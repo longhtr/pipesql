@@ -7,7 +7,7 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 12, 2026 (local time) complete gates for `827cad5` passed all 23
+The September 12, 2026 (local time) complete gates for `8aceaee` passed all 23
 stages on macOS and GNU arm64 Linux. The macOS environment was arm64 Darwin 25.6.0, Rust 1.98.1,
 Python 3.14.7, and the native Apple toolchain. The Linux environment is identified
 below. Checks used release artifacts, offline locked dependencies, and
@@ -22,21 +22,21 @@ The seed-only graph command previously passed on both platforms; reuse of its
 output directory was rejected. Seed failure propagation and artifact identities
 have tooling regressions independent of engine execution.
 
-Rust suites executed 454 tests on each platform, with no failed or ignored
+Rust suites executed 457 tests on each platform, with no failed or ignored
 tests. Each suite also executed one selected lease subprocess, excluded from
 these totals. The twelve bounded-thread scenarios and their ordinary-thread
 counterparts passed on both targets. The independent native stack control and
 the Rust oversized-thread negative control passed. The public directory cleanup
 regression executed, including its isolated unwind control.
 
-Both gates used one frozen 663-file export containing 662 manifested inputs.
+Both gates used one frozen 664-file export containing 663 manifested inputs.
 All stage statuses were zero, before/after manifests matched across both runs,
 and finalization reported no errors and removed owned build targets. The frozen
 manifest SHA-256 is
-`56fe5841848f6efed996eb231aec967d4ac2706baec25abb46f7e39a355b3b73`.
+`163e2a845a501d8741f9926184fe12eb877b7c9b9cd79784fdd9aa66cb0e94d0`.
 At that checkpoint, only the two notes files were finalized afterward. The
-other 660 manifested inputs have fingerprint
-`b0087231c7cef7c5ad444f12bce9579ccad484a51d315e69daf156a8de1a2e79`.
+other 661 manifested inputs have fingerprint
+`0ad61af2f2418fe75539c26b6994d472b4aba1f69ab7c986f3982baaac620441`.
 To fingerprint the currently checked-out inputs:
 
 ```sh
@@ -44,11 +44,11 @@ python3 -B tools/source-manifest.py | python3 -c 'import hashlib, sys; print(has
 ```
 
 This fingerprint identifies maintained source, not reproducible binaries. Final
-documentation checks cover the finalized notes. The declared-table example ran
+documentation checks cover the finalized notes. At the earlier `827cad5` checkpoint, the declared-table example ran
 on both platforms and printed `north total=15 rows=3 present=2` and
 `south total=20 rows=1 present=1`. The frontend walkthrough also produced its
-complete INT64 result, 38, on macOS. Gate stages took 1,558 seconds on macOS and
-774 seconds on Linux; these are verification costs, not query benchmarks.
+complete INT64 result, 38, on macOS. The current gate stages took 1,551 seconds on macOS and
+747 seconds on Linux; these are verification costs, not query benchmarks.
 Raw successful logs and retired source exports are not required inputs; current
 callers and fixtures reconstruct the generated cases.
 
@@ -119,13 +119,13 @@ Admission checks compare constructed owners with their required bytes, including
 one-byte-shortfall refusal. Nine numeric extrema exposed an omitted capacity
 term; the repaired hash admission passes at 8,000, 32,000, 128,000, and 1,000,000
 available bytes. Legacy STRING extrema retain one-byte slots and pass global,
-two-key, and repeated aggregation under 2 MB. Declared STRING extrema reserve
-65,536 bytes per slot per group regardless of actual length. This is an accepted
-capacity cost for allocation-free replacement and explicit bounded fallback,
-not a compact-string or performance claim. Persistent formats are unchanged.
+two-key, and repeated aggregation under 2 MB. At `827cad5`, declared STRING
+extrema reserved 65,536 bytes per slot per group regardless of actual length.
+The compact hash representation below replaces that cost while retaining fixed
+slots for disk reduction. Persistent formats are unchanged.
 
 The extended public allocation caller checks numeric and text extrema alongside
-its existing COUNT/SUM/AVG results. Both platform gates execute exactly 721
+its existing COUNT/SUM/AVG results. At `827cad5`, both platform gates executed 721
 allocation-refusal prefixes and the full healthy prefix on each short and
 384-byte path. The campaign ceiling increased from 710 to 800 to admit that
 control; it does not truncate the measured sweep. Refusal paths retain recovery,
@@ -499,28 +499,86 @@ this recipe does not claim reproducible binaries.
 
 #### Decision
 
-Adopt a follow-up to compact retained text in optional hash grouping. The
-capacity cost is established by both the source layout and the allocator
-observation: four eight-byte groups retain only 64 bytes of extrema, yet the
-80 MB configuration admits roughly 41 MB. At 256 short-string groups, the 4 MB
-configuration spills despite only 4,096 bytes of useful extrema. This is a
-representation cost, not evidence that the current answers or accounting are
-incorrect. Maximum-width values still need substantial storage; the large-budget
-runs demonstrate why a blanket reduction of hash capacity is insufficient.
+The study selected compact text storage for optional hash grouping. Four
+short-string groups needed only 64 bytes of extrema but admitted about 41 MB;
+256 groups spilled at 4 MB despite retaining only 4,096 useful text bytes.
+The implementation and accepted growth costs follow. The original workload,
+source identity, and measurements remain the comparison baseline.
 
-The next change should target the optional hash owner's text storage and
-admission. Use bounded variable-width storage with explicit spans and fallible
-admission; retain the fixed one-group disk fallback and existing source replay.
-The design must explain growth, replacement, transient old/new allocations,
-independent validation, and exhaustion without per-row allocation or unbounded
-compaction. This study does not implement that change or establish its speed.
-The unrelated physical-process-memory qualification remains open.
+### Compact hash text storage
 
-Warnings-denied Clippy for all examples and stock execution passed on both
-platforms. Formatting, maintenance, fixture, and documentation checks cover the
-retained example and instructions. Engine, filesystem, tests, and maintained
-campaign sources remain unchanged, so their complete `827cad5` gates are reused.
-No full gate or production-performance claim is attributed to this study.
+Commit `8aceaee` implements explicit text spans, geometric region capacities,
+and separately admitted arena growth. The [resource contract](../docs/resources.md#declared-grouping-admission)
+owns the space bound, copying quantum, admission order, and fallback behavior.
+Fixed disk reduction and serialized records remain unchanged. STRING hash
+metadata admits at most 4,096 groups, subject to available memory; numeric-only
+sizing is unchanged. This policy avoids replacing unused maximum-width text
+with another large reservation for empty slots.
+
+The unchanged [STRING example](../examples/string_grouping.rs) ran all eight
+combinations on the macOS and GNU arm64 Linux environments above. Each checked
+all ordered keys, both extrema, count 2, successful completion, and reservation
+release. Stock timings exclude setup/open/prepare and include validation and
+result destruction. These single observations ran without a concurrent gate;
+they do not establish latency distributions or a speedup. Paths account for
+small differences in logical reservations.
+
+| Groups | String bytes | Budget | Sampled logical memory, macOS / Linux | Temporary bytes, both | Seconds, macOS / Linux |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 4 | 8 | 4,000,000 | 2,492,857 / 2,492,775 | 0 | 0.001834 / 0.000526 |
+| 4 | 8 | 80,000,000 | 2,492,858 / 2,492,776 | 0 | 0.001721 / 0.000523 |
+| 4 | 65,536 | 4,000,000 | 3,279,197 / 3,279,115 | 0 | 0.002055 / 0.002064 |
+| 4 | 65,536 | 80,000,000 | 3,279,198 / 3,279,116 | 0 | 0.003358 / 0.002047 |
+| 256 | 8 | 4,000,000 | 2,498,907 / 2,498,825 | 0 | 0.016103 / 0.005729 |
+| 256 | 8 | 80,000,000 | 2,498,908 / 2,498,826 | 0 | 0.016194 / 0.003789 |
+| 256 | 65,536 | 4,000,000 | 3,279,199 / 3,279,117 | 67,169,320 | 0.422369 / 0.551240 |
+| 256 | 65,536 | 80,000,000 | 52,824,416 / 52,824,334 | 0 | 0.072121 / 0.091444 |
+
+The four-group, eight-byte case falls from about 40.93 MB to 2.49 MB at an
+80 MB budget. The 256-group short-string case no longer spills at 4 MB, and a
+public regression checks that property with complete results. Maximum-width
+values still spill at 4 MB and remain in memory at 80 MB. Growth temporarily
+owns old and new buffers: the large-budget wide-value peak rises from 40.93 MB
+to 52.82 MB. This is an accepted reservation cost of bounded copying, not a
+whole-process-memory guarantee. Shorter replacements reuse capacity; historical
+large values can therefore retain more space than their current lengths.
+
+Stock executable SHA-256 values were
+`2e26e04326ba1241b71cae125b735c276fc71e5a7803e44b280145c3f82379f1` on macOS and
+`753f0a783a235c7fb928bbadd59ca4ad08d8bf93aaa8a49a4cf90aa6de9cf3d3` on Linux.
+The example source and reconstruction commands are unchanged from the baseline.
+
+The existing disposable allocator recipe above ran six macOS cases against the
+new ordinary release library. All returned requested and usable live counters
+exactly to baseline after result destruction. The following are peak increases
+over the pre-execution baseline. Diagnostic timings are excluded: the full gates
+ran concurrently with these allocation observations.
+
+| Groups | String bytes | Budget | Peak requested increase | Peak usable increase | Allocation calls |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 4 | 8 | 4,000,000 | 2,455,070 | 2,547,552 | 60 |
+| 4 | 8 | 80,000,000 | 2,455,073 | 2,547,552 | 60 |
+| 256 | 8 | 4,000,000 | 2,455,076 | 2,547,552 | 570 |
+| 256 | 8 | 80,000,000 | 2,455,079 | 2,547,552 | 570 |
+| 256 | 65,536 | 4,000,000 | 3,232,990 | 3,323,456 | 572 |
+| 256 | 65,536 | 80,000,000 | 52,778,207 | 52,868,672 | 570 |
+
+The observer executable hash was
+`9db6f5703b08475672f8169de6ce7b51696542d336fa11653ada2ca029041924`.
+Requested/usable peaks and sampled logical reservations have different scopes;
+they are not interchangeable with RSS, foreign allocations, or filesystem usage.
+
+The full gates above passed all maintained semantic, allocation, native,
+interruption, and graph campaigns. Both public allocation sweeps covered 723
+catalog refusal prefixes plus the healthy control on short and 384-byte paths.
+New internal tests check region reuse, invalid extents, competing reservation
+refusal, cancellation after one copying quantum with both buffers live, and
+release back to baseline. Existing tests retain NULL/empty/Unicode behavior,
+full-width replay, independent decoding, demanded errors, and cleanup checks.
+An earlier debug-profile aggregation selection overflowed the bounded-stack
+test; the required release-profile test passed. Debug stack qualification is
+not claimed. The first new growth fixture incorrectly selected legacy one-byte
+text storage; selecting the declared UTF-8 layout repaired that fixture.
 
 ## Native boundaries and diagnostics
 
