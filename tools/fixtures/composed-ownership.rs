@@ -291,9 +291,13 @@ pub(super) fn run(root: &Path, negative: bool) -> Result<(), Box<dyn std::error:
     let running = rows.accounted_memory_bytes();
     let held = checkpoint(&db, "hash-held", prior + running, baseline);
     assert!((held.requested - baseline.requested) as u64 <= running);
-    let denied = db.execute(&distinct, &cancel);
-    assert!(matches!(denied, Err(Error::Resource { .. })));
-    drop(denied);
+    // A small grouped query must leave room for the independently admitted reader.
+    // Check complete rows from both snapshots rather than only successful opening.
+    let mut competing = db
+        .execute(&distinct, &cancel)
+        .expect("small grouped query unnecessarily excluded a competing reader");
+    consume(&mut competing, true, false, false);
+    drop(competing);
     assert_eq!(Live::now(), held);
     assert_eq!(db.reserved_memory_bytes(), prior + running);
     consume(&mut rows, true, true, false);

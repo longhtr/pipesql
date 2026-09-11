@@ -67,7 +67,11 @@ fn composition_io(
     derived: bool,
 ) {
     let path = root.join("database");
-    let config = Config::new(4_000_000, 2_000_000).unwrap();
+    // The repeated query fits its blocking minima but spills at 1.1 MB.
+    // The census must observe reads and writes, so admission changes cannot
+    // silently turn this failure campaign into an in-memory-only test.
+    let memory = if derived { 4_000_000 } else { 1_100_000 };
+    let config = Config::new(memory, 2_000_000).unwrap();
     let db = Database::create_empty(&path, config).unwrap();
     let cancel = CancellationToken::new();
     db.declare_table(

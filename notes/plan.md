@@ -18,26 +18,21 @@ the [platform matrix](../docs/testing.md#platform-status) distinguishes those
 limits from exercised behavior. The Linux campaigns require an unprivileged user
 and GNU time. No production-readiness claim follows from a passing local gate.
 
-## Next: make grouping admission proportionate to its input
+## Current: recover functional coverage from stack exclusions
 
-The composed ownership caller shows that optional hash grouping can reserve nearly
-the remaining memory budget even for few groups, refusing a competing reader.
-Trace admission through the grouping controller, hash storage, and resource
-reservation owner. Establish a public regression with overlapping readers and
-independent complete-row expectations before choosing a repair.
+Twelve GNU arm64 exclusions currently skip complete functional scenarios because
+their native threads cannot satisfy the separate 64-KiB stack check. Separate the
+scenario from its stack qualification. Execute the same behavioral assertions on
+ordinary threads on both platforms, while retaining the bounded-stack tests and
+their explicit target exclusions. Keep shared scenario setup local to each test
+owner; do not duplicate expected results or introduce a test framework.
 
-Bound optional allocation using justified input information or incremental growth
-while preserving the admitted spill minimum. Do not add an arbitrary fairness
-percentage, an unbounded estimate, or a separate execution path. Keep NULL/key
-semantics, aggregate results, refusal, cancellation, spill/replay, and cleanup
-intact. Explain the chosen representation and admission invariant beside their
-owners so the implementation remains useful for learning.
-
-Completion requires the competing-reader regression, relevant grouping and
-allocation/failure tests, an updated resource contract and evidence record, and
-coherent verified local commits. Assess whether the first candidate changes the
-counterexample before extending the design. Whole-process memory qualification,
-Windows, and general scheduling fairness remain separate work.
+Verify test discovery and execution on macOS and GNU/Linux, preserve the macOS
+small-stack checks, and update the platform matrix and evidence. This milestone
+does not enlarge or claim to satisfy the GNU arm64 stack bound. Run focused checks
+and the required core gates on frozen inputs, review the final diff, and commit
+coherent verified changes locally. Retain applicable runtime evidence for unchanged
+production and native campaign inputs instead of repeating unrelated campaigns.
 
 ## Other release work
 
@@ -46,7 +41,6 @@ Windows, and general scheduling fairness remain separate work.
 | Windows | Implement native paths, handles, traversal, locking, synchronization, CLI startup, process ownership, and target-specific verification. |
 | Stack limits | Resolve or explicitly redesign the 64-KiB contract against GNU arm64's larger native minimum; do not silently skip the combined scenarios. |
 | Filesystems and durability | Investigate the shared-mount identity counterexample and qualify supported filesystem/device premises beyond process termination. |
-| Grouping admission | Prevent optional hash allocation from unnecessarily excluding competing readers while preserving bounded execution and complete results. |
 | Physical memory | Reconcile logical charges with allocator-usable memory and other owners without claiming a whole-process cap from engine counters. |
 | Native diagnostics | Establish reproducible sanitizer controls and identify instrumentation limits before attributing reports or claiming a clean boundary. |
 | Product qualification | Extend representative language/workload, crash/concurrency, and performance evidence; define compatibility before promising stable formats or interfaces. |

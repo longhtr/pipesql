@@ -411,7 +411,8 @@ and return to the pre-call owner baseline, including live errors. Park two
 reader threads around writer staging/publication with separate ORDER BY and
 DISTINCT scratch. Check query charges plus writer deltas, allocation and temp
 refusal, one-reader cancellation, writer reuse, old/new snapshots, and
-competing-query refusal under held hash grouping. A deliberately false
+competing-reader completion while a small hash-grouped result is held. Check
+complete rows from both snapshots and independent owner release. A deliberately false
 complete-row expectation must fail after query completion. Caller
 thread/barrier/buffer owners remain separate. These schedules do not prove
 arbitrary races, every overlapping cut, C-runtime memory, allocator-retained

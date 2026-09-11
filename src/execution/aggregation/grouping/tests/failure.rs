@@ -413,6 +413,19 @@ fn public_grouping_faults_release_the_complete_query_owner() {
 
 #[test]
 fn repeated_aggregation_cancels_at_observed_controller_phases() {
+    fn use_disk_for_second_group(result: &mut QueryResult<'_, '_>) {
+        let State::Running(runtime) = &mut result.state else {
+            unreachable!()
+        };
+        let Aggregation::General(owner) = &mut runtime.aggregates[1] else {
+            unreachable!()
+        };
+        // Exercise both output paths without depending on an earlier group's
+        // optional allocation starving this controller. No input has run yet.
+        owner[0].memory.clear();
+        owner[0].phase = Phase::Create;
+    }
+
     let directory = Directory::new();
     let database = database(
         &directory,
@@ -426,6 +439,7 @@ fn repeated_aggregation_cancels_at_observed_controller_phases() {
     let baseline = database.reserved_memory_bytes();
     let healthy = CancellationToken::new();
     let mut reference = database.execute(&query, &healthy).unwrap();
+    use_disk_for_second_group(&mut reference);
     let mut boundaries = Vec::new();
     let mut memory_output = false;
     let mut disk_output = false;
@@ -470,6 +484,7 @@ fn repeated_aggregation_cancels_at_observed_controller_phases() {
     for prefix in prefixes {
         let cancel = CancellationToken::new();
         let mut result = database.execute(&query, &cancel).unwrap();
+        use_disk_for_second_group(&mut result);
         for _ in 0..prefix {
             assert!(matches!(result.step(), QueryStep::Progress));
         }
@@ -492,6 +507,7 @@ fn repeated_aggregation_cancels_at_observed_controller_phases() {
         assert_eq!(database.reserved_temp_bytes(), 0);
     }
     let mut healed = database.execute(&query, &healthy).unwrap();
+    use_disk_for_second_group(&mut healed);
     let mut seen = false;
     let mut done = false;
     for _ in 0..8192 {

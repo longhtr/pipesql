@@ -206,11 +206,14 @@ impl<'db> MemoryGroups<'db> {
         let key_bytes = available
             .checked_sub(arrays)
             .ok_or(Error::Corrupt("hash sizing exceeds available memory"))?;
-        Ok((
-            capacity,
-            usize::try_from(key_bytes)
-                .map_err(|_| Error::Corrupt("hash key arena does not fit"))?,
-        ))
+        // Each occupied slot stores one encoded key. Bytes beyond this bound
+        // cannot be used before the group limit forces the existing spill path.
+        let maximum_key_bytes = capacity
+            .checked_mul(keys.max_bytes)
+            .ok_or(Error::Corrupt("hash key capacity overflow"))?;
+        let key_bytes = usize::try_from(key_bytes)
+            .map_err(|_| Error::Corrupt("hash key arena does not fit"))?;
+        Ok((capacity, key_bytes.min(maximum_key_bytes)))
     }
 
     pub(super) fn begin(&mut self, arguments: &ArgumentBatch<'_>) -> Result<(), Error> {

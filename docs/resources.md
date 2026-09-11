@@ -38,10 +38,10 @@ retain cleanup debt even when no temporary bytes are charged.
 The shared authorities charge logical ownership. The stock [composed-ownership
 checks](../notes/evidence.md#resource-ownership-and-admission) reconcile these
 charges with live requested allocations and separately observed allocator
-rounding. Usable Rust heap can exceed the configured memory limit even when
-logical admission succeeds: the held catalog hash-grouping case demonstrates
-this at one live checkpoint. Configuration is therefore not a hard usable-heap
-or RSS limit. Closing this physical-memory gap remains a release obligation.
+rounding. Logical admission does not charge every allocator size-class increment,
+so configuration is not a hard usable-heap or RSS limit. Reducing optional hash
+allocation does not change that distinction. Closing this physical-memory gap
+remains a release obligation.
 
 ## Query preparation
 
@@ -212,7 +212,11 @@ and bytes then grow together up to 4,096 slots, reserving the maximum first
 record and the minimum encoded width for each additional slot. Scalar lanes use
 the remaining budget up to 256. Optional hash storage splits the remaining
 capacity between group slots and key bytes, accounting power-of-two bucket
-rounding. These are sizing policies, not distribution or performance guarantees.
+rounding. The key arena is also bounded by the group-slot capacity multiplied
+by the maximum encoded key width: each occupied slot stores one key, and a full
+slot array already forces fallback. Reserving more key bytes cannot increase
+the admitted workload. These are sizing policies, not distribution or performance
+guarantees.
 Admission may refuse if concurrent reservations change availability. After
 admission, replay, sorting and reduction never reacquire their retained minimum.
 Hash storage and the run collection arena are destroyed before their charges are

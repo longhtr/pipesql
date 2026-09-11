@@ -19,7 +19,7 @@ The Rust suites executed 417 tests with no failures or exclusions. The lease
 subprocess additionally executed one selected test; it is not counted twice.
 The public directory cleanup regression executed, including its isolated unwind
 control. Maintenance checked 81 tooling tests, 39 independent codec fixtures,
-and 374 local documentation links. The unchanged declared-table example was
+and 375 local documentation links. The unchanged declared-table example was
 previously exercised at baseline `36b7823`: it printed `north 15` and `south 20`;
 reuse of its database path returned `AlreadyExists` with exit 1.
 
@@ -27,7 +27,7 @@ Both platform runs used the same frozen 656-file export. Their before/after
 manifests matched, all stage exit statuses were zero, and finalization reported
 no errors. Only the two notes files were finalized after runtime verification.
 The remaining 654 inputs match the final source. Their manifest fingerprint is
-`995c7dd284df278e1ddb1a58d5684ec6f6d42dea53e23d5f2de25268c57b7002`.
+`5734ea83b3711d1ad5dec4c6d237e22c1d171faf270782f1a3de999640d76864`.
 Recompute it from the repository root:
 
 ```sh
@@ -78,7 +78,7 @@ calls, scheduled overlap, injected refusal, a 33-link chain, correct names, and
 byte-preserving healed reopen. Darwin's extra cases cover its data-mount spelling.
 Linux entry observation does not expose or qualify libc's internal allocations,
 stack, synchronization, or traversal work. Both platforms passed 241 native
-synchronization cells, 1,088 byte-I/O cells, and the graph/interruption cases below.
+synchronization cells, 1,028 byte-I/O cells, and the graph/interruption cases below.
 These checks do not qualify other libc implementations, static linking, all
 filesystems, native concurrency, or power-loss durability.
 
@@ -133,13 +133,33 @@ Cancellation, completion, drop, allocation refusal, and temporary refusal must
 preserve other live owners and release the departing owner's resources. A wrong
 count for the committed key is rejected by the completed-row oracle.
 
-The held hash-grouping control exposes a consequential limitation: a 4 MB logical
-budget can admit allocations whose allocator-usable extents exceed 4 MB. Optional
-hash admission can also consume nearly the remaining budget even for few groups,
-causing a competing query to refuse while the held result remains valid. This is
-not a whole-process memory cap or a resolved admission policy. The caller reports
-requested, usable, and charged bytes separately so the current values can be
-measured without an old workload or source archive.
+At baseline `99164f2`, the held grouping case charged 3,991,744 bytes against a
+4,000,000-byte budget and excluded a competing DISTINCT reader during setup.
+The key arena reserved all remaining memory even when the bounded group slots
+could not store that many key bytes. The maintained caller now requires both
+readers to complete against independent old/new row counts and checks that the
+competing reader releases its owners without disturbing the held group.
+
+The repair bounds the arena by group-slot capacity times maximum encoded key
+width. Each inserted group stores one key; this removes unusable capacity without
+reducing what those slots can hold. The completed macOS gate observed charges of
+2,693,132 bytes on the short path and 2,693,291 bytes on the long path; GNU/Linux
+observed 2,693,101 and 2,693,275 bytes. Both readers completed on both platforms,
+and the departing reader restored the held owner's allocation totals.
+
+The repeated-aggregation cancellation test explicitly selects downstream disk
+execution before any input runs. The public native-I/O fixture uses a 1.1-MB
+budget that admits the query's blocking minimum and forces spill. Its census
+requires both positional reads and writes: the completed runs observed 19 reads
+and five writes. This preserves failure coverage without relying on an earlier
+optional allocation starving the downstream controller. The census caught the
+missing writes before this fixture repair; that failed run and the superseded,
+interrupted macOS run are not full-gate evidence.
+
+This is not cardinality-based slot sizing or general scheduling fairness. Wide
+keys may still use the available key budget. Requested, usable, and logically
+charged bytes remain separate measurements; the repair does not turn the logical
+limit into a whole-process memory cap.
 
 Thread stacks, runtime state, allocator metadata, caller barriers, and foreign
 owners remain separate. Returning engine allocations to baseline does not require
