@@ -242,17 +242,32 @@ fn boolean_filters_match_independent_three_valued_model() {
 }
 
 #[test]
+fn boolean_scan_scratch_is_optional_and_bounded() {
+    check_boolean_scan_scratch(false);
+}
+
+#[test]
 #[cfg_attr(
     all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
     ignore = "GNU aarch64 has a 128-KiB pthread minimum; this test requires at most 64 KiB"
 )]
-fn boolean_scan_scratch_is_optional_bounded_and_small_stack_safe() {
+fn boolean_scan_scratch_fits_reported_stack_allowance() {
+    check_boolean_scan_scratch(true);
+}
+
+fn check_boolean_scan_scratch(small_stack: bool) {
     let (_directory, db) = super::null_predicate::fixture().unwrap();
-    std::thread::scope(|scope| {
+    let thread = if small_stack {
+        std::thread::Builder::new().stack_size(48 * 1024)
+    } else {
         std::thread::Builder::new()
-            .stack_size(48 * 1024)
+    };
+    std::thread::scope(|scope| {
+        thread
             .spawn_scoped(scope, || {
-                assert!(pipesql_filesystem::test_current_thread_stack_bytes() <= 65_536);
+                if small_stack {
+                    assert!(pipesql_filesystem::test_current_thread_stack_bytes() <= 65_536);
+                }
                 let cancel = CancellationToken::new();
                 for (projection, column, rows) in [("id", "id", 4096_u64), ("id+0 AS x", "x", 256)]
                 {

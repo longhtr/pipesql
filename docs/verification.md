@@ -12,7 +12,7 @@ production release.
 | --- | --- |
 | Which checks do I run for a change? | [Build and test](testing.md#focused-verification), then the relevant requirements below. |
 | What does the maintained gate check? | [Local regression gate](#local-regression-gate). |
-| What has actually passed? | [Completed checkpoint](../notes/evidence.md#latest-completed-gate-checkpoint), including its exact source and exclusions. |
+| What has actually passed? | [Completed checks](../notes/evidence.md), including their exact sources and exclusions. |
 | Which operating systems have been exercised? | [Platform status](testing.md#platform-status). |
 | What remains necessary for production? | [Release criteria](#release-criteria) and the capability-specific requirements below. |
 

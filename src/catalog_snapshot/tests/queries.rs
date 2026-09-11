@@ -131,17 +131,27 @@ fn catalog_native_text_feeds_bounded_result_ownership() {
 }
 
 #[test]
+fn catalog_readers_move_with_snapshot_and_cached_index_page() {
+    check_catalog_reader_transfer(false);
+}
+
+#[test]
 #[cfg_attr(
     all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
     ignore = "GNU aarch64 pthread minimum exceeds the 64-KiB reported-stack ceiling"
 )]
-fn catalog_readers_move_with_snapshot_and_cached_index_page() {
+fn catalog_reader_transfer_fits_reported_stack_allowance() {
+    check_catalog_reader_transfer(true);
+}
+
+fn check_catalog_reader_transfer(small_stack: bool) {
     struct Readers<'db> {
         payload: native_unit::ColumnBuffer,
         index: table_data::Cursor,
         unit: native_unit::Unit,
         snapshot: crate::catalog_snapshot::Snapshot<'db>,
     }
+
     let parent = Fixture::directory();
     let path = parent.0.join("owned-readers");
     let database = Database::create_catalog_with_effects(
@@ -175,15 +185,21 @@ fn catalog_readers_move_with_snapshot_and_cached_index_page() {
         .reserve_memory(bytes, "retained native readers")
         .unwrap();
     let mut owner = crate::resources::allocate(1, 1, "retained reader allocation", bytes).unwrap();
-    let readers = std::thread::scope(|scope| {
+    let thread = if small_stack {
+        std::thread::Builder::new().stack_size(48 * 1024)
+    } else {
         std::thread::Builder::new()
-            .stack_size(48 * 1024)
+    };
+    let readers = std::thread::scope(|scope| {
+        thread
             .spawn_scoped(scope, || {
                 let reported = pipesql_filesystem::test_current_thread_stack_bytes();
-                assert!(
-                    reported > 0 && reported <= 65_536,
-                    "native reader stack: {reported}"
-                );
+                if small_stack {
+                    assert!(
+                        reported > 0 && reported <= 65_536,
+                        "native reader stack: {reported}"
+                    );
+                }
                 let snapshot = database.catalog_snapshot().unwrap();
                 let mut catalog_bytes = [0; catalog::MAX_BYTES];
                 let catalog = snapshot
@@ -399,11 +415,20 @@ fn catalog_query_scans_pinned_generations_and_reopen() {
 }
 
 #[test]
+fn catalog_query_text_boundaries_cancellation_and_memory() {
+    check_catalog_text_queries(false);
+}
+
+#[test]
 #[cfg_attr(
     all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
     ignore = "GNU aarch64 pthread minimum exceeds the 64-KiB reported-stack ceiling"
 )]
-fn catalog_query_text_boundaries_cancellation_and_memory() {
+fn catalog_text_queries_fit_reported_stack_allowance() {
+    check_catalog_text_queries(true);
+}
+
+fn check_catalog_text_queries(small_stack: bool) {
     use crate::{QueryStep, Value};
     let parent = Fixture::directory();
     let path = parent.0.join("native-text-query");
@@ -453,16 +478,23 @@ fn catalog_query_text_boundaries_cancellation_and_memory() {
     ));
     assert_eq!(db.reserved_memory_bytes(), before + held.bytes());
     drop(held);
-    // The whole native query admission and drain must fit the observed stack.
-    std::thread::scope(|scope| {
+    // Keep admission and draining on the same worker; the small-stack test
+    // qualifies both operations.
+    let thread = if small_stack {
+        std::thread::Builder::new().stack_size(48 * 1024)
+    } else {
         std::thread::Builder::new()
-            .stack_size(48 * 1024)
+    };
+    std::thread::scope(|scope| {
+        thread
             .spawn_scoped(scope, || {
                 let reported = pipesql_filesystem::test_current_thread_stack_bytes();
-                assert!(
-                    reported > 0 && reported <= 65_536,
-                    "native scan stack: {reported}"
-                );
+                if small_stack {
+                    assert!(
+                        reported > 0 && reported <= 65_536,
+                        "native scan stack: {reported}"
+                    );
+                }
                 let mut running = db.execute(&query, &cancel).unwrap();
                 let charged = db.reserved_memory_bytes();
                 let mut rows = 0;

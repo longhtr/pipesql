@@ -761,22 +761,37 @@ fn computed_scan_reserves_before_io_at_exact_and_next_byte() {
 }
 
 #[test]
+fn shared_threads_preserve_results_and_release_query_owners() {
+    check_shared_query_threads(false);
+}
+
+#[test]
 #[cfg_attr(
     all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
     ignore = "GNU aarch64 pthread minimum exceeds the 64-KiB reported-stack ceiling"
 )]
 fn shared_threads_and_small_reported_stack() {
+    check_shared_query_threads(true);
+}
+
+fn check_shared_query_threads(small_stack: bool) {
     let (_fixture, database) = loaded(4097);
     let path = database.path().to_owned();
     database.close().unwrap();
-    std::thread::Builder::new()
-        .stack_size(48 * 1024)
+    let thread = if small_stack {
+        std::thread::Builder::new().stack_size(48 * 1024)
+    } else {
+        std::thread::Builder::new()
+    };
+    thread
         .spawn(move || {
             let reported = pipesql_filesystem::test_current_thread_stack_bytes();
-            assert!(
-                reported <= 65536,
-                "actual stack exceeds test ceiling: {reported}"
-            );
+            if small_stack {
+                assert!(
+                    reported <= 65536,
+                    "actual stack exceeds test ceiling: {reported}"
+                );
+            }
             let database =
                 Database::open(&path, Config::new(4_000_000, 1_000_000).unwrap()).unwrap();
             std::thread::scope(|scope| {
@@ -794,7 +809,7 @@ fn shared_threads_and_small_reported_stack() {
                 });
                 assert_eq!(left.join().unwrap(), right.join().unwrap());
             });
-            // This call, including metadata admission and decoding, uses the measured small stack.
+            // Keep metadata admission and decoding on the same worker as execution.
             let query = database.prepare(SQL).unwrap();
             let cancellation = CancellationToken::new();
             let mut result = database.execute(&query, &cancellation).unwrap();

@@ -229,11 +229,20 @@ fn public_distinct_scalar_equivalence_empty_input_and_composition() {
 }
 
 #[test]
+fn public_distinct_uses_all_64_columns_before_projection_and_repeats() {
+    check_wide_distinct(false);
+}
+
+#[test]
 #[cfg_attr(
     all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
     ignore = "GNU aarch64 has a 128-KiB pthread minimum; this test requires at most 64 KiB"
 )]
-fn public_distinct_uses_all_64_columns_before_projection_and_repeats() {
+fn public_wide_distinct_fits_reported_stack_allowance() {
+    check_wide_distinct(true);
+}
+
+fn check_wide_distinct(small_stack: bool) {
     let directory = Directory::new();
     let cancel = CancellationToken::new();
     let db = Database::create_empty(
@@ -267,11 +276,17 @@ fn public_distinct_uses_all_64_columns_before_projection_and_repeats() {
     writer.write(&inputs, &cancel).unwrap();
     writer.commit(&cancel).unwrap();
 
-    std::thread::scope(|scope| {
+    let thread = if small_stack {
+        std::thread::Builder::new().stack_size(48 * 1024)
+    } else {
         std::thread::Builder::new()
-            .stack_size(48 * 1024)
+    };
+    std::thread::scope(|scope| {
+        thread
             .spawn_scoped(scope, || {
-                assert!(pipesql_filesystem::test_current_thread_stack_bytes() <= 65_536);
+                if small_stack {
+                    assert!(pipesql_filesystem::test_current_thread_stack_bytes() <= 65_536);
+                }
                 order::query(
                     &db,
                     "FROM wide |> DISTINCT |> SELECT c0",

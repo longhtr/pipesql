@@ -5,9 +5,47 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
-## Latest completed gate checkpoint
+## Functional coverage separated from stack qualification
 
-On September 11, 2026, the full macOS gate passed all 23 stages on arm64 Darwin
+The twelve previously combined scenarios now each have an ordinary-thread test
+and a bounded-stack test sharing the same expectations. Focused execution passed
+all 24 tests on macOS and the twelve ordinary variants on GNU arm64; GNU arm64
+explicitly ignored only the twelve stack qualifications. The load scenarios
+verified completion markers for empty input, one row, and 65,537 rows.
+
+The September 11 core gates passed all 14 stages on both platforms using the
+same environments as the full baseline below. The complete Rust suites executed
+429 tests on macOS and 409 on GNU arm64, with twelve explicit stack exclusions
+only on GNU arm64. Each suite also ran one selected lease subprocess, excluded
+from these totals. All twelve ordinary variants and twelve qualification entries
+were reconciled by name against the complete suite logs. Formatting, maintenance,
+ABI checks, independent fixtures/models, warnings-denied Clippy and rustdoc, and
+doctests passed. Maintenance checked 81 tooling tests, 39 codec fixtures, and
+375 local documentation links.
+
+Both core gates used one frozen 656-file export. All stage statuses were zero,
+before/after manifests matched, and finalization reported no errors. Only the
+two notes files were finalized afterward. The other 654 inputs have fingerprint
+`16d45dc032992c667505e99228fd86278df8583255ccd4448f3d999884871185`.
+Recompute it from the repository root:
+
+```sh
+python3 -B tools/source-manifest.py | python3 -c 'import hashlib, sys; print(hashlib.sha256("".join(line for line in sys.stdin if not line.split("  ", 1)[1].startswith("notes/")).encode()).hexdigest())'
+```
+
+Replay the core gate with `sh tools/check.sh --scope core --output
+/absolute/new-result-directory`. The earlier attempts stopped on a stale evidence
+anchor before Rust compilation; the corrected final export passed.
+
+Only integration tests, `cfg(test)` modules, and documentation changed from
+`b1c8f34`. Production and native campaign sources remain identical, so the full
+campaign baseline below remains applicable to those unchanged inputs. The core
+gates verify the changed tests and documentation; they are not another full
+native campaign run.
+
+## Full campaign baseline
+
+At `b1c8f34` on September 11, 2026, the full macOS gate passed all 23 stages on arm64 Darwin
 25.6.0 with Rust 1.98.1, Python 3.14.7, and the native Apple toolchain. Checks used
 release artifacts, offline locked dependencies, and warnings-denied compilation
 and documentation. The run covered formatting, maintenance, filesystem ABI,
@@ -26,13 +64,8 @@ reuse of its database path returned `AlreadyExists` with exit 1.
 Both platform runs used the same frozen 656-file export. Their before/after
 manifests matched, all stage exit statuses were zero, and finalization reported
 no errors. Only the two notes files were finalized after runtime verification.
-The remaining 654 inputs match the final source. Their manifest fingerprint is
+The remaining 654 inputs matched `b1c8f34`; their manifest fingerprint was
 `5734ea83b3711d1ad5dec4c6d237e22c1d171faf270782f1a3de999640d76864`.
-Recompute it from the repository root:
-
-```sh
-python3 -B tools/source-manifest.py | python3 -c 'import hashlib, sys; print(hashlib.sha256("".join(line for line in sys.stdin if not line.split("  ", 1)[1].startswith("notes/")).encode()).hexdigest())'
-```
 
 This fingerprint identifies maintained source, not reproducible binaries. The
 final documentation check covers the finalized notes. Raw successful logs and
@@ -196,8 +229,9 @@ GNU arm64 reports a native stack larger than the 64-KiB ceiling even for a 48-Ki
 request: the reviewed pthread minimum is 131,072 bytes, and the observed stack
 was 137,152 bytes. Four public catalog, two legacy integration, and six internal
 library tests retain their 65,536-byte ceiling and explicit exclusions. Their
-combined scenarios remain unqualified on that target; `--ignored` does not make
-the native minimum satisfy the contract.
+ordinary-thread counterparts exercise the functional scenarios on that target.
+Their 64-KiB qualification remains unsatisfied; `--ignored` does not make the
+native minimum satisfy the contract.
 
 A Docker host-shared mount reported as `fuseblk` exposed inconsistent pathname
 and opened-file identities during catalog creation. The stock caller returned

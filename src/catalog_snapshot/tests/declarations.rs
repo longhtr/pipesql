@@ -508,11 +508,20 @@ fn catalog_declaration_rejection_releases_writer_without_issuance() {
 }
 
 #[test]
+fn catalog_declaration_preserves_maximum_columns() {
+    check_maximum_declaration(false);
+}
+
+#[test]
 #[cfg_attr(
     all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
     ignore = "GNU aarch64 pthread minimum exceeds the 64-KiB reported-stack ceiling"
 )]
 fn catalog_declaration_maximum_columns_has_bounded_reported_stack() {
+    check_maximum_declaration(true);
+}
+
+fn check_maximum_declaration(small_stack: bool) {
     use crate::catalog_snapshot::ColumnDeclaration;
     let parent = Fixture::directory();
     let path = parent.0.join("maximum-declaration");
@@ -527,15 +536,21 @@ fn catalog_declaration_maximum_columns_has_bounded_reported_stack() {
             nullable: false,
         })
         .collect();
-    std::thread::scope(|scope| {
+    let thread = if small_stack {
+        std::thread::Builder::new().stack_size(48 * 1024)
+    } else {
         std::thread::Builder::new()
-            .stack_size(48 * 1024)
+    };
+    std::thread::scope(|scope| {
+        thread
             .spawn_scoped(scope, || {
                 let reported = pipesql_filesystem::test_current_thread_stack_bytes();
-                assert!(
-                    reported > 0 && reported <= 65_536,
-                    "declaration stack: {reported}"
-                );
+                if small_stack {
+                    assert!(
+                        reported > 0 && reported <= 65_536,
+                        "declaration stack: {reported}"
+                    );
+                }
                 db.catalog_writer()
                     .unwrap()
                     .declare_table(

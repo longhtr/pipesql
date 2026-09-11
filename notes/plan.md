@@ -11,28 +11,38 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The full 23-stage gates pass on macOS and GNU arm64 Linux for the inputs in the
-[evidence record](evidence.md). Windows remains unfinished. Twelve GNU arm64 stack
-scenarios and two Darwin ACL-specific allocation cells remain excluded on Linux;
-the [platform matrix](../docs/testing.md#platform-status) distinguishes those
-limits from exercised behavior. The Linux campaigns require an unprivileged user
-and GNU time. No production-readiness claim follows from a passing local gate.
+The current core gates pass on macOS and GNU arm64 Linux. The full 23-stage
+campaign baseline at `b1c8f34` remains applicable to unchanged production and
+campaign sources; [evidence](evidence.md) separates the two scopes. Twelve GNU
+arm64 stack qualifications remain excluded, but their ordinary-thread functional
+counterparts now execute on both platforms. Two Darwin ACL-specific allocation
+cells remain excluded on Linux. Windows remains unfinished. The
+[platform matrix](../docs/testing.md#platform-status) distinguishes implementation,
+execution, and qualification. Linux campaigns require an unprivileged user and
+GNU time. A passing local gate does not establish production readiness.
 
-## Current: recover functional coverage from stack exclusions
+## Current: resolve the shared-mount identity counterexample
 
-Twelve GNU arm64 exclusions currently skip complete functional scenarios because
-their native threads cannot satisfy the separate 64-KiB stack check. Separate the
-scenario from its stack qualification. Execute the same behavioral assertions on
-ordinary threads on both platforms, while retaining the bounded-stack tests and
-their explicit target exclusions. Keep shared scenario setup local to each test
-owner; do not duplicate expected results or introduce a test framework.
+The retained Linux `fuseblk` observation reported a pathname inode changing from
+5566 to 5567 when opened; the DBMS refused it as changed metadata. Investigate
+this concrete mismatch before extending filesystem qualification. Compare the
+same maintained public catalog operation on the shared mount and native
+`overlayfs`, then distinguish native pathname/descriptor API disagreement from
+actual replacement, caching, or unstable filesystem identities.
 
-Verify test discovery and execution on macOS and GNU/Linux, preserve the macOS
-small-stack checks, and update the platform matrix and evidence. This milestone
-does not enlarge or claim to satisfy the GNU arm64 stack bound. Run focused checks
-and the required core gates on frozen inputs, review the final diff, and commit
-coherent verified changes locally. Retain applicable runtime evidence for unchanged
-production and native campaign inputs instead of repeating unrelated campaigns.
+Limit initial reproduction and causal investigation to 90 minutes, then choose
+a disposition from the observations. Preserve a small current-source reproducer,
+exact mount/toolchain context, and the violated identity invariant. Repair the
+native boundary only when evidence establishes a defect, with independent
+regressions and applicable verification. If the mount cannot provide the required
+identity stability, retain fail-closed behavior and document that precise
+qualification limit. A successful rerun does not clear the counterexample.
+
+Use existing metadata, ABI, and graph callers where practical. Do not add a
+workflow framework, historical archive, blanket mount blacklist, weaker identity
+comparison, silent retries, or an unrelated feature. Finish with a verified
+implementation or environment disposition, current contracts/evidence, a coherent
+local commit, and owned scratch removal. Reassess the next milestone afterward.
 
 ## Other release work
 

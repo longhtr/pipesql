@@ -32,7 +32,7 @@ from checks actually performed; it is not a release-support promise.
 | --- | --- | --- | --- |
 | Rust library/CLI and test compilation | Native arm64 release builds and Clippy exercised. | x86_64 GNU all-target cross-check and arm64 GNU native release tests pass with warnings denied. | Blocked by Unix imports and the missing native implementation. |
 | Filesystem effects | Native path, metadata, directory, locking, and synchronization implementations; scoped failure campaigns exercised. | Twelve native filesystem tests pass. Synchronization, byte-I/O failure, and catalog interruption campaigns are implemented and exercised on GNU arm64. Resolver resource attribution and durability qualification remain unfinished. | No implementation yet. |
-| Declared-table lifecycle and queries | Public integration and failure tests exercised; full release qualification remains open. | Public catalog integration runs on Linux. GNU arm64 explicitly excludes four tests requiring a native-reported stack at most 64 KiB; see below. | Cannot build until the native boundary is implemented. |
+| Declared-table lifecycle and queries | Public integration and failure tests exercised; full release qualification remains open. | Public catalog integration runs on Linux. All four previously combined scenarios have ordinary-thread coverage. Their separate 64-KiB stack qualifications remain excluded on GNU arm64; see below. | Cannot build until the native boundary is implemented. |
 | Legacy lineitem loader | Available on the reviewed path. | Implemented; internal fault schedules and public load/query/receipt tests run natively. Native sync/I/O failure and healed receipt outcomes are exercised; durability remains unqualified. | Unavailable. |
 | CLI argument capture | Native startup capture exercised. | Bounded `/proc/self/cmdline` capture and its unit tests run; CLI allocation and publication callers are implemented; retained evidence identifies exercised coverage. | Native argument capture is missing. |
 | Complete regression gate | The complete gate runs here; retained evidence identifies its tested inputs. | All gate stages are implemented. GNU arm64 stack tests and Darwin-specific ACL recovery observations remain excluded; retained evidence identifies completed runs. | No complete gate available. |
@@ -59,10 +59,12 @@ thread; a 48-KiB request was observed as 137,152 bytes on the Linux test host.
 Four public catalog tests, two legacy load/execution tests, and six internal
 library tests require an observed stack at most 64 KiB and are explicitly
 **ignored on GNU aarch64**, with the reason printed by the test runner. Their
-assertions and macOS execution remain intact. `-- --ignored` runs those
-unsatisfied checks explicitly; their exclusion does not qualify Linux stack
-headroom. It also excludes those twelve combined behavior/stack scenarios from
-Linux runtime evidence.
+assertions and macOS execution remain intact. Each has a separate ordinary-thread
+test sharing the same functional scenario and expected results. These ordinary
+variants run on both platforms, covering reader transfer, text boundaries,
+append/declaration, nested plans, joins, Boolean scratch, wide relations,
+DISTINCT, and legacy load/execution. `-- --ignored` runs the unsatisfied stack
+checks explicitly; functional success does not qualify Linux stack headroom.
 
 Platform-specific helpers compile with their actual consumers, without warning
 suppression. Extending coverage requires executing the target contracts and

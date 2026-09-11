@@ -11,11 +11,20 @@ fn assert_reported_stack_bound(limit: usize) {
 }
 
 #[test]
+fn public_load_and_queries_preserve_boundaries_and_release_owners() {
+    check_load_and_queries(false);
+}
+
+#[test]
 #[cfg_attr(
     all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
     ignore = "GNU aarch64 has a 128-KiB pthread minimum; this test requires at most 64 KiB"
 )]
 fn public_load_and_queries_fit_declared_stack_headroom() {
+    check_load_and_queries(true);
+}
+
+fn check_load_and_queries(small_stack: bool) {
     const CHILD: &str = "PIPESQL_LOAD_STACK_CHILD";
     if std::env::var_os(CHILD).is_some() {
         let path = PathBuf::from(std::env::var_os("PIPESQL_STACK_DATABASE").unwrap());
@@ -24,13 +33,11 @@ fn public_load_and_queries_fit_declared_stack_headroom() {
         let mut database =
             Box::new(Database::open(&path, Config::new(2_000_000, 8_000_000).unwrap()).unwrap());
         let resident = database.reserved_memory_bytes();
-        let database = std::thread::Builder::new()
-            .name("bounded-public-load".into())
-            // Native allocation can exceed the requested size. Leave one host
-            // page of margin, then verify the original 64-KiB ceiling inside.
-            .stack_size(49_152)
+        let database = worker("public-load", small_stack)
             .spawn(move || {
-                assert_reported_stack_bound(65_536);
+                if small_stack {
+                    assert_reported_stack_bound(65_536);
+                }
                 let commit = database
                     .load_lineitem(&input, &CancellationToken::new())
                     .unwrap();
@@ -48,11 +55,11 @@ fn public_load_and_queries_fit_declared_stack_headroom() {
         ] {
             let prepared = database.prepare(sql).unwrap();
             std::thread::scope(|scope| {
-                std::thread::Builder::new()
-                    .name("bounded-public-query".into())
-                    .stack_size(49_152)
+                worker("public-query", small_stack)
                     .spawn_scoped(scope, || {
-                        assert_reported_stack_bound(65_536);
+                        if small_stack {
+                            assert_reported_stack_bound(65_536);
+                        }
                         let cancellation = CancellationToken::new();
                         let mut result = database.execute(&prepared, &cancellation).unwrap();
                         let mut finished = false;
@@ -77,7 +84,7 @@ fn public_load_and_queries_fit_declared_stack_headroom() {
             });
         }
         database.close().unwrap();
-        eprintln!("bounded load child completed");
+        eprintln!("load/query child completed");
         return;
     }
     // Empty metadata, a nonempty unit, and both DOUBLE/date block boundaries.
@@ -88,12 +95,13 @@ fn public_load_and_queries_fit_declared_stack_headroom() {
         fs::write(&input, ROW.repeat(rows)).unwrap();
         Database::create(&path, config()).unwrap().close().unwrap();
         let diagnostics = temp.0.join("child.err");
+        let selected = if small_stack {
+            "stack::public_load_and_queries_fit_declared_stack_headroom"
+        } else {
+            "stack::public_load_and_queries_preserve_boundaries_and_release_owners"
+        };
         let mut child = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "stack::public_load_and_queries_fit_declared_stack_headroom",
-                "--nocapture",
-            ])
+            .args(["--exact", selected, "--nocapture"])
             .env(CHILD, "1")
             .env("PIPESQL_STACK_DATABASE", &path)
             .env("PIPESQL_STACK_INPUT", &input)
@@ -117,12 +125,23 @@ fn public_load_and_queries_fit_declared_stack_headroom() {
         let diagnostics = fs::read_to_string(diagnostics).unwrap();
         assert!(
             status.is_some() && reaped.success(),
-            "public load exceeds its declared stack headroom or failed: {}",
+            "load/query child failed or exceeded its deadline: {}",
             diagnostics
         );
         assert!(
-            diagnostics.contains("bounded load child completed"),
-            "{rows} rows: selected child did not complete the stack scenario"
+            diagnostics.contains("load/query child completed"),
+            "{rows} rows: selected child did not complete the load/query scenario"
         );
+    }
+}
+
+fn worker(name: &str, small_stack: bool) -> std::thread::Builder {
+    let thread = std::thread::Builder::new().name(name.into());
+    if small_stack {
+        // Native allocation can exceed the request. Leave one host page of
+        // margin and verify the original 64-KiB ceiling inside each worker.
+        thread.stack_size(49_152)
+    } else {
+        thread
     }
 }

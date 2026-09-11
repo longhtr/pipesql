@@ -89,11 +89,20 @@ fn joins_compose_with_further_joins_filters_and_aggregation() {
 }
 
 #[test]
+fn joins_keep_one_snapshot_across_appends_threads_and_reopen() {
+    check_join_snapshots(false);
+}
+
+#[test]
 #[cfg_attr(
     all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
     ignore = "GNU aarch64 has a 128-KiB pthread minimum; this test requires at most 64 KiB"
 )]
-fn joins_keep_one_snapshot_across_appends_threads_and_reopen() {
+fn join_snapshots_fit_reported_stack_allowance() {
+    check_join_snapshots(true);
+}
+
+fn check_join_snapshots(small_stack: bool) {
     let (directory, db) = join_fixture();
     let baseline = db.reserved_memory_bytes();
     let cancel = CancellationToken::new();
@@ -102,13 +111,19 @@ fn joins_keep_one_snapshot_across_appends_threads_and_reopen() {
     let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
     let (resume_tx, resume_rx) = std::sync::mpsc::sync_channel(1);
     let timeout = std::time::Duration::from_secs(30);
+    let thread = if small_stack {
+        std::thread::Builder::new().stack_size(48 * 1024)
+    } else {
+        std::thread::Builder::new()
+    };
     std::thread::scope(|scope| {
         let (reader_db, reader_query, reader_cancel) = (&db, &old, &cancel);
-        let worker = std::thread::Builder::new()
-            .stack_size(48 * 1024)
+        let worker = thread
             .spawn_scoped(scope, move || {
                 let stack = pipesql_filesystem::test_current_thread_stack_bytes();
-                assert!(stack <= 65_536, "reported stack {stack}");
+                if small_stack {
+                    assert!(stack <= 65_536, "reported stack {stack}");
+                }
                 let mut result = reader_db.execute(reader_query, reader_cancel).unwrap();
                 assert!(matches!(result.step(), QueryStep::Progress));
                 ready_tx.send(()).unwrap();

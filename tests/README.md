@@ -13,10 +13,11 @@
 | [catalog_lifecycle.rs](catalog_lifecycle.rs) | Declared-table suite entry point and shared public fixtures. Contract tests live in its child modules below. |
 
 The catalog, legacy load, and legacy execution suites run on macOS and Linux.
-Four public catalog tests, two legacy tests, and six internal library tests
-requiring a measured stack at most 64 KiB
-are explicitly ignored on GNU aarch64, whose native pthread
-minimum exceeds that limit. [Platform status](../docs/testing.md#platform-status)
+Four public catalog, two legacy, and six internal scenarios each have an ordinary
+thread test and a separate test requiring a measured stack at most 64 KiB.
+Only the twelve stack qualifications are ignored on GNU aarch64, whose native
+pthread minimum exceeds that limit. The ordinary variants retain the same
+functional assertions on both platforms. [Platform status](../docs/testing.md#platform-status)
 explains the observer, exclusions, and remaining qualification.
 
 Public fixture directories report cleanup failures after successful scenarios and
@@ -30,14 +31,16 @@ and a subprocess unwind so a second panic cannot abort the parent harness.
 | --- | --- |
 | [execution/queries.rs](execution/queries.rs) | Independently enumerated key pairs, grouping, and LIMIT across batches and empty input. |
 | [execution/ownership.rs](execution/ownership.rs) | Borrowed results, memory release, and diagnostic spans after source/query teardown. |
-| [execution/stack.rs](execution/stack.rs), [load/stack.rs](load/stack.rs) | Native stack observation around loaded open, load, preparation, and execution. |
+| [execution/stack.rs](execution/stack.rs), [load/stack.rs](load/stack.rs) | Loaded open, load, preparation, and execution on ordinary threads and separately qualified small stacks. |
 | [load/lifecycle.rs](load/lifecycle.rs) | Load publication, reopen, retained receipts, and token shape versus issuance. |
 | [execution/cli.rs](execution/cli.rs), [load/cli.rs](load/cli.rs) | CLI query sources and sinks, load publication, and independent receipt history. |
 
-The stack subprocess uses its full test selector and reports completion after
-the measured work. Successful process exit without that marker is a failure.
-Keep the query expectations and small-stack operations in their test bodies;
-shared setup must not add work to the measured stack.
+The load subprocess selects the ordinary or bounded test by its full name and
+reports completion after the scenario. Successful process exit without that
+marker is a failure. Each pair shares one scenario and its expected results.
+Thread setup selects the stack size and checks its native extent only for the
+bounded variant. Keep fixture setup and teardown outside measured workers when
+those operations are outside the original stack contract.
 
 ## Declared-table contracts
 

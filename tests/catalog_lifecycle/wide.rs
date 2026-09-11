@@ -46,18 +46,33 @@ fn scan_memory_upper_bound_admits_a_full_text_schema() {
 }
 
 #[test]
+fn complete_declared_schema_preserves_late_columns_and_wide_outputs() {
+    check_complete_declared_schema(false);
+}
+
+#[test]
 #[cfg_attr(
     all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
     ignore = "GNU aarch64 has a 128-KiB pthread minimum; this test requires at most 64 KiB"
 )]
-fn complete_declared_schema_preserves_late_columns_and_wide_outputs() {
+fn complete_declared_schema_preserves_late_columns_on_small_stack() {
+    check_complete_declared_schema(true);
+}
+
+fn check_complete_declared_schema(small_stack: bool) {
     let directory = Directory::new();
     let path = directory.database();
-    let worker = std::thread::Builder::new()
-        .stack_size(48 * 1024)
+    let thread = if small_stack {
+        std::thread::Builder::new().stack_size(48 * 1024)
+    } else {
+        std::thread::Builder::new()
+    };
+    let worker = thread
         .spawn(move || {
             let stack = pipesql_filesystem::test_current_thread_stack_bytes();
-            assert!(stack <= 65_536, "reported stack {stack}");
+            if small_stack {
+                assert!(stack <= 65_536, "reported stack {stack}");
+            }
             let config = Config::new(64_000_000, 16_000_000).unwrap();
             let cancel = CancellationToken::new();
             let db = Database::create_empty(&path, config).unwrap();
