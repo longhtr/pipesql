@@ -1,0 +1,19 @@
+[package]
+name = "pipesql-filesystem"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98.1"
+publish = false
+
+[features]
+# Private test instrumentation, not a supported engine/runtime interface.
+test-stack-observation = []
+
+[dependencies]
+libc = "=0.2.186"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+correctness = "deny"

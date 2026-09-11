@@ -1,0 +1,35 @@
+[package]
+name = "pipesql"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98.1"
+publish = false
+
+[workspace]
+members = ["filesystem"]
+resolver = "3"
+
+[dependencies]
+pipesql-filesystem = { path = "filesystem" }
+# CLI native startup boundary; same pinned ABI dependency as filesystem.
+libc = "=0.2.186"
+
+[dev-dependencies]
+# Native stack observation is absent from ordinary library/CLI builds.
+pipesql-filesystem = { path = "filesystem", features = ["test-stack-observation"] }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "pipesql"
+path = "src/main.rs"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+correctness = "deny"
+
+[profile.release]
+debug = true
