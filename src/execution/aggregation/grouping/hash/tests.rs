@@ -672,3 +672,181 @@ fn reserved_creation_releases_its_memory_on_abandonment_and_failure() {
     assert_eq!(database.reserved_memory_bytes(), before);
     assert_eq!(database.reserved_temp_bytes(), 0);
 }
+
+#[test]
+fn compact_text_growth_preserves_values_and_releases_both_buffers_on_cancellation() {
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("text"),
+        crate::Config::new(16_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    database
+        .declare_table(
+            "words",
+            &[
+                crate::ColumnDeclaration {
+                    name: "k",
+                    data_type: DataType::Int64,
+                    nullable: false,
+                },
+                crate::ColumnDeclaration {
+                    name: "word",
+                    data_type: DataType::String,
+                    nullable: true,
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    let query = database
+        .prepare("FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi,COUNT(*) AS n GROUP BY k")
+        .unwrap();
+    let mut aggregate = AggregateState::new(
+        &database.memory,
+        &query.plan.aggregates[0],
+        query.plan.aggregate_demand(0),
+        1,
+        query.plan.input_columns(),
+    )
+    .unwrap();
+    let keys = schema(&[(DataType::Int64, false)]);
+    let input_charge = database
+        .reserve_memory(crate::batch::MAX_BYTES, "text growth input")
+        .unwrap();
+    let mut input = Batch::new_with_text(
+        &[DataType::Int64, DataType::String],
+        &[None, Some(65_536)],
+        input_charge.bytes(),
+    )
+    .unwrap();
+    let mut arguments =
+        ArgumentBatch::new(&database, ArgumentShape::from_aggregate(&aggregate), 1).unwrap();
+    let medium = "m".repeat(32_768);
+    let wide = "z".repeat(65_536);
+    let full_medium = "m".repeat(65_536);
+    let before = database.reserved_memory_bytes();
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Scenario {
+        Complete,
+        CancelGrowth,
+        RefuseGrowth,
+    }
+    for scenario in [
+        Scenario::Complete,
+        Scenario::CancelGrowth,
+        Scenario::RefuseGrowth,
+    ] {
+        let mut groups = MemoryGroups::new(&database, &aggregate, &keys, 4, 36).unwrap();
+        let mut pressure = None;
+        let first = if scenario == Scenario::CancelGrowth {
+            &full_medium
+        } else {
+            &medium
+        };
+        for (index, value) in [first.as_str(), wide.as_str(), "a"].into_iter().enumerate() {
+            input.clear();
+            input
+                .set(
+                    0,
+                    0,
+                    Value::Int64(i64::from(scenario == Scenario::CancelGrowth && index == 1)),
+                )
+                .unwrap();
+            input
+                .set(0, 1, Value::String(StringValue::new(value)))
+                .unwrap();
+            input.publish_rows(1);
+            arguments
+                .evaluate(&mut aggregate, &input, 0..1, &cancel)
+                .unwrap();
+            groups.begin(&arguments).unwrap();
+            if scenario == Scenario::RefuseGrowth && index == 1 {
+                pressure = Some(
+                    database
+                        .reserve_memory(
+                            database.config().memory_limit_bytes()
+                                - database.reserved_memory_bytes(),
+                            "competing text growth",
+                        )
+                        .unwrap(),
+                );
+            }
+            let mut complete = false;
+            for _ in 0..20 {
+                if scenario == Scenario::CancelGrowth
+                    && index == 1
+                    && groups.phase == Phase::GrowText
+                {
+                    assert_eq!(
+                        groups.step(&input, &arguments, &keys, &cancel).unwrap(),
+                        HashStep::Progress
+                    );
+                    assert_eq!(
+                        groups.phase,
+                        Phase::GrowText,
+                        "one step cannot copy the entire old arena"
+                    );
+                    let growth = groups.text_growth.as_ref().unwrap();
+                    assert_eq!(growth.bytes.len(), 65_536);
+                    assert!(groups.cells.text.capacity() > 0);
+                    assert!(growth.bytes.capacity() > groups.cells.text.capacity());
+                    assert_eq!(
+                        database.reserved_memory_bytes() - before,
+                        groups.reservation.bytes()
+                            + groups.text_reservation.as_ref().unwrap().bytes()
+                            + growth.reservation.bytes()
+                    );
+                    let stopped = CancellationToken::new();
+                    stopped.cancel();
+                    assert!(matches!(
+                        groups.step(&input, &arguments, &keys, &stopped),
+                        Err(Error::Cancelled)
+                    ));
+                    assert_eq!(groups.phase, Phase::Failed);
+                    break;
+                }
+                match groups.step(&input, &arguments, &keys, &cancel).unwrap() {
+                    HashStep::Progress => {}
+                    HashStep::Complete => {
+                        complete = true;
+                        break;
+                    }
+                    HashStep::Fallback(reason) => {
+                        assert_eq!(scenario, Scenario::RefuseGrowth);
+                        assert_eq!(index, 1);
+                        assert_eq!(reason, HashLimit::TextBytes);
+                        break;
+                    }
+                }
+            }
+            if index == 1 && scenario != Scenario::Complete {
+                break;
+            }
+            assert!(
+                complete,
+                "the captured row must finish within the growth bound"
+            );
+        }
+        if scenario == Scenario::Complete {
+            groups.load_group(0, &mut aggregate).unwrap();
+            assert_eq!(
+                aggregate.value(0, 0).unwrap(),
+                Value::String(StringValue::new("a"))
+            );
+            assert_eq!(
+                aggregate.value(0, 1).unwrap(),
+                Value::String(StringValue::new(&wide))
+            );
+            assert_eq!(aggregate.value(0, 2).unwrap(), Value::Int64(3));
+            aggregate.cells.clear_group(0);
+        } else {
+            assert_eq!(aggregate.cells.counts[0], 0, "fallback remains untouched");
+        }
+        drop(groups);
+        drop(pressure);
+        assert_eq!(database.reserved_memory_bytes(), before);
+        assert_eq!(database.reserved_temp_bytes(), 0);
+    }
+}

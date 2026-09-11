@@ -212,10 +212,26 @@ COUNT-only STRING/DATE arguments capture validity only.
 
 Each demanded MIN/MAX slot owns an eight-byte word per admitted group. Numeric
 slots store value bits; text slots store lengths and own separate reusable byte
-storage. Declared text reserves 65,536 bytes per slot per group. Legacy fixed-key
-text reserves one byte. Admission and independent validation receive the source
-domain explicitly. Optional hash capacity includes every retained text slot;
-when hash grouping cannot fit, disk reduction reuses one group's slots.
+storage. The fixed accumulator reserves 65,536 bytes per declared STRING slot
+per group; legacy fixed-key text reserves one byte. Admission and independent
+validation receive the source domain explicitly. Disk reduction reuses one
+fixed group's slots.
+
+Optional hash grouping stores explicit byte spans for STRING extrema. Each
+span's capacity is a power of two, bounded by the source width. Replacements
+reuse the span when they fit; a larger value receives a new region. Because
+capacities grow geometrically and never shrink, superseded regions total less
+than the current region's capacity for each slot. Repeated equal or shorter
+replacements consume no additional arena space.
+
+Before folding captured rows, hash grouping admits a conservative bound for all
+possible region growth in the batch. Arena growth charges the entire new buffer
+while the old buffer remains live. Each copying step moves at most 65,536 bytes
+and checks cancellation. The old buffer is destroyed before its charge is
+released. This temporary overlap can raise peak reservations above the fixed
+representation for wide values. Admission refusal destroys optional state and
+replays the pinned source through the retained disk minimum. It does not turn
+partially updated hash cells into output.
 
 Captured STRING arguments each reserve a 65,536-byte arena per batch, in addition
 to eight-byte row spans and validity masks. The minimum includes these arenas
@@ -223,15 +239,19 @@ even with one admitted row. A spill frame contains its header, encoded keys,
 eight bytes per argument, and retained text bytes. Its maximum trailer is
 65,536 bytes times the number of retained text arguments. Replay flushes before
 an append exceeds a text arena or the row capacity, so one full-width row always
-fits. Replacement of retained extrema reuses admitted storage without allocating
-per row or accumulating discarded strings.
+fits. Folding does not allocate per row. Fixed extrema reuse their admitted
+slots; hash extrema use the bounded region-growth protocol above.
 
 Available memory first increases captured arguments up to 256 rows. Run slots
 and bytes then grow together up to 4,096 slots, reserving the maximum first
 record and the minimum encoded width for each additional slot. Scalar lanes use
 the remaining budget up to 256. Optional hash storage splits the remaining
 capacity between group slots and key bytes, accounting power-of-two bucket
-rounding. The key arena is also bounded by the group-slot capacity multiplied
+rounding. When STRING extrema are retained, metadata admits at most 4,096
+groups; larger cardinalities use the external path. Numeric-only hash sizing
+retains its row-bound ceiling. Text arena allocations are admitted as needed
+rather than reserving maximum-width text for every metadata slot. The key arena
+is also bounded by the group-slot capacity multiplied
 by the maximum encoded key width: each occupied slot stores one key, and a full
 slot array already forces fallback. Reserving more key bytes cannot increase
 the admitted workload. These are sizing policies, not distribution or performance

@@ -255,7 +255,7 @@ impl<'db> ArgumentBatch<'db> {
         Ok(())
     }
 
-    fn text_value(&self, state: usize, row: usize) -> Result<Option<&str>, Error> {
+    pub(super) fn text_value(&self, state: usize, row: usize) -> Result<Option<&str>, Error> {
         let Some(span) = self.value(state, row) else {
             return Ok(None);
         };

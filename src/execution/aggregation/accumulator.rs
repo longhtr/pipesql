@@ -380,6 +380,7 @@ impl<'db> AggregateState<'db> {
                 extrema,
                 extrema_slots,
                 text,
+                text_spans: Vec::new(),
                 text_offsets,
             },
             reservation,
@@ -495,7 +496,8 @@ impl<'db> AggregateState<'db> {
                 }
             }
         }
-        if self.cells.text_offsets != text_offsets
+        if !self.cells.text_spans.is_empty()
+            || self.cells.text_offsets != text_offsets
             || self.cells.text.len() != groups * text_offsets[usize::from(extrema)]
             || self.cells.extrema.len() != groups * usize::from(extrema)
             || self
@@ -730,6 +732,9 @@ pub(super) struct AggregateCells {
     // Numeric extrema store bits; text extrema store lengths in the same slots.
     pub(super) extrema: Vec<u64>,
     pub(super) text: Vec<u8>,
+    // Empty for the admitted fixed layout. Hash grouping uses one span per
+    // extremum slot and owns arena growth outside argument folding.
+    pub(super) text_spans: Vec<TextSpan>,
     // Prefix offsets within one group's text storage, indexed by extremum slot.
     // Numeric slots have zero width. Text slots reserve their source bound so each
     // replacement reuses its own capacity without allocation or compaction.
@@ -749,18 +754,88 @@ pub(super) struct AggregateCells {
     pub(super) sum_states: u32,
 }
 
+/// One optional hash slot's region. Its capacity never shrinks, so repeated
+/// replacement cannot accumulate space in proportion to the input row count.
+#[derive(Clone, Copy, Default)]
+pub(super) struct TextSpan {
+    pub(super) start: usize,
+    pub(super) capacity: usize,
+}
+
 impl AggregateCells {
-    fn text_value(&self, group: usize, slot: usize) -> Result<&str, Error> {
+    pub(super) fn text_value(&self, group: usize, slot: usize) -> Result<&str, Error> {
         let slots = self.extrema.len() / self.counts.len();
-        let length = usize::try_from(self.extrema[group * slots + slot])
+        let cell = group * slots + slot;
+        let length = usize::try_from(self.extrema[cell])
             .map_err(|_| Error::Corrupt("text extremum length"))?;
         let width = self.text_offsets[slot + 1] - self.text_offsets[slot];
         if !matches!(width, 1 | crate::batch::MAX_TEXT_BYTES) || length > width {
             return Err(Error::Corrupt("text extremum extent"));
         }
-        let start = group * self.text_offsets[slots] + self.text_offsets[slot];
-        std::str::from_utf8(&self.text[start..start + length])
-            .map_err(|_| Error::Corrupt("text extremum UTF-8"))
+        let start = if self.text_spans.is_empty() {
+            group * self.text_offsets[slots] + self.text_offsets[slot]
+        } else {
+            let span = self
+                .text_spans
+                .get(cell)
+                .ok_or(Error::Corrupt("hash text slot"))?;
+            if length > span.capacity
+                || span.capacity > width
+                || (span.capacity != 0 && !span.capacity.is_power_of_two())
+            {
+                return Err(Error::Corrupt("hash text capacity"));
+            }
+            let end = span
+                .start
+                .checked_add(span.capacity)
+                .ok_or(Error::Corrupt("hash text extent overflow"))?;
+            if end > self.text.len() {
+                return Err(Error::Corrupt("hash text extent"));
+            }
+            span.start
+        };
+        let end = start
+            .checked_add(length)
+            .ok_or(Error::Corrupt("text extremum end"))?;
+        let bytes = self
+            .text
+            .get(start..end)
+            .ok_or(Error::Corrupt("text extremum bytes"))?;
+        std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("text extremum UTF-8"))
+    }
+
+    fn replace_text(&mut self, group: usize, slot: usize, value: &str) -> Result<(), Error> {
+        let slots = self.extrema.len() / self.counts.len();
+        let cell = group * slots + slot;
+        let start = if self.text_spans.is_empty() {
+            group * self.text_offsets[slots] + self.text_offsets[slot]
+        } else {
+            let span = self
+                .text_spans
+                .get_mut(cell)
+                .ok_or(Error::Corrupt("hash text slot"))?;
+            if value.len() > span.capacity {
+                let capacity = value
+                    .len()
+                    .checked_next_power_of_two()
+                    .ok_or(Error::Corrupt("hash text region capacity"))?;
+                let start = self.text.len();
+                let end = start
+                    .checked_add(capacity)
+                    .ok_or(Error::Corrupt("hash text arena extent"))?;
+                // The controller admits growth before folding. No row operation
+                // may allocate or silently cross that admitted capacity.
+                if end > self.text.capacity() {
+                    return Err(Error::Corrupt("hash text growth was not admitted"));
+                }
+                self.text.resize(end, 0);
+                *span = TextSpan { start, capacity };
+            }
+            span.start
+        };
+        self.text[start..start + value.len()].copy_from_slice(value.as_bytes());
+        self.extrema[cell] = value.len() as u64;
+        Ok(())
     }
 
     pub(super) fn fold_text(
@@ -774,7 +849,6 @@ impl AggregateCells {
             return Err(Error::Corrupt("text extremum input length"));
         }
         let count = self.count_present(state, group, row_count)?;
-        let slots = self.extrema.len() / self.counts.len();
         for direction in 0..2 {
             let slot = self.extrema_slots[direction][state];
             if slot == u8::MAX {
@@ -794,9 +868,7 @@ impl AggregateCells {
                 }
             };
             if replace {
-                let start = group * self.text_offsets[slots] + self.text_offsets[slot];
-                self.text[start..start + value.len()].copy_from_slice(value.as_bytes());
-                self.extrema[group * slots + slot] = value.len() as u64;
+                self.replace_text(group, slot, value)?;
             }
         }
         Ok(())
@@ -991,7 +1063,44 @@ fn update_extremum(current: &mut u64, incoming: u64, integer: bool, first: bool,
 
 #[cfg(test)]
 mod extrema_tests {
-    use super::update_extremum;
+    use super::{AggregateCells, TextSpan, update_extremum};
+    use crate::frontend::MAX_AGGREGATE_COLUMNS;
+
+    #[test]
+    fn compact_text_reuses_regions_and_rejects_invalid_extents() {
+        let mut offsets = [0; MAX_AGGREGATE_COLUMNS + 1];
+        offsets[1] = crate::batch::MAX_TEXT_BYTES;
+        let mut cells = AggregateCells {
+            values: Vec::new(),
+            integers: Vec::new(),
+            extrema: vec![0],
+            text: Vec::with_capacity(64),
+            text_spans: vec![TextSpan::default()],
+            text_offsets: offsets,
+            extrema_slots: [[u8::MAX; MAX_AGGREGATE_COLUMNS]; 2],
+            nonnull_counts: Vec::new(),
+            value_slots: [u8::MAX; MAX_AGGREGATE_COLUMNS],
+            count_slots: [u8::MAX; MAX_AGGREGATE_COLUMNS],
+            counts: vec![1],
+            flags: Vec::new(),
+            sum_states: 0,
+        };
+        let allocation = cells.text.as_ptr();
+        for value in ["", "a", "bc", "def", "x", "ghijk", "", "lmnop"] {
+            cells.replace_text(0, 0, value).unwrap();
+            assert_eq!(cells.text_value(0, 0).unwrap(), value);
+            assert_eq!(cells.text.as_ptr(), allocation, "folding cannot allocate");
+        }
+        assert_eq!(cells.text.len(), 15, "regions of 1, 2, 4, and 8 bytes");
+        assert_eq!(cells.text_spans[0].capacity, 8);
+        for _ in 0..100 {
+            cells.replace_text(0, 0, "short").unwrap();
+            cells.replace_text(0, 0, "").unwrap();
+        }
+        assert_eq!(cells.text.len(), 15, "repeated replacement reuses capacity");
+        cells.text_spans[0].start = usize::MAX;
+        assert!(cells.text_value(0, 0).is_err());
+    }
 
     #[test]
     fn floating_extrema_preserve_nan_payloads_and_order_zero_signs() {

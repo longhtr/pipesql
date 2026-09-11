@@ -30,7 +30,7 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
-## Next: compact optional hash text storage
+## Active: compact optional hash text storage
 
 The [STRING grouping study](evidence.md#string-grouping-costs) is complete.
 On both tested platforms, four groups of eight-byte extrema reserve about
@@ -45,6 +45,61 @@ source replay, persistent formats, and independent validators intact. Before
 implementation, make growth, replacement, transient old/new allocations, and
 exhaustion locally understandable and fully charged. Avoid per-row allocation,
 unbounded compaction, and new shared-memory frameworks.
+
+The design review is bounded to 30 minutes before reassessment. Hash grouping
+currently reuses the fixed accumulator representation and folds captured arguments
+only after assigning every row in a batch to a group. On hash exhaustion, the
+controller destroys optional state and replays the pinned source through the
+already-admitted disk owner. Preserve that transition.
+
+Two costs must be separated: maximum-width text per slot and eager allocation
+of slots from the entire available budget. Merely packing text while admitting
+many more slots could retain the same unused reservation. Compare a small initial
+allocation with bounded growth against a fixed optional capacity policy before
+choosing the smaller complete implementation. Any growth must occur outside row
+folding, charge simultaneous old/new buffers, and preserve bounded cancellation
+points. Repeated replacements must reuse capacity or have a proved space bound;
+an arena that accumulates every discarded value is insufficient. The first
+falsifier is the existing eight-case workload plus an increasing-length replacement
+case; a lower short-string reservation alone cannot excuse a broken wide-value
+or fallback path.
+
+The candidate uses explicit `(start, capacity)` spans for hash text slots; the
+existing extremum word continues to hold length. A replacement reuses its span
+when it fits. Otherwise it receives a power-of-two region in an append-only
+arena. For each slot, superseded region capacities sum to less than its current
+capacity, even after repeated shrinking and regrowth. Thus discarded regions
+remain bounded by retained capacities rather than input row count. UTF-8, source
+width, span extents, and lengths still require independent checks.
+
+Allocate or grow the arena before folding a captured batch. Charge the complete
+new buffer while the old buffer remains live, copy in bounded cancellable steps,
+and release the old charge only after destroying its buffer. If admission fails,
+destroy optional state and use the existing pinned-source replay. Do not mutate
+the fallback accumulator. The candidate sizing policy caps initial STRING hash
+metadata at 4,096 groups (the existing run-row bound), subject to available
+memory, while leaving numeric-only sizing unchanged. This is a policy to test,
+not an additional semantic group limit: larger inputs retain the disk path.
+Reject or revise it if the workload comparison reveals an unjustified regression.
+
+Implementation checkpoint: hash grouping now uses compact spans, pre-fold
+admission, cancellable arena copying, and fixed-layout finalization. The release
+aggregation selection passed 58 tests. Warnings-denied Clippy passed for the
+library, tests, and examples. The eight-case macOS workload completed with full
+results and resource release: short-string reservations are about 2.49 MB at
+both budgets, and 256 short-string groups no longer spill at 4 MB. Wide values
+still spill at 4 MB and stay in memory at 80 MB; growth overlap raises that case's
+sampled peak to 52.82 MB. Treat these as initial observations, pending final
+verification and allocator comparison.
+
+The earlier debug aggregation selection aborted in the bounded-stack test;
+the required release version passes. A new fixture initially selected legacy
+one-byte text storage and was corrected to declared UTF-8 storage. A follow-up
+focused test now checks cancellation after the first 65,536-byte copy while
+both arena buffers remain live. That two-test focused selection passes. All ten public aggregate tests pass,
+including NULL/empty/Unicode behavior and the new 256-group no-spill regression.
+Next, complete frozen macOS/Linux gates and final workload/allocator comparisons,
+review any failures, and consolidate the final evidence and plan.
 
 Completion requires unchanged query semantics and failure/cleanup contracts,
 meaningfully lower short-string reservations, and no spill for the maintained

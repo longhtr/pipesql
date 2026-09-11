@@ -922,3 +922,95 @@ fn declared_nullable_double_aggregates_preserve_exceptional_values() {
         }
     }
 }
+
+#[test]
+fn short_text_extrema_keep_256_groups_in_memory_at_four_megabytes() {
+    let directory = Directory::new();
+    let db = Database::create_empty(&directory.database(), config()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "words",
+        &[
+            ColumnDeclaration {
+                name: "k",
+                data_type: DataType::Int64,
+                nullable: false,
+            },
+            ColumnDeclaration {
+                name: "word",
+                data_type: DataType::String,
+                nullable: false,
+            },
+        ],
+        &cancel,
+    )
+    .unwrap();
+    let keys: Vec<i64> = (0..256).rev().collect();
+    let mut append = db.begin_append("words", limits(), &cancel).unwrap();
+    for word in ["aaaaaaaa", "zzzzzzzz"] {
+        append
+            .write(
+                &[
+                    ColumnInput {
+                        values: ColumnValues::Int64(&keys),
+                        validity: &[u8::MAX; 32],
+                    },
+                    ColumnInput {
+                        values: ColumnValues::String(&[word; 256]),
+                        validity: &[u8::MAX; 32],
+                    },
+                ],
+                &cancel,
+            )
+            .unwrap();
+    }
+    append.commit(&cancel).unwrap();
+    db.close().unwrap();
+    let db = Database::open(
+        &directory.database(),
+        Config::new(4_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    let query = db.prepare("FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi,COUNT(*) AS n GROUP AND ORDER BY k").unwrap();
+    let baseline = db.reserved_memory_bytes();
+    let mut result = db.execute(&query, &cancel).unwrap();
+    let mut seen = 0;
+    let mut finished = false;
+    for _ in 0..100_000 {
+        let step = result.step();
+        assert_eq!(
+            db.reserved_temp_bytes(),
+            0,
+            "short extrema should not require disk grouping"
+        );
+        match step {
+            QueryStep::Rows(batch) => {
+                for row in 0..batch.len() {
+                    assert!(seen < 256);
+                    assert_eq!(batch.value(row, 0), Some(Value::Int64(seen)));
+                    assert!(
+                        matches!(batch.value(row, 1), Some(Value::String(value)) if value.as_str() == "aaaaaaaa")
+                    );
+                    assert!(
+                        matches!(batch.value(row, 2), Some(Value::String(value)) if value.as_str() == "zzzzzzzz")
+                    );
+                    assert_eq!(batch.value(row, 3), Some(Value::Int64(2)));
+                    seen += 1;
+                }
+            }
+            QueryStep::Progress => (),
+            QueryStep::Finished => {
+                finished = true;
+                break;
+            }
+            QueryStep::Failed(error) => panic!("short STRING grouping failed: {error:?}"),
+        }
+    }
+    assert!(finished);
+    assert_eq!(seen, 256);
+    drop(result);
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    drop(query);
+    db.close().unwrap();
+}

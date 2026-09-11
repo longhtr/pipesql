@@ -147,13 +147,15 @@ query memory bytes. Setup uses a separate budget and one row per input unit for
 both widths. Timing excludes setup, open, and preparation; it includes execution,
 full result validation, and destruction of the result owner.
 
-On the reviewed builds, 256 groups spill at 4 MB and remain in memory at 80 MB.
-Four groups remain in memory at either budget. The larger budget reserves about
-40.9 MB even for four groups of eight-byte strings. Each optional hash slot
-currently admits maximum-width extrema before seeing actual values. The
-[resource contract](resources.md) explains admission; the
-[measurements](../notes/evidence.md#string-grouping-costs) record the cost and
-the decision about a later compact representation.
+Short STRING extrema use compact hash storage. In the maintained workload,
+256 groups of eight-byte strings remain in memory at 4 MB. Maximum-width strings
+still require the spill path at 4 MB and remain in memory at 80 MB. Four groups
+fit at either budget. Arena growth temporarily owns both old and new buffers,
+so wider values can raise peak reservations during copying.
+
+The [resource contract](resources.md#declared-grouping-admission) explains
+admission and replacement. The [original measurements](../notes/evidence.md#string-grouping-costs)
+record the fixed-slot baseline that motivated this representation change.
 
 The counters report sampled logical reservations, not allocator-usable memory,
 filesystem blocks, cumulative I/O, or RSS. Timings are workload observations,

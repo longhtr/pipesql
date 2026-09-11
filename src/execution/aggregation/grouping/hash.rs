@@ -1,10 +1,10 @@
 //! Optional hash grouping. Its allocations never own the disk fallback's charge.
 use crate::batch::Batch;
-use crate::execution::aggregation::accumulator::{AggregateCells, AggregateState};
+use crate::execution::aggregation::accumulator::{AggregateCells, AggregateState, TextSpan};
 use crate::execution::aggregation::arguments::ArgumentBatch;
 use crate::execution::blocking::{ArgumentShape, MAX_KEY_BYTES, RowLayout, append_bytes};
 use crate::execution::{BATCH_ROWS, MAX_AGGREGATE_ROWS};
-use crate::resources::{Reservation, allocate};
+use crate::resources::{MemoryAuthority, Reservation, allocate};
 use crate::{CancellationToken, Database, Error, Value};
 use std::cmp::Ordering;
 use std::mem::size_of;
@@ -25,6 +25,7 @@ pub(super) enum HashLimit {
     Groups,
     KeyBytes,
     ProbeWork,
+    TextBytes,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,6 +39,7 @@ pub(super) enum HashStep {
 enum Phase {
     Idle,
     Input,
+    GrowText,
     Complete,
     OrderInit(usize),
     Order(OrderCursor),
@@ -69,6 +71,13 @@ impl OrderCursor {
     }
 }
 
+// Growth owns its new allocation and charge while the old arena remains live.
+// Copying advances by at most one maximum-width text value per public step.
+struct TextGrowth<'db> {
+    bytes: Vec<u8>,
+    reservation: Reservation<'db>,
+}
+
 pub(super) struct MemoryGroups<'db> {
     cells: AggregateCells,
     key: Vec<u8>,
@@ -86,6 +95,9 @@ pub(super) struct MemoryGroups<'db> {
     cursor: usize,
     input_rows: u64,
     order_start: usize,
+    text_growth: Option<TextGrowth<'db>>,
+    text_reservation: Option<Reservation<'db>>,
+    authority: &'db MemoryAuthority,
     reservation: Reservation<'db>,
 }
 
@@ -112,7 +124,12 @@ impl<'db> MemoryGroups<'db> {
                 sum_states: base.sum_states,
                 extrema: repeated(&base.extrema, capacity, 0, bytes)?,
                 extrema_slots: base.extrema_slots,
-                text: repeated(&base.text, capacity, 0, bytes)?,
+                text: Vec::new(),
+                text_spans: if base.text.is_empty() {
+                    Vec::new()
+                } else {
+                    filled(base.extrema.len() * capacity, TextSpan::default(), bytes)?
+                },
                 text_offsets: base.text_offsets,
             },
             key: allocate(keys.max_bytes, keys.max_bytes, "hash lookup key", bytes)?,
@@ -130,6 +147,9 @@ impl<'db> MemoryGroups<'db> {
             cursor: 0,
             input_rows: 0,
             order_start: 0,
+            text_growth: None,
+            text_reservation: None,
+            authority: &database.memory,
             reservation,
         })
     }
@@ -160,7 +180,14 @@ impl<'db> MemoryGroups<'db> {
             (count(base.values.len())?, size_of::<f64>()),
             (count(base.integers.len())?, size_of::<i128>()),
             (count(base.extrema.len())?, size_of::<u64>()),
-            (count(base.text.len())?, size_of::<u8>()),
+            (
+                if base.text.is_empty() {
+                    0
+                } else {
+                    count(base.extrema.len())?
+                },
+                size_of::<TextSpan>(),
+            ),
             (count(base.nonnull_counts.len())?, size_of::<u32>()),
             (capacity, size_of::<u32>()),
             (count(base.flags.len())?, size_of::<u32>()),
@@ -201,14 +228,25 @@ impl<'db> MemoryGroups<'db> {
         let cell_bytes = base.values.len() * size_of::<f64>()
             + base.integers.len() * size_of::<i128>()
             + base.extrema.len() * size_of::<u64>()
-            + base.text.len()
+            + if base.text.is_empty() {
+                0
+            } else {
+                base.extrema.len() * size_of::<TextSpan>()
+            }
             + base.nonnull_counts.len() * size_of::<u32>()
             + size_of::<u32>()
             + base.flags.len() * size_of::<u32>();
         // Share the remaining budget between key bytes and group slots. Four
         // buckets per group bounds power-of-two rounding; lookup stays <= 50% full.
         let per_group = cell_bytes + size_of::<KeySlot>() + 4 * size_of::<u32>();
-        let capacity = usize::try_from((extra / 2 / per_group as u64).clamp(1, MAX_AGGREGATE_ROWS))
+        // Keep STRING metadata bounded independently of the maximum text width.
+        // Larger cardinalities retain the already-admitted external path.
+        let maximum_groups = if base.text.is_empty() {
+            MAX_AGGREGATE_ROWS
+        } else {
+            crate::execution::COMPUTE_ROWS as u64
+        };
+        let capacity = usize::try_from((extra / 2 / per_group as u64).clamp(1, maximum_groups))
             .map_err(|_| Error::Corrupt("hash capacity does not fit"))?;
         let (_, arrays) = Self::requirement(aggregate, keys, capacity, 0)?;
         let key_bytes = available
@@ -271,6 +309,26 @@ impl<'db> MemoryGroups<'db> {
                 self.phase = phase;
                 return Ok(HashStep::Fallback(limit));
             }
+            Phase::GrowText => {
+                cancel.check()?;
+                let growth = self
+                    .text_growth
+                    .as_mut()
+                    .ok_or(Error::Corrupt("missing text growth"))?;
+                let start = growth.bytes.len();
+                let end = (start + crate::batch::MAX_TEXT_BYTES).min(self.cells.text.len());
+                growth.bytes.extend_from_slice(&self.cells.text[start..end]);
+                if end == self.cells.text.len() {
+                    let growth = self.text_growth.take().expect("active text growth");
+                    drop(std::mem::replace(&mut self.cells.text, growth.bytes));
+                    // The old allocation is gone before its reservation is released.
+                    self.text_reservation = Some(growth.reservation);
+                    self.phase = Phase::Input;
+                } else {
+                    self.phase = Phase::GrowText;
+                }
+                return Ok(HashStep::Progress);
+            }
             Phase::Input => {}
             Phase::Idle
             | Phase::OrderInit(_)
@@ -293,6 +351,23 @@ impl<'db> MemoryGroups<'db> {
             return Err(Error::Corrupt("hash input changed during a batch"));
         }
         if self.cursor == self.batch_rows {
+            let required = self.text_requirement(arguments)?;
+            if required > self.cells.text.capacity() {
+                let capacity = required
+                    .checked_next_power_of_two()
+                    .ok_or(Error::Corrupt("hash text growth capacity"))?;
+                match self.start_text_growth(capacity) {
+                    Ok(()) => {
+                        self.phase = Phase::GrowText;
+                        return Ok(HashStep::Progress);
+                    }
+                    Err(Error::Resource { .. }) => {
+                        self.phase = Phase::Fallback(HashLimit::TextBytes);
+                        return Ok(HashStep::Fallback(HashLimit::TextBytes));
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
             arguments.fold_positions(&mut self.cells, &self.positions[..self.batch_rows])?;
             self.phase = Phase::Complete;
             return Ok(HashStep::Complete);
@@ -311,6 +386,49 @@ impl<'db> MemoryGroups<'db> {
         self.input_rows += 1; // begin checked the complete batch before admission.
         self.phase = Phase::Input;
         Ok(HashStep::Progress)
+    }
+
+    fn start_text_growth(&mut self, capacity: usize) -> Result<(), Error> {
+        let reservation = self
+            .authority
+            .reserve(capacity as u64, "hash text growth")?;
+        let bytes = allocate(capacity, capacity, "hash text growth", reservation.bytes())?;
+        self.text_growth = Some(TextGrowth { bytes, reservation });
+        Ok(())
+    }
+
+    fn text_requirement(&self, arguments: &ArgumentBatch<'_>) -> Result<usize, Error> {
+        let mut required = self.cells.text.len();
+        if self.cells.text_spans.is_empty() {
+            return Ok(required);
+        }
+        let slots = self.cells.extrema.len() / self.capacity;
+        // A conservative batch bound: only values wider than the current slot
+        // can append a region. Repeated groups may overestimate growth, but row
+        // folding never allocates and the bound is independent of prior batches.
+        for state in 0..self.shape.count {
+            if self.shape.text & (1 << state) == 0 {
+                continue;
+            }
+            for (row, &(group, _)) in self.positions[..self.batch_rows].iter().enumerate() {
+                let Some(value) = arguments.text_value(state, row)? else {
+                    continue;
+                };
+                for direction in 0..2 {
+                    let slot = self.cells.extrema_slots[direction][state];
+                    if slot == u8::MAX {
+                        continue;
+                    }
+                    let span = self.cells.text_spans[group * slots + usize::from(slot)];
+                    if value.len() > span.capacity {
+                        required = required
+                            .checked_add(value.len().next_power_of_two())
+                            .ok_or(Error::Corrupt("hash text batch requirement"))?;
+                    }
+                }
+            }
+        }
+        Ok(required)
     }
 
     fn lookup(&mut self, keys: &RowLayout, hash: u64) -> Result<Result<usize, HashLimit>, Error> {
@@ -524,7 +642,19 @@ impl<'db> MemoryGroups<'db> {
             self.capacity,
             group,
         )?;
-        copy_group(&self.cells.text, &mut target.text, self.capacity, group)?;
+        let slots = target.extrema.len();
+        if !self.cells.text_spans.is_empty()
+            && self.cells.text_spans.len() != self.cells.extrema.len()
+        {
+            return Err(Error::Corrupt("hash text slot extent"));
+        }
+        for slot in 0..slots {
+            if target.text_offsets[slot + 1] != target.text_offsets[slot] {
+                let value = self.cells.text_value(group, slot)?;
+                let start = target.text_offsets[slot];
+                target.text[start..start + value.len()].copy_from_slice(value.as_bytes());
+            }
+        }
         copy_group(&self.cells.counts, &mut target.counts, self.capacity, group)?;
         copy_group(&self.cells.flags, &mut target.flags, self.capacity, group)
     }
