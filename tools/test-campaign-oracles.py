@@ -3,15 +3,62 @@
 
 from contextlib import redirect_stdout
 import io
+import hashlib
+import json
 from pathlib import Path
 import runpy
 import subprocess
+import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 TOOLS = Path(__file__).resolve().parent
 COMPOSITION = runpy.run_path(str(TOOLS / "check-composable-aggregates.py"))
 ALLOCATION = runpy.run_path(str(TOOLS / "check-diagnostic-allocation.py"))
+GRAPH = runpy.run_path(str(TOOLS / "check-catalog-graph.py"))
+
+
+class CatalogSeed(unittest.TestCase):
+    def test_seed_only_preserves_inspection_and_reports_artifact_identities(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            driver = work / "driver"
+            driver.write_bytes(b"caller")
+            library = work / "target/release/libpipesql.rlib"
+            library.parent.mkdir(parents=True)
+            library.write_bytes(b"library")
+            seed = work / "seed"
+            build = Mock(return_value=(b"source", driver))
+            inspect = Mock(return_value=(seed, {}))
+            remainder = Mock(side_effect=AssertionError("unexpected full campaign"))
+            output = io.StringIO()
+            with patch.dict(GRAPH["campaign"].__globals__, {
+                "build_driver": build,
+                "create_seed": inspect,
+                "check_genesis_lease_and_fixture": remainder,
+            }), redirect_stdout(output):
+                GRAPH["campaign"](work, seed_only=True)
+            build.assert_called_once_with(work)
+            inspect.assert_called_once_with(work, driver)
+            remainder.assert_not_called()
+            summary = json.loads(output.getvalue().removeprefix("catalog seed passed: "))
+            self.assertEqual(summary, {
+                "source_manifest_sha256": hashlib.sha256(b"source").hexdigest(),
+                "driver_sha256": hashlib.sha256(b"caller").hexdigest(),
+                "library_sha256": hashlib.sha256(b"library").hexdigest(),
+                "seed": str(seed),
+            })
+
+    def test_failed_seed_never_reports_success(self):
+        failure = subprocess.CalledProcessError(101, ["driver", "seed", "setup"])
+        output = io.StringIO()
+        with patch.dict(GRAPH["campaign"].__globals__, {
+            "build_driver": Mock(return_value=(b"source", Path("driver"))),
+            "create_seed": Mock(side_effect=failure),
+        }), redirect_stdout(output), self.assertRaises(subprocess.CalledProcessError) as raised:
+            GRAPH["campaign"](Path("unused"), seed_only=True)
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(output.getvalue(), "")
 
 
 class GroupExpectations(unittest.TestCase):

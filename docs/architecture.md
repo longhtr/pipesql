@@ -176,7 +176,13 @@ Open-file inspection uses `file_metadata(&File)`, returning the same normalized
 identity, type, length, link count, and timestamps as pathname inspection.
 Storage and publication compare these facts without importing native metadata
 traits. An opened descriptor still identifies its original object after its name
-is replaced. Each native pathname uses at most 4,097 checked stack bytes;
+is replaced. An unchanged object must have the same device/inode identity through
+pathname and descriptor inspection. A mismatch causes refusal; retrying or
+discarding the identity comparison would hide replacement as well as unstable
+filesystem observations. This premise needs verification on the database's
+actual filesystem, including any host/guest sharing layer.
+
+Each native pathname uses at most 4,097 checked stack bytes;
 dual-name operations validate both before one syscall. Canonicalization requires
 an absolute bounded path and uses a fixed result buffer plus one fallible
 PathBuf allocation. The macOS resolver owns its root-device observation, suffix

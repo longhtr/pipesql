@@ -93,6 +93,15 @@ These runners compile and execute code. C/Rust callers live in
 `fixtures/`; they are development scaffolding with their own unsafe and process
 ownership, not shipped adapters.
 
+The graph runner's `--seed-only --output /absolute/new-directory` builds the stock
+caller and independently inspects its seed, then stops before corruption cases.
+It reports source, caller, and library hashes and retains the caller for replay.
+This option does not establish a passing graph campaign.
+[Filesystem identity diagnosis](../docs/testing.md#diagnose-filesystem-identity)
+uses that caller and the GNU/Linux `filesystem-identity.c` observer. Its separate
+control checks stable and deliberately replaced files; the observer adds metadata
+queries and is not a concurrency oracle or a production adapter.
+
 Campaign work starts at the command entry point. Importing a checker does not
 start builds or create campaign output. `--help` works before platform checks or
 campaign setup, including when Unix-only Python modules are unavailable. Native

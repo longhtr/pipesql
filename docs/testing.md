@@ -84,6 +84,59 @@ receipts can be copied out after the run. The [retained
 counterexample](../notes/evidence.md#platform-and-sanitizer-limitations)
 distinguishes this unresolved failure from passing native-filesystem checks.
 
+### Diagnose filesystem identity
+
+Use an unprivileged GNU/Linux shell with the pinned toolchain, C compiler, and
+GNU `timeout`. In a Mac-hosted container, mount the source read-only and build
+under `/tmp` on native container storage. Mount the host directory being tested
+separately. Record the image digest, kernel, libc, user, and both mount types.
+
+From the repository root, create a fresh native output directory and stock seed:
+
+```sh
+identity_work=$(mktemp -d /tmp/pipesql-identity.XXXXXX)
+python3 -B tools/check-catalog-graph.py --seed-only --output "$identity_work/build"
+cc -std=c11 -Wall -Wextra -Werror -fPIC -shared \
+  tools/fixtures/filesystem-identity.c -ldl -o "$identity_work/identity.so"
+cc -std=c11 -Wall -Wextra -Werror tools/fixtures/filesystem-identity-control.c \
+  -o "$identity_work/control"
+```
+
+Check the observer before interpreting its output. These commands use fresh
+native directories. The stable control must exit zero without an identity line;
+the replacement control must exit zero with exactly one identity line on stderr.
+The final control deliberately omits the observer and must produce no such line.
+
+```sh
+timeout 30 env LD_PRELOAD="$identity_work/identity.so" \
+  "$identity_work/control" "$identity_work/stable" stable
+timeout 30 env LD_PRELOAD="$identity_work/identity.so" \
+  "$identity_work/control" "$identity_work/replaced" replace
+timeout 30 "$identity_work/control" "$identity_work/unobserved" replace
+```
+
+Run the unchanged caller on a new absolute database path on the mount under
+investigation. Replace `/absolute/test-mount/new-database` before running:
+
+```sh
+timeout 30 "$identity_work/build/driver" /absolute/test-mount/new-database setup
+```
+
+Keep each exit status and failure output. Repeat on up to 20 fresh paths on each
+mount; success does not clear an intermittent counterexample. Then repeat with
+`env LD_PRELOAD="$identity_work/identity.so"` between `timeout 30` and the caller,
+again using fresh paths. An identity line records the preceding pathname
+`lstat`, descriptor `fstat64`, descriptor `statx`, and immediate pathname recheck.
+It correlates same-thread root-file calls and adds read-only metadata queries.
+It cannot distinguish concurrent replacement from filesystem identity changes
+on its own. Exit 98 means observation failed, not that identities agreed.
+
+The caller's `setup` operation checks stock completion, rows, and receipts; only
+the seed step above also runs the independent graph inspection. Retain a compact
+witness and environment description, then remove the owned output directory and
+test databases. Do not delete an existing database or suppress a refusal to
+complete this diagnostic.
+
 ### Windows implementation prerequisites
 
 A Windows build needs native path, identity, directory, locking, byte-I/O, and

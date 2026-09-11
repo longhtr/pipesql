@@ -5,75 +5,51 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
-## Functional coverage separated from stack qualification
+## Full verification checkpoint
 
-The twelve previously combined scenarios now each have an ordinary-thread test
-and a bounded-stack test sharing the same expectations. Focused execution passed
-all 24 tests on macOS and the twelve ordinary variants on GNU arm64; GNU arm64
-explicitly ignored only the twelve stack qualifications. The load scenarios
-verified completion markers for empty input, one row, and 65,537 rows.
+The September 11, 2026 complete gates passed all 23 stages on macOS and GNU
+arm64 Linux. The macOS environment was arm64 Darwin 25.6.0, Rust 1.98.1,
+Python 3.14.7, and the native Apple toolchain. The Linux environment is identified
+below. Checks used release artifacts, offline locked dependencies, and
+warnings-denied compilation and documentation.
 
-The September 11 core gates passed all 14 stages on both platforms using the
-same environments as the full baseline below. The complete Rust suites executed
-429 tests on macOS and 409 on GNU arm64, with twelve explicit stack exclusions
-only on GNU arm64. Each suite also ran one selected lease subprocess, excluded
-from these totals. All twelve ordinary variants and twelve qualification entries
-were reconciled by name against the complete suite logs. Formatting, maintenance,
-ABI checks, independent fixtures/models, warnings-denied Clippy and rustdoc, and
-doctests passed. Maintenance checked 81 tooling tests, 39 codec fixtures, and
-375 local documentation links.
+The gates covered formatting, maintenance, filesystem ABI, rounding vectors,
+attempt models, Clippy, Rust tests, rustdoc, doctests, aggregate semantics and
+composition, public/CLI allocation, native initialization/synchronization/byte
+I/O, catalog interruption, and independent graph inspection. Maintenance passed
+83 tooling tests, 39 independent codec fixtures, and local documentation links.
+The new seed-only graph command also passed on both platforms; reuse of its
+output directory was rejected. Seed failure propagation and artifact identities
+have tooling regressions independent of engine execution.
 
-Both core gates used one frozen 656-file export. All stage statuses were zero,
-before/after manifests matched, and finalization reported no errors. Only the
-two notes files were finalized afterward. The other 654 inputs have fingerprint
-`16d45dc032992c667505e99228fd86278df8583255ccd4448f3d999884871185`.
+Rust suites executed 429 tests on macOS and 409 on GNU arm64. GNU arm64 explicitly
+excluded twelve 64-KiB stack qualifications; macOS excluded none. Each suite also
+executed one selected lease subprocess, excluded from these totals. The twelve
+ordinary-thread counterparts passed on both platforms and share expectations
+with their bounded-stack variants. Their functional success does not qualify
+GNU arm64 stack headroom. The public directory cleanup regression executed,
+including its isolated unwind control.
+
+Both gates used one frozen 659-file export containing 658 manifested inputs.
+All stage statuses were zero, before/after manifests matched across both runs,
+and finalization reported no errors and removed owned build targets. Only the
+two notes files were finalized afterward. The other 656 manifested inputs have
+fingerprint `6030ecdad6a9739b4841e5628100e7be5e1355239f18723f933e08cc80831e58`.
 Recompute it from the repository root:
 
 ```sh
 python3 -B tools/source-manifest.py | python3 -c 'import hashlib, sys; print(hashlib.sha256("".join(line for line in sys.stdin if not line.split("  ", 1)[1].startswith("notes/")).encode()).hexdigest())'
 ```
 
-Replay the core gate with `sh tools/check.sh --scope core --output
-/absolute/new-result-directory`. The earlier attempts stopped on a stale evidence
-anchor before Rust compilation; the corrected final export passed.
-
-Only integration tests, `cfg(test)` modules, and documentation changed from
-`b1c8f34`. Production and native campaign sources remain identical, so the full
-campaign baseline below remains applicable to those unchanged inputs. The core
-gates verify the changed tests and documentation; they are not another full
-native campaign run.
-
-## Full campaign baseline
-
-At `b1c8f34` on September 11, 2026, the full macOS gate passed all 23 stages on arm64 Darwin
-25.6.0 with Rust 1.98.1, Python 3.14.7, and the native Apple toolchain. Checks used
-release artifacts, offline locked dependencies, and warnings-denied compilation
-and documentation. The run covered formatting, maintenance, filesystem ABI,
-rounding vectors, attempt models, Clippy, Rust tests, rustdoc, doc tests, aggregate
-semantics/composition, public/CLI allocation, native initialization/synchronization/
-byte I/O, catalog interruption, and independent graph inspection.
-
-The Rust suites executed 417 tests with no failures or exclusions. The lease
-subprocess additionally executed one selected test; it is not counted twice.
-The public directory cleanup regression executed, including its isolated unwind
-control. Maintenance checked 81 tooling tests, 39 independent codec fixtures,
-and 375 local documentation links. The unchanged declared-table example was
-previously exercised at baseline `36b7823`: it printed `north 15` and `south 20`;
-reuse of its database path returned `AlreadyExists` with exit 1.
-
-Both platform runs used the same frozen 656-file export. Their before/after
-manifests matched, all stage exit statuses were zero, and finalization reported
-no errors. Only the two notes files were finalized after runtime verification.
-The remaining 654 inputs matched `b1c8f34`; their manifest fingerprint was
-`5734ea83b3711d1ad5dec4c6d237e22c1d171faf270782f1a3de999640d76864`.
-
-This fingerprint identifies maintained source, not reproducible binaries. The
-final documentation check covers the finalized notes. Raw successful logs and
-retired source exports are not required inputs; the current gate reconstructs
-its generated cases from maintained callers and fixtures.
+This fingerprint identifies maintained source, not reproducible binaries. Final
+documentation checks cover the finalized notes. The unchanged declared-table
+example was previously exercised at baseline `36b7823`: it printed `north 15`
+and `south 20`; reuse of its database path returned `AlreadyExists` with exit 1.
+Raw successful logs and retired source exports are not required inputs; current
+callers and fixtures reconstruct the generated cases.
 
 Run `sh tools/check.sh --output /absolute/new-result-directory` with the
-[documented prerequisites](../docs/testing.md#prerequisites). The gate preserves
+[documented prerequisites](../docs/testing.md#complete-local-gate). The gate keeps
 stage logs and a JSON receipt, checks before/after source manifests, and removes
 its owned build target. Preserve failure context before disposing of a run.
 
@@ -86,7 +62,9 @@ on native `overlayfs` and sources mounted read-only. The compiler image starts
 from `rust@sha256:9a73a5088750b4c95158ab26629c854c3d6fc4b173cb7bc8079ad252d8ed7bfa`
 (arm64 manifest `09e98f39fa15751de9476fefafe4be0e4ef92b292d608410595bbbde9ebdd375`),
 with Clippy, rustfmt, and Debian GNU time 1.9-0.2 provisioned before disabling
-networking. Campaigns ran as UID/GID 1000, with writable temporary output on the
+networking. The provisioned local image ID was
+`sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
+Campaigns ran as UID/GID 1000, with writable temporary output on the
 container filesystem. A root-run allocation control had correctly failed because
 root could bypass read-only directory permissions; it is not passing evidence.
 
@@ -96,7 +74,7 @@ gate sets warnings-denied Rust and documentation flags. Keep database/output
 directories separate from a host-shared source mount.
 
 The September 11 run passed all 23 stages on the same frozen inputs described
-above. It executed 397 Rust tests, with 12 explicit stack exclusions and one
+above. It executed 409 Rust tests, with 12 explicit stack exclusions and one
 additional selected lease-subprocess execution. Both platforms passed 547 CLI
 allocation-prefix cases, 83 parser control/deny pairs, ambiguous publication
 resolving to aborted and durable outcomes, and closed/broken output sinks.
@@ -233,20 +211,46 @@ ordinary-thread counterparts exercise the functional scenarios on that target.
 Their 64-KiB qualification remains unsatisfied; `--ignored` does not make the
 native minimum satisfy the contract.
 
-A Docker host-shared mount reported as `fuseblk` exposed inconsistent pathname
-and opened-file identities during catalog creation. The stock caller returned
-`RecoveryRequired` with "metadata file changed while opening". One captured
-ROOT.B observation changed from pathname inode 5566 to opened inode 5567 on device
-47; an immediate pathname recheck also reported 5567. The cause remains unresolved.
-Successful runs on native `overlayfs` and simpler replacement probes do not clear
-that failure, and no database invariant was relaxed.
+The September 11 shared-mount investigation reproduced the failure using the
+unchanged stock catalog caller from `4931770`: 7 of 20 fresh setups failed on the
+Mac-hosted `fuseblk` mount; all 20 native `overlayfs` setups passed. Failures
+returned `RecoveryRequired` with "metadata file changed while opening". The GNU
+arm64 caller SHA-256 was
+`20cb51e778a6af8a555f20b433146e9765b5d26b601d62064a7028253d540e09`.
+Execution used UID 1000, glibc 2.36, Rust 1.98.1, and Linux
+7.0.12-linuxkit in the image identified above, on an arm64 Darwin 25.6.0 host.
 
-Investigate with the maintained [catalog graph caller](../tools/fixtures/catalog-graph.rs)
-and campaign on fresh directories on the affected mount. Record the OS, kernel,
-libc, database filesystem, and pathname/opened identities; compare with a native
-filesystem using the same stock executable. The failure was intermittent, so a
-single successful setup is insufficient. Old diagnostic builds and their failure
-frequencies are not retained qualification claims.
+The maintained [identity observer](../tools/fixtures/filesystem-identity.c)
+reproduced 4 failures in 20 additional shared-mount setups and none in 20 native
+setups. One ROOT.B witness was:
+
+```text
+before=46:282 fstat=46:286 statx=46:286 after=46:286
+```
+
+The fields are device:inode pairs. Raw libc pathname inspection disagreed with
+both raw descriptor APIs; `fstat64` ran before `statx`. The immediate pathname
+recheck agreed with the descriptor. This is not merely Rust metadata
+normalization or a difference between those descriptor APIs. A separate trace
+recorded no application rename or writable open between the disagreeing calls.
+A synchronized host-side observation retained the same host inode, size, and
+nanosecond modification/change timestamps across a guest mismatch. These
+observations do not identify the responsible bridge or kernel behavior.
+
+The independent observer control passed with a stable file and with intentional
+replacement. Omitting the observer removed the expected replacement witness.
+Simpler C publication loops did not reproduce the stock caller's mismatch; they
+do not clear it. The observed failure fractions describe these runs, not a
+reliability estimate. No production identity check, retry, or filesystem blacklist
+changed. This tested shared mount remains unqualified; that disposition does not
+exclude every FUSE filesystem or every container configuration.
+
+[Replay instructions](../docs/testing.md#diagnose-filesystem-identity) use current
+source, fresh paths, bounded attempts, the stock seed, and optional observation.
+Run without observation first, retain actual failures, and compare with native
+storage. Old diagnostic binaries, host scripts, and raw successful logs are not
+required inputs. Further root-cause work needs evidence about the sharing layer;
+repeatedly passing a simpler probe cannot establish the missing identity premise.
 
 Sanitizer qualification is incomplete. Earlier diagnostic compiler/standard-library
 combinations disagreed about reports and error kinds in safe-std/native controls;

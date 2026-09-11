@@ -658,9 +658,25 @@ def write_report(work, source, driver, records):
     print("catalog graph passed: " + json.dumps(record), flush=True)
 
 
-def campaign(work):
+def campaign(work, *, seed_only=False):
     source, driver = build_driver(work)
     seed, baseline = create_seed(work, driver)
+    if seed_only:
+        print(
+            "catalog seed passed: "
+            + json.dumps(
+                {
+                    "source_manifest_sha256": hashlib.sha256(source).hexdigest(),
+                    "driver_sha256": hashlib.sha256(driver.read_bytes()).hexdigest(),
+                    "library_sha256": hashlib.sha256(
+                        (work / "target/release/libpipesql.rlib").read_bytes()
+                    ).hexdigest(),
+                    "seed": str(seed),
+                }
+            ),
+            flush=True,
+        )
+        return
     check_genesis_lease_and_fixture(work, driver, seed)
     checks = GraphChecks(work, seed, driver)
     check = checks.case
@@ -713,6 +729,11 @@ def sparse(path, size):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, help="new replay output directory")
+    parser.add_argument(
+        "--seed-only",
+        action="store_true",
+        help="create and independently inspect the stock seed; omit corruption campaigns",
+    )
     args = parser.parse_args(argv)
     if not __debug__:
         parser.error("catalog graph checks require Python assertions")
@@ -721,10 +742,10 @@ def main(argv=None):
     if args.output:
         work = args.output.absolute()
         work.mkdir()
-        campaign(work)
+        campaign(work, seed_only=args.seed_only)
     else:
         with tempfile.TemporaryDirectory(prefix="pipesql-catalog-graph-") as directory:
-            campaign(Path(directory).resolve())
+            campaign(Path(directory).resolve(), seed_only=args.seed_only)
 
 
 if __name__ == "__main__":
