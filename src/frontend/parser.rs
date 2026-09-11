@@ -548,7 +548,7 @@ impl Parser<'_> {
                 });
             };
             self.take(Kind::LeftParen)?;
-            let column = if kind == AggregateKind::Count {
+            let column = if kind == AggregateKind::Count && self.peek() == Kind::Star {
                 self.take(Kind::Star)?;
                 None
             } else {

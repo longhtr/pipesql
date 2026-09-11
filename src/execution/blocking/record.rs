@@ -395,17 +395,25 @@ pub(in crate::execution) struct ArgumentShape {
     pub(in crate::execution) count: usize,
     pub(in crate::execution) nonnull: u16,
     pub(in crate::execution) integers: u16,
+    /// Count-only arguments encode present values as zero; NULL remains absent.
+    pub(in crate::execution) presence: u16,
 }
 
 impl ArgumentShape {
     pub(in crate::execution) fn layout(self, keys: &RowLayout) -> u32 {
         assert!(self.count <= MAX_AGGREGATE_COLUMNS);
-        let mut bytes = [0; 9];
+        let mut bytes = [0; 11];
         bytes[..4].copy_from_slice(&keys.layout.to_le_bytes());
         bytes[4] = self.count as u8;
         bytes[5..7].copy_from_slice(&self.nonnull.to_le_bytes());
         bytes[7..9].copy_from_slice(&self.integers.to_le_bytes());
-        storage_format::crc32c(&bytes)
+        bytes[9..11].copy_from_slice(&self.presence.to_le_bytes());
+        // Preserve existing layouts when no presence-only argument is admitted.
+        storage_format::crc32c(if self.presence == 0 {
+            &bytes[..9]
+        } else {
+            &bytes
+        })
     }
 }
 
@@ -439,6 +447,7 @@ impl SortRecord {
             count: 0,
             nonnull: 0,
             integers: 0,
+            presence: 0,
         };
         self.finish(arguments.layout(layout), length, ordinal, &[])
     }
@@ -463,7 +472,7 @@ impl SortRecord {
     ) -> Result<(), Error> {
         if arguments.len() > MAX_AGGREGATE_COLUMNS
             || arguments.len() != shape.count
-            || (shape.nonnull | shape.integers) >> shape.count != 0
+            || (shape.nonnull | shape.integers | shape.presence) >> shape.count != 0
             || ordinal >= MAX_AGGREGATE_ROWS
         {
             return Err(Error::Corrupt("group argument shape"));
@@ -510,7 +519,7 @@ impl SortRecord {
         io: &mut Io<'_, '_>,
     ) -> Result<(), Error> {
         if arguments.count > MAX_AGGREGATE_COLUMNS
-            || (arguments.nonnull | arguments.integers) >> arguments.count != 0
+            || (arguments.nonnull | arguments.integers | arguments.presence) >> arguments.count != 0
         {
             return Err(Error::Corrupt("group argument type shape"));
         }
@@ -580,6 +589,9 @@ impl SortRecord {
         for state in 0..states {
             if valid & (1 << state) == 0 && self.bits(state) != 0 {
                 return Err(Error::Corrupt("NULL group argument payload"));
+            }
+            if arguments.presence & (1 << state) != 0 && self.bits(state) != 0 {
+                return Err(Error::Corrupt("count-only group argument payload"));
             }
         }
         Ok(())

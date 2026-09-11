@@ -158,11 +158,6 @@ impl Expression {
             .any(|op| matches!(op, Op::Column(column) if column.nullable()))
     }
 
-    #[cfg(test)]
-    pub(crate) fn needs(&self, column: SemanticColumn) -> bool {
-        self.ops[..usize::from(self.len)].contains(&Op::Column(column))
-    }
-
     pub(crate) fn infer(&self, visible: &[SemanticColumn]) -> Result<DataType, Error> {
         if self.len == 0
             || usize::from(self.len) > MAX_OPS

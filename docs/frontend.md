@@ -39,7 +39,7 @@ FROM sales
 |> AGGREGATE SUM(adjusted) AS total
 ```
 
-With the walkthrough's three rows, this query produces `38`. Follow
+With the walkthrough's four rows (one amount is NULL), this query produces `38`. Follow
 `Database::prepare` into `prepare_catalog`, then `bind_plan` in the
 [binder](../src/frontend/binding.rs).
 
@@ -151,7 +151,7 @@ the original identity and must not be rebuilt from output positions or aliases.
 
 The parser retains each aggregate call's source extent on its bound entry and
 each numeric constant's extent in parsed syntax.
-Executable Expression equality excludes provenance so equivalent SUM/AVG
+Executable Expression equality excludes provenance so equivalent COUNT/SUM/AVG
 arguments still share state. Binding validates nonempty ranges inside the original
 source byte extent. No parser or execution component retains query text merely
 to render an arithmetic error.

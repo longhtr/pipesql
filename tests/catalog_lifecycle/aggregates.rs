@@ -2,6 +2,226 @@
 use super::*;
 
 #[test]
+fn count_arguments_follow_repeated_derived_and_joined_inputs() {
+    let directory = Directory::new();
+    let db = Database::create_empty(&directory.database(), config()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "facts",
+        &[
+            ColumnDeclaration {
+                name: "k",
+                data_type: DataType::Int64,
+                nullable: false,
+            },
+            ColumnDeclaration {
+                name: "v",
+                data_type: DataType::Int64,
+                nullable: true,
+            },
+        ],
+        &cancel,
+    )
+    .unwrap();
+    let mut append = db.begin_append("facts", limits(), &cancel).unwrap();
+    append
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::Int64(&[1, 1, 2]),
+                    validity: &[7],
+                },
+                ColumnInput {
+                    values: ColumnValues::Int64(&[10, 20, 30]),
+                    validity: &[5],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    append.commit(&cancel).unwrap();
+
+    // Self-joining duplicates both rows for key 1; only two of those four
+    // left-side values are present. Key 2 contributes one present row.
+    for (sql, expected) in [
+        (
+            "FROM facts AS f |> JOIN facts AS d ON f.k = d.k |> AGGREGATE COUNT(f.v) AS present,COUNT(*) AS n",
+            vec![vec![3, 5]],
+        ),
+        (
+            "FROM facts AS f |> JOIN facts AS d ON f.k = d.k |> AGGREGATE COUNT(f.v) AS present GROUP AND ORDER BY f.k",
+            vec![vec![1, 2], vec![2, 1]],
+        ),
+        (
+            "FROM facts |> AGGREGATE COUNT(v) AS n GROUP BY k |> AGGREGATE COUNT(n) AS present,SUM(n) AS total",
+            vec![vec![2, 2]],
+        ),
+        (
+            "FROM (FROM facts |> AGGREGATE COUNT(v) AS n GROUP BY k) AS g |> AGGREGATE COUNT(g.n) AS present",
+            vec![vec![2]],
+        ),
+        (
+            "FROM facts |> AGGREGATE COUNT(v) AS n GROUP BY k |> SELECT n*2 AS doubled |> AGGREGATE COUNT(doubled) AS present",
+            vec![vec![2]],
+        ),
+    ] {
+        let query = db.prepare(sql).unwrap();
+        let baseline = db.reserved_memory_bytes();
+        let expected: Vec<Vec<Cell>> = expected
+            .into_iter()
+            .map(|row| row.into_iter().map(Cell::Integer).collect())
+            .collect();
+        assert_eq!(
+            collect(&mut db.execute(&query, &cancel).unwrap()),
+            expected,
+            "{sql}"
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+    db.close().unwrap();
+}
+
+#[test]
+fn count_arguments_count_present_values_without_summing_them() {
+    let directory = Directory::new();
+    let db = Database::create_empty(&directory.database(), config()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "facts",
+        &[
+            ("note", DataType::String),
+            ("amount", DataType::Int64),
+            ("number", DataType::Double),
+            ("day", DataType::Date),
+        ]
+        .map(|(name, data_type)| ColumnDeclaration {
+            name,
+            data_type,
+            nullable: true,
+        }),
+        &cancel,
+    )
+    .unwrap();
+    let sql = "FROM facts |> AGGREGATE COUNT(*) AS nrows,COUNT(note) AS notes,COUNT(amount) AS amounts,COUNT(number) AS numbers,COUNT(day) AS days";
+    let empty = db.prepare(sql).unwrap();
+    assert_eq!(
+        collect(&mut db.execute(&empty, &cancel).unwrap()),
+        vec![vec![Cell::Integer(0); 5]]
+    );
+    drop(empty);
+    let mut append = db.begin_append("facts", limits(), &cancel).unwrap();
+    append
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::String(&["a", "ignored", "", "ignored"]),
+                    validity: &[0b0101],
+                },
+                ColumnInput {
+                    values: ColumnValues::Int64(&[i64::MAX; 4]),
+                    validity: &[0b1110],
+                },
+                ColumnInput {
+                    values: ColumnValues::Double(&[f64::NAN, f64::MAX, 0.0, 0.0]),
+                    validity: &[0b0011],
+                },
+                ColumnInput {
+                    values: ColumnValues::Date(
+                        &[DateValue::from_days_since_unix_epoch(0).unwrap(); 4],
+                    ),
+                    validity: &[0],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    append.commit(&cancel).unwrap();
+    let query = db.prepare(sql).unwrap();
+    for column in 0..5 {
+        let definition = query.result_column(column).unwrap();
+        assert_eq!(definition.data_type, DataType::Int64);
+        assert!(!definition.nullable);
+    }
+    assert_eq!(
+        collect(&mut db.execute(&query, &cancel).unwrap()),
+        vec![vec![
+            Cell::Integer(4),
+            Cell::Integer(2),
+            Cell::Integer(3),
+            Cell::Integer(2),
+            Cell::Integer(0),
+        ]]
+    );
+    drop(query);
+    let grouped = db
+        .prepare(&format!("{sql} GROUP AND ORDER BY note"))
+        .unwrap();
+    assert_eq!(
+        collect(&mut db.execute(&grouped, &cancel).unwrap()),
+        vec![
+            vec![
+                Cell::Null,
+                Cell::Integer(2),
+                Cell::Integer(0),
+                Cell::Integer(2),
+                Cell::Integer(1),
+                Cell::Integer(0)
+            ],
+            vec![
+                Cell::Text("".into()),
+                Cell::Integer(1),
+                Cell::Integer(1),
+                Cell::Integer(1),
+                Cell::Integer(0),
+                Cell::Integer(0)
+            ],
+            vec![
+                Cell::Text("a".into()),
+                Cell::Integer(1),
+                Cell::Integer(1),
+                Cell::Integer(0),
+                Cell::Integer(1),
+                Cell::Integer(0)
+            ],
+        ]
+    );
+    drop(grouped);
+    let hidden = db
+        .prepare("FROM facts |> AGGREGATE COUNT(amount*2) AS bad,COUNT(*) AS n |> SELECT n")
+        .unwrap();
+    assert_eq!(
+        collect(&mut db.execute(&hidden, &cancel).unwrap()),
+        vec![vec![Cell::Integer(4)]]
+    );
+    drop(hidden);
+
+    let source = "FROM facts |> AGGREGATE COUNT(amount*2) AS n";
+    let demanded = db.prepare(source).unwrap();
+    let baseline = db.reserved_memory_bytes();
+    let mut result = db.execute(&demanded, &cancel).unwrap();
+    let mut failed = false;
+    for _ in 0..1000 {
+        match result.step() {
+            QueryStep::Progress => (),
+            QueryStep::Failed(Error::ArithmeticOverflow { operation, span }) => {
+                assert_eq!(*operation, "multiplication");
+                assert_eq!(&source[span.start()..span.end()], "COUNT(amount*2)");
+                failed = true;
+                break;
+            }
+            _ => panic!("a demanded overflowing COUNT argument cannot publish rows"),
+        }
+    }
+    assert!(failed);
+    drop(result);
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    drop(demanded);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    db.close().unwrap();
+}
+
+#[test]
 fn declared_global_aggregates_preserve_types_null_counts_and_pinned_inputs() {
     let directory = Directory::new();
     let path = directory.database();

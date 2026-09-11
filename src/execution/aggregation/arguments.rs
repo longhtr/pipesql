@@ -5,9 +5,9 @@ use crate::execution::blocking::{
     ArgumentShape, RECORD_HEADER, RowLayout, SortRecord, append_bytes,
 };
 use crate::execution::{BATCH_ROWS, MAX_AGGREGATE_ROWS};
-use crate::frontend::{DataType, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS};
+use crate::frontend::{AggregateArgument, DataType, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS};
 use crate::resources::{Reservation, allocate};
-use crate::scalar::Expression;
+
 use crate::{CancellationToken, Database, Error};
 use std::mem::size_of;
 
@@ -124,12 +124,34 @@ impl<'db> ArgumentBatch<'db> {
         }
         let mut numeric = [None; MAX_COLUMNS];
         for (index, source) in aggregate.input_columns.iter().enumerate() {
-            if let Some(source) = source {
+            if let Some(source) = source
+                && matches!(source.data_type(), DataType::Int64 | DataType::Double)
+            {
                 numeric[index] = Some(input.numeric(index, *source)?);
             }
         }
         for state in 0..self.shape.count {
-            let expression = aggregate.inputs[state].expect("validated demanded expression");
+            let argument = aggregate.inputs[state].expect("validated demanded argument");
+            let expression = match argument {
+                AggregateArgument::Numeric(expression) => expression,
+                AggregateArgument::Validity(column) => {
+                    let index = aggregate
+                        .input_columns
+                        .iter()
+                        .position(|input| *input == Some(*column))
+                        .ok_or(Error::Corrupt("count input mapping missing"))?;
+                    let valid = input.validity(index, *column)?;
+                    for row in 0..rows {
+                        let source = range.start + row;
+                        self.store(
+                            state,
+                            row,
+                            (valid[source / 64] & (1 << (source % 64)) != 0).then_some(0),
+                        );
+                    }
+                    continue;
+                }
+            };
             assert!(aggregate.lanes > 0, "numeric programs own expression lanes");
             for start in (0..rows).step_by(aggregate.lanes) {
                 cancel.check()?;
@@ -143,7 +165,14 @@ impl<'db> ArgumentBatch<'db> {
                     Err(failure) => return Err(aggregate.argument_error(state, failure)),
                 };
                 for row in start..end {
-                    self.store(state, row, output.value(row - start));
+                    let value = output.value(row - start).map(|bits| {
+                        if self.shape.presence & (1 << state) != 0 {
+                            0
+                        } else {
+                            bits
+                        }
+                    });
+                    self.store(state, row, value);
                 }
             }
         }
@@ -230,10 +259,16 @@ impl<'db> ArgumentBatch<'db> {
 
 impl ArgumentShape {
     pub(super) fn from_aggregate(aggregate: &AggregateState<'_>) -> Self {
-        Self::from_inputs(&aggregate.inputs[..aggregate.states])
+        let mut shape = Self::from_inputs(&aggregate.inputs[..aggregate.states]);
+        for state in 0..aggregate.states {
+            if aggregate.cells.value_slots[state] == u8::MAX {
+                shape.presence |= 1 << state;
+            }
+        }
+        shape
     }
 
-    pub(super) fn from_inputs(inputs: &[Option<&Expression>]) -> Self {
+    pub(super) fn from_inputs(inputs: &[Option<&AggregateArgument>]) -> Self {
         let mut nonnull = 0;
         let mut integers = 0;
         for (index, input) in inputs.iter().enumerate() {
@@ -241,7 +276,7 @@ impl ArgumentShape {
             if !input.nullable() {
                 nonnull |= 1 << index;
             }
-            if input.data_type == DataType::Int64 {
+            if input.data_type() == DataType::Int64 {
                 integers |= 1 << index;
             }
         }
@@ -249,6 +284,7 @@ impl ArgumentShape {
             count: inputs.len(),
             nonnull,
             integers,
+            presence: 0,
         }
     }
 }

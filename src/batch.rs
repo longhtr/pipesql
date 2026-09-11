@@ -316,6 +316,34 @@ impl Batch {
             Data::Date(v) => Value::Date(v[row]),
         })
     }
+
+    /// Borrow presence bits without converting or copying the column's values.
+    pub(crate) fn validity(
+        &self,
+        index: usize,
+        identity: crate::frontend::SemanticColumn,
+    ) -> Result<&[u64; ROWS / 64], Error> {
+        let column = self
+            .columns
+            .get(index)
+            .ok_or(Error::Corrupt("validity column missing"))?;
+        let kind = match &column.data {
+            Data::Double(_) => crate::frontend::DataType::Double,
+            Data::Int64(_) => crate::frontend::DataType::Int64,
+            Data::String(_) | Data::Text(_) => crate::frontend::DataType::String,
+            Data::Date(_) => crate::frontend::DataType::Date,
+        };
+        if kind != identity.data_type()
+            || (!identity.nullable()
+                && (0..self.rows).any(|row| column.valid[row / 64] & (1 << (row % 64)) == 0))
+        {
+            return Err(Error::Corrupt(
+                "validity column disagrees with semantic type",
+            ));
+        }
+        Ok(&column.valid)
+    }
+
     // The producer publishes rows only after every demanded column is filled.
     pub(crate) fn nonnull_column(
         &mut self,

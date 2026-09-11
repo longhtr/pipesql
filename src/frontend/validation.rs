@@ -1,9 +1,9 @@
 //! Independent semantic-plan validation. Does not call the parser or binder.
 use super::{
-    AggregateKind, ColumnId, DataType, Error, Group, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS,
-    MAX_COMPUTED, MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_QUERY_COLUMNS, MAX_SOURCE_BYTES,
-    MAX_STAGES, Name, Node, OrderKey, Output, Plan, RelationId, SourceColumn, SourceOccurrence,
-    Stage, initial_outputs,
+    AggregateArgument, AggregateKind, ColumnId, DataType, Error, Group, MAX_AGGREGATE_COLUMNS,
+    MAX_COLUMNS, MAX_COMPUTED, MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_QUERY_COLUMNS,
+    MAX_SOURCE_BYTES, MAX_STAGES, Name, Node, OrderKey, Output, Plan, RelationId, SourceColumn,
+    SourceOccurrence, Stage, initial_outputs,
 };
 
 pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
@@ -195,11 +195,15 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                         .ok_or(Error::Corrupt("aggregate input has no semantic facts"))?;
                 }
                 for entry in &aggregate.entries {
-                    let valid = match (entry.kind, &entry.expression) {
+                    let valid = match (entry.kind, &entry.argument) {
                         (AggregateKind::Count, None) => true,
-                        (AggregateKind::Sum | AggregateKind::Avg, Some(expression)) => {
+                        (_, Some(AggregateArgument::Numeric(expression))) => {
                             expression.validate(&sources[..input.len()])?;
                             matches!(expression.data_type, DataType::Int64 | DataType::Double)
+                        }
+                        (AggregateKind::Count, Some(AggregateArgument::Validity(column))) => {
+                            matches!(column.data_type(), DataType::String | DataType::Date)
+                                && sources[..input.len()].contains(column)
                         }
                         _ => false,
                     };

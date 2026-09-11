@@ -13,6 +13,64 @@ use crate::storage_format::RootState;
 use std::sync::atomic::Ordering;
 
 #[test]
+fn legacy_count_arguments_preserve_types_filters_and_repeated_aggregation() {
+    let (_fixture, database) = loaded(47);
+    let cancel = CancellationToken::new();
+    for (sql, expected) in [
+        (
+            "FROM lineitem |> AGGREGATE COUNT(l_quantity) AS q,COUNT(l_returnflag) AS f,COUNT(l_shipdate) AS d",
+            vec![47, 47, 47],
+        ),
+        (
+            "FROM lineitem |> WHERE l_quantity < 3 |> AGGREGATE COUNT(l_quantity*2) AS q,COUNT(l_returnflag) AS f,COUNT(l_shipdate) AS d",
+            vec![6, 6, 6],
+        ),
+        (
+            "FROM lineitem |> WHERE l_quantity < 0 |> AGGREGATE COUNT(l_returnflag) AS f,COUNT(l_shipdate) AS d",
+            vec![0, 0],
+        ),
+        (
+            "FROM lineitem |> AGGREGATE COUNT(l_shipdate) AS n GROUP BY l_returnflag |> AGGREGATE COUNT(n) AS nkeys,SUM(n) AS n",
+            vec![1, 47],
+        ),
+    ] {
+        let query = database.prepare(sql).unwrap();
+        let baseline = database.reserved_memory_bytes();
+        let mut result = database.execute(&query, &cancel).unwrap();
+        let mut observed = Vec::new();
+        let mut finished = false;
+        for _ in 0..100_000 {
+            match result.step() {
+                QueryStep::Rows(batch) => {
+                    for row in 0..batch.len() {
+                        let mut values = Vec::new();
+                        for column in 0..batch.column_count() {
+                            let Some(Value::Int64(value)) = batch.value(row, column) else {
+                                panic!("COUNT returns INT64");
+                            };
+                            values.push(value);
+                        }
+                        observed.push(values);
+                    }
+                }
+                QueryStep::Progress => (),
+                QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("{sql}: {error}"),
+            }
+        }
+        assert!(finished);
+        assert_eq!(observed, vec![expected], "{sql}");
+        drop(result);
+        assert_eq!(database.reserved_memory_bytes(), baseline);
+        assert_eq!(database.reserved_temp_bytes(), 0);
+    }
+    database.close().unwrap();
+}
+
+#[test]
 fn concurrent_aggregate_readers_reconcile_one_memory_account() {
     let (_fixture, database) = loaded(65_537);
     let path = database.path().to_owned();
@@ -390,14 +448,18 @@ fn aggregate_consumes_derived_values_without_storage_metadata() {
     assert_eq!(produced, Some(3.0));
     drop(result);
 
-    // Narrow trusted test boundary: bind the consumer program to a derived
-    // relation identity. The public parser does not yet admit this pipeline.
+    // Bind a derived identity directly to isolate accumulator reuse from the
+    // producer scheduler and its intermediate batches.
     let derived = SemanticColumn::new(1001, DataType::Double, true);
     let mut consumer = database
         .prepare("FROM lineitem |> AGGREGATE SUM(l_quantity) AS total")
         .unwrap();
     let semantic = consumer.plan.aggregates.first_mut().unwrap();
-    let expression = semantic.entries[0].expression.as_mut().unwrap();
+    let crate::frontend::AggregateArgument::Numeric(expression) =
+        semantic.entries[0].argument.as_mut().unwrap()
+    else {
+        unreachable!()
+    };
     expression.ops[0] = Op::Column(derived);
     expression.validate(&[derived]).unwrap();
     let resident = database.reserved_memory_bytes();

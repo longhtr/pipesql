@@ -3,6 +3,96 @@ use crate::execution::aggregation::*;
 use crate::execution::blocking::test_support::Directory;
 
 #[test]
+fn count_only_arguments_own_counters_and_share_numeric_work_when_needed() {
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("db"),
+        crate::Config::new(4_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    database
+        .declare_table(
+            "facts",
+            &[crate::ColumnDeclaration {
+                name: "n",
+                data_type: DataType::Int64,
+                nullable: true,
+            }],
+            &cancel,
+        )
+        .unwrap();
+    let charge = database
+        .reserve_memory(crate::batch::MAX_BYTES, "count test input")
+        .unwrap();
+    let mut batch = Batch::new(&[DataType::Int64], charge.bytes()).unwrap();
+    for (row, value) in [Value::Null, Value::Int64(2), Value::Int64(4)]
+        .into_iter()
+        .enumerate()
+    {
+        batch.set(row, 0, value).unwrap();
+    }
+    batch.publish_rows(3);
+    for (sql, shared) in [
+        ("FROM facts |> AGGREGATE COUNT(n) AS c", false),
+        (
+            "FROM facts |> AGGREGATE COUNT(n) AS c,SUM(n) AS s,AVG(n) AS a",
+            true,
+        ),
+    ] {
+        let query = database.prepare(sql).unwrap();
+        let semantic = query.plan.aggregates.first().unwrap();
+        let demand = query.plan.aggregate_demand(0);
+        let baseline = database.reserved_memory_bytes();
+        let mut state = AggregateState::new(
+            &database.memory,
+            semantic,
+            demand,
+            1,
+            query.plan.input_columns(),
+        )
+        .unwrap();
+        state
+            .validate_plan(semantic, demand, 1, query.plan.input_columns())
+            .unwrap();
+        assert_eq!(
+            state.states, 1,
+            "identical numeric arguments share evaluation"
+        );
+        assert_eq!(state.cells.nonnull_counts.len(), 1);
+        assert!(state.cells.values.is_empty() && state.cells.flags.is_empty());
+        assert_eq!(state.cells.integers.len(), usize::from(shared));
+        if !shared {
+            state.cells.value_slots[0] = 0;
+            assert!(
+                state
+                    .validate_plan(semantic, demand, 1, query.plan.input_columns())
+                    .is_err(),
+                "validator rejects a count-only value slot"
+            );
+            state.cells.value_slots[0] = u8::MAX;
+        }
+        let shape = ArgumentShape::from_aggregate(&state);
+        assert_eq!(shape.presence, u16::from(!shared));
+        let mut arguments = ArgumentBatch::new(&database, shape, 3).unwrap();
+        arguments
+            .evaluate(&mut state, &batch, 0..3, &cancel)
+            .unwrap();
+        assert_eq!(arguments.value(0, 0), None);
+        assert_eq!(arguments.value(0, 1), Some(if shared { 2 } else { 0 }));
+        arguments.fold_group(&mut state, 0).unwrap();
+        assert_eq!(state.value(0, 0).unwrap(), Value::Int64(2));
+        if shared {
+            assert_eq!(state.value(0, 1).unwrap(), Value::Int64(6));
+            assert_eq!(state.value(0, 2).unwrap(), Value::Double(3.0));
+        }
+        drop(arguments);
+        drop(state);
+        assert_eq!(database.reserved_memory_bytes(), baseline);
+    }
+}
+
+#[test]
 fn key_mapping_uses_the_bound_semantic_identity() {
     let directory = Directory::new();
     let database = Database::create(

@@ -64,6 +64,13 @@ keys and cancellation across controller phases live in the internal grouping
 tests; the composed ownership campaign measures a held grouped reader alongside
 another query under the same database authority.
 
+Nullable COUNT tests cover all four scalar types, demanded scalar errors,
+repeated and joined inputs, and the distinction from COUNT(*). The wider
+grouping fixture observes spill at 1,600,000 bytes and memory execution at
+4,000,000 bytes. It checks cancellation after spill begins, admission refusal,
+temporary-space refusal, retries, and release. These budgets apply to that
+fixture, not to arbitrary queries.
+
 The [physical-planning mutations](../src/execution/planning/tests.rs) run on
 macOS and Linux. They check producer edges, hidden order demand, DISTINCT/LIMIT
 mapping, and refusal of malformed references to unvalidated later rows.

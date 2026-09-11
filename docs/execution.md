@@ -185,9 +185,16 @@ predicate, even when omitted from final output.
 INT64 aggregates retain a checked signed 128-bit sum, bounded by the admitted
 row count times the maximum input magnitude. Only a demanded final SUM narrows
 to INT64; AVG converts its wide sum to DOUBLE and divides by the nonnull count.
-Identical SUM/AVG expressions share one state. Counters for nullable expressions
-advance only when the evaluated argument is valid. An expression with no valid
-arguments remains NULL, independently of the number of rows in its group.
+Identical COUNT/SUM/AVG arguments share one state. Counters for nullable
+arguments advance only for valid input. SUM/AVG with no valid arguments return
+NULL; COUNT returns zero. COUNT(*) uses the group row count.
+
+`AggregateArgument` distinguishes numeric programs from direct STRING/DATE
+columns whose validity is counted. Numeric programs retain demanded scalar
+errors. Count-only states allocate no sum or average cells. Captured arguments
+carry presence with a canonical zero payload when no value accumulator needs
+them; the spill reader independently rejects nonzero presence-only payloads.
+This avoids copying text or interpreting dates as numeric values.
 
 ## Pipeline state
 
@@ -342,7 +349,7 @@ destroyed before their reservations are released.
 Ordinary builds connect catalog storage to the same Begin/Filter/Output
 controller. `Source` owns either the legacy reader or one declared-table reader.
 Catalog queries use `Database::prepare`, `Database::execute` and
-`QueryResult::step`. Global COUNT(*), SUM and AVG use the same aggregate owner
+`QueryResult::step`. Global COUNT, SUM and AVG use the same aggregate owner
 and finalization phases as legacy queries. When the scan finishes, the aggregate
 consumer enters finalization, including empty tables. Declared grouping selects
 the general controller below.

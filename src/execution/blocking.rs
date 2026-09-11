@@ -55,6 +55,7 @@ const ROW_ARGUMENTS: ArgumentShape = ArgumentShape {
     count: 0,
     nonnull: 0,
     integers: 0,
+    presence: 0,
 };
 
 struct SortedInput<'db> {

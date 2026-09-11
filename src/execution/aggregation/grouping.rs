@@ -150,7 +150,7 @@ impl OutputLayout {
                     AggregateKind::Sum => (
                         aggregate.inputs[aggregate.entry_states[entry]]
                             .ok_or(Error::Corrupt("group result argument absent"))?
-                            .data_type,
+                            .data_type(),
                         true,
                     ),
                 }
@@ -319,7 +319,8 @@ impl<'db> General<'db> {
         }
         let keys = key_layout(semantic, &inputs[..count])?;
         let layout = AggregateLayout::new(semantic, demand, inputs[..count].iter().copied());
-        let shape = ArgumentShape::from_inputs(&layout.inputs[..layout.states]);
+        let mut shape = ArgumentShape::from_inputs(&layout.inputs[..layout.states]);
+        shape.presence = layout.count_only_states();
         let mut columns = [(DataType::Int64, false); MAX_COLUMNS];
         let mut output_count = 0;
         for column in output_columns {

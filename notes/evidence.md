@@ -7,7 +7,7 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 11, 2026 complete gates passed all 23 stages on macOS and GNU
+The September 12, 2026 (local time) complete gates passed all 23 stages on macOS and GNU
 arm64 Linux. The macOS environment was arm64 Darwin 25.6.0, Rust 1.98.1,
 Python 3.14.7, and the native Apple toolchain. The Linux environment is identified
 below. Checks used release artifacts, offline locked dependencies, and
@@ -22,7 +22,7 @@ The seed-only graph command previously passed on both platforms; reuse of its
 output directory was rejected. Seed failure propagation and artifact identities
 have tooling regressions independent of engine execution.
 
-Rust suites executed 432 tests on each platform, with no failed or ignored
+Rust suites executed 439 tests on each platform, with no failed or ignored
 tests. Each suite also executed one selected lease subprocess, excluded from
 these totals. The twelve bounded-thread scenarios and their ordinary-thread
 counterparts passed on both targets. The independent native stack control and
@@ -33,10 +33,10 @@ Both gates used one frozen 662-file export containing 661 manifested inputs.
 All stage statuses were zero, before/after manifests matched across both runs,
 and finalization reported no errors and removed owned build targets. The frozen
 manifest SHA-256 is
-`787f8183fe13fd9e7b3b6903804ca274db9247d02e0315888ac5f1604d0d158b`.
+`1c71891d7a9e04f4ca5b8afd0b5bdeee2dda703433aecf503f9b244aff9061bd`.
 Only the two notes files were finalized afterward. The other 659 manifested
 inputs have fingerprint
-`14d7cc2664c87d3896225afe2dd42b64a8dd8e2b4d4f7f451a6097e886baef6b`.
+`4be67091821b95426832627764db3f3e7290f784df20b71e7eb888a4a7f2c0ee`.
 Recompute it from the repository root:
 
 ```sh
@@ -44,9 +44,11 @@ python3 -B tools/source-manifest.py | python3 -c 'import hashlib, sys; print(has
 ```
 
 This fingerprint identifies maintained source, not reproducible binaries. Final
-documentation checks cover the finalized notes. The unchanged declared-table
-example was previously exercised at baseline `36b7823`: it printed `north 15`
-and `south 20`; reuse of its database path returned `AlreadyExists` with exit 1.
+documentation checks cover the finalized notes. The declared-table example ran
+on both platforms and printed `north total=15 rows=3 present=2` and
+`south total=20 rows=1 present=1`. The frontend walkthrough also produced its
+complete INT64 result, 38, on macOS. Gate stages took 1,559 seconds on macOS and
+877 seconds on Linux; these are verification costs, not query benchmarks.
 Raw successful logs and retired source exports are not required inputs; current
 callers and fixtures reconstruct the generated cases.
 
@@ -54,6 +56,32 @@ Run `sh tools/check.sh --output /absolute/new-result-directory` with the
 [documented prerequisites](../docs/testing.md#complete-local-gate). The gate keeps
 stage logs and a JSON receipt, checks before/after source manifests, and removes
 its owned build target. Preserve failure context before disposing of a run.
+
+## Nullable COUNT arguments
+
+COUNT(expression) uses the existing aggregate engine for global, grouped,
+repeated, and composed queries. Numeric programs still evaluate demanded scalar
+errors; direct STRING/DATE arguments use typed validity. Count-only states own
+no sum cells. Identical demanded COUNT/SUM/AVG programs share evaluation and
+state. Only the new temporary argument layout carries presence-only payloads;
+persistent formats remain unchanged.
+
+The full gates execute seven added Rust regressions. They cover all four scalar
+types, empty/all-NULL input, empty strings, NaN, large integers, exact diagnostic
+spans, hidden versus demanded overflow, legacy execution, join multiplicity,
+and repeated/derived inputs. A 4,096-group fixture checks complete ordered counts
+at 4,000,000 bytes without spill and 1,600,000 bytes with observed spill. It
+checks cancellation after spill begins, workspace refusal at 1,200,000 bytes,
+temporary-space refusal at one byte, repeated execution, and owner release.
+These budgets describe that fixture, not universal query minima.
+
+Internal controls reject invalid count-only value slots and checksum-valid
+nonzero presence payloads or changed layout interpretation. Semantic mutations
+reject wrong validity-input types, NULLability, identity, and aggregate kind.
+Both CLI composition campaigns passed 285 cases, including numeric/STRING/DATE
+counts over empty and nonempty input while retaining COUNT(DISTINCT ...) refusal.
+The [tutorial](../docs/getting-started.md) explains the different results of
+COUNT(*) and COUNT(nullable_column) using the maintained declared-table example.
 
 ## Linux native verification
 
@@ -75,8 +103,8 @@ Set `RUSTUP_TOOLCHAIN=1.98.1-aarch64-unknown-linux-gnu` and run the
 gate sets warnings-denied Rust and documentation flags. Keep database/output
 directories separate from a host-shared source mount.
 
-The September 11 run passed all 23 stages on the same frozen inputs described
-above. It executed 431 Rust tests, with no ignored tests and one
+The September 12 run passed all 23 stages on the same frozen inputs described
+above. It executed 439 Rust tests, with no ignored tests and one
 additional selected lease-subprocess execution. Both platforms passed 547 CLI
 allocation-prefix cases, 83 parser control/deny pairs, ambiguous publication
 resolving to aborted and durable outcomes, and closed/broken output sinks.

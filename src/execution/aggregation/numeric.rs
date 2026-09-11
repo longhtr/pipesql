@@ -9,10 +9,11 @@ use crate::Error;
 use crate::batch::Batch;
 use crate::execution::{BATCH_ROWS, MAX_AGGREGATE_ROWS};
 use crate::frontend::{
-    AggregateKind, AggregatePlan, DataType, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS, SemanticColumn,
+    AggregateArgument, AggregateKind, AggregatePlan, DataType, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS,
+    SemanticColumn,
 };
 use crate::resources::{MemoryAuthority, Reservation, allocate};
-use crate::scalar::{ArithmeticFailure, Expression, Op};
+use crate::scalar::ArithmeticFailure;
 use crate::storage_format;
 use crate::value::Value;
 use std::mem::size_of;
@@ -20,13 +21,13 @@ use std::mem::size_of;
 pub(super) struct AggregateState<'db> {
     pub(super) plan: &'db AggregatePlan,
     pub(super) demand: u16,
-    pub(super) inputs: [Option<&'db Expression>; MAX_AGGREGATE_COLUMNS],
+    pub(super) inputs: [Option<&'db AggregateArgument>; MAX_AGGREGATE_COLUMNS],
     pub(super) scratch: Vec<u64>,
     pub(super) lanes: usize,
     pub(super) input_columns: [Option<SemanticColumn>; MAX_COLUMNS],
     pub(super) states: usize,
-    // Demanded SUM/AVG entries with identical expressions share one state.
-    // COUNT and undemanded entries use usize::MAX and never index numeric cells.
+    // Demanded COUNT/SUM/AVG entries with identical arguments share one state.
+    // COUNT(*) and undemanded entries have no argument state (usize::MAX).
     pub(super) entry_states: [usize; MAX_AGGREGATE_COLUMNS],
     pub(super) cells: AggregateCells,
     // All physical allocations are destroyed before their reservation.
@@ -38,8 +39,8 @@ pub(super) struct AggregateState<'db> {
 pub(super) struct AggregateLayout<'db> {
     plan: &'db AggregatePlan,
     demand: u16,
-    pub(super) inputs: [Option<&'db Expression>; MAX_AGGREGATE_COLUMNS],
-    numeric_columns: [Option<SemanticColumn>; MAX_COLUMNS],
+    pub(super) inputs: [Option<&'db AggregateArgument>; MAX_AGGREGATE_COLUMNS],
+    input_columns: [Option<SemanticColumn>; MAX_COLUMNS],
     pub(super) states: usize,
     entry_states: [usize; MAX_AGGREGATE_COLUMNS],
     value_slots: [u8; MAX_AGGREGATE_COLUMNS],
@@ -56,22 +57,21 @@ impl<'db> AggregateLayout<'db> {
         demand: u16,
         columns: impl Iterator<Item = SemanticColumn>,
     ) -> Self {
-        let mut inputs: [Option<&Expression>; MAX_AGGREGATE_COLUMNS] =
+        let mut inputs: [Option<&AggregateArgument>; MAX_AGGREGATE_COLUMNS] =
             [None; MAX_AGGREGATE_COLUMNS];
-        let mut numeric_columns = [None; MAX_COLUMNS];
+        let mut input_columns = [None; MAX_COLUMNS];
         for (index, column) in columns.enumerate() {
-            if matches!(column.data_type(), DataType::Int64 | DataType::Double) {
-                numeric_columns[index] = Some(column);
-            }
+            input_columns[index] = Some(column);
         }
         let mut states = 0;
         let mut sum_states = 0_u32;
+        let mut value_states = 0_u32;
         let mut entry_states = [usize::MAX; MAX_AGGREGATE_COLUMNS];
         for (index, entry) in plan.entries.iter().enumerate() {
             if demand & (1 << index) == 0 {
                 continue;
             }
-            if let Some(expression) = &entry.expression {
+            if let Some(expression) = &entry.argument {
                 let state = if let Some(state) = inputs[..states]
                     .iter()
                     .position(|prior| *prior == Some(expression))
@@ -83,6 +83,9 @@ impl<'db> AggregateLayout<'db> {
                     states - 1
                 };
                 entry_states[index] = state;
+                if entry.kind != AggregateKind::Count {
+                    value_states |= 1_u32 << state;
+                }
                 if entry.kind == AggregateKind::Sum {
                     sum_states |= 1_u32 << state;
                 }
@@ -95,13 +98,15 @@ impl<'db> AggregateLayout<'db> {
         let (mut doubles, mut integers, mut nullable) = (0_usize, 0_usize, 0_usize);
         for (state, expression) in inputs[..states].iter().enumerate() {
             let expression = expression.expect("bounded state input");
-            let count = if expression.data_type == DataType::Int64 {
-                &mut integers
-            } else {
-                &mut doubles
-            };
-            value_slots[state] = u8::try_from(*count).expect("bounded state slot");
-            *count += 1;
+            if value_states & (1 << state) != 0 {
+                let count = if expression.data_type() == DataType::Int64 {
+                    &mut integers
+                } else {
+                    &mut doubles
+                };
+                value_slots[state] = u8::try_from(*count).expect("bounded state slot");
+                *count += 1;
+            }
             if expression.nullable() {
                 count_slots[state] = u8::try_from(nullable).expect("bounded count slot");
                 nullable += 1;
@@ -111,7 +116,7 @@ impl<'db> AggregateLayout<'db> {
             plan,
             demand,
             inputs,
-            numeric_columns,
+            input_columns,
             states,
             entry_states,
             value_slots,
@@ -121,6 +126,15 @@ impl<'db> AggregateLayout<'db> {
             integers,
             nullable,
         }
+    }
+
+    pub(super) fn count_only_states(&self) -> u16 {
+        self.value_slots[..self.states]
+            .iter()
+            .enumerate()
+            .fold(0, |mask, (state, slot)| {
+                mask | (u16::from(*slot == u8::MAX) << state)
+            })
     }
 
     fn depth(&self) -> usize {
@@ -225,7 +239,7 @@ impl<'db> AggregateState<'db> {
             plan,
             demand,
             inputs,
-            numeric_columns,
+            input_columns,
             states,
             entry_states,
             value_slots,
@@ -259,7 +273,7 @@ impl<'db> AggregateState<'db> {
             inputs,
             scratch,
             lanes,
-            input_columns: numeric_columns,
+            input_columns,
             states,
             entry_states,
             cells: AggregateCells {
@@ -291,9 +305,7 @@ impl<'db> AggregateState<'db> {
             return Err(Error::Corrupt("aggregate physical shape disagrees"));
         }
         for input in &self.input_columns {
-            let expected = columns
-                .next()
-                .filter(|column| matches!(column.data_type(), DataType::Int64 | DataType::Double));
+            let expected = columns.next();
             if *input != expected {
                 return Err(Error::Corrupt("aggregate input mapping disagrees"));
             }
@@ -306,7 +318,7 @@ impl<'db> AggregateState<'db> {
             .iter()
             .enumerate()
             .filter(|(index, _)| demand & (1 << index) != 0)
-            .filter_map(|(_, entry)| entry.expression.as_ref())
+            .filter_map(|(_, entry)| entry.argument.as_ref())
             .map(|expression| expression.stack_depth())
             .max()
             .unwrap_or(0);
@@ -320,15 +332,24 @@ impl<'db> AggregateState<'db> {
         for state in 0..self.states {
             let expression =
                 self.inputs[state].ok_or(Error::Corrupt("aggregate state input absent"))?;
-            let count = match expression.data_type {
-                DataType::Int64 => &mut integers,
-                DataType::Double => &mut doubles,
-                _ => return Err(Error::Corrupt("aggregate numeric type")),
-            };
-            if usize::from(self.cells.value_slots[state]) != *count {
-                return Err(Error::Corrupt("aggregate value slot"));
+            let needs_value = semantic.entries.iter().enumerate().any(|(index, entry)| {
+                demand & (1 << index) != 0
+                    && self.entry_states[index] == state
+                    && entry.kind != AggregateKind::Count
+            });
+            if needs_value {
+                let count = match expression.data_type() {
+                    DataType::Int64 => &mut integers,
+                    DataType::Double => &mut doubles,
+                    _ => return Err(Error::Corrupt("aggregate numeric type")),
+                };
+                if usize::from(self.cells.value_slots[state]) != *count {
+                    return Err(Error::Corrupt("aggregate value slot"));
+                }
+                *count += 1;
+            } else if self.cells.value_slots[state] != u8::MAX {
+                return Err(Error::Corrupt("count-only state owns a value cell"));
             }
-            *count += 1;
             if expression.nullable() {
                 if usize::from(self.cells.count_slots[state]) != nullable {
                     return Err(Error::Corrupt("aggregate count slot"));
@@ -355,13 +376,13 @@ impl<'db> AggregateState<'db> {
         let mut sum_states = 0;
         let mut used_states = 0;
         for (index, entry) in semantic.entries.iter().enumerate() {
-            if demand & (1 << index) == 0 || entry.expression.is_none() {
+            if demand & (1 << index) == 0 || entry.argument.is_none() {
                 if self.entry_states[index] != usize::MAX {
                     return Err(Error::Corrupt("unused aggregate state"));
                 }
                 continue;
             }
-            if let Some(expression) = &entry.expression {
+            if let Some(expression) = &entry.argument {
                 let state = self.entry_states[index];
                 if state >= self.states || self.inputs[state] != Some(expression) {
                     return Err(Error::Corrupt("aggregate physical expression disagrees"));
@@ -370,10 +391,8 @@ impl<'db> AggregateState<'db> {
                 if entry.kind == AggregateKind::Sum {
                     sum_states |= 1_u32 << state;
                 }
-                for op in &expression.ops[..usize::from(expression.len)] {
-                    if let Op::Column(column) = op
-                        && !self.input_columns.contains(&Some(*column))
-                    {
+                for column in expression.columns() {
+                    if !self.input_columns.contains(&Some(column)) {
                         return Err(Error::Corrupt("physical expression input is missing"));
                     }
                 }
@@ -397,18 +416,39 @@ impl<'db> AggregateState<'db> {
         }
         let mut numeric = [None; MAX_COLUMNS];
         for (index, input) in self.input_columns.iter().enumerate() {
-            if let Some(input) = input {
+            if let Some(input) = input
+                && matches!(input.data_type(), DataType::Int64 | DataType::Double)
+            {
                 numeric[index] = Some(batch.numeric(index, *input)?);
             }
         }
         for state in 0..self.states {
-            let is_integer = self.inputs[state].expect("state input").data_type == DataType::Int64;
+            let argument = self.inputs[state].expect("state input");
+            let expression = match argument {
+                AggregateArgument::Numeric(expression) => expression,
+                AggregateArgument::Validity(column) => {
+                    let index = self
+                        .input_columns
+                        .iter()
+                        .position(|input| *input == Some(*column))
+                        .ok_or(Error::Corrupt("count input mapping missing"))?;
+                    let valid = batch.validity(index, *column)?;
+                    for (row, &(group, row_count)) in positions.iter().enumerate() {
+                        if valid[row / 64] & (1 << (row % 64)) != 0 {
+                            self.cells.count_present(state, group, row_count)?;
+                        }
+                    }
+                    continue;
+                }
+            };
+            let is_integer = expression.data_type == DataType::Int64;
             for (chunk, positions) in positions[..batch.len()].chunks(self.lanes).enumerate() {
                 let first = chunk * self.lanes;
-                let evaluated = match self.inputs[state]
-                    .expect("validated state expression")
-                    .evaluate_batch(&numeric, first..first + positions.len(), &mut self.scratch)
-                {
+                let evaluated = match expression.evaluate_batch(
+                    &numeric,
+                    first..first + positions.len(),
+                    &mut self.scratch,
+                ) {
                     Ok(output) => output,
                     Err(failure) => return Err(self.argument_error(state, failure)),
                 };
@@ -439,7 +479,7 @@ impl<'db> AggregateState<'db> {
         }
         let count = self.cells.counts[group];
         let kind = self.plan.entries[index].kind;
-        if kind == AggregateKind::Count {
+        if kind == AggregateKind::Count && self.plan.entries[index].argument.is_none() {
             return Ok(Value::Int64(i64::from(count)));
         }
         let state = self.entry_states[index];
@@ -450,10 +490,13 @@ impl<'db> AggregateState<'db> {
                 * (self.cells.nonnull_counts.len() / self.cells.counts.len())
                 + usize::from(self.cells.count_slots[state])]
         };
+        if kind == AggregateKind::Count {
+            return Ok(Value::Int64(i64::from(count)));
+        }
         if count == 0 {
             return Ok(Value::Null);
         }
-        if self.inputs[state].expect("state input").data_type == DataType::Int64 {
+        if self.inputs[state].expect("state input").data_type() == DataType::Int64 {
             let value = self.cells.integers[group
                 * (self.cells.integers.len() / self.cells.counts.len())
                 + usize::from(self.cells.value_slots[state])];
@@ -502,7 +545,8 @@ pub(super) struct AggregateCells {
     pub(super) values: Vec<f64>,
     pub(super) integers: Vec<i128>,
     pub(super) nonnull_counts: Vec<u32>,
-    // State-to-column offsets in group-major typed arrays. A nonnullable state
+    // State-to-column offsets in group-major typed arrays. A count-only state
+    // has no value cell (u8::MAX). A nonnullable state
     // uses u8::MAX for its count slot and borrows the group's row count instead.
     pub(super) value_slots: [u8; MAX_AGGREGATE_COLUMNS],
     pub(super) count_slots: [u8; MAX_AGGREGATE_COLUMNS],
@@ -514,6 +558,18 @@ pub(super) struct AggregateCells {
 }
 
 impl AggregateCells {
+    fn count_present(&mut self, state: usize, group: usize, row_count: u32) -> Result<u32, Error> {
+        if self.count_slots[state] == u8::MAX {
+            return Ok(row_count);
+        }
+        let width = self.nonnull_counts.len() / self.counts.len();
+        let count = &mut self.nonnull_counts[group * width + usize::from(self.count_slots[state])];
+        *count = count
+            .checked_add(1)
+            .ok_or(Error::Corrupt("aggregate nonnull count overflow"))?;
+        Ok(*count)
+    }
+
     pub(super) fn clear_group(&mut self, group: usize) {
         let groups = self.counts.len();
         assert!(group < groups, "clear an admitted group slot");
@@ -548,22 +604,15 @@ impl AggregateCells {
         let groups = self.counts.len();
         let double_width = self.values.len() / groups;
         let integer_width = self.integers.len() / groups;
-        let count_width = self.nonnull_counts.len() / groups;
         let value_slot = usize::from(self.value_slots[state]);
         for (lane, (group, row_count)) in positions.iter().copied().enumerate() {
             let Some(bits) = evaluated.value(lane) else {
                 continue;
             };
-            let count = if self.count_slots[state] == u8::MAX {
-                row_count
-            } else {
-                let count = &mut self.nonnull_counts
-                    [group * count_width + usize::from(self.count_slots[state])];
-                *count = count
-                    .checked_add(1)
-                    .ok_or(Error::Corrupt("aggregate nonnull count overflow"))?;
-                *count
-            };
+            let count = self.count_present(state, group, row_count)?;
+            if self.value_slots[state] == u8::MAX {
+                continue;
+            }
             if is_integer {
                 let cell = &mut self.integers[group * integer_width + value_slot];
                 let value = i128::from(i64::from_ne_bytes(bits.to_ne_bytes()));

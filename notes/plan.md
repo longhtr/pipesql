@@ -30,35 +30,53 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
-## Next: complete nullable COUNT arguments
+## Next: trace composed blocking execution
 
-The grouping learning workload is complete: the
-[runnable comparison](../docs/getting-started.md#observe-grouping-with-less-memory),
-[execution path](../docs/execution.md#follow-the-grouping-example), and
-[retained observations](evidence.md#grouping-learning-workload) connect the SQL
-and its independently checked results to real memory and disk owners. Both full
-gates pass; no algorithm replacement was needed.
+COUNT(expression) is complete for the current scalar profile. Both full gates
+pass all 23 stages on matching frozen inputs, with 439 Rust tests per platform,
+no ignored tests, and one separate lease subprocess. The updated tutorial runs
+on both platforms. [Evidence](evidence.md#nullable-count-arguments) records
+semantics, failure coverage, source identity, and qualification limits.
 
-The current language supports COUNT(*) but rejects COUNT(expression). Complete
-that ordinary analytical operation next, using the expression forms and scalar
-types already supported by PipeSQL. Start with at most 45 minutes tracing the
-existing aggregate representation, demand rules, NULL counts, and spill argument
-codec. Confirm GoogleSQL's contract from its primary reference and record the
-smallest coherent design before implementation.
+Next make a join-to-group-to-order query understandable as a complete operation,
+including competing memory owners. Spend at most 45 minutes reviewing the
+existing joined aggregation, sorting, and composed-ownership checks before
+choosing the smallest missing learning workload. Do not reopen accepted work
+without a concrete defect or missing contract boundary.
 
-Deliver counting of non-NULL arguments through global, grouped, repeated, and
-composed aggregation on the existing execution path. Keep COUNT(*) unchanged.
-Test empty and all-NULL input, each supported scalar type, demanded expression
-errors, memory/disk equivalence, cancellation, refusal, and release with
-independent expectations. Add no DISTINCT aggregates, window functions, new
-scalar types, or unrelated expression syntax. Retain diagnostic spans and
-persistent bytes; keep independent validators independent.
+Use a generated dataset with independently calculable join multiplicity and
+nullable aggregate results. Connect one runnable example to preparation,
+operator scheduling, memory admission, spill, cancellation, and release. Compare
+comfortable and constrained memory with observed temporary use; a small budget
+alone does not establish spill. Reuse existing fixtures and failure campaigns,
+adding a regression only where current coverage does not exercise a consequential
+boundary. Keep the explanation in the existing tutorial and execution owners.
 
-Make the implementation traceable and add a concise example explaining why
-COUNT(*) and COUNT(nullable_column) differ. Complete focused checks and the
-required frozen-input macOS/Linux verification, update authoritative contracts,
-consolidate evidence, and commit locally. Windows qualification remains separate;
-its unavailable runtime must not block this portable work.
+Finish with complete results, visible ownership and cleanup checks, applicable
+macOS/Linux verification, concise evidence, current documentation, and a local
+commit. Repair any concrete prerequisite defect without weakening contracts.
+Do not add new SQL features, speculative optimization, profiling infrastructure,
+or another test framework. Reassess after the bounded inspection if existing
+coverage already supplies the required operation and learning path.
+
+## Applying DuckDB lessons
+
+The [grouping evidence](evidence.md#grouping-learning-workload) records the primary
+references and the workload already delivered. Apply further lessons through
+bounded changes to existing owners:
+
+| Lesson | PipeSQL action and acceptance check |
+| --- | --- |
+| Streaming alone does not bound blocking intermediates. | Retain the completed COUNT spill/refusal regressions. Apply the same complete-result and release checks to the composed workload. |
+| Operators compete for memory across a complete query. | Review an existing join-to-group-to-order workload with overlapping owners. Add a regression only for a concrete missing boundary; measure memory and temporary bytes separately. |
+| Memory limits need interpretable measurements. | When addressing physical-memory qualification, reconcile existing logical counters with allocation measurements. Add diagnostics only where a missing observation prevents a decision. |
+| SQL regressions should expose queries and expected results. | Keep explicit independent expectations beside each new query. Use DuckDB for optional differential checks only after reconciling NULL, overflow, floating-point, ordering, and dialect semantics. |
+
+For any proposed algorithm change, first identify a representative workload, correctness oracle,
+resource costs, and an end-to-end measurement that could reject the proposal.
+DuckDB's implementation is a source of alternatives, not evidence that a change
+will improve PipeSQL. Keep adopted invariants in their existing contract owners;
+retain findings here or in evidence rather than creating a research archive.
 
 ## Remaining qualification
 

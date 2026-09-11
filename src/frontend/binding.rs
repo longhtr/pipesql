@@ -6,12 +6,12 @@ use super::parser::{
 };
 use super::validate;
 use super::{
-    AggregateEntry, AggregatePlan, ColumnFacts, ColumnId, Comparison, Computed, DataType, Database,
-    DateValue, DistinctPlan, Error, Expression, Filter, FilterLiteral, Group, LimitBounds,
-    MAX_AGGREGATE_COLUMNS, MAX_COLUMNS, MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_QUERY_COLUMNS,
-    MAX_STAGES, Name, Node, Op, OrderKey, Output, OwnedPlan, PREPARED_ALLOCATION_ALLOWANCE, Plan,
-    Predicate, PreparedQuery, RelationId, SemanticColumn, SourceColumn, SourceOccurrence,
-    SourceSpan, Stage, bind_error, initial_outputs, text,
+    AggregateArgument, AggregateEntry, AggregateKind, AggregatePlan, ColumnFacts, ColumnId,
+    Comparison, Computed, DataType, Database, DateValue, DistinctPlan, Error, Expression, Filter,
+    FilterLiteral, Group, LimitBounds, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS, MAX_ORDER_ITEMS,
+    MAX_PROJECTIONS, MAX_QUERY_COLUMNS, MAX_STAGES, Name, Node, Op, OrderKey, Output, OwnedPlan,
+    PREPARED_ALLOCATION_ALLOWANCE, Plan, Predicate, PreparedQuery, RelationId, SemanticColumn,
+    SourceColumn, SourceOccurrence, SourceSpan, Stage, bind_error, initial_outputs, text,
 };
 use crate::date::DatePart;
 use std::mem::size_of;
@@ -946,18 +946,28 @@ impl Binder<'_, '_> {
             alias,
             span,
         } = entry;
-        let expression = column
+        let argument = column
             .as_ref()
-            .map(|range| self.bind_expression(&self.parsed.expression(*range)?))
+            .map(|range| {
+                let syntax = self.parsed.expression(*range)?;
+                if *kind == AggregateKind::Count
+                    && let [ParsedOp::Column(span)] = &syntax.ops[..usize::from(syntax.len)]
+                {
+                    let column = self
+                        .facts()
+                        .column(self.resolve(*span)?)
+                        .ok_or(Error::Corrupt("count argument has no semantic facts"))?;
+                    if matches!(column.data_type(), DataType::String | DataType::Date) {
+                        return Ok(AggregateArgument::Validity(column));
+                    }
+                }
+                self.bind_expression(&syntax)
+                    .map(AggregateArgument::Numeric)
+            })
             .transpose()?;
-        if expression.as_ref().is_some_and(|expression| {
-            !matches!(expression.data_type, DataType::Int64 | DataType::Double)
-        }) {
-            return Err(bind_error("SUM and AVG require numeric input", *alias));
-        }
         Ok(AggregateEntry {
             kind: *kind,
-            expression,
+            argument,
             span: *span,
             name: Name::new(reference_name(self.source, *alias)),
         })

@@ -22,6 +22,87 @@ fn encoded(keys: &RowLayout, values: &[Value<'_>]) -> Vec<u8> {
 }
 
 #[test]
+fn count_presence_frames_reject_values_and_changed_interpretation() {
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("db"),
+        crate::Config::new(4_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    let baseline = database.reserved_memory_bytes();
+    let keys = schema(&[(DataType::Int64, false)]);
+    let key = encoded(&keys, &[Value::Int64(7)]);
+    let shape = ArgumentShape {
+        count: 1,
+        nonnull: 0,
+        integers: 1,
+        presence: 1,
+    };
+    let cancel = CancellationToken::new();
+    let mut effects = Effects::default();
+    let charge = database
+        .reserve_memory((IO_BYTES + 49) as u64, "presence codec test")
+        .unwrap();
+    let mut record = SortRecord::new(49, charge.bytes()).unwrap();
+    let mut reader = ReadBuffer::new(charge.bytes()).unwrap();
+    let mut scratch = crate::scratch::Scratch::new(&database, &cancel, &mut effects).unwrap();
+    for value in [None, Some(0), Some(1)] {
+        // The generic encoder supplies a valid checksum even for a payload
+        // forbidden by the consuming count-only layout.
+        record.encode(&keys, shape, &key, 0, &[value]).unwrap();
+        let limit = record.bytes.len() as u64;
+        scratch
+            .write(0, 0, &record.bytes, &cancel, &mut effects)
+            .unwrap();
+        reader.clear();
+        let result = record.read(
+            &mut reader,
+            ReadAt {
+                slot: 0,
+                offset: 0,
+                limit,
+            },
+            &keys,
+            shape,
+            &mut Io::new(&mut scratch, &cancel, &mut effects),
+        );
+        if value == Some(1) {
+            assert!(matches!(
+                result,
+                Err(Error::Corrupt("count-only group argument payload"))
+            ));
+        } else {
+            result.unwrap();
+            assert_eq!(record.valid(), u16::from(value.is_some()));
+            assert_eq!(record.bits(0), 0);
+        }
+        reader.clear();
+        assert!(
+            record
+                .read(
+                    &mut reader,
+                    ReadAt {
+                        slot: 0,
+                        offset: 0,
+                        limit
+                    },
+                    &keys,
+                    ArgumentShape {
+                        presence: 0,
+                        ..shape
+                    },
+                    &mut Io::new(&mut scratch, &cancel, &mut effects)
+                )
+                .is_err(),
+            "a valid checksum cannot turn presence into a numeric argument"
+        );
+    }
+    drop((scratch, reader, record, charge));
+    assert_eq!(database.reserved_memory_bytes(), baseline);
+    assert_eq!(database.reserved_temp_bytes(), 0);
+}
+
+#[test]
 fn wide_rows_sort_by_key_without_losing_nonkey_payloads() {
     let directory = Directory::new();
     let database = Database::create_empty(
@@ -64,6 +145,7 @@ fn wide_rows_sort_by_key_without_losing_nonkey_payloads() {
         count: 0,
         nonnull: 0,
         integers: 0,
+        presence: 0,
     };
     let mut sort = RowSort::new(&database, &layout, shape, record_bytes, 2).unwrap();
     let cancel = CancellationToken::new();
@@ -236,6 +318,7 @@ fn interrupted_sort(database: &Database, fault: SortFault) -> u64 {
         count: 1,
         nonnull: 1,
         integers: 1,
+        presence: 0,
     };
     let cancel = CancellationToken::new();
     let mut effects = Effects::default();
@@ -351,6 +434,7 @@ fn argument_sort_preserves_unsorted_records_across_row_and_byte_caps() {
         count: 2,
         nonnull: 0,
         integers: 0,
+        presence: 0,
     };
     let record_bytes = RECORD_HEADER + keys.max_bytes + 16;
     let before = database.reserved_memory_bytes();
@@ -530,6 +614,7 @@ fn check_merge_passes(database: &Database, runs: u32, fail_at: Option<u64>) -> u
         count: 1,
         nonnull: 1,
         integers: 1,
+        presence: 0,
     };
     let cancel = CancellationToken::new();
     let mut effects = Effects::default();
@@ -710,6 +795,7 @@ fn check_pair_merge(equal_keys: bool) {
         count: 2,
         nonnull: 1,
         integers: 1,
+        presence: 0,
     };
     let cancel = CancellationToken::new();
     let mut effects = Effects::default();

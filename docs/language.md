@@ -92,7 +92,7 @@ separate from this query manifest.
 | `WHERE name comparison constant` | Accepts `<`, `<=`, `=`, `!=`, `>=`, `>` over numeric, DATE or STRING columns and compatible constants. |
 | `WHERE name IS [NOT] NULL` | Tests a visible column, including a computed or aggregate output. IS NULL retains NULL values; IS NOT NULL retains non-NULL values, including zero, empty text and NaN. Both tests preserve column demand and input order. |
 | `WHERE` Boolean expression | Comparisons and NULL tests compose with NOT, AND, OR and parentheses. NOT binds above AND, which binds above OR. Each leaf consumes one normalized stage; inclusive BETWEEN consumes two. See the demand rules below. |
-| `AGGREGATE SUM(expression) AS name`, `AVG(expression) AS name`, `COUNT(*) AS name` | Aggregate stages may repeat; each consumes the preceding relation. All aggregate stages together may introduce at most ten output identities, including grouping keys. Every entry requires an explicit alias. SUM/AVG accept INT64 or DOUBLE expressions; COUNT accepts only `*`. SUM preserves the argument type; AVG returns DOUBLE. |
+| `AGGREGATE SUM(expression) AS name`, `AVG(expression) AS name`, `COUNT(*) AS name`, `COUNT(expression) AS name` | Aggregate stages may repeat; each consumes the preceding relation. All aggregate stages together may introduce at most ten output identities, including grouping keys. Every entry requires an explicit alias. SUM/AVG accept INT64 or DOUBLE expressions; COUNT also accepts those expressions or a direct STRING/DATE column. SUM preserves the argument type; AVG returns DOUBLE; COUNT returns nonnullable INT64. |
 | `DISTINCT` | Removes duplicate complete rows on declared tables. Preserves output names and shared identities through fresh replacements; clears order. See [equality](#values-null-and-equality). |
 | `LIMIT count [OFFSET skip_rows]` | Selects a prefix on legacy or declared tables. Count and offset are non-negative INT64 constant expressions; see [LIMIT](#limit) for demand and error rules. |
 | `GROUP BY key [, key]` | Legacy tables group by up to two distinct visible source STRING identities. Declared-table keys are specified below. Group aliases inherited from earlier projections are valid. |
@@ -240,8 +240,11 @@ later appends and declarations do not change that query's source. Stored INT64,
 DOUBLE, UTF-8 STRING, DATE and NULL values retain their declared types. The
 comparison and demanded-evaluation rules above apply. Global COUNT(*) counts
 every row reaching the aggregate stage. SUM and AVG ignore NULL arguments and
-return NULL for empty or all-NULL input; COUNT(*) returns zero only for empty
-input. SUM(INT64) returns an exact INT64 result or overflow if the final sum is
+return NULL for empty or all-NULL input. COUNT(expression) counts non-NULL
+argument results, including empty strings and NaN. It returns zero for empty or
+all-NULL input; COUNT(*) returns zero only for empty input. Count-only arguments
+do not accumulate a sum, but numeric expressions still report demanded scalar
+errors. SUM(INT64) returns an exact INT64 result or overflow if the final sum is
 outside INT64. Intermediate aggregate sums may exceed INT64; a later
 cancellation can bring the result back into range. This does not suppress
 checked overflow in a demanded scalar argument. AVG(INT64) returns DOUBLE and
@@ -250,8 +253,7 @@ exceptional-value rules below.
 
 Projection and filters may follow aggregation, preserving exact INT64
 comparisons and demanded errors. The same aggregate signatures are available on
-the legacy `lineitem` path. COUNT(expression) remains unsupported. Legacy
-grouping retains its two bounded STRING-key restriction.
+the legacy `lineitem` path. Legacy grouping retains its two bounded STRING-key restriction.
 
 Declared GROUP BY accepts distinct visible INT64, DOUBLE, DATE and UTF-8 STRING
 identities, including nullable columns. Keys retain their types and NULLability

@@ -128,12 +128,10 @@ pub(super) fn demand_masks(plan: &frontend::Plan) -> Result<[ColumnSet; MAX_PIPE
                     .enumerate()
                 {
                     if output.contains(id)
-                        && let Some(expression) = &aggregate.entries[entry].expression
+                        && let Some(argument) = &aggregate.entries[entry].argument
                     {
-                        for op in &expression.ops[..usize::from(expression.len)] {
-                            if let Op::Column(column) = op {
-                                masks[input] |= bit(column.identity());
-                            }
+                        for column in argument.columns() {
+                            masks[input] |= bit(column.identity());
                         }
                     }
                 }

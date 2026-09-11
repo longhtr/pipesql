@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ColumnDeclaration {
                 name: "amount",
                 data_type: DataType::Int64,
-                nullable: false,
+                nullable: true,
             },
         ],
         &cancel,
@@ -44,11 +44,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     append.write(
         &[
             ColumnInput {
-                values: ColumnValues::String(&["north", "south", "north"]),
-                validity: &[0b111],
+                values: ColumnValues::String(&["north", "south", "north", "north"]),
+                validity: &[0b1111],
             },
             ColumnInput {
-                values: ColumnValues::Int64(&[10, 20, 5]),
+                values: ColumnValues::Int64(&[10, 20, 5, 0]),
                 validity: &[0b111],
             },
         ],
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let db = Database::open(&path, config)?;
     let query =
-        db.prepare("FROM sales |> AGGREGATE SUM(amount) AS total GROUP AND ORDER BY region")?;
+        db.prepare("FROM sales |> AGGREGATE SUM(amount) AS total,COUNT(*) AS n,COUNT(amount) AS present GROUP AND ORDER BY region")?;
     let mut result = db.execute(&query, &cancel)?;
     let stdout = std::io::stdout();
     let mut output = stdout.lock();
@@ -67,12 +67,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match result.step() {
             QueryStep::Rows(batch) => {
                 for row in 0..batch.len() {
-                    let (Some(Value::String(region)), Some(Value::Int64(total))) =
-                        (batch.value(row, 0), batch.value(row, 1))
+                    let (
+                        Some(Value::String(region)),
+                        Some(Value::Int64(total)),
+                        Some(Value::Int64(n)),
+                        Some(Value::Int64(present)),
+                    ) = (
+                        batch.value(row, 0),
+                        batch.value(row, 1),
+                        batch.value(row, 2),
+                        batch.value(row, 3),
+                    )
                     else {
                         return Err("unexpected result schema or value".into());
                     };
-                    writeln!(output, "{} {total}", region.as_str())?;
+                    writeln!(
+                        output,
+                        "{} total={total} rows={n} present={present}",
+                        region.as_str()
+                    )?;
                 }
             }
             QueryStep::Progress => (),

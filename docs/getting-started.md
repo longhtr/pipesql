@@ -1,6 +1,6 @@
 # Create and query a declared table
 
-This walkthrough creates a table, appends three rows, closes and reopens the
+This walkthrough creates a table, appends four rows, closes and reopens the
 database, and computes a total for each region. It uses the ordinary Rust
 library on macOS or Linux. Use the pinned toolchain and [build
 prerequisites](testing.md#prerequisites); the [platform
@@ -24,13 +24,18 @@ cargo run --release --offline --locked --example declared -- "$pipesql_example_d
 Successful completion prints:
 
 ```text
-north 15
-south 20
+north total=15 rows=3 present=2
+south total=20 rows=1 present=1
 ```
 
 ## Follow the operation
 
-Each validity bitmap marks the three supplied values as present. A successful
+The region bitmap marks all four values as present. The amount bitmap marks
+only the first three: the last north row has NULL amount, regardless of its
+payload. `COUNT(*)` counts all rows; `COUNT(amount)` counts present amounts.
+`SUM(amount)` ignores NULL and gives north a total of 15.
+
+A successful
 `write` creates private data; `commit` publishes it. Reopen checks that the
 table and rows survived closing the first handle. `GROUP AND ORDER BY`
 establishes the displayed order. `Progress` means more work remains, and output

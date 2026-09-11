@@ -716,7 +716,7 @@ def check_numeric_failures(queries, work, encoder):
             "numeric-group",
             "FROM lineitem |> AGGREGATE COUNT(*) AS n GROUP BY l_quantity",
         ),
-        ("count-value", "FROM lineitem |> AGGREGATE COUNT(l_quantity) AS n"),
+        ("count-distinct", "FROM lineitem |> AGGREGATE COUNT(DISTINCT l_quantity) AS n"),
     ]:
         call = queries.run("empty", sql)
         assert call.returncode == 1 and not call.stdout, (
@@ -725,6 +725,15 @@ def check_numeric_failures(queries, work, encoder):
             call.stderr,
         )
         queries.observations.append({"case": label, "outcome": "refused"})
+
+    for database, expected in [("empty", 0), ("mean-only", 2), ("late-nan", 3)]:
+        queries.composed(
+            f"count-typed-arguments-{database}",
+            "FROM lineitem |> AGGREGATE COUNT(l_quantity) AS n,"
+            "COUNT(l_returnflag) AS flags,COUNT(l_shipdate) AS dates",
+            [[encoded(expected)] * 3],
+            database,
+        )
 
 
 

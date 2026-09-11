@@ -31,6 +31,7 @@ fn fallback_minimum_matches_constructed_owners_and_refusal_releases_them() {
                         count: arguments,
                         nonnull: 0,
                         integers: 0,
+                        presence: 0,
                     };
                     let required = Minimum::required(&keys, &output, shape).unwrap();
                     let limits = Limits {

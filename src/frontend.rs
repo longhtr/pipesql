@@ -330,10 +330,56 @@ pub(crate) enum AggregateKind {
     Count,
 }
 
+// Programs stay inline in the admitted plan; boxing would add a separate
+// fallible allocation and owner for every numeric aggregate argument.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AggregateArgument {
+    Numeric(Expression),
+    /// COUNT reads the validity of a STRING or DATE column without conversion.
+    Validity(SemanticColumn),
+}
+
+impl AggregateArgument {
+    pub(crate) fn data_type(&self) -> DataType {
+        match self {
+            Self::Numeric(expression) => expression.data_type,
+            Self::Validity(column) => column.data_type(),
+        }
+    }
+
+    pub(crate) fn nullable(&self) -> bool {
+        match self {
+            Self::Numeric(expression) => expression.nullable(),
+            Self::Validity(column) => column.nullable(),
+        }
+    }
+
+    pub(crate) fn stack_depth(&self) -> usize {
+        match self {
+            Self::Numeric(expression) => expression.stack_depth(),
+            Self::Validity(_) => 0,
+        }
+    }
+
+    pub(crate) fn columns(&self) -> impl Iterator<Item = SemanticColumn> + '_ {
+        let (ops, column): (&[Op], _) = match self {
+            Self::Numeric(expression) => (&expression.ops[..usize::from(expression.len)], None),
+            Self::Validity(column) => (&[], Some(*column)),
+        };
+        ops.iter()
+            .filter_map(|op| match op {
+                Op::Column(column) => Some(*column),
+                _ => None,
+            })
+            .chain(column)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct AggregateEntry {
     pub(crate) kind: AggregateKind,
-    pub(crate) expression: Option<Expression>,
+    pub(crate) argument: Option<AggregateArgument>,
     pub(crate) span: SourceSpan,
     name: Name,
 }
@@ -404,10 +450,10 @@ impl AggregatePlan {
             AggregateKind::Count => (DataType::Int64, false),
             AggregateKind::Sum => (
                 entry
-                    .expression
+                    .argument
                     .as_ref()
                     .expect("validated SUM input")
-                    .data_type,
+                    .data_type(),
                 true,
             ),
             AggregateKind::Avg => (DataType::Double, true),
@@ -420,9 +466,9 @@ impl AggregatePlan {
             || self.entries.iter().enumerate().any(|(index, entry)| {
                 demand & (1 << index) != 0
                     && entry
-                        .expression
+                        .argument
                         .as_ref()
-                        .is_some_and(|expression| expression.needs(column.semantic()))
+                        .is_some_and(|argument| argument.columns().any(|c| c == column.semantic()))
             })
     }
 }
@@ -1010,11 +1056,9 @@ impl Plan {
                             .id;
                         if needed[id.value() as usize] {
                             demand |= 1 << entry_index;
-                            if let Some(expression) = &entry.expression {
-                                for op in &expression.ops[..usize::from(expression.len)] {
-                                    if let Op::Column(column) = op {
-                                        needed[column.identity().value() as usize] = true;
-                                    }
+                            if let Some(argument) = &entry.argument {
+                                for column in argument.columns() {
+                                    needed[column.identity().value() as usize] = true;
                                 }
                             }
                         }

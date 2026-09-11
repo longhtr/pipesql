@@ -205,7 +205,9 @@ prior key, one final-result frame, controller fields and 8,192 bytes for scratch
 paths. The final frame is sized from projected types, including repeated text
 keys. Every retained field and allocation capacity belongs to exactly one of
 these owners; AggregateState charges its arrays while its enclosing owner
-charges its inline fields.
+charges its inline fields. Count-only arguments own nullable counters where
+needed, but no typed sum cells. An identical numeric argument shared with
+SUM/AVG owns one value state; direct STRING/DATE counts capture validity only.
 
 Available memory first increases captured arguments up to 256 rows. Run slots
 and bytes then grow together up to 4,096 slots, reserving the maximum first

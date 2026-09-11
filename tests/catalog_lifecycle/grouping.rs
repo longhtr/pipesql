@@ -9,7 +9,7 @@ fn ordered_grouping_preserves_few_many_and_skewed_groups_across_memory_budgets()
     for groups in [32, 4096] {
         for skewed in [false, true] {
             let directory = Directory::new();
-            create_grouping_sales(&directory, groups, skewed);
+            create_grouping_sales(&directory, groups, skewed, 255);
             for memory in [2_000_000, 1_200_000] {
                 let db = Database::open(
                     &directory.database(),
@@ -79,7 +79,211 @@ fn ordered_grouping_preserves_few_many_and_skewed_groups_across_memory_budgets()
     }
 }
 
-fn create_grouping_sales(directory: &Directory, groups: i64, skewed: bool) {
+#[test]
+fn nullable_count_preserves_presence_through_spill_and_cancellation() {
+    let directory = Directory::new();
+    // Keys descend within each batch: even input positions have odd keys.
+    create_presence_sales(&directory);
+    for memory in [4_000_000, 1_600_000] {
+        let db = Database::open(
+            &directory.database(),
+            Config::new(memory, 8_000_000).unwrap(),
+        )
+        .unwrap();
+        let query = db.prepare(PRESENCE_QUERY).unwrap();
+        let cancel = CancellationToken::new();
+        let baseline = db.reserved_memory_bytes();
+        let mut result = db.execute(&query, &cancel).unwrap();
+        let mut groups = 0;
+        let mut peak_temp = 0;
+        let mut finished = false;
+        for _ in 0..200_000 {
+            match result.step() {
+                QueryStep::Rows(batch) => {
+                    for row in 0..batch.len() {
+                        for (column, expected) in [
+                            groups,
+                            if groups % 2 == 1 { 2 } else { 0 },
+                            if groups % 2 == 1 { 2 } else { 0 },
+                            if groups % 4 >= 2 { 2 } else { 0 },
+                            2,
+                        ]
+                        .into_iter()
+                        .enumerate()
+                        {
+                            assert!(
+                                matches!(batch.value(row, column), Some(Value::Int64(value)) if value == expected)
+                            );
+                        }
+                        groups += 1;
+                    }
+                }
+                QueryStep::Progress => (),
+                QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("COUNT failed: {error}"),
+            }
+            peak_temp = peak_temp.max(db.reserved_temp_bytes());
+        }
+        assert!(finished);
+        assert_eq!(groups, 4096);
+        assert_eq!(peak_temp > 0, memory == 1_600_000);
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+
+        if peak_temp > 0 {
+            let mut result = db.execute(&query, &cancel).unwrap();
+            for _ in 0..200_000 {
+                assert!(matches!(result.step(), QueryStep::Progress));
+                if db.reserved_temp_bytes() > 0 {
+                    break;
+                }
+            }
+            assert!(
+                db.reserved_temp_bytes() > 0,
+                "cancel after actual spill begins"
+            );
+            cancel.cancel();
+            assert!(matches!(result.step(), QueryStep::Failed(Error::Cancelled)));
+            drop(result);
+            assert_eq!(db.reserved_memory_bytes(), baseline);
+            assert_eq!(db.reserved_temp_bytes(), 0);
+        }
+        drop(query);
+        db.close().unwrap();
+    }
+}
+
+const PRESENCE_QUERY: &str = "FROM sales |> AGGREGATE COUNT(amount*2) AS numbers,COUNT(note) AS texts,COUNT(day) AS days,COUNT(*) AS n GROUP AND ORDER BY region";
+
+#[test]
+fn nullable_count_releases_owners_when_spill_space_is_refused() {
+    let directory = Directory::new();
+    create_presence_sales(&directory);
+    let db = Database::open(
+        &directory.database(),
+        Config::new(1_200_000, 8_000_000).unwrap(),
+    )
+    .unwrap();
+    let query = db.prepare(PRESENCE_QUERY).unwrap();
+    let baseline = db.reserved_memory_bytes();
+    assert!(matches!(
+        db.execute(&query, &CancellationToken::new()),
+        Err(Error::Resource {
+            owner: "native query workspace",
+            required,
+            limit: 1_200_000,
+        }) if required > 1_200_000
+    ));
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    drop(query);
+    db.close().unwrap();
+
+    let db = Database::open(&directory.database(), Config::new(1_600_000, 1).unwrap()).unwrap();
+    let query = db.prepare(PRESENCE_QUERY).unwrap();
+    let baseline = db.reserved_memory_bytes();
+    // Retry with the same prepared query to expose retained execution owners.
+    for _ in 0..2 {
+        let cancel = CancellationToken::new();
+        let mut result = db.execute(&query, &cancel).unwrap();
+        let mut refused = false;
+        for _ in 0..200_000 {
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Failed(Error::Resource {
+                    owner,
+                    required,
+                    limit,
+                }) => {
+                    assert_eq!(*owner, "database temporary storage");
+                    assert_eq!(*limit, 1);
+                    assert!(*required > *limit);
+                    refused = true;
+                    break;
+                }
+                _ => panic!("expected temporary-space refusal before output"),
+            }
+        }
+        assert!(refused);
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+    drop(query);
+    db.close().unwrap();
+}
+
+fn create_presence_sales(directory: &Directory) {
+    let db = Database::create_empty(
+        &directory.database(),
+        Config::new(32_000_000, 8_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "sales",
+        &[
+            ("region", DataType::Int64, false),
+            ("amount", DataType::Int64, true),
+            ("note", DataType::String, true),
+            ("day", DataType::Date, true),
+        ]
+        .map(|(name, data_type, nullable)| ColumnDeclaration {
+            name,
+            data_type,
+            nullable,
+        }),
+        &cancel,
+    )
+    .unwrap();
+    let mut append = db
+        .begin_append(
+            "sales",
+            AppendLimits {
+                batches: 32,
+                encoded_bytes: 1_000_000,
+            },
+            &cancel,
+        )
+        .unwrap();
+    let days = [DateValue::from_days_since_unix_epoch(0).unwrap(); 256];
+    for amount in [1, 3] {
+        for start in (0..4096).step_by(256) {
+            let regions: [i64; 256] = std::array::from_fn(|row| 4095 - start - row as i64);
+            append
+                .write(
+                    &[
+                        ColumnInput {
+                            values: ColumnValues::Int64(&regions),
+                            validity: &[255; 32],
+                        },
+                        ColumnInput {
+                            values: ColumnValues::Int64(&[amount; 256]),
+                            validity: &[0x55; 32],
+                        },
+                        ColumnInput {
+                            values: ColumnValues::String(&["present"; 256]),
+                            validity: &[0x55; 32],
+                        },
+                        ColumnInput {
+                            values: ColumnValues::Date(&days),
+                            validity: &[0x33; 32],
+                        },
+                    ],
+                    &cancel,
+                )
+                .unwrap();
+        }
+    }
+    append.commit(&cancel).unwrap();
+    db.close().unwrap();
+}
+
+fn create_grouping_sales(directory: &Directory, groups: i64, skewed: bool, amount_validity: u8) {
     let db = Database::create_empty(
         &directory.database(),
         Config::new(32_000_000, 8_000_000).unwrap(),
@@ -91,7 +295,7 @@ fn create_grouping_sales(directory: &Directory, groups: i64, skewed: bool) {
         &["region", "amount"].map(|name| ColumnDeclaration {
             name,
             data_type: DataType::Int64,
-            nullable: false,
+            nullable: name == "amount",
         }),
         &cancel,
     )
@@ -124,7 +328,7 @@ fn create_grouping_sales(directory: &Directory, groups: i64, skewed: bool) {
                         },
                         ColumnInput {
                             values: ColumnValues::Int64(&[amount; 256]),
-                            validity: &[255; 32],
+                            validity: &[amount_validity; 32],
                         },
                     ],
                     &cancel,

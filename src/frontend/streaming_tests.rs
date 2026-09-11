@@ -105,7 +105,7 @@ fn semantic_plan_mutations_refuse() {
             0 => query.plan.outputs[0].id = ColumnId::new(8),
             1 => query.plan.outputs[0].id = SourceColumn::QUANTITY.identity,
             2 => query.plan.stages[2].stage = Stage::Aggregate(0),
-            3 => query.plan.aggregates.first_mut().unwrap().entries[1].kind = AggregateKind::Count,
+            3 => query.plan.aggregates.first_mut().unwrap().entries[2].kind = AggregateKind::Sum,
             4..=6 => {
                 let Stage::Where(filter) = &mut query.plan.stages[1].stage else {
                     unreachable!()
@@ -154,6 +154,28 @@ fn semantic_plan_mutations_refuse() {
         assert!(
             validate(&query.plan).is_err(),
             "aggregate mutation {mutation}"
+        );
+    }
+    for mutation in 0..5 {
+        let mut query = database
+            .prepare("FROM lineitem |> AGGREGATE COUNT(l_returnflag) AS n")
+            .unwrap();
+        validate(&query.plan).unwrap();
+        let entry = &mut query.plan.aggregates.first_mut().unwrap().entries[0];
+        let Some(AggregateArgument::Validity(column)) = &mut entry.argument else {
+            panic!("STRING count must retain typed validity input");
+        };
+        match mutation {
+            0 => column.kind = DataType::Date,
+            1 => column.kind = DataType::Int64,
+            2 => column.nullable = true,
+            3 => column.identity = ColumnId::new(u32::MAX),
+            4 => entry.kind = AggregateKind::Avg,
+            _ => unreachable!(),
+        }
+        assert!(
+            validate(&query.plan).is_err(),
+            "count validity mutation {mutation}"
         );
     }
     assert_eq!(
