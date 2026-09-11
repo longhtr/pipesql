@@ -119,6 +119,51 @@ to see what changes between these runs. When finished, remove the owned inputs:
 rm -r -- "$pipesql_grouping_dir"
 ```
 
+## Measure STRING grouping costs
+
+[examples/string_grouping.rs](../examples/string_grouping.rs) compares group
+count, string width, and memory budget. Each key occurs twice: once with an
+all-`a` string and once with an all-`z` string. The program checks every ordered
+key, both extrema, count 2, successful completion, and resource release.
+
+Run the eight combinations from the repository root:
+
+```sh
+pipesql_strings_dir=$(mktemp -d)
+cargo build --release --offline --locked --example string_grouping
+for groups in 4 256; do
+  for width in 8 65536; do
+    for memory in 4000000 80000000; do
+      target/release/examples/string_grouping \
+        "$pipesql_strings_dir/g${groups}-w${width}-m${memory}" \
+        "$groups" "$width" "$memory"
+    done
+  done
+done
+```
+
+Arguments are a fresh absolute database path, group count, string bytes, and
+query memory bytes. Setup uses a separate budget and one row per input unit for
+both widths. Timing excludes setup, open, and preparation; it includes execution,
+full result validation, and destruction of the result owner.
+
+On the reviewed builds, 256 groups spill at 4 MB and remain in memory at 80 MB.
+Four groups remain in memory at either budget. The larger budget reserves about
+40.9 MB even for four groups of eight-byte strings. Each optional hash slot
+currently admits maximum-width extrema before seeing actual values. The
+[resource contract](resources.md) explains admission; the
+[measurements](../notes/evidence.md#string-grouping-costs) record the cost and
+the decision about a later compact representation.
+
+The counters report sampled logical reservations, not allocator-usable memory,
+filesystem blocks, cumulative I/O, or RSS. Timings are workload observations,
+not a benchmark ranking. The caller's two expected strings are outside the
+database counters. After inspecting the results, remove the generated databases:
+
+```sh
+rm -r -- "$pipesql_strings_dir"
+```
+
 ## Follow a join through grouping and sorting
 
 The [composed example](../examples/composed.rs) uses the same 4,096 regions, but

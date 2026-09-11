@@ -393,6 +393,135 @@ query completion. Both callers exit unsuccessfully without printing `verified`.
 These source substitutions reconstruct the controls; no modified library,
 historical fixture, or retained temporary caller is required.
 
+### STRING grouping costs
+
+The September 12 study uses [examples/string_grouping.rs](../examples/string_grouping.rs)
+with unchanged engine inputs from `5ec3589`. The [tutorial](../docs/getting-started.md#measure-string-grouping-costs)
+reconstructs all eight inputs and commands. Each key has two rows, containing
+all-`a` and all-`z` strings of the selected width. Every run checks every ordered
+key, MIN/MAX, count 2, completion, and release. One row per input unit keeps the
+batch shape fixed, but does not represent typical bulk-ingestion performance.
+
+Stock release runs used the macOS and unprivileged GNU arm64 Linux environments
+above, with no concurrent verification campaign. Setup, opening, and preparation
+are outside the timer; execution, full result validation, and result destruction
+are inside it. These are single-run observations with warm input from setup,
+not latency distributions or a cross-platform benchmark ranking. Memory counts
+include the database and prepared query; small path-length differences affect
+them. Temporary counts are reserved extents, not cumulative I/O or filesystem
+block usage.
+
+| Groups | String bytes | Memory budget | Sampled logical memory, macOS / Linux | Temporary bytes, both | Seconds, macOS / Linux |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 4 | 8 | 4,000,000 | 2,898,510 / 2,898,425 | 0 | 0.002216 / 0.000996 |
+| 4 | 8 | 80,000,000 | 40,928,793 / 40,928,708 | 0 | 0.009260 / 0.002389 |
+| 4 | 65,536 | 4,000,000 | 2,898,514 / 2,898,429 | 0 | 0.001314 / 0.001876 |
+| 4 | 65,536 | 80,000,000 | 40,928,797 / 40,928,712 | 0 | 0.009601 / 0.004000 |
+| 256 | 8 | 4,000,000 | 2,898,512 / 2,898,427 | 48,680 | 0.021542 / 0.005141 |
+| 256 | 8 | 80,000,000 | 40,928,795 / 40,928,710 | 0 | 0.027226 / 0.020152 |
+| 256 | 65,536 | 4,000,000 | 2,898,516 / 2,898,431 | 67,169,320 | 0.434948 / 0.552074 |
+| 256 | 65,536 | 80,000,000 | 40,928,799 / 40,928,714 | 0 | 0.062368 / 0.077310 |
+
+The source SHA-256 is
+`78d09fb7b0b3b76c06b5bc2b1aa6d3f792d52c9a7f31e3d933b3a0fc8dd02514`.
+Stock executable hashes were
+`60ec5d453156a3c02d0f9c5b909e69e44f407251b668f33a678c9373ed6ab372`
+on macOS and
+`96e8a760851efe30a16b922177ad975013e9678bb8c85f7b1a7641bc5878a727`
+on Linux. A separate macOS caller replaced only `MIN(word) AS lo` with
+`MAX(word) AS lo`. At 4 groups, 8-byte strings, and 4 MB, the unchanged checker
+rejected the wrong extremum with exit 1 and no `verified` output.
+
+#### Allocator observation
+
+A separate macOS diagnostic reused the System-forwarding observer from
+[diagnostic-allocation.rs](../tools/fixtures/diagnostic-allocation.rs) around the
+same query. Its timer values are excluded from the stock table. The following
+peaks are increases above live counters sampled immediately before execution.
+They include observed Rust allocations, not foreign allocations, allocator
+metadata, thread stacks, or RSS. Both requested and usable live counters returned
+exactly to their starting values after dropping the result.
+
+| Groups | String bytes | Budget | Peak requested increase | Peak usable increase | Allocation calls |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 4 | 8 | 4,000,000 | 2,860,808 | 2,941,024 | 57 |
+| 4 | 8 | 80,000,000 | 40,891,093 | 40,972,256 | 57 |
+| 256 | 8 | 4,000,000 | 2,860,814 | 2,941,056 | 571 |
+| 256 | 8 | 80,000,000 | 40,891,099 | 40,972,256 | 561 |
+| 256 | 65,536 | 4,000,000 | 2,860,826 | 2,941,056 | 571 |
+| 256 | 65,536 | 80,000,000 | 40,891,111 | 40,972,256 | 561 |
+
+To reconstruct this disposable diagnostic, save the following as `observe.py`
+in a fresh directory outside the repository and run it from the repository root.
+It copies the existing observer, adds only measurement boundaries, and leaves
+engine code unchanged. The generated source SHA-256 for this study was
+`a81be2005de7a2c46eca995e5d586ed8999ef6bbaf1bee5daf1f429488137c16`.
+
+```python
+from pathlib import Path
+
+root = Path(__file__).resolve().parent
+example = Path('examples/string_grouping.rs').read_text()
+allocator = Path('tools/fixtures/diagnostic-allocation.rs').read_text().split('#[path = "catalog-allocation.rs"]', 1)[0]
+observer = '''
+pub fn begin() -> (usize, usize) {
+    let before = (LIVE_REQUESTED.load(Ordering::Relaxed), LIVE_USABLE.load(Ordering::Relaxed));
+    PEAK_REQUESTED.store(before.0, Ordering::Relaxed);
+    PEAK_USABLE.store(before.1, Ordering::Relaxed);
+    CALLS.store(0, Ordering::Relaxed);
+    TRACK.store(true, Ordering::Relaxed);
+    before
+}
+pub fn finish(before: (usize, usize)) {
+    TRACK.store(false, Ordering::Relaxed);
+    assert_eq!(LIVE_REQUESTED.load(Ordering::Relaxed), before.0);
+    assert_eq!(LIVE_USABLE.load(Ordering::Relaxed), before.1);
+    println!("allocator baseline_requested={} baseline_usable={} peak_requested={} peak_usable={} calls={}", before.0, before.1, PEAK_REQUESTED.load(Ordering::Relaxed), PEAK_USABLE.load(Ordering::Relaxed), CALLS.load(Ordering::Relaxed));
+}
+'''
+assert example.count('let start = Instant::now();') == 1
+assert example.count('let elapsed = start.elapsed();') == 1
+example = example.replace('let start = Instant::now();', 'let before = observer::begin(); let start = Instant::now();')
+example = example.replace('let elapsed = start.elapsed();', 'let elapsed = start.elapsed(); observer::finish(before);')
+combined = '#[allow(dead_code, unused_imports)] mod observer {\n' + allocator + observer + '\n}\n' + example.replace('//!', '//')
+(root / 'observed.rs').write_text(combined)
+```
+
+Build the ordinary release library with
+`cargo build --release --offline --locked --lib`. Compile `observed.rs` using
+`rustc --edition 2024 -O`, `--extern pipesql=target/release/libpipesql.rlib`, and
+`-L dependency=target/release/deps`, selecting an output beside the generated
+source. Run that caller with the same arguments as the tutorial. Its assertions
+check return to the pre-execution allocator baseline. Remove the disposable
+caller, generated source, and databases afterward. The recorded observer binary
+hash was `feb3a13c1825b29c2e9110d0707e59d475eaa05841811a0c8d3ced194cda2a47`;
+this recipe does not claim reproducible binaries.
+
+#### Decision
+
+Adopt a follow-up to compact retained text in optional hash grouping. The
+capacity cost is established by both the source layout and the allocator
+observation: four eight-byte groups retain only 64 bytes of extrema, yet the
+80 MB configuration admits roughly 41 MB. At 256 short-string groups, the 4 MB
+configuration spills despite only 4,096 bytes of useful extrema. This is a
+representation cost, not evidence that the current answers or accounting are
+incorrect. Maximum-width values still need substantial storage; the large-budget
+runs demonstrate why a blanket reduction of hash capacity is insufficient.
+
+The next change should target the optional hash owner's text storage and
+admission. Use bounded variable-width storage with explicit spans and fallible
+admission; retain the fixed one-group disk fallback and existing source replay.
+The design must explain growth, replacement, transient old/new allocations,
+independent validation, and exhaustion without per-row allocation or unbounded
+compaction. This study does not implement that change or establish its speed.
+The unrelated physical-process-memory qualification remains open.
+
+Warnings-denied Clippy for all examples and stock execution passed on both
+platforms. Formatting, maintenance, fixture, and documentation checks cover the
+retained example and instructions. Engine, filesystem, tests, and maintained
+campaign sources remain unchanged, so their complete `827cad5` gates are reused.
+No full gate or production-performance claim is attributed to this study.
+
 ## Native boundaries and diagnostics
 
 The maintained [allocation and native callers](../tools/README.md#native-and-allocation-callers)
