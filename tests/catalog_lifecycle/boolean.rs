@@ -247,10 +247,6 @@ fn boolean_scan_scratch_is_optional_and_bounded() {
 }
 
 #[test]
-#[cfg_attr(
-    all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
-    ignore = "GNU aarch64 has a 128-KiB pthread minimum; this test requires at most 64 KiB"
-)]
 fn boolean_scan_scratch_fits_reported_stack_allowance() {
     check_boolean_scan_scratch(true);
 }
@@ -258,7 +254,7 @@ fn boolean_scan_scratch_fits_reported_stack_allowance() {
 fn check_boolean_scan_scratch(small_stack: bool) {
     let (_directory, db) = super::null_predicate::fixture().unwrap();
     let thread = if small_stack {
-        std::thread::Builder::new().stack_size(48 * 1024)
+        std::thread::Builder::new().stack_size(pipesql_filesystem::TEST_SMALL_STACK_REQUEST_BYTES)
     } else {
         std::thread::Builder::new()
     };
@@ -266,7 +262,7 @@ fn check_boolean_scan_scratch(small_stack: bool) {
         thread
             .spawn_scoped(scope, || {
                 if small_stack {
-                    assert!(pipesql_filesystem::test_current_thread_stack_bytes() <= 65_536);
+                    pipesql_filesystem::test_assert_small_stack();
                 }
                 let cancel = CancellationToken::new();
                 for (projection, column, rows) in [("id", "id", 4096_u64), ("id+0 AS x", "x", 256)]

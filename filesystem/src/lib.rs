@@ -36,6 +36,36 @@ pub fn test_current_thread_stack_bytes() -> usize {
     syscall::test_current_thread_stack_bytes()
 }
 
+/// Request used by bounded-thread regressions; the runtime may allocate more.
+#[cfg(feature = "test-stack-observation")]
+pub const TEST_SMALL_STACK_REQUEST_BYTES: usize = 48 * 1024;
+
+/// Qualification ceiling for the native-reported thread extent, not live frames.
+/// GNU arm64 requires a 128-KiB native minimum plus runtime/TLS storage. Reserve
+/// at most 16 KiB for that overhead; increased runtime requirements fail the check.
+/// Other reviewed targets retain the original 64-KiB ceiling.
+#[cfg(feature = "test-stack-observation")]
+pub const TEST_SMALL_STACK_LIMIT_BYTES: usize = if cfg!(all(
+    target_os = "linux",
+    target_arch = "aarch64",
+    target_env = "gnu"
+)) {
+    144 * 1024
+} else {
+    64 * 1024
+};
+
+/// Verify the actual thread before running a bounded-thread scenario.
+/// Success qualifies only the subsequent exercised path on this runtime.
+#[cfg(feature = "test-stack-observation")]
+pub fn test_assert_small_stack() {
+    let reported = test_current_thread_stack_bytes();
+    assert!(
+        reported > 0 && reported <= TEST_SMALL_STACK_LIMIT_BYTES,
+        "reported thread stack {reported} outside 1..={TEST_SMALL_STACK_LIMIT_BYTES}"
+    );
+}
+
 /// Inspect a borrowed open file in the same representation as pathname metadata.
 /// The descriptor remains owned by the caller; this does not follow its old name.
 pub fn file_metadata(file: &File) -> io::Result<Metadata> {

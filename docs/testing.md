@@ -31,11 +31,11 @@ from checks actually performed; it is not a release-support promise.
 | Boundary | macOS | Linux | Windows |
 | --- | --- | --- | --- |
 | Rust library/CLI and test compilation | Native arm64 release builds and Clippy exercised. | x86_64 GNU all-target cross-check and arm64 GNU native release tests pass with warnings denied. | Blocked by Unix imports and the missing native implementation. |
-| Filesystem effects | Native path, metadata, directory, locking, and synchronization implementations; scoped failure campaigns exercised. | Twelve native filesystem tests pass. Synchronization, byte-I/O failure, and catalog interruption campaigns are implemented and exercised on GNU arm64. Resolver resource attribution and durability qualification remain unfinished. | No implementation yet. |
-| Declared-table lifecycle and queries | Public integration and failure tests exercised; full release qualification remains open. | Public catalog integration runs on Linux. All four previously combined scenarios have ordinary-thread coverage. Their separate 64-KiB stack qualifications remain excluded on GNU arm64; see below. | Cannot build until the native boundary is implemented. |
+| Filesystem effects | Native path, metadata, directory, locking, and synchronization implementations; scoped failure campaigns exercised. | Native filesystem tests exercise the implemented boundary. Synchronization, byte-I/O failure, and catalog interruption campaigns are implemented and exercised on GNU arm64. Path traversal has explicit resource bounds; durability qualification remains unfinished. | No implementation yet. |
+| Declared-table lifecycle and queries | Public integration and failure tests exercised; full release qualification remains open. | Public catalog integration and bounded-thread scenarios run on Linux with explicit target ceilings; see below. | Cannot build until the native boundary is implemented. |
 | Legacy lineitem loader | Available on the reviewed path. | Implemented; internal fault schedules and public load/query/receipt tests run natively. Native sync/I/O failure and healed receipt outcomes are exercised; durability remains unqualified. | Unavailable. |
 | CLI argument capture | Native startup capture exercised. | Bounded `/proc/self/cmdline` capture and its unit tests run; CLI allocation and publication callers are implemented; retained evidence identifies exercised coverage. | Native argument capture is missing. |
-| Complete regression gate | The complete gate runs here; retained evidence identifies its tested inputs. | All gate stages are implemented. GNU arm64 stack tests and Darwin-specific ACL recovery observations remain excluded; retained evidence identifies completed runs. | No complete gate available. |
+| Complete regression gate | The complete gate runs here; retained evidence identifies its tested inputs. | All gate stages are implemented. Darwin-specific ACL recovery observations remain excluded; retained evidence identifies completed runs. | No complete gate available. |
 
 For a Linux cross-compilation check, provision the `x86_64-unknown-linux-gnu`
 target before offline use, then run:
@@ -52,19 +52,35 @@ implementations. Their stack observer uses Darwin's `pthread_get_stacksize_np`
 or Linux's `pthread_getattr_np` and `pthread_attr_getstacksize`; an observation
 failure fails the test.
 
-GNU aarch64 has a [128-KiB pthread
-minimum](https://github.com/bminor/glibc/blob/release/2.36/master/sysdeps/unix/sysv/linux/aarch64/bits/pthread_stack_min.h).
-Rust includes the native minimum and thread-local storage when creating a
-thread; a 48-KiB request was observed as 137,152 bytes on the Linux test host.
-Four public catalog tests, two legacy load/execution tests, and six internal
-library tests require an observed stack at most 64 KiB and are explicitly
-**ignored on GNU aarch64**, with the reason printed by the test runner. Their
-assertions and macOS execution remain intact. Each has a separate ordinary-thread
-test sharing the same functional scenario and expected results. These ordinary
-variants run on both platforms, covering reader transfer, text boundaries,
-append/declaration, nested plans, joins, Boolean scratch, wide relations,
-DISTINCT, and legacy load/execution. `-- --ignored` runs the unsatisfied stack
-checks explicitly; functional success does not qualify Linux stack headroom.
+The [stack contract](resources.md#native-paths-stack-and-io) defines the
+48-KiB request and target-specific reported ceilings: 64 KiB on macOS and
+144 KiB on GNU arm64. The Linux ceiling accounts for the native 128-KiB minimum
+plus bounded runtime overhead; it is not a 64-KiB engine-frame claim.
+Four public catalog, two legacy load/execution, and six internal scenarios run
+with these checks. Their ordinary-thread counterparts preserve the same
+functional expectations. No GNU arm64 stack scenario is ignored.
+
+Run the focused scenarios with:
+
+```sh
+cargo test --offline --locked --release --workspace --all-targets stack -- --test-threads=1
+```
+
+The `stack` filter also selects a few scalar and ordinary-thread tests; inspect
+the names and counts. Run the observer and its oversized-thread negative control
+separately:
+
+```sh
+cargo test --offline --locked --release -p pipesql-filesystem --features test-stack-observation bounded_thread_observation
+python3 tools/check-filesystem-abi.py
+```
+
+The native C control uses installed pthread headers, checks the current thread's
+stack address/extent, and rejects an oversized extent. GNU arm64 additionally
+requires native refusal of 48-KiB and 64-KiB requests. The Rust control verifies
+that the actual scenario helper accepts a small thread and rejects a 2-MiB
+thread. Both controls are included in the complete gate. Neither measures peak
+engine frames, and neither substitutes for running the DBMS scenarios.
 
 Platform-specific helpers compile with their actual consumers, without warning
 suppression. Extending coverage requires executing the target contracts and
@@ -276,7 +292,7 @@ root/component `lstat` and symlink `readlink` refusal, expanded pending suffixes
 and overlapping callers. It also rejects calls to libc `realpath`. Darwin checks
 root metadata during its separate traversal.
 The Linux run does not exercise Darwin data-mount spelling or the two Darwin ACL
-recovery cells, and its existing stack exclusions remain explicit.
+recovery cells, and its target-specific stack ceiling remains explicit.
 
 On GNU/Linux, `python3 tools/check-diagnostic-allocation.py --pathname-only`
 sweeps allocation refusal during expanded-path creation and reopen. It checks

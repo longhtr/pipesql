@@ -783,3 +783,24 @@ fn canonicalization_preserves_errors_at_the_native_name_ceiling() {
         );
     }
 }
+
+#[cfg(feature = "test-stack-observation")]
+#[test]
+fn bounded_thread_observation_accepts_small_and_rejects_oversized_threads() {
+    for (requested, accepted) in [
+        (TEST_SMALL_STACK_REQUEST_BYTES, true),
+        (2 * 1024 * 1024, false),
+    ] {
+        let result = std::thread::Builder::new()
+            .stack_size(requested)
+            .spawn(|| {
+                let reported = test_current_thread_stack_bytes();
+                println!("native thread bytes={reported}");
+                std::panic::catch_unwind(test_assert_small_stack).is_ok()
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(result, accepted, "requested thread bytes={requested}");
+    }
+}

@@ -12,8 +12,9 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 Maintained builds, tests, and examples require no historical checkout or archive.
 
 The complete 23-stage gates pass on macOS and GNU arm64 Linux on the same frozen
-inputs. Twelve GNU arm64 stack qualifications remain excluded, but their
-ordinary-thread functional counterparts execute on both platforms. Two Darwin
+inputs. All twelve bounded-thread scenarios and their ordinary-thread
+counterparts execute on both platforms, with explicit target-specific ceilings.
+Two Darwin
 ACL-specific allocation cells remain excluded on Linux. Windows remains
 unfinished. The [platform matrix](../docs/testing.md#platform-status) distinguishes
 implementation, execution, and qualification; [evidence](evidence.md) records the
@@ -29,38 +30,32 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
-## Next: resolve cross-platform stack qualification
+## Next: learn from DuckDB through one complete analytical workload
 
-Linux pathname traversal now has explicit byte, symlink, native-call, and
-caller-accounted scratch bounds. Native comparisons, allocation refusal, healed
-outcomes, and the complete macOS/Linux gates passed. The
-[evidence record](evidence.md#linux-pathname-bounds) retains the consequential
-large-suffix counterexample and qualification limits.
+Trace a declared-table query through grouping and
+ordering under both comfortable and forced-spill memory budgets. Use maintained,
+locally generated inputs and an independent result oracle. Connect the runnable
+case to preparation, physical operators, reservations, spill files, and cleanup
+in the existing execution guide. This should help a reader explain why each
+owner exists and what changes when memory runs short.
 
-The next bounded milestone is the twelve excluded GNU arm64 stack scenarios.
-Determine a defensible cross-platform stack contract from actual native thread
-minimums, engine call paths, and retained scenarios. Distinguish allocated thread
-size from engine stack consumption. Spend at most 90 minutes on initial design
-and falsification, then reassess from evidence before expanding instrumentation.
+| DuckDB lesson | PipeSQL application and acceptance criteria |
+| --- | --- |
+| [Streaming, spilling, and shared memory](https://duckdb.org/2024/07/09/memory-management) | Compare operator admission under one database authority, including a held reader. Record logical/requested/usable bytes separately and verify complete results, refusal, and release. Identify any starvation or avoidable reservation before proposing scheduling changes. |
+| [External aggregation](https://duckdb.org/2024/03/29/external-aggregation) | Challenge few/many groups, skew, and wide keys across the memory-to-spill transition. Measure spill bytes and complete-query time before considering a different grouping layout. DuckDB's unified page management and pointer relocation are design alternatives, not requirements for our safe engine. |
+| [Readable SQL result tests](https://duckdb.org/docs/current/dev/sqllogictest/intro) | Keep the query and independently established expected rows visible in the walkthrough and regression. Reuse current runners; introduce no test language or framework without a concrete maintenance benefit. |
 
-Preserve every functional scenario and its independent expectations. Do not
-silently increase a ceiling, relabel an ordinary-thread pass as bounded-stack
-qualification, or claim live-stack use from a requested/reported thread size.
-If a contract needs redesign, explain the failed premise, resulting guarantee,
-per-target limits, and remaining uncertainty with its authoritative owner.
-Keep instrumentation proportional and separate from production behavior.
+These are study inputs and planned checks, not verified improvements. Start with
+one workload and a bounded investigation; finish its explanation, checks, and
+any demonstrated prerequisite repair before adding another algorithm. Preserve
+PipeSQL's own NULL, numeric, ordering, error, and cancellation contracts rather
+than treating another database's answer as automatically authoritative.
 
-Finish applicable native controls and regressions, complete verification on
-frozen inputs, reconcile discovery and exclusions, update the existing contracts
-and evidence, and commit coherent work locally. Do not add unrelated features or
-make unavailable Windows runtime resources a blocker for independent progress.
-
-## Other release work
+## Remaining qualification
 
 | Concern | Required outcome |
 | --- | --- |
 | Windows | Implement native paths, handles, traversal, locking, synchronization, CLI startup, process ownership, and target-specific verification. |
-| Stack limits | Resolve or explicitly redesign the 64-KiB contract against GNU arm64's larger native minimum; do not silently skip the combined scenarios. |
 | Filesystems and durability | Retain the tested shared-mount exclusion; qualify supported filesystem/device premises beyond process termination. |
 | Physical memory | Reconcile logical charges with allocator-usable memory and other owners without claiming a whole-process cap from engine counters. |
 | Native diagnostics | Establish reproducible sanitizer controls and identify instrumentation limits before attributing reports or claiming a clean boundary. |

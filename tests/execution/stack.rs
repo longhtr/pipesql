@@ -12,19 +12,14 @@ fn loaded_open_and_queries_preserve_results_and_release_owners() {
 }
 
 #[test]
-#[cfg_attr(
-    all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
-    ignore = "GNU aarch64 has a 128-KiB pthread minimum; this test requires at most 64 KiB"
-)]
 fn loaded_open_and_queries_fit_the_reported_stack_allowance() {
     let temp = loaded_database();
     let path = temp.0.join("database");
     std::thread::Builder::new()
         // Observe the native extent too: requested and reported sizes differ.
-        .stack_size(48 * 1024)
+        .stack_size(pipesql_filesystem::TEST_SMALL_STACK_REQUEST_BYTES)
         .spawn(move || {
-            let reported = pipesql_filesystem::test_current_thread_stack_bytes();
-            assert!(reported > 0 && reported <= 65_536);
+            pipesql_filesystem::test_assert_small_stack();
             check_loaded_queries(&path);
         })
         .unwrap()

@@ -14,11 +14,10 @@
 
 The catalog, legacy load, and legacy execution suites run on macOS and Linux.
 Four public catalog, two legacy, and six internal scenarios each have an ordinary
-thread test and a separate test requiring a measured stack at most 64 KiB.
-Only the twelve stack qualifications are ignored on GNU aarch64, whose native
-pthread minimum exceeds that limit. The ordinary variants retain the same
-functional assertions on both platforms. [Platform status](../docs/testing.md#platform-status)
-explains the observer, exclusions, and remaining qualification.
+thread test and a bounded-thread variant with the same functional expectations.
+Both execute on GNU arm64. [Platform status](../docs/testing.md#platform-status)
+explains the requested size, target-specific reported ceilings, native controls,
+and limits of the evidence.
 
 Public fixture directories report cleanup failures after successful scenarios and
 preserve the original panic during unwinding. The catalog fixture regression
@@ -89,8 +88,8 @@ The interruption test derives its subprocess selector from its current module an
 requires the child to reach the selected exit boundary.
 The internal [legacy scan tests](../src/execution/scan/legacy/tests.rs) cover scan admission,
 source effects, result ownership, and cancellation. These and the shared
-execution suites run on macOS and Linux; GNU arm64 stack exclusions are explicit
-in the affected tests. Aggregate mapping and
+execution suites run on macOS and Linux with the documented target-specific
+stack ceilings. Aggregate mapping and
 controller checks live under [aggregation](../src/execution/aggregation/tests.rs),
 with independent numerical vectors, captured arguments, hash grouping, and disk
 reduction beside their respective owners. General grouping scenarios separate
@@ -139,5 +138,5 @@ inclusion and test discovery after a move; syntax formatting alone does not prov
 that a test will run.
 
 Shared lifecycle and query scenarios run on macOS and Linux. Native-specific
-tests and the GNU arm64 stack exclusions remain platform-dependent. A successful
+tests and stack ceilings remain platform-dependent. A successful
 build, ignored test, or empty selection must not be reported as runtime coverage.

@@ -22,22 +22,21 @@ The seed-only graph command previously passed on both platforms; reuse of its
 output directory was rejected. Seed failure propagation and artifact identities
 have tooling regressions independent of engine execution.
 
-Rust suites executed 430 tests on macOS and 418 on GNU arm64. GNU arm64 explicitly
-excluded twelve 64-KiB stack qualifications; macOS excluded none. Each suite also
-executed one selected lease subprocess, excluded from these totals. The twelve
-ordinary-thread counterparts passed on both platforms and share expectations
-with their bounded-stack variants. Their functional success does not qualify
-GNU arm64 stack headroom. The public directory cleanup regression executed,
-including its isolated unwind control.
+Rust suites executed 431 tests on each platform, with no failed or ignored
+tests. Each suite also executed one selected lease subprocess, excluded from
+these totals. The twelve bounded-thread scenarios and their ordinary-thread
+counterparts passed on both targets. The independent native stack control and
+the Rust oversized-thread negative control passed. The public directory cleanup
+regression executed, including its isolated unwind control.
 
-Both gates used one frozen 660-file export containing 659 manifested inputs.
+Both gates used one frozen 661-file export containing 660 manifested inputs.
 All stage statuses were zero, before/after manifests matched across both runs,
-and finalization reported no errors and removed owned build targets. The frozen manifest SHA-256 is
-`80b97c89c74f0975c8b64d3d91864ecf7e5383328ecb34648421f6df88a7cfe8`.
-The two notes files and the concurrency guide's description of Linux pathname
-ownership were finalized afterward; runtime inputs did not change. The final
-657 non-notes inputs have fingerprint
-`751a521fde97e246fb2f581ce986243611c39db1c05c67db36fd04ec034ac14a`.
+and finalization reported no errors and removed owned build targets. The frozen
+manifest SHA-256 is
+`fc611b7da3cdd4f35daa44b0f7e5be07dbcf465b0fc3cf6f7b0f374dfbfdfd33`.
+Only the two notes files were finalized afterward. The other 658 manifested
+inputs have fingerprint
+`977068c87e787258722a4f74ccd53dd3e208d60923d69993539a8ccdd5804e8c`.
 Recompute it from the repository root:
 
 ```sh
@@ -77,7 +76,7 @@ gate sets warnings-denied Rust and documentation flags. Keep database/output
 directories separate from a host-shared source mount.
 
 The September 11 run passed all 23 stages on the same frozen inputs described
-above. It executed 418 Rust tests, with 12 explicit stack exclusions and one
+above. It executed 431 Rust tests, with no ignored tests and one
 additional selected lease-subprocess execution. Both platforms passed 547 CLI
 allocation-prefix cases, 83 parser control/deny pairs, ambiguous publication
 resolving to aborted and durable outcomes, and closed/broken output sinks.
@@ -150,7 +149,7 @@ replacing that accepted behavior with a single 4-KiB pending buffer. Each link i
 read once; overflow retains the suffix rather than replaying a namespace that
 may have changed. Independent native comparisons cover names and errors, joined
 workers, permission refusal, and byte-ceiling error precedence. The GNU/Linux
-filesystem suite passed all eighteen tests. A mode-000 directory's `/.` and
+filesystem suite passed all nineteen tests, including the stack observer control. A mode-000 directory's `/.` and
 `/..` cases retain native behavior; a named child returns `EACCES`.
 
 Public creation and reopen checks exercise logical scratch refusal before
@@ -163,7 +162,7 @@ bytes and preserved state on refusal.
 
 The pathname-specific GNU arm64 thread reported 137,152 bytes with a 128-KiB
 request and passed creation, refusal, and reopen. This is within that test's
-144-KiB ceiling; it does not satisfy the twelve existing 64-KiB qualifications
+144-KiB ceiling; it does not establish a 64-KiB Linux engine-frame bound
 or measure live stack use. No pathname performance improvement, whole-process
 memory cap, or other-platform qualification follows from these checks.
 
@@ -238,13 +237,25 @@ live frames are different measurements.
 
 The [platform matrix](../docs/testing.md#platform-status) distinguishes implemented,
 exercised, excluded, and unfinished behavior. Windows remains unimplemented.
-GNU arm64 reports a native stack larger than the 64-KiB ceiling even for a 48-KiB
-request: the reviewed pthread minimum is 131,072 bytes, and the observed stack
-was 137,152 bytes. Four public catalog, two legacy integration, and six internal
-library tests retain their 65,536-byte ceiling and explicit exclusions. Their
-ordinary-thread counterparts exercise the functional scenarios on that target.
-Their 64-KiB qualification remains unsatisfied; `--ignored` does not make the
-native minimum satisfy the contract.
+At `b6737e3`, twelve GNU arm64 scenarios were excluded because a 48-KiB request
+produced a 137,152-byte reported thread, exceeding their 64-KiB ceiling. The
+independent native control now confirms that GNU arm64 rejects both 48-KiB and
+64-KiB pthread requests with `EINVAL`; its native minimum is 131,072 bytes.
+The revised [stack contract](../docs/resources.md#native-paths-stack-and-io)
+keeps the 48-KiB Rust request, retains macOS's 64-KiB ceiling, and explicitly
+qualifies GNU arm64 against a 144-KiB reported extent. This allows at most
+16 KiB above the native minimum for runtime overhead. It is a changed native
+thread envelope, not evidence that Linux engine frames fit within 64 KiB.
+
+Focused execution passed all twelve scenarios on both platforms, with unchanged
+functional expectations and their ordinary-thread counterparts retained. Native
+reports were 61,440 bytes on macOS and 137,152 on GNU arm64. The independent C
+control and the Rust scenario helper both rejected an oversized 2-MiB request;
+macOS reported 2,109,440 bytes and Linux reported 2,097,152. The C observer also
+checked that its local variable lay inside the returned native stack interval.
+Observation failures fail the tests. These controls do not measure peak frames,
+guard residency, or a whole-process cap. The full gates for this change passed; the checkpoint above identifies their
+verified inputs.
 
 The September 11 shared-mount investigation reproduced the failure using the
 unchanged stock catalog caller from `4931770`: 7 of 20 fresh setups failed on the

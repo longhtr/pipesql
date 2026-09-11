@@ -80,7 +80,7 @@ recorded revision after a path move.
 
 | Runner | Owned boundary |
 | --- | --- |
-| `check-filesystem-abi.py` | Native SDK/decoder agreement. |
+| `check-filesystem-abi.py` | Native SDK/decoder agreement and independent pthread extent/minimum controls. |
 | `check-diagnostic-allocation.py` | Public library construction, errors, queries, catalog recovery, and composed ownership under allocator refusal. |
 | `check-cli-allocation.py` | CLI startup, parsing, output, publication tokens, and allocation refusal. |
 | `check-native-initialization.py` | Darwin root-stat and Linux lstat/readlink observation, refusal, and overlapping callers. |

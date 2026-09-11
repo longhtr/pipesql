@@ -564,10 +564,6 @@ fn derived_nesting_preserves_limits_and_releases_plan_owners() {
 
 #[test]
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-#[cfg_attr(
-    all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
-    ignore = "GNU aarch64 pthread minimum exceeds the 64-KiB reported-stack ceiling"
-)]
 fn derived_nesting_uses_bounded_reported_stack() {
     check_derived_nesting(true);
 }
@@ -578,19 +574,15 @@ fn check_derived_nesting(small_stack: bool) {
     let database = database(&directory, &[]);
     let baseline = database.reserved_memory_bytes();
     let thread = if small_stack {
-        std::thread::Builder::new().stack_size(48 * 1024)
+        std::thread::Builder::new().stack_size(pipesql_filesystem::TEST_SMALL_STACK_REQUEST_BYTES)
     } else {
         std::thread::Builder::new()
     };
     std::thread::scope(|scope| {
         thread
             .spawn_scoped(scope, || {
-                let reported = pipesql_filesystem::test_current_thread_stack_bytes();
                 if small_stack {
-                    assert!(
-                        reported <= 65536,
-                        "actual stack exceeds test ceiling: {reported}"
-                    );
+                    pipesql_filesystem::test_assert_small_stack();
                 }
                 let mut sql = String::from("FROM facts");
                 for depth in 0..=crate::frontend::MAX_STAGES {

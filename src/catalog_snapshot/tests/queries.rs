@@ -136,10 +136,6 @@ fn catalog_readers_move_with_snapshot_and_cached_index_page() {
 }
 
 #[test]
-#[cfg_attr(
-    all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
-    ignore = "GNU aarch64 pthread minimum exceeds the 64-KiB reported-stack ceiling"
-)]
 fn catalog_reader_transfer_fits_reported_stack_allowance() {
     check_catalog_reader_transfer(true);
 }
@@ -186,19 +182,15 @@ fn check_catalog_reader_transfer(small_stack: bool) {
         .unwrap();
     let mut owner = crate::resources::allocate(1, 1, "retained reader allocation", bytes).unwrap();
     let thread = if small_stack {
-        std::thread::Builder::new().stack_size(48 * 1024)
+        std::thread::Builder::new().stack_size(pipesql_filesystem::TEST_SMALL_STACK_REQUEST_BYTES)
     } else {
         std::thread::Builder::new()
     };
     let readers = std::thread::scope(|scope| {
         thread
             .spawn_scoped(scope, || {
-                let reported = pipesql_filesystem::test_current_thread_stack_bytes();
                 if small_stack {
-                    assert!(
-                        reported > 0 && reported <= 65_536,
-                        "native reader stack: {reported}"
-                    );
+                    pipesql_filesystem::test_assert_small_stack();
                 }
                 let snapshot = database.catalog_snapshot().unwrap();
                 let mut catalog_bytes = [0; catalog::MAX_BYTES];
@@ -420,10 +412,6 @@ fn catalog_query_text_boundaries_cancellation_and_memory() {
 }
 
 #[test]
-#[cfg_attr(
-    all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
-    ignore = "GNU aarch64 pthread minimum exceeds the 64-KiB reported-stack ceiling"
-)]
 fn catalog_text_queries_fit_reported_stack_allowance() {
     check_catalog_text_queries(true);
 }
@@ -481,19 +469,15 @@ fn check_catalog_text_queries(small_stack: bool) {
     // Keep admission and draining on the same worker; the small-stack test
     // qualifies both operations.
     let thread = if small_stack {
-        std::thread::Builder::new().stack_size(48 * 1024)
+        std::thread::Builder::new().stack_size(pipesql_filesystem::TEST_SMALL_STACK_REQUEST_BYTES)
     } else {
         std::thread::Builder::new()
     };
     std::thread::scope(|scope| {
         thread
             .spawn_scoped(scope, || {
-                let reported = pipesql_filesystem::test_current_thread_stack_bytes();
                 if small_stack {
-                    assert!(
-                        reported > 0 && reported <= 65_536,
-                        "native scan stack: {reported}"
-                    );
+                    pipesql_filesystem::test_assert_small_stack();
                 }
                 let mut running = db.execute(&query, &cancel).unwrap();
                 let charged = db.reserved_memory_bytes();

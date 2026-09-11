@@ -308,17 +308,33 @@ optional mount-name and prefix checks; the next call returns
 before native entry. This bounds admitted calls, not kernel work or elapsed
 time. Scratch remains private and no partial resolved path escapes.
 
-Measured small-stack regressions check the native-reported thread size against
-64 KiB. Requested size alone is insufficient, and reported size does not measure
-live frames, VM mappings, residency, or runtime storage. The [platform
-exclusions](testing.md#platform-status) identify targets that cannot meet the
-tests' native thread-size premise. Native and failure-phase attribution remain
-separate from logical reservations.
+Bounded-thread regressions qualify exercised operations against a native-reported
+thread extent. They request 48 KiB on each target, then check the actual size
+inside the worker before entering the scenario. The private test helper owns
+these constants; production code neither creates these workers nor changes a
+caller's stack.
 
-A separate GNU arm64 pathname test requests a 128-KiB thread and checks its
-native-reported size against a 144-KiB ceiling before exercising expanded-path
-creation, refusal, and reopen. It does not replace the 64-KiB qualifications or
-measure maximum live stack use.
+| Target | Maximum reported extent | Rationale |
+| --- | --- | --- |
+| macOS and other existing targets | 64 KiB | Retains the existing envelope; macOS reports 61,440 bytes for the 48-KiB request. Other targets require their own runtime evidence. |
+| GNU arm64 Linux | 144 KiB | The native minimum is 128 KiB; at most 16 KiB more is permitted for runtime/TLS and alignment overhead. The reviewed Rust executable reports 137,152 bytes. |
+
+The Linux ceiling explicitly replaces the impossible 64-KiB native-thread
+premise. It does not establish that Linux engine frames fit within 64 KiB.
+Runtime changes that exceed the allowance fail qualification. The independent
+native control checks the minimum and an oversized thread; the Rust helper's
+negative control verifies that a real 2-MiB thread is rejected.
+
+Requested size, native extent, usable call-stack space, live frames, guard pages,
+VM mappings, and resident memory are different quantities. Native reports do not
+measure maximum live frames or isolate runtime/TLS storage. Passing scenarios
+establish execution within the recorded target envelope, not every call path,
+a guaranteed caller-stack minimum, or a whole-process memory cap. Native and
+failure-phase attribution remain separate from logical reservations.
+
+A separate Linux pathname test requests a 128-KiB thread and checks a 144-KiB
+reported ceiling during expanded-path creation, refusal, and reopen. Its scope
+remains pathname handling; it does not replace the other operation scenarios.
 
 Synchronization borrows an existing file, allocates no buffer, and makes one
 native attempt using the platform's required durability primitive. Interruption

@@ -766,10 +766,6 @@ fn shared_threads_preserve_results_and_release_query_owners() {
 }
 
 #[test]
-#[cfg_attr(
-    all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
-    ignore = "GNU aarch64 pthread minimum exceeds the 64-KiB reported-stack ceiling"
-)]
 fn shared_threads_and_small_reported_stack() {
     check_shared_query_threads(true);
 }
@@ -779,18 +775,14 @@ fn check_shared_query_threads(small_stack: bool) {
     let path = database.path().to_owned();
     database.close().unwrap();
     let thread = if small_stack {
-        std::thread::Builder::new().stack_size(48 * 1024)
+        std::thread::Builder::new().stack_size(pipesql_filesystem::TEST_SMALL_STACK_REQUEST_BYTES)
     } else {
         std::thread::Builder::new()
     };
     thread
         .spawn(move || {
-            let reported = pipesql_filesystem::test_current_thread_stack_bytes();
             if small_stack {
-                assert!(
-                    reported <= 65536,
-                    "actual stack exceeds test ceiling: {reported}"
-                );
+                pipesql_filesystem::test_assert_small_stack();
             }
             let database =
                 Database::open(&path, Config::new(4_000_000, 1_000_000).unwrap()).unwrap();
@@ -874,7 +866,10 @@ fn check_shared_query_threads(small_stack: bool) {
                 drop(query);
                 assert_eq!(database.reserved_memory_bytes(), database.path_memory_bytes());
             }
-            println!("stream, aggregate and computed projection reported stack={reported}");
+            println!(
+                "stream, aggregate and computed projection reported stack={}",
+                pipesql_filesystem::test_current_thread_stack_bytes()
+            );
         })
         .unwrap()
         .join()

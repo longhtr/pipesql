@@ -654,10 +654,6 @@ fn catalog_streaming_append_transfers_commit_and_releases_owners() {
 }
 
 #[test]
-#[cfg_attr(
-    all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
-    ignore = "GNU aarch64 pthread minimum exceeds the 64-KiB reported-stack ceiling"
-)]
 fn catalog_streaming_append_has_bounded_reported_stack() {
     check_streaming_append(true);
 }
@@ -666,19 +662,15 @@ fn check_streaming_append(small_stack: bool) {
     use crate::catalog_snapshot::AppendLimits;
     let (_fixture, db, _) = streaming_database();
     let thread = if small_stack {
-        std::thread::Builder::new().stack_size(48 * 1024)
+        std::thread::Builder::new().stack_size(pipesql_filesystem::TEST_SMALL_STACK_REQUEST_BYTES)
     } else {
         std::thread::Builder::new()
     };
     let commit = std::thread::scope(|scope| {
         thread
             .spawn_scoped(scope, || {
-                let reported = pipesql_filesystem::test_current_thread_stack_bytes();
                 if small_stack {
-                    assert!(
-                        reported > 0 && reported <= 65_536,
-                        "streaming append stack: {reported}"
-                    );
+                    pipesql_filesystem::test_assert_small_stack();
                 }
                 let cancel = CancellationToken::new();
                 let mut append = db

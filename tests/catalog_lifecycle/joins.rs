@@ -94,10 +94,6 @@ fn joins_keep_one_snapshot_across_appends_threads_and_reopen() {
 }
 
 #[test]
-#[cfg_attr(
-    all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
-    ignore = "GNU aarch64 has a 128-KiB pthread minimum; this test requires at most 64 KiB"
-)]
 fn join_snapshots_fit_reported_stack_allowance() {
     check_join_snapshots(true);
 }
@@ -112,7 +108,7 @@ fn check_join_snapshots(small_stack: bool) {
     let (resume_tx, resume_rx) = std::sync::mpsc::sync_channel(1);
     let timeout = std::time::Duration::from_secs(30);
     let thread = if small_stack {
-        std::thread::Builder::new().stack_size(48 * 1024)
+        std::thread::Builder::new().stack_size(pipesql_filesystem::TEST_SMALL_STACK_REQUEST_BYTES)
     } else {
         std::thread::Builder::new()
     };
@@ -120,9 +116,8 @@ fn check_join_snapshots(small_stack: bool) {
         let (reader_db, reader_query, reader_cancel) = (&db, &old, &cancel);
         let worker = thread
             .spawn_scoped(scope, move || {
-                let stack = pipesql_filesystem::test_current_thread_stack_bytes();
                 if small_stack {
-                    assert!(stack <= 65_536, "reported stack {stack}");
+                    pipesql_filesystem::test_assert_small_stack();
                 }
                 let mut result = reader_db.execute(reader_query, reader_cancel).unwrap();
                 assert!(matches!(result.step(), QueryStep::Progress));

@@ -2,24 +2,12 @@ use super::{ROW, TempDir, config};
 use pipesql::{CancellationToken, Config, Database};
 use std::{fs, path::PathBuf, process::Command};
 
-fn assert_reported_stack_bound(limit: usize) {
-    let reported = pipesql_filesystem::test_current_thread_stack_bytes();
-    assert!(
-        reported > 0 && reported <= limit,
-        "reported thread stack {reported} outside 1..={limit}"
-    );
-}
-
 #[test]
 fn public_load_and_queries_preserve_boundaries_and_release_owners() {
     check_load_and_queries(false);
 }
 
 #[test]
-#[cfg_attr(
-    all(target_os = "linux", target_arch = "aarch64", target_env = "gnu"),
-    ignore = "GNU aarch64 has a 128-KiB pthread minimum; this test requires at most 64 KiB"
-)]
 fn public_load_and_queries_fit_declared_stack_headroom() {
     check_load_and_queries(true);
 }
@@ -36,7 +24,7 @@ fn check_load_and_queries(small_stack: bool) {
         let database = worker("public-load", small_stack)
             .spawn(move || {
                 if small_stack {
-                    assert_reported_stack_bound(65_536);
+                    pipesql_filesystem::test_assert_small_stack();
                 }
                 let commit = database
                     .load_lineitem(&input, &CancellationToken::new())
@@ -58,7 +46,7 @@ fn check_load_and_queries(small_stack: bool) {
                 worker("public-query", small_stack)
                     .spawn_scoped(scope, || {
                         if small_stack {
-                            assert_reported_stack_bound(65_536);
+                            pipesql_filesystem::test_assert_small_stack();
                         }
                         let cancellation = CancellationToken::new();
                         let mut result = database.execute(&prepared, &cancellation).unwrap();
@@ -138,9 +126,8 @@ fn check_load_and_queries(small_stack: bool) {
 fn worker(name: &str, small_stack: bool) -> std::thread::Builder {
     let thread = std::thread::Builder::new().name(name.into());
     if small_stack {
-        // Native allocation can exceed the request. Leave one host page of
-        // margin and verify the original 64-KiB ceiling inside each worker.
-        thread.stack_size(49_152)
+        // Verify the target-specific native extent inside each worker.
+        thread.stack_size(pipesql_filesystem::TEST_SMALL_STACK_REQUEST_BYTES)
     } else {
         thread
     }
