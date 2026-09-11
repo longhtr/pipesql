@@ -22,21 +22,21 @@ The seed-only graph command previously passed on both platforms; reuse of its
 output directory was rejected. Seed failure propagation and artifact identities
 have tooling regressions independent of engine execution.
 
-Rust suites executed 431 tests on each platform, with no failed or ignored
+Rust suites executed 432 tests on each platform, with no failed or ignored
 tests. Each suite also executed one selected lease subprocess, excluded from
 these totals. The twelve bounded-thread scenarios and their ordinary-thread
 counterparts passed on both targets. The independent native stack control and
 the Rust oversized-thread negative control passed. The public directory cleanup
 regression executed, including its isolated unwind control.
 
-Both gates used one frozen 661-file export containing 660 manifested inputs.
+Both gates used one frozen 662-file export containing 661 manifested inputs.
 All stage statuses were zero, before/after manifests matched across both runs,
 and finalization reported no errors and removed owned build targets. The frozen
 manifest SHA-256 is
-`fc611b7da3cdd4f35daa44b0f7e5be07dbcf465b0fc3cf6f7b0f374dfbfdfd33`.
-Only the two notes files were finalized afterward. The other 658 manifested
+`787f8183fe13fd9e7b3b6903804ca274db9247d02e0315888ac5f1604d0d158b`.
+Only the two notes files were finalized afterward. The other 659 manifested
 inputs have fingerprint
-`977068c87e787258722a4f74ccd53dd3e208d60923d69993539a8ccdd5804e8c`.
+`14d7cc2664c87d3896225afe2dd42b64a8dd8e2b4d4f7f451a6097e886baef6b`.
 Recompute it from the repository root:
 
 ```sh
@@ -211,6 +211,58 @@ owners remain separate. Returning engine allocations to baseline does not requir
 RSS to return to baseline. Serialized transitions with overlapping owners do not
 qualify every interleaving or allocation-failure position. [Resources](../docs/resources.md)
 owns current equations and the outstanding physical-memory obligation.
+
+### Grouping learning workload
+
+DuckDB's discussions of [shared memory and spilling](https://duckdb.org/2024/07/09/memory-management)
+and [external aggregation](https://duckdb.org/2024/03/29/external-aggregation)
+motivated this workload: vary group cardinality and skew, observe actual disk
+use, and check competing owners before considering a new algorithm. Its
+[SQL result tests](https://duckdb.org/docs/current/dev/sqllogictest/intro) also
+reinforce keeping queries and independent expected rows visible. PipeSQL reuses
+its existing test runners and safe engine; DuckDB's page management and pointer
+relocation are alternatives, not required architecture. The checks below found
+no prerequisite engine defect. Measure complete-query time and I/O before
+proposing a performance change; preserve PipeSQL's own semantic contracts.
+
+[The runnable example](../examples/grouping.rs) generates 8,192 declared-table
+rows across 4,096 integer keys. Each key occurs with amounts 1 and 3. It verifies
+every ordered key, count 2, and sum 4, requires successful completion, and checks
+that dropping the result restores the prepared-query reservation baseline.
+[The walkthrough](../docs/getting-started.md#observe-grouping-with-less-memory)
+contains the fresh-input commands and cleanup instructions.
+
+Focused release runs on the macOS and GNU arm64 Linux environments above
+observed these logical database counters, sampled after query steps:
+
+| Platform | Query memory limit | Maximum sampled memory | Maximum sampled temporary bytes |
+| --- | ---: | ---: | ---: |
+| macOS | 2,000,000 | 1,576,883 | 0 |
+| macOS | 1,200,000 | 1,162,145 | 803,016 |
+| GNU/Linux | 2,000,000 | 1,576,835 | 0 |
+| GNU/Linux | 1,200,000 | 1,162,043 | 803,016 |
+
+Both runs returned all 4,096 expected groups on each platform. Grouping supplies
+the requested order itself, so a separate ORDER BY operator cannot account for
+the temporary bytes. Scratch reserves extents before writes; these counters
+are not filesystem block usage, cumulative I/O, allocator-usable memory, or RSS.
+No timing comparison or algorithm improvement is claimed.
+
+The maintained public regression
+`grouping::ordered_grouping_preserves_few_many_and_skewed_groups_across_memory_budgets`
+passes eight combinations on each platform: 32 or 4,096 groups, uniform or skewed
+input, and both budgets. It independently derives counts and sums from the two
+input passes, verifies every ordered row and completion, asserts disk use only
+for the high-cardinality low-budget cases, and checks release. Internal grouping
+tests retain wide-text and cancellation-at-each-phase coverage; the composed
+ownership caller above checks competing readers and allocator observations.
+
+Two isolated copies of the example challenge its result checker against the
+stock library. Replacing `SUM(amount)` with `SUM(amount+1)` rejects a wrong sum.
+Appending `|> LIMIT 4095` to the query rejects a missing tail after successful
+query completion. Both callers exit unsuccessfully without printing `verified`.
+These source substitutions reconstruct the controls; no modified library,
+historical fixture, or retained temporary caller is required.
 
 ## Native boundaries and diagnostics
 

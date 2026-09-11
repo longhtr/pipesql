@@ -1,6 +1,141 @@
 //! Public grouping contract tests.
 use super::*;
 
+const GROUPING_QUERY: &str =
+    "FROM sales |> AGGREGATE COUNT(*) AS n,SUM(amount) AS total GROUP AND ORDER BY region";
+
+#[test]
+fn ordered_grouping_preserves_few_many_and_skewed_groups_across_memory_budgets() {
+    for groups in [32, 4096] {
+        for skewed in [false, true] {
+            let directory = Directory::new();
+            create_grouping_sales(&directory, groups, skewed);
+            for memory in [2_000_000, 1_200_000] {
+                let db = Database::open(
+                    &directory.database(),
+                    Config::new(memory, 8_000_000).unwrap(),
+                )
+                .unwrap();
+                let cancel = CancellationToken::new();
+                let query = db.prepare(GROUPING_QUERY).unwrap();
+                let baseline = db.reserved_memory_bytes();
+                let mut result = db.execute(&query, &cancel).unwrap();
+                let mut next_region = 0;
+                let mut peak_temp = 0;
+                let mut finished = false;
+                for _ in 0..200_000 {
+                    match result.step() {
+                        QueryStep::Rows(batch) => {
+                            assert_eq!(batch.column_count(), 3);
+                            for row in 0..batch.len() {
+                                let base = 4096 / groups;
+                                // The first pass distributes amount 1 evenly. The
+                                // second distributes amount 3 evenly or all to 0.
+                                let second = if skewed {
+                                    if next_region == 0 { 4096 } else { 0 }
+                                } else {
+                                    base
+                                };
+                                assert!(next_region < groups, "extra group");
+                                for (column, expected) in
+                                    [next_region, base + second, base + 3 * second]
+                                        .into_iter()
+                                        .enumerate()
+                                {
+                                    assert!(
+                                        matches!(
+                                            batch.value(row, column),
+                                            Some(Value::Int64(value)) if value == expected
+                                        ),
+                                        "groups={groups} skewed={skewed} memory={memory} region={next_region} column={column}"
+                                    );
+                                }
+                                next_region += 1;
+                            }
+                        }
+                        QueryStep::Progress => (),
+                        QueryStep::Finished => {
+                            finished = true;
+                            break;
+                        }
+                        QueryStep::Failed(error) => panic!("grouping failed: {error}"),
+                    }
+                    peak_temp = peak_temp.max(db.reserved_temp_bytes());
+                }
+                assert!(finished, "query exceeded the fixture's step bound");
+                assert_eq!(next_region, groups, "missing group");
+                assert_eq!(
+                    peak_temp > 0,
+                    groups == 4096 && memory == 1_200_000,
+                    "verify the intended grouping path"
+                );
+                drop(result);
+                assert_eq!(db.reserved_memory_bytes(), baseline);
+                assert_eq!(db.reserved_temp_bytes(), 0);
+                drop(query);
+                db.close().unwrap();
+            }
+        }
+    }
+}
+
+fn create_grouping_sales(directory: &Directory, groups: i64, skewed: bool) {
+    let db = Database::create_empty(
+        &directory.database(),
+        Config::new(32_000_000, 8_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "sales",
+        &["region", "amount"].map(|name| ColumnDeclaration {
+            name,
+            data_type: DataType::Int64,
+            nullable: false,
+        }),
+        &cancel,
+    )
+    .unwrap();
+    let mut append = db
+        .begin_append(
+            "sales",
+            AppendLimits {
+                batches: 32,
+                encoded_bytes: 1_000_000,
+            },
+            &cancel,
+        )
+        .unwrap();
+    for amount in [1, 3] {
+        for start in (0..4096).step_by(256) {
+            let regions: [i64; 256] = std::array::from_fn(|row| {
+                if skewed && amount == 3 {
+                    0
+                } else {
+                    (4095 - start - row as i64) % groups
+                }
+            });
+            append
+                .write(
+                    &[
+                        ColumnInput {
+                            values: ColumnValues::Int64(&regions),
+                            validity: &[255; 32],
+                        },
+                        ColumnInput {
+                            values: ColumnValues::Int64(&[amount; 256]),
+                            validity: &[255; 32],
+                        },
+                    ],
+                    &cancel,
+                )
+                .unwrap();
+        }
+    }
+    append.commit(&cancel).unwrap();
+    db.close().unwrap();
+}
+
 #[test]
 fn declared_grouping_preserves_nullable_text_float_and_date_keys() {
     let directory = Directory::new();

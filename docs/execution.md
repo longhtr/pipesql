@@ -52,6 +52,46 @@ handoff neither allocates replacement buffers nor transfers cleanup authority.
 The shared record and run encodings, validation, capacity, and failure rules
 still apply to every consumer.
 
+## Follow the grouping example
+
+Run [the memory comparison](getting-started.md#observe-grouping-with-less-memory)
+with [examples/grouping.rs](../examples/grouping.rs) open. The expected result
+follows directly from input construction: each numbered region occurs twice,
+with amounts 1 and 3. The example checks every key, count, and sum in order.
+
+Trace these owners in sequence:
+
+1. [Preparation](frontend.md#trace-a-query-through-preparation) resolves `region`
+   and `amount` to stable column identities. Names and output positions are not
+   storage identities. The prepared query retains the table's snapshot.
+2. [Admission](../src/execution/admission.rs) validates the physical plan and
+   reserves required owners. In [the runtime](../src/execution/runtime.rs),
+   `open_aggregates` constructs grouping after the source and output minima are
+   accounted for. Optional hash capacity uses the remaining database budget.
+3. [The grouping controller](../src/execution/aggregation/grouping.rs) requests
+   source batches and captures aggregate arguments. Its
+   [hash owner](../src/execution/aggregation/grouping/hash.rs) stores each distinct
+   encoded key and accumulator state. If they fit, grouping validates all
+   demanded final values and emits its retained groups in key order.
+4. When the hash capacity is insufficient, grouping releases that attempt and
+   replays the same pinned source through the [shared sorter](../src/execution/blocking.rs).
+   [Reduction](../src/execution/aggregation/grouping/reduction.rs) folds adjacent
+   equal keys. Grouping validates the result spool before emitting it. This
+   query's `GROUP AND ORDER BY` uses grouping's ordering; there is no separate
+   standalone ORDER BY operator to confuse the spill observation.
+5. [Scratch](../src/scratch.rs) reserves temporary extents before extending a
+   file. On this successful query, a positive sampled temporary count therefore
+   witnesses the disk path. It does not measure physical allocation or total
+   bytes transferred. Scratch owns disposal, including failure and cancellation.
+
+The runtime advances on the caller's thread. `Progress` returns control without
+rows; `Rows` borrows the current batch. Cancellation is checked during bounded
+work and produces a terminal failure. Completion, failure, or dropping the
+result releases runtime owners; the prepared query remains live until separately
+dropped. The example checks release after normal completion. The grouping
+[failure tests](../src/execution/aggregation/grouping/tests/failure.rs) exercise
+the cancellation and failed-cleanup contracts.
+
 ## Producer execution
 
 Physical plans describe producer pipelines for scans, aggregates, joins,

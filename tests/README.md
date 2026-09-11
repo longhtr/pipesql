@@ -56,6 +56,14 @@ Shared helpers construct public fixtures and collect typed results. The test bod
 own their expectations and case-specific failure checks. Preserve independent
 oracles when consolidating setup; do not replace them with engine calculations.
 
+The ordered grouping corpus in `grouping.rs` complements the
+[runnable memory comparison](../docs/getting-started.md#observe-grouping-with-less-memory).
+It checks few/many groups and uniform/skewed inputs at two budgets, including
+complete ordered results, observed disk use, and reservation release. Wide text
+keys and cancellation across controller phases live in the internal grouping
+tests; the composed ownership campaign measures a held grouped reader alongside
+another query under the same database authority.
+
 The [physical-planning mutations](../src/execution/planning/tests.rs) run on
 macOS and Linux. They check producer edges, hidden order demand, DISTINCT/LIMIT
 mapping, and refusal of malformed references to unvalidated later rows.

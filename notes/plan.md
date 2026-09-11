@@ -30,26 +30,35 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
-## Next: learn from DuckDB through one complete analytical workload
+## Next: complete nullable COUNT arguments
 
-Trace a declared-table query through grouping and
-ordering under both comfortable and forced-spill memory budgets. Use maintained,
-locally generated inputs and an independent result oracle. Connect the runnable
-case to preparation, physical operators, reservations, spill files, and cleanup
-in the existing execution guide. This should help a reader explain why each
-owner exists and what changes when memory runs short.
+The grouping learning workload is complete: the
+[runnable comparison](../docs/getting-started.md#observe-grouping-with-less-memory),
+[execution path](../docs/execution.md#follow-the-grouping-example), and
+[retained observations](evidence.md#grouping-learning-workload) connect the SQL
+and its independently checked results to real memory and disk owners. Both full
+gates pass; no algorithm replacement was needed.
 
-| DuckDB lesson | PipeSQL application and acceptance criteria |
-| --- | --- |
-| [Streaming, spilling, and shared memory](https://duckdb.org/2024/07/09/memory-management) | Compare operator admission under one database authority, including a held reader. Record logical/requested/usable bytes separately and verify complete results, refusal, and release. Identify any starvation or avoidable reservation before proposing scheduling changes. |
-| [External aggregation](https://duckdb.org/2024/03/29/external-aggregation) | Challenge few/many groups, skew, and wide keys across the memory-to-spill transition. Measure spill bytes and complete-query time before considering a different grouping layout. DuckDB's unified page management and pointer relocation are design alternatives, not requirements for our safe engine. |
-| [Readable SQL result tests](https://duckdb.org/docs/current/dev/sqllogictest/intro) | Keep the query and independently established expected rows visible in the walkthrough and regression. Reuse current runners; introduce no test language or framework without a concrete maintenance benefit. |
+The current language supports COUNT(*) but rejects COUNT(expression). Complete
+that ordinary analytical operation next, using the expression forms and scalar
+types already supported by PipeSQL. Start with at most 45 minutes tracing the
+existing aggregate representation, demand rules, NULL counts, and spill argument
+codec. Confirm GoogleSQL's contract from its primary reference and record the
+smallest coherent design before implementation.
 
-These are study inputs and planned checks, not verified improvements. Start with
-one workload and a bounded investigation; finish its explanation, checks, and
-any demonstrated prerequisite repair before adding another algorithm. Preserve
-PipeSQL's own NULL, numeric, ordering, error, and cancellation contracts rather
-than treating another database's answer as automatically authoritative.
+Deliver counting of non-NULL arguments through global, grouped, repeated, and
+composed aggregation on the existing execution path. Keep COUNT(*) unchanged.
+Test empty and all-NULL input, each supported scalar type, demanded expression
+errors, memory/disk equivalence, cancellation, refusal, and release with
+independent expectations. Add no DISTINCT aggregates, window functions, new
+scalar types, or unrelated expression syntax. Retain diagnostic spans and
+persistent bytes; keep independent validators independent.
+
+Make the implementation traceable and add a concise example explaining why
+COUNT(*) and COUNT(nullable_column) differ. Complete focused checks and the
+required frozen-input macOS/Linux verification, update authoritative contracts,
+consolidate evidence, and commit locally. Windows qualification remains separate;
+its unavailable runtime must not block this portable work.
 
 ## Remaining qualification
 

@@ -66,3 +66,43 @@ Continue with [the preparation
 walkthrough](frontend.md#trace-a-query-through-preparation) to follow a query
 from names to typed column identities. Keep the example source open when tracing
 the append, commit, and query lifetimes.
+
+## Observe grouping with less memory
+
+[The grouping example](../examples/grouping.rs) creates 8,192 sales rows across
+4,096 numbered regions. Each region has two amounts, 1 and 3. Its query counts
+and sums each region, then emits regions in ascending order:
+
+```sql
+FROM sales
+|> AGGREGATE COUNT(*) AS n, SUM(amount) AS total GROUP AND ORDER BY region
+```
+
+Run it twice with fresh database paths. Both runs generate identical rows. They
+use a separate setup budget before reopening with the specified query budget:
+
+```sh
+pipesql_grouping_dir=$(mktemp -d)
+cargo run --release --offline --locked --example grouping -- "$pipesql_grouping_dir/memory" 2000000
+cargo run --release --offline --locked --example grouping -- "$pipesql_grouping_dir/spill" 1200000
+```
+
+Both runs must print `verified 4096 groups: region=0..4095, n=2, total=4`.
+The program checks every ordered row and requires `Finished`; matching a prefix
+does not pass. It also checks that query reservations return to their baseline
+after dropping the result.
+
+Read the second output line to compare sampled logical memory and temporary
+bytes. With the reviewed macOS and GNU arm64 Linux builds, the first run uses no
+temporary bytes and the second reaches 803,016 temporary bytes. These observations
+are specific to this workload and build. A small budget alone does not establish spilling: the
+2,000,000-byte run still fits its groups in memory. Temporary bytes measure
+reserved scratch-file extents, not filesystem blocks, total I/O, or process RSS.
+The example does not measure allocator-usable memory or performance.
+
+Follow [the grouping execution path](execution.md#follow-the-grouping-example)
+to see what changes between these runs. When finished, remove the owned inputs:
+
+```sh
+rm -r -- "$pipesql_grouping_dir"
+```
