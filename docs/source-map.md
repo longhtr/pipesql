@@ -39,7 +39,7 @@ concerns still share one source file.
 | [planning/demand.rs](../src/execution/planning/demand.rs) | Shared backward column-demand analysis. |
 | [planning/validate.rs](../src/execution/planning/validate.rs) | Graph, computation, filter, and output validation using a separate position-to-identity mapping. |
 | [aggregation.rs](../src/execution/aggregation.rs) | Controller selection and bounded dense-key grouping: input, checking, emission, and replay. |
-| [numeric.rs](../src/execution/aggregation/numeric.rs), [arguments.rs](../src/execution/aggregation/arguments.rs) | Shared aggregate layout, admitted typed cells, numeric evaluation/finalization, and argument capture/replay. Numeric state receives only memory authority. |
+| [accumulator.rs](../src/execution/aggregation/accumulator.rs), [arguments.rs](../src/execution/aggregation/arguments.rs) | Shared aggregate layout, admitted numeric/text cells, extrema and sum finalization, and owned argument capture/replay. Accumulator state receives only memory authority. |
 | [runtime.rs](../src/execution/runtime.rs) | Admission and scheduling of producer owners, input/output lifetimes, and replay. |
 | [computed.rs](../src/execution/computed.rs) and [scalar.rs](../src/scalar.rs) | Demanded row/batch evaluation and shared checked numeric kernels. Scalar kernels have no parser, catalog, or I/O authority. |
 | [declared.rs](../src/execution/scan/declared.rs) | Pinned declared-table scans, demanded payload buffers, and source replay. |

@@ -950,15 +950,17 @@ impl Binder<'_, '_> {
             .as_ref()
             .map(|range| {
                 let syntax = self.parsed.expression(*range)?;
-                if *kind == AggregateKind::Count
-                    && let [ParsedOp::Column(span)] = &syntax.ops[..usize::from(syntax.len)]
+                if matches!(
+                    kind,
+                    AggregateKind::Count | AggregateKind::Min | AggregateKind::Max
+                ) && let [ParsedOp::Column(span)] = &syntax.ops[..usize::from(syntax.len)]
                 {
                     let column = self
                         .facts()
                         .column(self.resolve(*span)?)
                         .ok_or(Error::Corrupt("count argument has no semantic facts"))?;
-                    if matches!(column.data_type(), DataType::String | DataType::Date) {
-                        return Ok(AggregateArgument::Validity(column));
+                    if matches!(column.data_type(), DataType::Date | DataType::String) {
+                        return Ok(AggregateArgument::Column(column));
                     }
                 }
                 self.bind_expression(&syntax)

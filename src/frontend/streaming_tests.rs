@@ -162,7 +162,7 @@ fn semantic_plan_mutations_refuse() {
             .unwrap();
         validate(&query.plan).unwrap();
         let entry = &mut query.plan.aggregates.first_mut().unwrap().entries[0];
-        let Some(AggregateArgument::Validity(column)) = &mut entry.argument else {
+        let Some(AggregateArgument::Column(column)) = &mut entry.argument else {
             panic!("STRING count must retain typed validity input");
         };
         match mutation {

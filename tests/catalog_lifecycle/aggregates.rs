@@ -2,6 +2,310 @@
 use super::*;
 
 #[test]
+fn extrema_nan_does_not_suppress_later_demanded_errors() {
+    let directory = Directory::new();
+    let db = Database::create_empty(&directory.database(), config()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "values",
+        &[
+            ColumnDeclaration {
+                name: "k",
+                data_type: DataType::Int64,
+                nullable: false,
+            },
+            ColumnDeclaration {
+                name: "v",
+                data_type: DataType::Double,
+                nullable: false,
+            },
+        ],
+        &cancel,
+    )
+    .unwrap();
+    // Distinct input units make the NaN arrive before the overflowing batch.
+    for value in [f64::NAN, f64::MAX] {
+        let mut append = db.begin_append("values", limits(), &cancel).unwrap();
+        append
+            .write(
+                &[
+                    ColumnInput {
+                        values: ColumnValues::Int64(&[0]),
+                        validity: &[1],
+                    },
+                    ColumnInput {
+                        values: ColumnValues::Double(&[value]),
+                        validity: &[1],
+                    },
+                ],
+                &cancel,
+            )
+            .unwrap();
+        append.commit(&cancel).unwrap();
+    }
+    for function in ["MIN", "MAX"] {
+        let call = format!("{function}(v*2)");
+        for suffix in ["", " GROUP BY k"] {
+            let sql = format!("FROM values |> AGGREGATE {call} AS bound{suffix}");
+            let query = db.prepare(&sql).unwrap();
+            let baseline = db.reserved_memory_bytes();
+            let mut result = db.execute(&query, &cancel).unwrap();
+            let mut failed = false;
+            for _ in 0..100_000 {
+                match result.step() {
+                    QueryStep::Progress => (),
+                    QueryStep::Failed(Error::ArithmeticOverflow { operation, span }) => {
+                        assert_eq!(*operation, "multiplication");
+                        assert_eq!(&sql[span.start()..span.end()], call);
+                        failed = true;
+                        break;
+                    }
+                    _ => panic!("a prior NaN cannot hide a demanded argument failure"),
+                }
+            }
+            assert!(failed);
+            drop(result);
+            assert_eq!(db.reserved_memory_bytes(), baseline);
+            assert_eq!(db.reserved_temp_bytes(), 0);
+        }
+        let sql = format!("FROM values |> AGGREGATE {call} AS unused,COUNT(*) AS n |> SELECT n");
+        let query = db.prepare(&sql).unwrap();
+        let baseline = db.reserved_memory_bytes();
+        let mut result = db.execute(&query, &cancel).unwrap();
+        assert_eq!(collect(&mut result), vec![vec![Cell::Integer(2)]]);
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    db.close().unwrap();
+}
+
+#[test]
+fn text_extrema_preserve_nulls_empty_text_and_unicode_order() {
+    let directory = Directory::new();
+    let db = Database::create_empty(&directory.database(), config()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "words",
+        &[
+            ColumnDeclaration {
+                name: "k",
+                data_type: DataType::Int64,
+                nullable: false,
+            },
+            ColumnDeclaration {
+                name: "word",
+                data_type: DataType::String,
+                nullable: true,
+            },
+        ],
+        &cancel,
+    )
+    .unwrap();
+    let sql = "FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi,COUNT(word) AS n";
+    let empty = db.prepare(sql).unwrap();
+    assert_eq!(
+        collect(&mut db.execute(&empty, &cancel).unwrap()),
+        vec![vec![Cell::Null, Cell::Null, Cell::Integer(0)]]
+    );
+    drop(empty);
+    let mut append = db.begin_append("words", limits(), &cancel).unwrap();
+    append
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::Int64(&[0, 0, 1, 1, 2, 2]),
+                    validity: &[63],
+                },
+                ColumnInput {
+                    values: ColumnValues::String(&["ignored", "ignored", "z", "é", "", "a"]),
+                    validity: &[60],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    append.commit(&cancel).unwrap();
+    let cases = [
+        (sql.to_owned(), vec![vec![Cell::Text("".into()), Cell::Text("é".into()), Cell::Integer(4)]]),
+        (format!("{sql} GROUP AND ORDER BY k"), vec![
+            vec![Cell::Integer(0), Cell::Null, Cell::Null, Cell::Integer(0)],
+            vec![Cell::Integer(1), Cell::Text("z".into()), Cell::Text("é".into()), Cell::Integer(2)],
+            vec![Cell::Integer(2), Cell::Text("".into()), Cell::Text("a".into()), Cell::Integer(2)],
+        ]),
+        ("FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi GROUP BY k |> AGGREGATE MIN(lo) AS lo,MAX(hi) AS hi".to_owned(),
+            vec![vec![Cell::Text("".into()), Cell::Text("é".into())]]),
+    ];
+    for (sql, expected) in cases {
+        let query = db.prepare(&sql).unwrap();
+        let baseline = db.reserved_memory_bytes();
+        let mut result = db.execute(&query, &cancel).unwrap();
+        assert_eq!(collect(&mut result), expected, "{sql}");
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+    db.close().unwrap();
+}
+
+#[test]
+fn date_extrema_preserve_type_nulls_and_repeated_aggregation() {
+    let directory = Directory::new();
+    let db = Database::create_empty(&directory.database(), config()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "dates",
+        &[
+            ColumnDeclaration {
+                name: "k",
+                data_type: DataType::Int64,
+                nullable: false,
+            },
+            ColumnDeclaration {
+                name: "day",
+                data_type: DataType::Date,
+                nullable: true,
+            },
+        ],
+        &cancel,
+    )
+    .unwrap();
+    let sql = "FROM dates |> AGGREGATE MIN(day) AS lo,MAX(day) AS hi,COUNT(day) AS n";
+    let empty = db.prepare(sql).unwrap();
+    assert_eq!(
+        collect(&mut db.execute(&empty, &cancel).unwrap()),
+        vec![vec![Cell::Null, Cell::Null, Cell::Integer(0)]]
+    );
+    drop(empty);
+    let days = [0, 0, -719162, 2932896, -1, -1]
+        .map(|day| DateValue::from_days_since_unix_epoch(day).unwrap());
+    let mut append = db.begin_append("dates", limits(), &cancel).unwrap();
+    append
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::Int64(&[0, 0, 1, 1, 2, 2]),
+                    validity: &[63],
+                },
+                ColumnInput {
+                    values: ColumnValues::Date(&days),
+                    validity: &[60],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    append.commit(&cancel).unwrap();
+    for (sql, expected) in [
+        (sql.to_owned(), vec![vec![Cell::Day(-719162),Cell::Day(2932896),Cell::Integer(4)]]),
+        (format!("{sql} GROUP AND ORDER BY k"), vec![
+            vec![Cell::Integer(0),Cell::Null,Cell::Null,Cell::Integer(0)],
+            vec![Cell::Integer(1),Cell::Day(-719162),Cell::Day(2932896),Cell::Integer(2)],
+            vec![Cell::Integer(2),Cell::Day(-1),Cell::Day(-1),Cell::Integer(2)],
+        ]),
+        ("FROM dates |> AGGREGATE MIN(day) AS lo,MAX(day) AS hi GROUP BY k |> AGGREGATE MIN(lo) AS lo,MAX(hi) AS hi".to_owned(), vec![vec![Cell::Day(-719162),Cell::Day(2932896)]]),
+    ] {
+        let query=db.prepare(&sql).unwrap();
+        let baseline=db.reserved_memory_bytes();
+        let mut result=db.execute(&query,&cancel).unwrap();
+        assert_eq!(collect(&mut result),expected,"{sql}");
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(),baseline);
+        assert_eq!(db.reserved_temp_bytes(),0);
+    }
+    db.close().unwrap();
+}
+
+#[test]
+fn numeric_extrema_preserve_nulls_special_values_and_shared_aggregation() {
+    let directory = Directory::new();
+    let db = Database::create_empty(&directory.database(), config()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "metrics",
+        &[
+            ColumnDeclaration {
+                name: "k",
+                data_type: DataType::Int64,
+                nullable: false,
+            },
+            ColumnDeclaration {
+                name: "n",
+                data_type: DataType::Int64,
+                nullable: true,
+            },
+            ColumnDeclaration {
+                name: "d",
+                data_type: DataType::Double,
+                nullable: true,
+            },
+        ],
+        &cancel,
+    )
+    .unwrap();
+    let sql = "FROM metrics |> AGGREGATE MIN(n) AS lo,MAX(n) AS hi,COUNT(n) AS present,MIN(d) AS dlo,MAX(d) AS dhi";
+    let empty = db.prepare(sql).unwrap();
+    assert_eq!(
+        collect(&mut db.execute(&empty, &cancel).unwrap()),
+        vec![vec![
+            Cell::Null,
+            Cell::Null,
+            Cell::Integer(0),
+            Cell::Null,
+            Cell::Null
+        ]]
+    );
+    drop(empty);
+    let nan = f64::from_bits(0x7ff8_0000_0000_0001);
+    let mut append = db.begin_append("metrics", limits(), &cancel).unwrap();
+    append
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::Int64(&[0, 0, 1, 1, 2, 2]),
+                    validity: &[63],
+                },
+                ColumnInput {
+                    values: ColumnValues::Int64(&[0, 0, i64::MIN, i64::MAX, 7, 9]),
+                    validity: &[60],
+                },
+                ColumnInput {
+                    values: ColumnValues::Double(&[
+                        nan,
+                        f64::NAN,
+                        -0.0,
+                        0.0,
+                        f64::NEG_INFINITY,
+                        f64::INFINITY,
+                    ]),
+                    validity: &[63],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    append.commit(&cancel).unwrap();
+    for (sql, expected) in [
+        (sql.to_owned(), vec![vec![Cell::Integer(i64::MIN), Cell::Integer(i64::MAX), Cell::Integer(4), Cell::Number(nan.to_bits()), Cell::Number(nan.to_bits())]]),
+        (format!("{sql} GROUP AND ORDER BY k"), vec![
+            vec![Cell::Integer(0), Cell::Null, Cell::Null, Cell::Integer(0), Cell::Number(nan.to_bits()), Cell::Number(nan.to_bits())],
+            vec![Cell::Integer(1), Cell::Integer(i64::MIN), Cell::Integer(i64::MAX), Cell::Integer(2), Cell::Number((-0.0_f64).to_bits()), Cell::Number(0.0_f64.to_bits())],
+            vec![Cell::Integer(2), Cell::Integer(7), Cell::Integer(9), Cell::Integer(2), Cell::Number(f64::NEG_INFINITY.to_bits()), Cell::Number(f64::INFINITY.to_bits())],
+        ]),
+        ("FROM metrics |> AGGREGATE MIN(n) AS lo,MAX(n) AS hi,COUNT(n) AS present,SUM(n) AS total,AVG(n) AS mean".to_owned(), vec![vec![Cell::Integer(i64::MIN), Cell::Integer(i64::MAX), Cell::Integer(4), Cell::Integer(15), Cell::Number(3.75_f64.to_bits())]]),
+        ("FROM metrics |> AGGREGATE MIN(n) AS lo,MAX(n) AS hi GROUP BY k |> AGGREGATE MIN(lo) AS lo,MAX(hi) AS hi".to_owned(), vec![vec![Cell::Integer(i64::MIN), Cell::Integer(i64::MAX)]]),
+    ] {
+        let query = db.prepare(&sql).unwrap();
+        let baseline = db.reserved_memory_bytes();
+        let mut result = db.execute(&query, &cancel).unwrap();
+        assert_eq!(collect(&mut result), expected, "{sql}");
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+    db.close().unwrap();
+}
+
+#[test]
 fn count_arguments_follow_repeated_derived_and_joined_inputs() {
     let directory = Directory::new();
     let db = Database::create_empty(&directory.database(), config()).unwrap();

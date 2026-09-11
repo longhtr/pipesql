@@ -22,6 +22,223 @@ fn encoded(keys: &RowLayout, values: &[Value<'_>]) -> Vec<u8> {
 }
 
 #[test]
+fn text_argument_frames_validate_lengths_utf8_and_null_payloads() {
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("db"),
+        crate::Config::new(4_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    let baseline = database.reserved_memory_bytes();
+    let keys = schema(&[(DataType::Int64, false)]);
+    let key = encoded(&keys, &[Value::Int64(7)]);
+    let shape = ArgumentShape {
+        count: 3,
+        nonnull: 1,
+        integers: 1,
+        presence: 0,
+        dates: 0,
+        text: 6,
+    };
+    let capacity = RECORD_HEADER + keys.max_bytes + shape.max_payload_bytes();
+    let charge = database
+        .reserve_memory((IO_BYTES + capacity) as u64, "text codec test")
+        .unwrap();
+    let mut record = SortRecord::new(capacity, charge.bytes()).unwrap();
+    let mut reader = ReadBuffer::new(charge.bytes()).unwrap();
+    let cancel = CancellationToken::new();
+    let mut effects = Effects::default();
+    let mut scratch = crate::scratch::Scratch::new(&database, &cancel, &mut effects).unwrap();
+    let long = "é".repeat(crate::batch::MAX_TEXT_BYTES / 2);
+    for value in [None, Some(""), Some("abc"), Some(long.as_str())] {
+        record.bytes.clear();
+        append_bytes(&mut record.bytes, &[0; RECORD_HEADER]).unwrap();
+        append_bytes(&mut record.bytes, &key).unwrap();
+        record
+            .finish_with_text(
+                shape.layout(&keys),
+                key.len(),
+                0,
+                &[Some(42), value.map(|text| text.len() as u64), Some(1)],
+                &[value.unwrap_or(""), "z"],
+            )
+            .unwrap();
+        let limit = record.bytes.len() as u64;
+        scratch
+            .write(0, 0, &record.bytes, &cancel, &mut effects)
+            .unwrap();
+        reader.clear();
+        record
+            .read(
+                &mut reader,
+                ReadAt {
+                    slot: 0,
+                    offset: 0,
+                    limit,
+                },
+                &keys,
+                shape,
+                &mut Io::new(&mut scratch, &cancel, &mut effects),
+            )
+            .unwrap();
+        assert_eq!(record.bits(0), 42);
+        assert_eq!(record.valid() & 2 != 0, value.is_some());
+        assert_eq!(record.text_value(1, shape).unwrap(), value.unwrap_or(""));
+        assert_eq!(record.text_value(2, shape).unwrap(), "z");
+    }
+    // Each malformed frame has a recomputed checksum. Rejection must come
+    // from the independent length, UTF-8, or NULL-payload contract.
+    for mutation in 0..3 {
+        record.bytes.clear();
+        append_bytes(&mut record.bytes, &[0; RECORD_HEADER]).unwrap();
+        append_bytes(&mut record.bytes, &key).unwrap();
+        record
+            .finish_with_text(
+                shape.layout(&keys),
+                key.len(),
+                0,
+                &[Some(42), Some(1), Some(1)],
+                &["a", "z"],
+            )
+            .unwrap();
+        match mutation {
+            0 => {
+                *record.bytes.last_mut().unwrap() = 0xff;
+            }
+            1 => {
+                let at = RECORD_HEADER + key.len() + 8;
+                record.bytes[at..at + 8]
+                    .copy_from_slice(&(crate::batch::MAX_TEXT_BYTES as u64 + 1).to_le_bytes());
+            }
+            2 => record.bytes[24] &= !2,
+            _ => unreachable!(),
+        }
+        record.bytes[28..32].fill(0);
+        let checksum = crate::storage_format::crc32c(&record.bytes);
+        record.bytes[28..32].copy_from_slice(&checksum.to_le_bytes());
+        let limit = record.bytes.len() as u64;
+        scratch
+            .write(0, 0, &record.bytes, &cancel, &mut effects)
+            .unwrap();
+        reader.clear();
+        let outcome = record.read(
+            &mut reader,
+            ReadAt {
+                slot: 0,
+                offset: 0,
+                limit,
+            },
+            &keys,
+            shape,
+            &mut Io::new(&mut scratch, &cancel, &mut effects),
+        );
+        let expected = match mutation {
+            0 => "group text argument UTF-8",
+            1 => "group text argument length",
+            2 => "NULL group argument payload",
+            _ => unreachable!(),
+        };
+        assert!(matches!(outcome, Err(Error::Corrupt(message)) if message == expected));
+    }
+    drop(scratch);
+    drop(reader);
+    drop(record);
+    drop(charge);
+    assert_eq!(database.reserved_memory_bytes(), baseline);
+    assert_eq!(database.reserved_temp_bytes(), 0);
+    database.close().unwrap();
+}
+
+#[test]
+fn date_argument_frames_reject_out_of_range_days_with_valid_checksums() {
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("db"),
+        crate::Config::new(4_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    let baseline = database.reserved_memory_bytes();
+    let keys = schema(&[(DataType::Int64, false)]);
+    let key = encoded(&keys, &[Value::Int64(7)]);
+    let shape = ArgumentShape {
+        count: 1,
+        nonnull: 0,
+        integers: 1,
+        presence: 0,
+        dates: 1,
+        text: 0,
+    };
+    let cancel = CancellationToken::new();
+    let mut effects = Effects::default();
+    let charge = database
+        .reserve_memory((IO_BYTES + 49) as u64, "date codec test")
+        .unwrap();
+    let mut record = SortRecord::new(49, charge.bytes()).unwrap();
+    let mut reader = ReadBuffer::new(charge.bytes()).unwrap();
+    let mut scratch = crate::scratch::Scratch::new(&database, &cancel, &mut effects).unwrap();
+    for (value, valid) in [
+        (None, true),
+        (Some(-719162_i64), true),
+        (Some(2932896), true),
+        (Some(-719163), false),
+        (Some(2932897), false),
+        (Some(i64::MAX), false),
+    ] {
+        // Preserve a correct producer checksum so the independent semantic
+        // check, rather than checksum rejection, must detect the bad date.
+        record
+            .encode(&keys, shape, &key, 0, &[value.map(|day| day as u64)])
+            .unwrap();
+        let limit = record.bytes.len() as u64;
+        scratch
+            .write(0, 0, &record.bytes, &cancel, &mut effects)
+            .unwrap();
+        reader.clear();
+        let outcome = record.read(
+            &mut reader,
+            ReadAt {
+                slot: 0,
+                offset: 0,
+                limit,
+            },
+            &keys,
+            shape,
+            &mut Io::new(&mut scratch, &cancel, &mut effects),
+        );
+        if valid {
+            outcome.unwrap();
+            assert_eq!(record.valid(), u16::from(value.is_some()));
+            assert_eq!(record.bits(0), value.unwrap_or(0) as u64);
+        } else {
+            assert!(matches!(
+                outcome,
+                Err(Error::Corrupt("group DATE argument range"))
+            ));
+        }
+        reader.clear();
+        assert!(
+            record
+                .read(
+                    &mut reader,
+                    ReadAt {
+                        slot: 0,
+                        offset: 0,
+                        limit
+                    },
+                    &keys,
+                    ArgumentShape { dates: 0, ..shape },
+                    &mut Io::new(&mut scratch, &cancel, &mut effects)
+                )
+                .is_err(),
+            "DATE layout cannot be interpreted as numeric input"
+        );
+    }
+    drop((scratch, reader, record, charge));
+    assert_eq!(database.reserved_memory_bytes(), baseline);
+    assert_eq!(database.reserved_temp_bytes(), 0);
+}
+
+#[test]
 fn count_presence_frames_reject_values_and_changed_interpretation() {
     let directory = Directory::new();
     let database = Database::create_empty(
@@ -37,6 +254,8 @@ fn count_presence_frames_reject_values_and_changed_interpretation() {
         nonnull: 0,
         integers: 1,
         presence: 1,
+        dates: 0,
+        text: 0,
     };
     let cancel = CancellationToken::new();
     let mut effects = Effects::default();
@@ -89,6 +308,8 @@ fn count_presence_frames_reject_values_and_changed_interpretation() {
                     &keys,
                     ArgumentShape {
                         presence: 0,
+                        dates: 0,
+                        text: 0,
                         ..shape
                     },
                     &mut Io::new(&mut scratch, &cancel, &mut effects)
@@ -115,7 +336,7 @@ fn wide_rows_sort_by_key_without_losing_nonkey_payloads() {
     types[0] = DataType::String;
     types[1] = DataType::Double;
     types[2] = DataType::Date;
-    types[4..13].fill(DataType::String);
+    types[4..23].fill(DataType::String);
     let text = types.map(|kind| (kind == DataType::String).then_some(crate::batch::MAX_TEXT_BYTES));
     let mut charge = database
         .reserve_memory(
@@ -146,6 +367,8 @@ fn wide_rows_sort_by_key_without_losing_nonkey_payloads() {
         nonnull: 0,
         integers: 0,
         presence: 0,
+        dates: 0,
+        text: 0,
     };
     let mut sort = RowSort::new(&database, &layout, shape, record_bytes, 2).unwrap();
     let cancel = CancellationToken::new();
@@ -169,8 +392,8 @@ fn wide_rows_sort_by_key_without_losing_nonkey_payloads() {
         2 => {
             Value::Date(DateValue::from_days([-719162, 2932896, -1, 0, 1, 100, -100][row]).unwrap())
         }
-        0 | 4..=12 if row == 1 => Value::Null,
-        0 | 4..=12 => Value::String(StringValue::new("雪\0payload")),
+        0 | 4..=22 if row == 1 => Value::Null,
+        0 | 4..=22 => Value::String(StringValue::new("雪\0payload")),
         _ if row == 2 && column.is_multiple_of(3) => Value::Null,
         _ => Value::Int64((row * 1000 + column) as i64),
     };
@@ -319,6 +542,8 @@ fn interrupted_sort(database: &Database, fault: SortFault) -> u64 {
         nonnull: 1,
         integers: 1,
         presence: 0,
+        dates: 0,
+        text: 0,
     };
     let cancel = CancellationToken::new();
     let mut effects = Effects::default();
@@ -435,6 +660,8 @@ fn argument_sort_preserves_unsorted_records_across_row_and_byte_caps() {
         nonnull: 0,
         integers: 0,
         presence: 0,
+        dates: 0,
+        text: 0,
     };
     let record_bytes = RECORD_HEADER + keys.max_bytes + 16;
     let before = database.reserved_memory_bytes();
@@ -615,6 +842,8 @@ fn check_merge_passes(database: &Database, runs: u32, fail_at: Option<u64>) -> u
         nonnull: 1,
         integers: 1,
         presence: 0,
+        dates: 0,
+        text: 0,
     };
     let cancel = CancellationToken::new();
     let mut effects = Effects::default();
@@ -796,6 +1025,8 @@ fn check_pair_merge(equal_keys: bool) {
         nonnull: 1,
         integers: 1,
         presence: 0,
+        dates: 0,
+        text: 0,
     };
     let cancel = CancellationToken::new();
     let mut effects = Effects::default();

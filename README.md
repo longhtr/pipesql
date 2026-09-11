@@ -15,7 +15,7 @@ Windows implementation remains unfinished.
 
 The library creates declared tables, appends typed batches, and queries
 immutable snapshots. One serialized writer can coexist with snapshot readers.
-Queries support numeric projections, STRING/NULL/Boolean filters, COUNT/SUM/AVG,
+Queries support numeric projections, STRING/NULL/Boolean filters, COUNT/SUM/AVG/MIN/MAX,
 grouped and repeated aggregation, full-row DISTINCT, equality joins, ORDER BY,
 LIMIT/OFFSET, and independent FROM/JOIN subqueries. Grouping has memory and
 spill paths; joins, ordering, and DISTINCT use shared sorting. Reclamation

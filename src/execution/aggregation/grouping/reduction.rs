@@ -1,7 +1,7 @@
 //! Fold globally sorted arguments into one reusable aggregate cell.
 //! The sorter retains its buffers; a completed group keeps its key until consumed.
+use crate::execution::aggregation::accumulator::AggregateState;
 use crate::execution::aggregation::arguments::ArgumentBatch;
-use crate::execution::aggregation::numeric::AggregateState;
 use crate::execution::blocking::{Io, RowLayout, RowSort, append_bytes};
 use crate::{Error, Value};
 use std::cmp::Ordering;
@@ -62,7 +62,11 @@ impl Reduction {
                 } else {
                     next.is_none()
                 };
-                if boundary || arguments.rows == arguments.capacity {
+                let full = match next {
+                    Some(record) => !arguments.can_append(record)?,
+                    None => false,
+                };
+                if boundary || full {
                     arguments.fold_group(aggregate, 0)?;
                     arguments.clear();
                     if boundary {

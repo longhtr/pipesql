@@ -397,22 +397,40 @@ pub(in crate::execution) struct ArgumentShape {
     pub(in crate::execution) integers: u16,
     /// Count-only arguments encode present values as zero; NULL remains absent.
     pub(in crate::execution) presence: u16,
+    /// Retained signed day values, independently range-checked on replay.
+    pub(in crate::execution) dates: u16,
+    /// Retained UTF-8 arguments. Their value words hold trailer byte lengths.
+    pub(in crate::execution) text: u16,
 }
 
 impl ArgumentShape {
+    pub(in crate::execution) fn text_bytes(self) -> usize {
+        self.text.count_ones() as usize * crate::batch::MAX_TEXT_BYTES
+    }
+
+    pub(in crate::execution) fn max_payload_bytes(self) -> usize {
+        self.count * 8 + self.text_bytes()
+    }
+
     pub(in crate::execution) fn layout(self, keys: &RowLayout) -> u32 {
         assert!(self.count <= MAX_AGGREGATE_COLUMNS);
-        let mut bytes = [0; 11];
+        let mut bytes = [0; 15];
         bytes[..4].copy_from_slice(&keys.layout.to_le_bytes());
         bytes[4] = self.count as u8;
         bytes[5..7].copy_from_slice(&self.nonnull.to_le_bytes());
         bytes[7..9].copy_from_slice(&self.integers.to_le_bytes());
         bytes[9..11].copy_from_slice(&self.presence.to_le_bytes());
-        // Preserve existing layouts when no presence-only argument is admitted.
-        storage_format::crc32c(if self.presence == 0 {
+        bytes[11..13].copy_from_slice(&self.dates.to_le_bytes());
+        bytes[13..15].copy_from_slice(&self.text.to_le_bytes());
+        // Preserve existing layouts when no new typed argument is admitted.
+        storage_format::crc32c(if self.text != 0 {
+            &bytes
+        } else if self.dates != 0 {
+            &bytes[..13]
+        } else if self.presence == 0 {
             &bytes[..9]
         } else {
-            &bytes
+            &bytes[..11]
         })
     }
 }
@@ -448,6 +466,8 @@ impl SortRecord {
             nonnull: 0,
             integers: 0,
             presence: 0,
+            dates: 0,
+            text: 0,
         };
         self.finish(arguments.layout(layout), length, ordinal, &[])
     }
@@ -472,7 +492,11 @@ impl SortRecord {
     ) -> Result<(), Error> {
         if arguments.len() > MAX_AGGREGATE_COLUMNS
             || arguments.len() != shape.count
-            || (shape.nonnull | shape.integers | shape.presence) >> shape.count != 0
+            || (shape.nonnull | shape.integers | shape.presence | shape.dates | shape.text)
+                >> shape.count
+                != 0
+            || shape.dates & (!shape.integers | shape.presence) != 0
+            || shape.text & (shape.integers | shape.presence | shape.dates) != 0
             || ordinal >= MAX_AGGREGATE_ROWS
         {
             return Err(Error::Corrupt("group argument shape"));
@@ -491,12 +515,29 @@ impl SortRecord {
         ordinal: u64,
         arguments: &[Option<u64>],
     ) -> Result<(), Error> {
+        self.finish_with_text(layout, key_len, ordinal, arguments, &[])
+    }
+
+    pub(in crate::execution) fn finish_with_text(
+        &mut self,
+        layout: u32,
+        key_len: usize,
+        ordinal: u64,
+        arguments: &[Option<u64>],
+        text: &[&str],
+    ) -> Result<(), Error> {
         assert_eq!(self.bytes.len(), RECORD_HEADER + key_len);
         assert!(arguments.len() <= MAX_AGGREGATE_COLUMNS && ordinal < MAX_AGGREGATE_ROWS);
         let mut valid = 0_u16;
         for (index, value) in arguments.iter().enumerate() {
             valid |= u16::from(value.is_some()) << index;
             append_bytes(&mut self.bytes, &value.unwrap_or(0).to_le_bytes())?;
+        }
+        for value in text {
+            if value.len() > crate::batch::MAX_TEXT_BYTES {
+                return Err(Error::Corrupt("group text argument length"));
+            }
+            append_bytes(&mut self.bytes, value.as_bytes())?;
         }
         self.bytes[..8].copy_from_slice(RECORD_MAGIC);
         self.bytes[8..16].copy_from_slice(&ordinal.to_le_bytes());
@@ -519,7 +560,15 @@ impl SortRecord {
         io: &mut Io<'_, '_>,
     ) -> Result<(), Error> {
         if arguments.count > MAX_AGGREGATE_COLUMNS
-            || (arguments.nonnull | arguments.integers | arguments.presence) >> arguments.count != 0
+            || (arguments.nonnull
+                | arguments.integers
+                | arguments.presence
+                | arguments.dates
+                | arguments.text)
+                >> arguments.count
+                != 0
+            || arguments.dates & (!arguments.integers | arguments.presence) != 0
+            || arguments.text & (arguments.integers | arguments.presence | arguments.dates) != 0
         {
             return Err(Error::Corrupt("group argument type shape"));
         }
@@ -571,6 +620,36 @@ impl SortRecord {
             &mut self.bytes[RECORD_HEADER..],
             io,
         )?;
+        // Lengths are untrusted until the CRC is checked. Bound every read by
+        // the admitted frame and per-value ceilings before extending the buffer.
+        let mut total = end;
+        for state in 0..states {
+            if arguments.text & (1 << state) != 0 {
+                let length = usize::try_from(self.bits(state))
+                    .map_err(|_| Error::Corrupt("group text argument length"))?;
+                if length > crate::batch::MAX_TEXT_BYTES {
+                    return Err(Error::Corrupt("group text argument length"));
+                }
+                total = total
+                    .checked_add(length)
+                    .filter(|total| *total <= self.bytes.capacity())
+                    .ok_or(Error::Corrupt("group text argument extent"))?;
+            }
+        }
+        if total != end {
+            self.bytes.resize(total, 0);
+            reader.read(
+                ReadAt {
+                    slot,
+                    offset: offset
+                        .checked_add(end as u64)
+                        .ok_or(Error::Corrupt("group text read offset"))?,
+                    limit,
+                },
+                &mut self.bytes[end..],
+                io,
+            )?;
+        }
         let expected = u32::from_le_bytes(self.bytes[28..32].try_into().expect("CRC bytes"));
         self.bytes[28..32].fill(0);
         let actual = storage_format::crc32c(&self.bytes);
@@ -589,6 +668,17 @@ impl SortRecord {
         for state in 0..states {
             if valid & (1 << state) == 0 && self.bits(state) != 0 {
                 return Err(Error::Corrupt("NULL group argument payload"));
+            }
+            if arguments.dates & valid & (1 << state) != 0
+                && i32::try_from(self.bits(state) as i64)
+                    .ok()
+                    .and_then(crate::DateValue::from_days)
+                    .is_none()
+            {
+                return Err(Error::Corrupt("group DATE argument range"));
+            }
+            if arguments.text & (1 << state) != 0 {
+                self.text_value(state, arguments)?;
             }
             if arguments.presence & (1 << state) != 0 && self.bits(state) != 0 {
                 return Err(Error::Corrupt("count-only group argument payload"));
@@ -617,6 +707,37 @@ impl SortRecord {
         assert!(state < usize::from(self.bytes[26]));
         let at = RECORD_HEADER + self.key_len() + state * 8;
         u64::from_le_bytes(self.bytes[at..at + 8].try_into().expect("argument bits"))
+    }
+
+    pub(in crate::execution) fn text_value(
+        &self,
+        state: usize,
+        shape: ArgumentShape,
+    ) -> Result<&str, Error> {
+        if state >= shape.count || shape.text & (1 << state) == 0 {
+            return Err(Error::Corrupt("group text argument slot"));
+        }
+        let mut start = RECORD_HEADER + self.key_len() + shape.count * 8;
+        for prior in 0..state {
+            if shape.text & (1 << prior) != 0 {
+                start = start
+                    .checked_add(
+                        usize::try_from(self.bits(prior))
+                            .map_err(|_| Error::Corrupt("group text argument offset"))?,
+                    )
+                    .ok_or(Error::Corrupt("group text argument offset"))?;
+            }
+        }
+        let length = usize::try_from(self.bits(state))
+            .map_err(|_| Error::Corrupt("group text argument length"))?;
+        let end = start
+            .checked_add(length)
+            .ok_or(Error::Corrupt("group text argument extent"))?;
+        let bytes = self
+            .bytes
+            .get(start..end)
+            .ok_or(Error::Corrupt("group text argument extent"))?;
+        std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("group text argument UTF-8"))
     }
 
     // The run arena contains only previously encoded records. Its spans must

@@ -56,6 +56,8 @@ const ROW_ARGUMENTS: ArgumentShape = ArgumentShape {
     nonnull: 0,
     integers: 0,
     presence: 0,
+    dates: 0,
+    text: 0,
 };
 
 struct SortedInput<'db> {
@@ -161,7 +163,7 @@ pub(super) const RECORD_HEADER: usize = 32;
 const RECORD_MAGIC: &[u8; 8] = b"PGRP0001";
 pub(super) const MAX_KEY_BYTES: usize = MAX_KEYS * (5 + crate::batch::MAX_TEXT_BYTES);
 pub(super) const MAX_ARGUMENT_RECORD_BYTES: usize =
-    RECORD_HEADER + MAX_KEY_BYTES + MAX_AGGREGATE_COLUMNS * 8;
+    RECORD_HEADER + MAX_KEY_BYTES + MAX_AGGREGATE_COLUMNS * (8 + crate::batch::MAX_TEXT_BYTES);
 const MAX_RECORD_BYTES: usize = MAX_FRAME_BYTES;
 // A projection may repeat a text key in every result column.
 pub(super) const MAX_FRAME_BYTES: usize =
@@ -401,13 +403,22 @@ impl<'db> PairMerge<'db> {
         arguments: ArgumentShape,
     ) -> Result<Self, Error> {
         let states = arguments.count;
-        if states > MAX_AGGREGATE_COLUMNS || (arguments.nonnull | arguments.integers) >> states != 0
+        if states > MAX_AGGREGATE_COLUMNS
+            || (arguments.nonnull
+                | arguments.integers
+                | arguments.presence
+                | arguments.dates
+                | arguments.text)
+                >> states
+                != 0
+            || arguments.dates & (!arguments.integers | arguments.presence) != 0
+            || arguments.text & (arguments.integers | arguments.presence | arguments.dates) != 0
         {
             return Err(Error::Corrupt("merge argument width"));
         }
         let record_bytes = RECORD_HEADER
             .checked_add(keys.max_bytes)
-            .and_then(|n| n.checked_add(states * 8))
+            .and_then(|n| n.checked_add(arguments.max_payload_bytes()))
             .ok_or(Error::Corrupt("merge record capacity"))?;
         let bytes = record_bytes
             .checked_mul(2)
@@ -1133,7 +1144,7 @@ impl<'db> RowSort<'db> {
     ) -> Result<Self, Error> {
         let minimum = RECORD_HEADER
             .checked_add(keys.max_bytes)
-            .and_then(|n| n.checked_add(arguments.count.checked_mul(8)?))
+            .and_then(|n| n.checked_add(arguments.max_payload_bytes()))
             .ok_or(Error::Corrupt("sort record minimum"))?;
         if bytes < minimum {
             return Err(Error::Resource {

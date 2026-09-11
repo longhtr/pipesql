@@ -3,8 +3,8 @@ mod hash;
 mod reduction;
 use crate::batch::Batch;
 use crate::effects::Effects;
+use crate::execution::aggregation::accumulator::{AggregateLayout, AggregateState};
 use crate::execution::aggregation::arguments::ArgumentBatch;
-use crate::execution::aggregation::numeric::{AggregateLayout, AggregateState};
 use crate::execution::blocking::{
     ArgumentShape, Files, IO_BYTES, KeyColumn, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_KEYS,
     RECORD_HEADER, ReadAt, RecordSpan, RowLayout, RowSort, SortPhase, SortRecord, append_bytes,
@@ -147,7 +147,7 @@ impl OutputLayout {
                 match aggregate.plan.entries[entry].kind {
                     AggregateKind::Count => (DataType::Int64, false),
                     AggregateKind::Avg => (DataType::Double, true),
-                    AggregateKind::Sum => (
+                    AggregateKind::Sum | AggregateKind::Min | AggregateKind::Max => (
                         aggregate.inputs[aggregate.entry_states[entry]]
                             .ok_or(Error::Corrupt("group result argument absent"))?
                             .data_type(),
@@ -220,7 +220,7 @@ impl<'db> Minimum<'db> {
     ) -> Result<Self, Error> {
         let frame_bytes = output
             .max_bytes
-            .max(RECORD_HEADER + keys.max_bytes + shape.count * 8);
+            .max(RECORD_HEADER + keys.max_bytes + shape.max_payload_bytes());
         // AggregateState charges its heap arrays only; this controller owns and
         // charges its inline fields. ArgumentBatch and RowSort include theirs.
         let inline =
@@ -249,13 +249,13 @@ impl<'db> Minimum<'db> {
         output: &OutputLayout,
         shape: ArgumentShape,
     ) -> Result<u64, Error> {
-        let record = RECORD_HEADER + keys.max_bytes + shape.count * 8;
+        let record = RECORD_HEADER + keys.max_bytes + shape.max_payload_bytes();
         // One captured argument, one maximum run record, two spans, two merge
         // records, three I/O buffers, a prior key, and the reusable final frame.
         [
             size_of::<General<'_>>(),
             record.max(output.max_bytes),
-            shape.count * 8,
+            shape.max_payload_bytes(),
             record,
             2 * size_of::<RecordSpan>(),
             2 * record,
@@ -319,8 +319,8 @@ impl<'db> General<'db> {
         }
         let keys = key_layout(semantic, &inputs[..count])?;
         let layout = AggregateLayout::new(semantic, demand, inputs[..count].iter().copied());
-        let mut shape = ArgumentShape::from_inputs(&layout.inputs[..layout.states]);
-        shape.presence = layout.count_only_states();
+        let shape =
+            ArgumentShape::from_inputs(&layout.inputs[..layout.states], layout.count_only_states());
         let mut columns = [(DataType::Int64, false); MAX_COLUMNS];
         let mut output_count = 0;
         for column in output_columns {
@@ -396,7 +396,7 @@ impl<'db> General<'db> {
             run_rows: 1 + extra_rows,
             run_bytes: RECORD_HEADER
                 + keys.max_bytes
-                + shape.count * 8
+                + shape.max_payload_bytes()
                 + extra_rows * shortest_record,
         };
         let minimum = Minimum::new(database, keys, output, shape, &limits)?;

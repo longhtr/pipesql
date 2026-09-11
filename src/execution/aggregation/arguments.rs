@@ -1,5 +1,5 @@
 //! Charged argument capture and replay through the shared checked row codec.
-use super::numeric::{AggregateCells, AggregateState};
+use super::accumulator::{AggregateCells, AggregateState};
 use crate::batch::Batch;
 use crate::execution::blocking::{
     ArgumentShape, RECORD_HEADER, RowLayout, SortRecord, append_bytes,
@@ -15,6 +15,10 @@ use std::mem::size_of;
 // Grouping keys remain in the source batch or record; they are never converted to numbers.
 pub(super) struct ArgumentBatch<'db> {
     pub(super) values: Vec<u64>,
+    // One bounded arena per retained text argument. Value words pack a u32
+    // start and u32 length within that arena; no word contains a source pointer.
+    text: Vec<u8>,
+    text_used: [usize; MAX_AGGREGATE_COLUMNS],
     pub(super) valid: [[u64; BATCH_ROWS / 64]; MAX_AGGREGATE_COLUMNS],
     pub(super) shape: ArgumentShape,
     pub(super) capacity: usize,
@@ -46,11 +50,22 @@ impl<'db> ArgumentBatch<'db> {
         for (state, value) in values[..self.shape.count].iter_mut().enumerate() {
             *value = self.value(state, row);
         }
-        record.finish(
+        let mut text = [""; MAX_AGGREGATE_COLUMNS];
+        let mut text_count = 0;
+        for (state, encoded) in values[..self.shape.count].iter_mut().enumerate() {
+            if self.shape.text & (1 << state) != 0 {
+                let value = self.text_value(state, row)?;
+                *encoded = value.map(|value| value.len() as u64);
+                text[text_count] = value.unwrap_or("");
+                text_count += 1;
+            }
+        }
+        record.finish_with_text(
             self.shape.layout(keys),
             key_len,
             ordinal,
             &values[..self.shape.count],
+            &text[..text_count],
         )
     }
 
@@ -62,7 +77,11 @@ impl<'db> ArgumentBatch<'db> {
         if capacity == 0
             || capacity > BATCH_ROWS
             || shape.count > MAX_AGGREGATE_COLUMNS
-            || (shape.nonnull | shape.integers | shape.presence) >> shape.count != 0
+            || (shape.nonnull | shape.integers | shape.presence | shape.dates | shape.text)
+                >> shape.count
+                != 0
+            || shape.dates & (!shape.integers | shape.presence) != 0
+            || shape.text & (shape.integers | shape.presence | shape.dates) != 0
         {
             return Err(Error::Corrupt("argument batch shape"));
         }
@@ -71,13 +90,23 @@ impl<'db> ArgumentBatch<'db> {
             .ok_or(Error::Corrupt("argument batch cells"))?;
         let bytes = cells
             .checked_mul(size_of::<u64>())
+            .and_then(|n| n.checked_add(shape.text_bytes()))
             .and_then(|n| n.checked_add(size_of::<Self>()))
             .ok_or(Error::Corrupt("argument batch memory"))? as u64;
         let reservation = database.reserve_memory(bytes, "group argument batch")?;
         let mut values = allocate(cells, cells, "group argument values", bytes)?;
         values.resize(cells, 0);
+        let mut text = allocate(
+            shape.text_bytes(),
+            shape.text_bytes(),
+            "group argument text",
+            bytes,
+        )?;
+        text.resize(shape.text_bytes(), 0);
         Ok(Self {
             values,
+            text,
+            text_used: [0; MAX_AGGREGATE_COLUMNS],
             valid: [[u64::MAX; BATCH_ROWS / 64]; MAX_AGGREGATE_COLUMNS],
             shape,
             capacity,
@@ -91,6 +120,7 @@ impl<'db> ArgumentBatch<'db> {
         self.rows = 0;
         self.source_start = None;
         self.valid.fill([u64::MAX; BATCH_ROWS / 64]);
+        self.text_used.fill(0);
     }
 
     pub(super) fn check_program(&self, aggregate: &AggregateState<'_>) -> Result<(), Error> {
@@ -134,7 +164,7 @@ impl<'db> ArgumentBatch<'db> {
             let argument = aggregate.inputs[state].expect("validated demanded argument");
             let expression = match argument {
                 AggregateArgument::Numeric(expression) => expression,
-                AggregateArgument::Validity(column) => {
+                AggregateArgument::Column(column) => {
                     let index = aggregate
                         .input_columns
                         .iter()
@@ -143,11 +173,24 @@ impl<'db> ArgumentBatch<'db> {
                     let valid = input.validity(index, *column)?;
                     for row in 0..rows {
                         let source = range.start + row;
-                        self.store(
-                            state,
-                            row,
-                            (valid[source / 64] & (1 << (source % 64)) != 0).then_some(0),
-                        );
+                        let value = if valid[source / 64] & (1 << (source % 64)) == 0 {
+                            None
+                        } else if self.shape.presence & (1 << state) != 0 {
+                            Some(0)
+                        } else if self.shape.text & (1 << state) != 0 {
+                            let Some(crate::Value::String(value)) = input.value(source, index)
+                            else {
+                                return Err(Error::Corrupt("typed STRING argument missing"));
+                            };
+                            self.store_text(state, row, value.as_str())?;
+                            continue;
+                        } else {
+                            let Some(crate::Value::Date(value)) = input.value(source, index) else {
+                                return Err(Error::Corrupt("typed DATE argument missing"));
+                            };
+                            Some(i64::from(value.days_since_unix_epoch()) as u64)
+                        };
+                        self.store(state, row, value);
                     }
                     continue;
                 }
@@ -195,13 +238,61 @@ impl<'db> ArgumentBatch<'db> {
             .then_some(self.values[state * self.capacity + row])
     }
 
+    fn text_base(&self, state: usize) -> usize {
+        (self.shape.text & ((1 << state) - 1)).count_ones() as usize * crate::batch::MAX_TEXT_BYTES
+    }
+
+    fn store_text(&mut self, state: usize, row: usize, value: &str) -> Result<(), Error> {
+        let start = self.text_used[state];
+        let end = start
+            .checked_add(value.len())
+            .filter(|end| *end <= crate::batch::MAX_TEXT_BYTES)
+            .ok_or(Error::Corrupt("captured text exceeds admitted capacity"))?;
+        let base = self.text_base(state);
+        self.text[base + start..base + end].copy_from_slice(value.as_bytes());
+        self.text_used[state] = end;
+        self.store(state, row, Some((value.len() as u64) << 32 | start as u64));
+        Ok(())
+    }
+
+    fn text_value(&self, state: usize, row: usize) -> Result<Option<&str>, Error> {
+        let Some(span) = self.value(state, row) else {
+            return Ok(None);
+        };
+        let start = (span as u32) as usize;
+        let length = (span >> 32) as usize;
+        let end = start
+            .checked_add(length)
+            .filter(|end| *end <= self.text_used[state])
+            .ok_or(Error::Corrupt("captured text span"))?;
+        let base = self.text_base(state);
+        std::str::from_utf8(&self.text[base + start..base + end])
+            .map(Some)
+            .map_err(|_| Error::Corrupt("captured text UTF-8"))
+    }
+
+    pub(super) fn can_append(&self, record: &SortRecord) -> Result<bool, Error> {
+        if self.rows == self.capacity {
+            return Ok(false);
+        }
+        for state in 0..self.shape.count {
+            if self.shape.text & (1 << state) != 0 {
+                let value = record.text_value(state, self.shape)?;
+                if value.len() > crate::batch::MAX_TEXT_BYTES - self.text_used[state] {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
     pub(super) fn append(&mut self, record: &SortRecord) -> Result<(), Error> {
         if self.source_start.is_some() {
             return Err(Error::Corrupt(
                 "disk arguments require an empty replay batch",
             ));
         }
-        if self.rows == self.capacity
+        if !self.can_append(record)?
             || usize::from(record.bytes[26]) != self.shape.count
             || record.valid() & self.shape.nonnull != self.shape.nonnull
         {
@@ -209,6 +300,10 @@ impl<'db> ArgumentBatch<'db> {
         }
         // The disk reader has already checked CRC, key shape and validity tails.
         for state in 0..self.shape.count {
+            if self.shape.text & record.valid() & (1 << state) != 0 {
+                self.store_text(state, self.rows, record.text_value(state, self.shape)?)?;
+                continue;
+            }
             self.store(
                 state,
                 self.rows,
@@ -244,6 +339,14 @@ impl<'db> ArgumentBatch<'db> {
             return Err(Error::Corrupt("argument position extent"));
         }
         for state in 0..self.shape.count {
+            if self.shape.text & (1 << state) != 0 {
+                for (row, &(group, row_count)) in positions.iter().enumerate() {
+                    if let Some(value) = self.text_value(state, row)? {
+                        cells.fold_text(state, group, row_count, value)?;
+                    }
+                }
+                continue;
+            }
             let values = &self.values[state * self.capacity..state * self.capacity + self.rows];
             let output = crate::scalar::NumericOutput::from_bits(values, self.valid[state])?;
             cells.fold(
@@ -259,24 +362,38 @@ impl<'db> ArgumentBatch<'db> {
 
 impl ArgumentShape {
     pub(super) fn from_aggregate(aggregate: &AggregateState<'_>) -> Self {
-        let mut shape = Self::from_inputs(&aggregate.inputs[..aggregate.states]);
+        let mut presence = 0;
         for state in 0..aggregate.states {
-            if aggregate.cells.value_slots[state] == u8::MAX {
-                shape.presence |= 1 << state;
+            if aggregate.cells.value_slots[state] == u8::MAX
+                && aggregate
+                    .cells
+                    .extrema_slots
+                    .iter()
+                    .all(|slots| slots[state] == u8::MAX)
+            {
+                presence |= 1 << state;
             }
         }
-        shape
+        Self::from_inputs(&aggregate.inputs[..aggregate.states], presence)
     }
 
-    pub(super) fn from_inputs(inputs: &[Option<&AggregateArgument>]) -> Self {
+    pub(super) fn from_inputs(inputs: &[Option<&AggregateArgument>], presence: u16) -> Self {
         let mut nonnull = 0;
         let mut integers = 0;
+        let mut dates = 0;
+        let mut text = 0;
         for (index, input) in inputs.iter().enumerate() {
             let input = input.expect("validated aggregate input");
             if !input.nullable() {
                 nonnull |= 1 << index;
             }
-            if input.data_type() == DataType::Int64 {
+            if input.data_type() == DataType::String && presence & (1 << index) == 0 {
+                text |= 1 << index;
+            }
+            if input.data_type() == DataType::Date && presence & (1 << index) == 0 {
+                dates |= 1 << index;
+            }
+            if input.data_type() == DataType::Int64 || dates & (1 << index) != 0 {
                 integers |= 1 << index;
             }
         }
@@ -284,7 +401,9 @@ impl ArgumentShape {
             count: inputs.len(),
             nonnull,
             integers,
-            presence: 0,
+            presence,
+            dates,
+            text,
         }
     }
 }

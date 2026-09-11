@@ -1,7 +1,7 @@
 //! Optional hash grouping. Its allocations never own the disk fallback's charge.
 use crate::batch::Batch;
+use crate::execution::aggregation::accumulator::{AggregateCells, AggregateState};
 use crate::execution::aggregation::arguments::ArgumentBatch;
-use crate::execution::aggregation::numeric::{AggregateCells, AggregateState};
 use crate::execution::blocking::{ArgumentShape, MAX_KEY_BYTES, RowLayout, append_bytes};
 use crate::execution::{BATCH_ROWS, MAX_AGGREGATE_ROWS};
 use crate::resources::{Reservation, allocate};
@@ -110,6 +110,10 @@ impl<'db> MemoryGroups<'db> {
                 value_slots: base.value_slots,
                 count_slots: base.count_slots,
                 sum_states: base.sum_states,
+                extrema: repeated(&base.extrema, capacity, 0, bytes)?,
+                extrema_slots: base.extrema_slots,
+                text: repeated(&base.text, capacity, 0, bytes)?,
+                text_offsets: base.text_offsets,
             },
             key: allocate(keys.max_bytes, keys.max_bytes, "hash lookup key", bytes)?,
             arena: allocate(key_limit, key_limit, "group key arena", bytes)?,
@@ -155,6 +159,8 @@ impl<'db> MemoryGroups<'db> {
         let bytes = [
             (count(base.values.len())?, size_of::<f64>()),
             (count(base.integers.len())?, size_of::<i128>()),
+            (count(base.extrema.len())?, size_of::<u64>()),
+            (count(base.text.len())?, size_of::<u8>()),
             (count(base.nonnull_counts.len())?, size_of::<u32>()),
             (capacity, size_of::<u32>()),
             (count(base.flags.len())?, size_of::<u32>()),
@@ -194,6 +200,8 @@ impl<'db> MemoryGroups<'db> {
         let base = &aggregate.cells;
         let cell_bytes = base.values.len() * size_of::<f64>()
             + base.integers.len() * size_of::<i128>()
+            + base.extrema.len() * size_of::<u64>()
+            + base.text.len()
             + base.nonnull_counts.len() * size_of::<u32>()
             + size_of::<u32>()
             + base.flags.len() * size_of::<u32>();
@@ -490,6 +498,8 @@ impl<'db> MemoryGroups<'db> {
             || ArgumentShape::from_aggregate(aggregate) != self.shape
             || aggregate.cells.value_slots != self.cells.value_slots
             || aggregate.cells.count_slots != self.cells.count_slots
+            || aggregate.cells.extrema_slots != self.cells.extrema_slots
+            || aggregate.cells.text_offsets != self.cells.text_offsets
             || aggregate.cells.sum_states != self.cells.sum_states
         {
             return Err(Error::Corrupt("hash finalization state differs"));
@@ -508,6 +518,13 @@ impl<'db> MemoryGroups<'db> {
             self.capacity,
             group,
         )?;
+        copy_group(
+            &self.cells.extrema,
+            &mut target.extrema,
+            self.capacity,
+            group,
+        )?;
+        copy_group(&self.cells.text, &mut target.text, self.capacity, group)?;
         copy_group(&self.cells.counts, &mut target.counts, self.capacity, group)?;
         copy_group(&self.cells.flags, &mut target.flags, self.capacity, group)
     }

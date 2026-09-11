@@ -575,3 +575,204 @@ fn downstream_hash_fallback_replays_retained_aggregate_input() {
         assert_eq!(database.reserved_temp_bytes(), 0);
     }
 }
+
+#[test]
+fn full_length_text_extrema_survive_hash_fallback_and_cancelled_reduction() {
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("db"),
+        crate::Config::new(16_000_000, 8_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    database
+        .declare_table(
+            "words",
+            &[
+                crate::ColumnDeclaration {
+                    name: "k",
+                    data_type: DataType::Int64,
+                    nullable: false,
+                },
+                crate::ColumnDeclaration {
+                    name: "word",
+                    data_type: DataType::String,
+                    nullable: true,
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    let long_m = "m".repeat(crate::batch::MAX_TEXT_BYTES);
+    let long_n = "n".repeat(crate::batch::MAX_TEXT_BYTES);
+    // Separate source batches let sorted replay encounter more than one full
+    // text arena's worth of values within a single group.
+    for (key, word) in [
+        (1, Some(long_m.as_str())),
+        (2, Some("é")),
+        (1, Some("")),
+        (2, Some("z")),
+        (0, None),
+        (0, None),
+        (1, Some(long_n.as_str())),
+    ] {
+        let mut append = database
+            .begin_append(
+                "words",
+                crate::AppendLimits {
+                    batches: 1,
+                    encoded_bytes: 200_000,
+                },
+                &cancel,
+            )
+            .unwrap();
+        append
+            .write(
+                &[
+                    crate::ColumnInput {
+                        values: crate::ColumnValues::Int64(&[key]),
+                        validity: &[1],
+                    },
+                    crate::ColumnInput {
+                        values: crate::ColumnValues::String(&[word.unwrap_or("")]),
+                        validity: &[u8::from(word.is_some())],
+                    },
+                ],
+                &cancel,
+            )
+            .unwrap();
+        append.commit(&cancel).unwrap();
+    }
+    let query = database.prepare(
+        "FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi,COUNT(word) AS n GROUP AND ORDER BY k"
+    ).unwrap();
+    let baseline = database.reserved_memory_bytes();
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Scenario {
+        Memory,
+        Spill,
+        CancelReduction,
+        RefuseTemporary,
+    }
+    for scenario in [
+        Scenario::Memory,
+        Scenario::Spill,
+        Scenario::CancelReduction,
+        Scenario::RefuseTemporary,
+    ] {
+        let hash_groups = if scenario == Scenario::Memory { 3 } else { 1 };
+        let cancel_reduction = scenario == Scenario::CancelReduction;
+        let occupied = if scenario == Scenario::RefuseTemporary {
+            database.config().temp_limit_bytes()
+        } else {
+            0
+        };
+        let cancel = CancellationToken::new();
+        let mut result = database.execute(&query, &cancel).unwrap();
+        let State::Running(runtime) = &mut result.state else {
+            unreachable!()
+        };
+        let Aggregation::General(owner) = &mut runtime.aggregates[0] else {
+            unreachable!()
+        };
+        let general = &mut owner[0];
+        // Change only optional capacity; the public plan, admitted fallback,
+        // source replay, scheduler, and output ownership remain intact.
+        general.memory.clear();
+        let groups = MemoryGroups::new(
+            &database,
+            &general.aggregate,
+            &general.keys,
+            hash_groups,
+            hash_groups * general.keys.max_bytes,
+        )
+        .unwrap();
+        assert!(general.memory.capacity() >= 1);
+        general.memory.push(groups);
+        database.temporary.reserve(occupied).unwrap();
+        let mut refused = false;
+        let mut observed = Vec::new();
+        let mut saw_spill = false;
+        let mut saw_reduce = false;
+        let mut finished = false;
+        let mut cancelled = false;
+        for _ in 0..50_000 {
+            let Aggregation::General(owner) = &runtime.aggregates[0] else {
+                unreachable!()
+            };
+            saw_spill |=
+                matches!(owner[0].files, Files::Open(_)) && database.reserved_temp_bytes() != 0;
+            if owner[0].phase == Phase::Reduce {
+                saw_reduce = true;
+                if cancel_reduction {
+                    cancel.cancel();
+                }
+            }
+            match runtime.step(&result.plan, &cancel, &mut Effects::default()) {
+                Ok(Advance::Rows) => {
+                    let output = runtime.output();
+                    for row in 0..output.len() {
+                        let integer = |column| match output.value(row, column).unwrap() {
+                            Value::Int64(value) => value,
+                            _ => panic!("integer output"),
+                        };
+                        let text = |column| match output.value(row, column).unwrap() {
+                            Value::Null => None,
+                            Value::String(value) => Some(value.as_str().to_owned()),
+                            _ => panic!("text output"),
+                        };
+                        observed.push((integer(0), text(1), text(2), integer(3)));
+                    }
+                }
+                Ok(Advance::Progress) => (),
+                Ok(Advance::Finished) => {
+                    finished = true;
+                    break;
+                }
+                Err(Error::Cancelled) if cancel_reduction => {
+                    cancelled = true;
+                    break;
+                }
+                Err(Error::Resource {
+                    owner: "database temporary storage",
+                    ..
+                }) if scenario == Scenario::RefuseTemporary => {
+                    refused = true;
+                    break;
+                }
+                Err(error) => panic!("{error:?}"),
+            }
+        }
+        if scenario == Scenario::RefuseTemporary {
+            assert!(refused && !finished);
+            assert!(observed.is_empty(), "temporary refusal publishes no groups");
+        } else if cancel_reduction {
+            assert!(saw_reduce && cancelled && !finished);
+            assert!(
+                observed.is_empty(),
+                "unfinished reduction publishes no groups"
+            );
+        } else {
+            assert!(finished);
+            assert_eq!(
+                observed,
+                vec![
+                    (0, None, None, 0),
+                    (1, Some(String::new()), Some(long_n.clone()), 3),
+                    (2, Some("z".into()), Some("é".into()), 2),
+                ]
+            );
+        }
+        if scenario != Scenario::RefuseTemporary {
+            assert_eq!(saw_spill, hash_groups == 1);
+            assert_eq!(saw_reduce, hash_groups == 1);
+        }
+        drop(result);
+        assert_eq!(database.reserved_temp_bytes(), occupied);
+        database.temporary.release(occupied);
+        assert_eq!(database.reserved_memory_bytes(), baseline);
+        assert_eq!(database.reserved_temp_bytes(), 0);
+    }
+    drop(query);
+    database.close().unwrap();
+}

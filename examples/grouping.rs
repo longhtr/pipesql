@@ -10,8 +10,7 @@ use std::path::Path;
 const GROUPS: usize = 4096;
 const BATCH_ROWS: usize = 256;
 const TEMP_BYTES: u64 = 8_000_000;
-const QUERY: &str =
-    "FROM sales |> AGGREGATE COUNT(*) AS n,SUM(amount) AS total GROUP AND ORDER BY region";
+const QUERY: &str = "FROM sales |> AGGREGATE COUNT(*) AS n,SUM(amount) AS total,MIN(amount) AS smallest,MAX(amount) AS largest GROUP AND ORDER BY region";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
@@ -44,17 +43,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Some(Value::Int64(region)),
                         Some(Value::Int64(count)),
                         Some(Value::Int64(total)),
+                        Some(Value::Int64(smallest)),
+                        Some(Value::Int64(largest)),
                     ) = (
                         batch.value(row, 0),
                         batch.value(row, 1),
                         batch.value(row, 2),
+                        batch.value(row, 3),
+                        batch.value(row, 4),
                     )
                     else {
                         return Err("unexpected result schema or value".into());
                     };
                     // Every region appears once with amount 1 and once with 3.
                     // Ordered keys also detect missing, duplicated, or extra groups.
-                    if (region, count, total) != (groups as i64, 2, 4) || groups >= GROUPS {
+                    if (region, count, total, smallest, largest) != (groups as i64, 2, 4, 1, 3)
+                        || groups >= GROUPS
+                    {
                         return Err("group result differs from the input construction".into());
                     }
                     groups += 1;
@@ -78,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     drop(query);
     db.close()?;
-    println!("verified {groups} groups: region=0..4095, n=2, total=4");
+    println!("verified {groups} groups: region=0..4095, n=2, total=4, smallest=1, largest=3");
     println!("sampled logical bytes: memory={peak_memory}, temporary={peak_temp}");
     Ok(())
 }

@@ -155,7 +155,7 @@ fn empty_and_fully_filtered_input_produce_no_groups_on_either_path() {
 
 #[test]
 fn projected_maximum_text_keys_fit_the_reserved_result_frame() {
-    for (width, temporary) in [(10, 8_000_000), (MAX_COLUMNS, 16_000_000)] {
+    for (width, temporary) in [(20, 8_000_000), (MAX_COLUMNS, 16_000_000)] {
         let directory = Directory::new();
         let database = Database::create_empty(
             &directory.0.join("db"),

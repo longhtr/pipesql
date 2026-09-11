@@ -1,12 +1,12 @@
 //! Aggregate controller selection and bounded dense-key grouping.
 //!
-//! Numeric state owns evaluation and accumulation. Controllers own input,
+//! Accumulator state owns evaluation and accumulation. Controllers own input,
 //! replay, final validation, and result emission; general grouping also owns
 //! hash storage and external-sort fallback.
 
+mod accumulator;
 mod arguments;
 pub(super) mod grouping;
-mod numeric;
 use crate::batch::Batch;
 use crate::execution::computed::RowValues;
 use crate::execution::planning::Pipeline;
@@ -14,7 +14,7 @@ use crate::execution::{BATCH_ROWS, COMPUTE_ROWS, ConsumerInput, ConsumerStep};
 use crate::fixed_text::{KEY_DOMAIN, StringValue as FixedKey};
 use crate::frontend::{AggregatePlan, MAX_COLUMNS, SemanticColumn, SourceColumn};
 use crate::{CancellationToken, Database, Error, StringValue, Value};
-use numeric::{AggregateLayout, AggregateState};
+use accumulator::{AggregateLayout, AggregateState, TextDomain};
 
 #[cfg(test)]
 use std::mem::size_of;
@@ -44,7 +44,13 @@ impl<'db> Aggregation<'db> {
             let capacity = KEY_DOMAIN
                 .checked_pow(u32::from(aggregate.group_count))
                 .ok_or(Error::Corrupt("group domain overflow"))?;
-            AggregateLayout::new(aggregate, demand, input).required_bytes(capacity, 1)
+            AggregateLayout::with_text_domain(
+                aggregate,
+                demand,
+                input,
+                TextDomain::for_storage(native),
+            )
+            .required_bytes(capacity, 1)
         }
     }
 
@@ -62,7 +68,7 @@ impl<'db> Aggregation<'db> {
             )?))
         } else {
             let groups = Groups::new(database, aggregate, demand, input.clone())?;
-            groups.validate_plan(aggregate, demand, input)?;
+            groups.validate_plan(aggregate, demand, input, TextDomain::for_storage(native))?;
             Ok(Self::Dense(groups))
         }
     }
@@ -145,12 +151,15 @@ impl<'db> Groups<'db> {
         Ok(Self {
             phase: AggregatePhase::Read,
             replayed: false,
-            aggregate: AggregateState::new(
+            aggregate: AggregateState::from_layout(
                 &database.memory,
-                plan,
-                demand,
+                AggregateLayout::with_text_domain(
+                    plan,
+                    demand,
+                    inputs[..count].iter().copied(),
+                    TextDomain::for_storage(database.catalog_registry().is_some()),
+                ),
                 capacity,
-                inputs[..count].iter().copied(),
             )?,
             group_count: plan.group_count,
             keys,
@@ -162,6 +171,7 @@ impl<'db> Groups<'db> {
         semantic: &AggregatePlan,
         demand: u16,
         columns: impl Iterator<Item = SemanticColumn> + Clone,
+        text_domain: TextDomain,
     ) -> Result<(), Error> {
         if self.group_count != semantic.group_count {
             return Err(Error::Corrupt("aggregate physical shape disagrees"));
@@ -175,7 +185,7 @@ impl<'db> Groups<'db> {
             }
         }
         self.aggregate
-            .validate_plan(semantic, demand, capacity, columns)
+            .validate_with_text_domain(semantic, demand, capacity, columns, text_domain)
     }
 
     fn consume(&mut self, batch: &Batch) -> Result<(), Error> {

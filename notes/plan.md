@@ -32,91 +32,123 @@ evidence can change the disposition.
 
 ## Active: complete scalar MIN and MAX aggregation
 
-COUNT(expression) and the composed execution learning path are complete. The
-[example](../examples/composed.rs) verifies join multiplicity, nullable counts
-and sums, descending results, and cancellation/release under two budgets on
-macOS and Linux. The [evidence](evidence.md#composed-execution-example) separates
-its focused verification from the unchanged engine's full gates. Existing
-competing-reader coverage was reused; no duplicate harness or engine change was
-needed.
+COUNT(expression) and the [composed execution example](../examples/composed.rs)
+are complete. MIN/MAX implementation is in the working tree. Keep this the sole
+active milestone; do not add DISTINCT aggregates, windows, scalar types,
+unrelated syntax, or speculative optimization.
 
-The next ordinary analytical gap is MIN/MAX. Start with at most 45 minutes
-reviewing the supported scalar profile, GoogleSQL semantics, argument capture,
-aggregate state, independent validation, and spill records. Establish exact
-NULL, NaN, signed-zero, STRING ordering, and DATE behavior from authoritative
-contracts before implementation. Record the smallest coherent representation
-and cheapest falsifiers here.
+### Semantics and representation
 
 The primary [MIN/MAX reference](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions#min)
 requires input-typed results, NULL for empty/all-NULL groups, and NaN propagation.
 GoogleSQL's [type rules](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types)
 compare strings by Unicode code points and treat signed zeros as equal. PipeSQL
-preserves stored DOUBLE bits, unlike BigQuery's documented negative-zero storage
-behavior. Specify the extrema tie rule locally: retain the first NaN payload;
-when both zero signs occur, MIN chooses negative zero and MAX positive zero.
-Continue evaluating demanded arguments after a NaN so later scalar errors remain
-observable. UTF-8 byte ordering agrees with code-point ordering for valid text.
+preserves DOUBLE bits: retain the first NaN payload; when both zero signs occur,
+MIN chooses negative zero and MAX positive zero. Demanded arguments still execute
+after NaN. Valid UTF-8 byte ordering agrees with code-point ordering. DATE extrema
+retain typed, range-checked days.
 
-The existing argument batch owns u64 values and validity only. General grouping
-sizes records as header + keys + eight bytes per argument. STRING extrema need
-captured bytes that survive source-batch release, checked variable-width spill
-payloads, and reusable retained result storage. Do not implement them as source
-pointers or numeric conversions. DATE retains its typed day value.
+Identical arguments share evaluation and nullable counts. SUM/AVG own sum cells;
+MIN/MAX own separate demanded slots. Numeric extrema use one u64 each. Text
+extrema reuse a bounded byte slot and store its length in that word. Legacy
+pipelines admit one byte per text extremum per dense group; declared pipelines
+admit 65,536 bytes. The controller supplies the source domain independently to
+construction and validation. Folding rejects values outside the admitted bound.
 
-Start with separate demanded MIN/MAX slots beside the existing sum state, sharing
-argument evaluation across calls. Allocate no sum cells for extrema-only input.
-For retained text, evaluate preallocated bounded slots before introducing an
-arena/compaction protocol: each demanded string extremum needs at most 65,536
-bytes per admitted group, plus length metadata. This is simple but expensive;
-include it in optional hash capacity and reassess the observed cost before
-accepting the representation. Disk reduction needs only one group's extrema.
-Argument capture should reserve at most 65,536 bytes per retained text argument
-for a batch, and flush replay batches when their byte capacity fills. A complete
-single argument row must always fit the admitted minimum.
+Captured text owns one 65,536-byte arena per retained argument per batch. Packed
+spans identify bytes within that arena, never source pointers. Spill records use
+length words followed by a UTF-8 trailer. The reader bounds lengths before reads,
+then checks the complete checksum, type layout, UTF-8, NULL payloads, and date
+ranges. Replay flushes when either row or byte capacity fills. The admitted
+minimum fits one complete maximum-width row. Persistent formats are unchanged.
 
-The first falsifiers are global empty/all-NULL and NaN/zero cases, shared
-COUNT/SUM/MIN/MAX programs with demanded errors, and strings that grow and shrink
-on successive replacements. Then force grouped replay across full-length text
-records and verify exact bytes, independent corruption rejection, admission,
-cancellation, and release. No public MIN/MAX support is implemented yet.
+Optional hash admission includes extrema and retained text in both capacity
+selection and allocation. A nine-extrema pressure regression exposed a missing
+term in capacity selection; it failed before the repair and passes afterward.
+Keep the simple text slots pending the final budget review; do not introduce an
+arena compactor without a measured need.
 
-The inspection found that argument-batch construction omitted the presence-mask
-tail check used by the record reader. Construction now rejects that malformed
-shape before reserving memory. A focused macOS test covers each mask tail, an
-empty shape with a presence bit, and valid construction/release; it passes.
+### Verification completed
 
-Complete global, grouped, repeated, and composed MIN/MAX for supported numeric
-expressions and direct STRING/DATE columns. Account for retained variable-width
-values and their release; avoid allocating per input row or adding a second
-aggregation engine. Preserve COUNT/SUM/AVG, demanded errors, diagnostics,
-resource refusal, cancellation, independent validation, and persistent bytes.
-Do not add DISTINCT aggregates, windows, new scalar types, or unrelated syntax.
+- Public macOS tests pass for numeric, DATE, and STRING extrema: empty/all-NULL
+  input, special numeric values, typed results, grouping, repeated aggregation,
+  shared COUNT/SUM/AVG arguments, and release.
+- Ownership and independent-validator tests pass for producer release, group
+  reuse, direction/slot corruption, mask conflicts, maximum-length text, UTF-8
+  ordering, shorter replacements, and byte-limited replay.
+- Checked-record tests reject invalid lengths, UTF-8, NULL payloads, and DATE
+  ranges with recomputed checksums. COUNT-only layout interpretations remain
+  distinct from retained values.
+- A full-length STRING workload passes through hash execution and forced disk
+  fallback with exact MIN/MAX/COUNT results. Cancellation during reduction
+  publishes no unfinished groups and releases all memory and temporary bytes.
+- A demanded-error regression passes for global/grouped MIN and MAX: NaN in
+  an earlier input unit cannot suppress multiplication overflow in a later unit.
+  Errors retain the aggregate call span; undemanded extrema are not evaluated.
+- Legacy global and two-key grouping tests pass under the existing 2 MB budget.
+  They check STRING/DOUBLE/DATE results, exact one-byte text-slot charges, and
+  rejection when validation is given the wrong source domain.
+- Before the latest spill and legacy tests, the serial macOS library/catalog run
+  passed 336 + 58 tests, with no failures or ignored tests. The command was
+  `cargo test --release --offline --locked --lib --test catalog_lifecycle -- --test-threads=1`.
+  An earlier concurrent run failed a process-wide descriptor assertion; serial
+  execution passed. Two fixtures were widened to exceed the enlarged argument
+  record maximum while retaining their boundary assertions.
 
-Deliver understandable state ownership, independent boundary regressions,
-actual memory/spill equivalence, a concise educational example, current language
-and resource contracts, required macOS/Linux verification, compact evidence,
-and coherent local commits. Platform qualification remains explicit. Reassess
-any approach whose state or temporary representation becomes harder to explain
-than the operation it implements.
+These focused results do not replace final platform gates. The latest completed
+full gates remain the earlier baseline recorded in [evidence](evidence.md).
+
+### Remaining work, in order
+
+1. Review remaining composed/legacy regression coverage and verify the final
+   retained text representation across representative budgets and group counts.
+   Demanded-error/span, exact fallback admission, temporary exhaustion, and
+   cancellation checks now pass.
+2. Finish the ownership/readability review. Language, execution, resource,
+   source-map, and test contracts now describe extrema. The existing grouping
+   tutorial checks MIN=1 and MAX=3 for all 4,096 regions. Fresh macOS runs pass
+   at 2 MB (memory 1,590,745 bytes; temporary 0) and 1.2 MB (memory 1,166,088;
+   temporary 803,016). Verify the updated example on GNU/Linux. Accumulator state
+   now lives in `accumulator.rs`; Clippy and all maintenance checks pass.
+3. Run focused checks for those changes, then complete required macOS and
+   unprivileged GNU/Linux gates on matching frozen inputs and isolated targets.
+   Reconcile executed tests, exclusions, fixtures/models, public/native campaigns,
+   examples, and before/after manifests. Windows remains unqualified.
+4. Consolidate self-contained evidence within the 641,696-byte historical budget,
+   commit coherent verified changes locally, remove owned outputs, and finish
+   with a clean tree. Do not publish or modify remote refs. Close the goal only
+   after its implementation, verification, documentation, and cleanup are done.
 
 ## Applying DuckDB lessons
 
-The [grouping evidence](evidence.md#grouping-learning-workload) records the primary
-references and the workload already delivered. Apply further lessons through
-bounded changes to existing owners:
+DuckDB's published designs inform the following work. These are PipeSQL design
+choices and acceptance checks, not claims that DuckDB's results transfer here.
+The [grouping evidence](evidence.md#grouping-learning-workload) records the
+learning workload already delivered.
 
-| Lesson | PipeSQL action and acceptance check |
-| --- | --- |
-| Streaming alone does not bound blocking intermediates. | Retain the completed COUNT spill/refusal regressions. Apply the same complete-result and release checks to the composed workload. |
-| Operators compete for memory across a complete query. | The composed example now connects these owners. Preserve the existing competing-reader checks and measure memory and temporary bytes separately. |
-| Memory limits need interpretable measurements. | When addressing physical-memory qualification, reconcile existing logical counters with allocation measurements. Add diagnostics only where a missing observation prevents a decision. |
-| SQL regressions should expose queries and expected results. | Keep explicit independent expectations beside each new query. Use DuckDB for optional differential checks only after reconciling NULL, overflow, floating-point, ordering, and dialect semantics. |
+| Priority | Lesson and source | PipeSQL action and completion check |
+| --- | --- | --- |
+| Current MIN/MAX goal | [External aggregation](https://duckdb.org/2024/03/29/external-aggregation) makes variable-width ownership and relocation part of the spill design. | Capture owned STRING bytes before releasing source batches. Independently validate replay lengths, UTF-8, NULLs, and type identity. Exercise maximum-length values, growing/shrinking replacements, and replay after producer release. Keep checked serialized records; pointer relocation would add machinery without an established need. |
+| Current MIN/MAX goal | The same external-aggregation study varies group cardinality and measures operation beyond available memory. | Compare complete results across several budgets around the hash admission boundary, with few/many groups and short/long strings. Record retained memory, temporary bytes, and elapsed time. Charge text capacity before admitting groups; reject a representation that prevents the one-group fallback from meeting its stated minimum. Fixed text slots remain a proposal until their cost is measured. |
+| Current MIN/MAX goal | [Memory management](https://duckdb.org/2024/07/09/memory-management) treats blocking intermediates and their competing owners explicitly. | Extend existing composed-query checks to extrema. Exercise memory refusal, exhausted temporary capacity, cancellation, and release. Attribute spill to the relevant operator or a controlled query; total temporary bytes alone do not prove aggregation spilled. |
+| Current tests | DuckDB's [SQL test guidance](https://duckdb.org/docs/lts/dev/sqllogictest/writing_tests) favors exercising behavior through SQL. | Keep queries and independent expected results visible in existing public tests. Retain internal corruption and allocation controls where SQL cannot establish the invariant. No additional test framework is needed. |
+| Later physical-memory qualification | DuckDB's memory-management article distinguishes component memory and temporary storage measurements. | Reconcile existing logical charges with allocator observations and other process owners on one representative composed workload. Explain unexplained differences before claiming a process-memory cap; add a diagnostic only when an existing observation cannot answer the question. |
 
-For any proposed algorithm change, first identify a representative workload, correctness oracle,
+DuckDB is not a universal differential oracle. Its documented
+[floating-point ordering](https://duckdb.org/docs/current/sql/data_types/numeric#floating-point-types)
+places NaN above other numbers. Our GoogleSQL-derived MIN/MAX contract propagates
+NaN in both directions. Establish compatible NULL, overflow, floating-point,
+collation, and ordering semantics before comparing results. Keep explicit local
+expectations for incompatible cases; never change them to match DuckDB.
+
+After MIN/MAX, reassess the existing qualification gaps before selecting another
+milestone. Partitioned hash aggregation, a shared buffer manager, parallel
+execution, and compact string storage are possible alternatives, not scheduled
+rewrites. Investigate one only when a representative workload exposes a concrete
+limitation in the current owner. Require an independent correctness oracle,
 resource costs, and an end-to-end measurement that could reject the proposal.
-DuckDB's implementation is a source of alternatives, not evidence that a change
-will improve PipeSQL. Keep adopted invariants in their existing contract owners;
-retain findings here or in evidence rather than creating a research archive.
+Keep adopted invariants in their existing contracts and replace settled plan
+entries instead of accumulating a research archive.
 
 ## Remaining qualification
 

@@ -13,6 +13,91 @@ use crate::storage_format::RootState;
 use std::sync::atomic::Ordering;
 
 #[test]
+fn legacy_extrema_use_fixed_text_admission_and_preserve_typed_results() {
+    let (_fixture, database) = loaded(47);
+    let cancel = CancellationToken::new();
+    let date = crate::DateValue::from_days_since_unix_epoch(8766).unwrap();
+    let aggregate = "FROM lineitem |> AGGREGATE MIN(l_returnflag) AS lo,MAX(l_returnflag) AS hi,MIN(l_quantity) AS qlo,MAX(l_quantity) AS qhi,MIN(l_shipdate) AS dlo,MAX(l_shipdate) AS dhi";
+    for grouped in [false, true] {
+        let sql = if grouped {
+            format!("{aggregate} GROUP AND ORDER BY l_returnflag,l_linestatus")
+        } else {
+            aggregate.to_owned()
+        };
+        let query = database.prepare(&sql).unwrap();
+        let baseline = database.reserved_memory_bytes();
+        let mut result = database.execute(&query, &cancel).unwrap();
+        let State::Running(runtime) = &result.state else {
+            unreachable!()
+        };
+        let Aggregation::Dense(groups) = &runtime.aggregates[0] else {
+            unreachable!()
+        };
+        let capacity = if grouped { KEY_DOMAIN * KEY_DOMAIN } else { 1 };
+        assert_eq!(groups.aggregate.cells.text.capacity(), 2 * capacity);
+        let semantic = query.plan.aggregates.first().unwrap();
+        assert!(
+            groups
+                .aggregate
+                .validate_with_text_domain(
+                    semantic,
+                    query.plan.aggregate_demand(0),
+                    capacity,
+                    query.plan.input_columns(),
+                    TextDomain::Utf8
+                )
+                .is_err(),
+            "validator must check the caller's source domain"
+        );
+        let mut rows = 0;
+        let mut finished = false;
+        for _ in 0..100_000 {
+            match result.step() {
+                QueryStep::Rows(batch) => {
+                    for row in 0..batch.len() {
+                        let offset = usize::from(grouped) * 2;
+                        if grouped {
+                            assert_eq!(
+                                batch.value(row, 0),
+                                Some(Value::String(StringValue::new("A")))
+                            );
+                            assert_eq!(
+                                batch.value(row, 1),
+                                Some(Value::String(StringValue::new("F")))
+                            );
+                        }
+                        let expected = [
+                            Value::String(StringValue::new("A")),
+                            Value::String(StringValue::new("A")),
+                            Value::Double(0.0),
+                            Value::Double(30.0),
+                            Value::Date(date),
+                            Value::Date(date),
+                        ];
+                        for (column, value) in expected.into_iter().enumerate() {
+                            assert_eq!(batch.value(row, offset + column), Some(value));
+                        }
+                        rows += 1;
+                    }
+                }
+                QueryStep::Progress => (),
+                QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("{sql}: {error}"),
+            }
+        }
+        assert!(finished);
+        assert_eq!(rows, 1);
+        drop(result);
+        assert_eq!(database.reserved_memory_bytes(), baseline);
+        assert_eq!(database.reserved_temp_bytes(), 0);
+    }
+    database.close().unwrap();
+}
+
+#[test]
 fn legacy_count_arguments_preserve_types_filters_and_repeated_aggregation() {
     let (_fixture, database) = loaded(47);
     let cancel = CancellationToken::new();
@@ -536,6 +621,7 @@ fn aggregate_workspace_and_mappings_are_independently_checked() {
                 semantic,
                 query.plan.aggregate_demand(0),
                 columns.iter().copied(),
+                TextDomain::FixedKey,
             )
             .unwrap();
         match mutation {
@@ -564,7 +650,8 @@ fn aggregate_workspace_and_mappings_are_independently_checked() {
                 .validate_plan(
                     semantic,
                     query.plan.aggregate_demand(0),
-                    columns.iter().copied()
+                    columns.iter().copied(),
+                    TextDomain::FixedKey,
                 )
                 .is_err(),
             "mutation {mutation}"
@@ -657,7 +744,8 @@ fn post_aggregate_mapping_and_demand_are_independently_checked() {
                 .validate_plan(
                     semantic,
                     query.plan.aggregate_demand(0),
-                    columns.iter().copied()
+                    columns.iter().copied(),
+                    TextDomain::FixedKey,
                 )
                 .is_err(),
             "demand mutation {mutation}"

@@ -325,6 +325,8 @@ pub(crate) struct Filter {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AggregateKind {
+    Min,
+    Max,
     Sum,
     Avg,
     Count,
@@ -336,36 +338,36 @@ pub(crate) enum AggregateKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AggregateArgument {
     Numeric(Expression),
-    /// COUNT reads the validity of a STRING or DATE column without conversion.
-    Validity(SemanticColumn),
+    /// Direct typed input; demanded aggregate kinds determine which values are retained.
+    Column(SemanticColumn),
 }
 
 impl AggregateArgument {
     pub(crate) fn data_type(&self) -> DataType {
         match self {
             Self::Numeric(expression) => expression.data_type,
-            Self::Validity(column) => column.data_type(),
+            Self::Column(column) => column.data_type(),
         }
     }
 
     pub(crate) fn nullable(&self) -> bool {
         match self {
             Self::Numeric(expression) => expression.nullable(),
-            Self::Validity(column) => column.nullable(),
+            Self::Column(column) => column.nullable(),
         }
     }
 
     pub(crate) fn stack_depth(&self) -> usize {
         match self {
             Self::Numeric(expression) => expression.stack_depth(),
-            Self::Validity(_) => 0,
+            Self::Column(_) => 0,
         }
     }
 
     pub(crate) fn columns(&self) -> impl Iterator<Item = SemanticColumn> + '_ {
         let (ops, column): (&[Op], _) = match self {
             Self::Numeric(expression) => (&expression.ops[..usize::from(expression.len)], None),
-            Self::Validity(column) => (&[], Some(*column)),
+            Self::Column(column) => (&[], Some(*column)),
         };
         ops.iter()
             .filter_map(|op| match op {
@@ -448,7 +450,7 @@ impl AggregatePlan {
         let entry = &self.entries[index - usize::from(self.group_count)];
         Some(match entry.kind {
             AggregateKind::Count => (DataType::Int64, false),
-            AggregateKind::Sum => (
+            AggregateKind::Sum | AggregateKind::Min | AggregateKind::Max => (
                 entry
                     .argument
                     .as_ref()

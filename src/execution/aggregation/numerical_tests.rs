@@ -1,4 +1,4 @@
-use super::numeric::{average_add, sum_add};
+use super::accumulator::{average_add, sum_add};
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use super::*;

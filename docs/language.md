@@ -92,7 +92,7 @@ separate from this query manifest.
 | `WHERE name comparison constant` | Accepts `<`, `<=`, `=`, `!=`, `>=`, `>` over numeric, DATE or STRING columns and compatible constants. |
 | `WHERE name IS [NOT] NULL` | Tests a visible column, including a computed or aggregate output. IS NULL retains NULL values; IS NOT NULL retains non-NULL values, including zero, empty text and NaN. Both tests preserve column demand and input order. |
 | `WHERE` Boolean expression | Comparisons and NULL tests compose with NOT, AND, OR and parentheses. NOT binds above AND, which binds above OR. Each leaf consumes one normalized stage; inclusive BETWEEN consumes two. See the demand rules below. |
-| `AGGREGATE SUM(expression) AS name`, `AVG(expression) AS name`, `COUNT(*) AS name`, `COUNT(expression) AS name` | Aggregate stages may repeat; each consumes the preceding relation. All aggregate stages together may introduce at most ten output identities, including grouping keys. Every entry requires an explicit alias. SUM/AVG accept INT64 or DOUBLE expressions; COUNT also accepts those expressions or a direct STRING/DATE column. SUM preserves the argument type; AVG returns DOUBLE; COUNT returns nonnullable INT64. |
+| `AGGREGATE SUM(expression) AS name`, `AVG(expression) AS name`, `COUNT(*) AS name`, `COUNT(expression) AS name`, `MIN(expression) AS name`, `MAX(expression) AS name` | Aggregate stages may repeat; each consumes the preceding relation. All aggregate stages together may introduce at most ten output identities, including grouping keys. Every entry requires an explicit alias. SUM/AVG accept INT64 or DOUBLE expressions. COUNT/MIN/MAX also accept direct STRING/DATE columns. SUM/MIN/MAX preserve the argument type; AVG returns DOUBLE; COUNT returns nonnullable INT64. Other aggregates return nullable results. |
 | `DISTINCT` | Removes duplicate complete rows on declared tables. Preserves output names and shared identities through fresh replacements; clears order. See [equality](#values-null-and-equality). |
 | `LIMIT count [OFFSET skip_rows]` | Selects a prefix on legacy or declared tables. Count and offset are non-negative INT64 constant expressions; see [LIMIT](#limit) for demand and error rules. |
 | `GROUP BY key [, key]` | Legacy tables group by up to two distinct visible source STRING identities. Declared-table keys are specified below. Group aliases inherited from earlier projections are valid. |
@@ -191,7 +191,7 @@ unsupported. The [NULL predicate
 record](../notes/evidence.md#query-semantics-and-accepted-costs) preserves
 pinned semantics and the independent-oracle boundary for NaN. DOUBLE comparisons
 use IEEE unordered-NaN behavior; both signed zeros compare equal. Empty global
-aggregation produces one row containing NULL SUM/AVG and zero COUNT. Empty
+aggregation produces one row containing NULL SUM/AVG/MIN/MAX and zero COUNT. Empty
 grouped input produces no rows. SUM preserves the first value's signed zero and
 uses the aggregate exceptional/range rules below; AVG-only state must not
 inherit a discarded SUM's overflow dependency.
@@ -250,6 +250,17 @@ cancellation can bring the result back into range. This does not suppress
 checked overflow in a demanded scalar argument. AVG(INT64) returns DOUBLE and
 does not require its sum to fit INT64. AVG and SUM on DOUBLE retain the
 exceptional-value rules below.
+
+MIN and MAX ignore NULL arguments and return NULL for empty or all-NULL input.
+They preserve the input type. INT64 and DATE use their numeric order; STRING
+uses Unicode code-point order without collation or normalization. Empty text is
+a value. Numeric expressions retain their ordinary demanded-error rules.
+DOUBLE extrema propagate NaN in both directions and retain the first NaN payload
+in the input fold sequence. When both zero signs occur, MIN returns negative zero
+and MAX positive zero. Infinities participate in the ordinary numeric order.
+These local tie rules preserve PipeSQL's stored bits; they do not establish a
+portable NaN-payload or signed-zero guarantee for other GoogleSQL implementations.
+A prior NaN never suppresses a later demanded scalar error.
 
 Projection and filters may follow aggregation, preserving exact INT64
 comparisons and demanded errors. The same aggregate signatures are available on

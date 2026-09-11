@@ -76,12 +76,19 @@ the append, commit, and query lifetimes.
 
 [The grouping example](../examples/grouping.rs) creates 8,192 sales rows across
 4,096 numbered regions. Each region has two amounts, 1 and 3. Its query counts
-and sums each region, then emits regions in ascending order:
+and sums each region, finds its smallest and largest amounts, then emits regions
+in ascending order:
 
 ```sql
 FROM sales
-|> AGGREGATE COUNT(*) AS n, SUM(amount) AS total GROUP AND ORDER BY region
+|> AGGREGATE COUNT(*) AS n, SUM(amount) AS total,
+             MIN(amount) AS smallest, MAX(amount) AS largest
+   GROUP AND ORDER BY region
 ```
+
+SUM, MIN, and MAX share evaluation of `amount` but retain different state: a sum
+and two extrema. Each new row updates those states without retaining the whole
+region's input. The final values are 4, 1, and 3 for every region.
 
 Run it twice with fresh database paths. Both runs generate identical rows. They
 use a separate setup budget before reopening with the specified query budget:
@@ -92,14 +99,15 @@ cargo run --release --offline --locked --example grouping -- "$pipesql_grouping_
 cargo run --release --offline --locked --example grouping -- "$pipesql_grouping_dir/spill" 1200000
 ```
 
-Both runs must print `verified 4096 groups: region=0..4095, n=2, total=4`.
+Both runs must print `verified 4096 groups: region=0..4095, n=2, total=4, smallest=1, largest=3`.
 The program checks every ordered row and requires `Finished`; matching a prefix
 does not pass. It also checks that query reservations return to their baseline
 after dropping the result.
 
 Read the second output line to compare sampled logical memory and temporary
-bytes. With the reviewed macOS and GNU arm64 Linux builds, the first run uses no
-temporary bytes and the second reaches 803,016 temporary bytes. These observations
+bytes. With the reviewed macOS build, the first run uses no temporary bytes and
+the second reaches 803,016 temporary bytes. Verification of this extended example
+on GNU/Linux is pending. These observations
 are specific to this workload and build. A small budget alone does not establish spilling: the
 2,000,000-byte run still fits its groups in memory. Temporary bytes measure
 reserved scratch-file extents, not filesystem blocks, total I/O, or process RSS.

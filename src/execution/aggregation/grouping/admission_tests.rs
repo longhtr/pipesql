@@ -32,6 +32,8 @@ fn fallback_minimum_matches_constructed_owners_and_refusal_releases_them() {
                         nonnull: 0,
                         integers: 0,
                         presence: 0,
+                        dates: 0,
+                        text: 0,
                     };
                     let required = Minimum::required(&keys, &output, shape).unwrap();
                     let limits = Limits {
@@ -170,6 +172,133 @@ fn accumulator_requirement_matches_typed_arrays_under_exact_pressure() {
                     assert_eq!(database.reserved_temp_bytes(), 0);
                 }
             }
+        }
+    }
+    database.close().unwrap();
+}
+
+#[test]
+fn hash_capacity_accounts_for_every_extremum_before_admission() {
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("db"),
+        crate::Config::new(4_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    database
+        .declare_table(
+            "facts",
+            &[
+                crate::ColumnDeclaration {
+                    name: "k",
+                    data_type: DataType::Int64,
+                    nullable: false,
+                },
+                crate::ColumnDeclaration {
+                    name: "n",
+                    data_type: DataType::Int64,
+                    nullable: true,
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    let query = database.prepare(
+        "FROM facts |> AGGREGATE MIN(n) AS a,MAX(n) AS b,MIN(n+1) AS c,MAX(n+1) AS d,MIN(n+2) AS e,MAX(n+2) AS f,MIN(n+3) AS g,MAX(n+3) AS h,MIN(n+4) AS i GROUP BY k"
+    ).unwrap();
+    let semantic = query.plan.aggregates.first().unwrap();
+    let aggregate = AggregateState::new(
+        &database.memory,
+        semantic,
+        query.plan.aggregate_demand(0),
+        1,
+        query.plan.input_columns(),
+    )
+    .unwrap();
+    let columns: Vec<_> = query.plan.input_columns().collect();
+    let keys = key_layout(semantic, &columns).unwrap();
+    assert_eq!(aggregate.cells.extrema.len(), 9);
+    let baseline = database.reserved_memory_bytes();
+    for available in [8_000, 32_000, 128_000, 1_000_000] {
+        let pressure = database
+            .reserve_memory(
+                database.config().memory_limit_bytes() - baseline - available,
+                "hash extrema admission pressure",
+            )
+            .unwrap();
+        let (capacity, key_bytes) = MemoryGroups::capacities(&database, &aggregate, &keys).unwrap();
+        assert!(capacity > 0);
+        let (_, required) =
+            MemoryGroups::requirement(&aggregate, &keys, capacity, key_bytes).unwrap();
+        assert!(required <= available);
+        let before = database.reserved_memory_bytes();
+        let groups = MemoryGroups::new(&database, &aggregate, &keys, capacity, key_bytes).unwrap();
+        assert_eq!(database.reserved_memory_bytes() - before, required);
+        drop(groups);
+        assert_eq!(database.reserved_memory_bytes(), before);
+        drop(pressure);
+        assert_eq!(database.reserved_memory_bytes(), baseline);
+    }
+}
+
+#[test]
+fn text_fallback_minimum_admits_owned_arenas_and_refuses_one_byte_less() {
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("db"),
+        crate::Config::new(16_000_000, 16_000_000).unwrap(),
+    )
+    .unwrap();
+    let baseline = database.reserved_memory_bytes();
+    for text_arguments in [1, MAX_AGGREGATE_COLUMNS] {
+        let shape = ArgumentShape {
+            count: text_arguments,
+            nonnull: 0,
+            integers: 0,
+            presence: 0,
+            dates: 0,
+            text: (1 << text_arguments) - 1,
+        };
+        let keys = schema(&[(DataType::Int64, false)]);
+        let output =
+            OutputLayout::from_columns([(DataType::String, true); MAX_COLUMNS], text_arguments)
+                .unwrap();
+        let required = Minimum::required(&keys, &output, shape).unwrap();
+        for shortfall in [0, 1] {
+            let pressure = database
+                .reserve_memory(
+                    database.config().memory_limit_bytes() - baseline - required + shortfall,
+                    "text minimum pressure",
+                )
+                .unwrap();
+            let keys = schema(&[(DataType::Int64, false)]);
+            let output =
+                OutputLayout::from_columns([(DataType::String, true); MAX_COLUMNS], text_arguments)
+                    .unwrap();
+            let limits = Limits {
+                arguments: 1,
+                run_rows: 1,
+                run_bytes: RECORD_HEADER + keys.max_bytes + shape.max_payload_bytes(),
+            };
+            let admitted = Minimum::new(&database, keys, output, shape, &limits);
+            if shortfall == 0 {
+                let owner = admitted.unwrap();
+                assert_eq!(
+                    database.reserved_memory_bytes() - (baseline + pressure.bytes()),
+                    required
+                );
+                drop(owner);
+            } else {
+                assert!(matches!(admitted, Err(Error::Resource { .. })));
+            }
+            assert_eq!(
+                database.reserved_memory_bytes(),
+                baseline + pressure.bytes()
+            );
+            assert_eq!(database.reserved_temp_bytes(), 0);
+            drop(pressure);
+            assert_eq!(database.reserved_memory_bytes(), baseline);
         }
     }
     database.close().unwrap();

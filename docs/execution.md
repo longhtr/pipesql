@@ -37,11 +37,14 @@ Consumers own the transitions that give records meaning:
   complete-row duplicate removal.
 
 [`aggregation.rs`](../src/execution/aggregation.rs) selects dense or general
-controllers. [`numeric.rs`](../src/execution/aggregation/numeric.rs) owns
-expression sharing, typed accumulator arrays, NULL counters, and final overflow
-checks. [`arguments.rs`](../src/execution/aggregation/arguments.rs) captures
-demanded inputs and folds checked replay batches through those same numeric
-cells.
+controllers. [`accumulator.rs`](../src/execution/aggregation/accumulator.rs) owns
+expression sharing, typed accumulator arrays, retained text extrema, NULL
+counters, and final overflow checks. [`arguments.rs`](../src/execution/aggregation/arguments.rs) captures
+demanded inputs and folds checked replay batches through those same cells.
+Text capture owns its bytes before the producer can release its batch. Temporary
+records carry lengths and UTF-8 payloads; readers validate bounds, checksums, and
+types before reduction. Extrema replacement copies into reusable admitted slots.
+[Grouping admission](resources.md#declared-grouping-admission) owns the byte bounds.
 
 After sorting, `RowSort::sorted_rows` lends the left cursor and retained
 key/ordinal storage through a `SortedRows` view. Allocations and charges stay
@@ -57,7 +60,7 @@ still apply to every consumer.
 Run [the memory comparison](getting-started.md#observe-grouping-with-less-memory)
 with [examples/grouping.rs](../examples/grouping.rs) open. The expected result
 follows directly from input construction: each numbered region occurs twice,
-with amounts 1 and 3. The example checks every key, count, and sum in order.
+with amounts 1 and 3. The example checks every key, count, sum, minimum, and maximum in order.
 
 Trace these owners in sequence:
 

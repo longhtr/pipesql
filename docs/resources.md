@@ -207,7 +207,24 @@ keys. Every retained field and allocation capacity belongs to exactly one of
 these owners; AggregateState charges its arrays while its enclosing owner
 charges its inline fields. Count-only arguments own nullable counters where
 needed, but no typed sum cells. An identical numeric argument shared with
-SUM/AVG owns one value state; direct STRING/DATE counts capture validity only.
+SUM/AVG owns one sum state. Sharing with MIN/MAX retains the argument value;
+COUNT-only STRING/DATE arguments capture validity only.
+
+Each demanded MIN/MAX slot owns an eight-byte word per admitted group. Numeric
+slots store value bits; text slots store lengths and own separate reusable byte
+storage. Declared text reserves 65,536 bytes per slot per group. Legacy fixed-key
+text reserves one byte. Admission and independent validation receive the source
+domain explicitly. Optional hash capacity includes every retained text slot;
+when hash grouping cannot fit, disk reduction reuses one group's slots.
+
+Captured STRING arguments each reserve a 65,536-byte arena per batch, in addition
+to eight-byte row spans and validity masks. The minimum includes these arenas
+even with one admitted row. A spill frame contains its header, encoded keys,
+eight bytes per argument, and retained text bytes. Its maximum trailer is
+65,536 bytes times the number of retained text arguments. Replay flushes before
+an append exceeds a text arena or the row capacity, so one full-width row always
+fits. Replacement of retained extrema reuses admitted storage without allocating
+per row or accumulating discarded strings.
 
 Available memory first increases captured arguments up to 256 rows. Run slots
 and bytes then grow together up to 4,096 slots, reserving the maximum first

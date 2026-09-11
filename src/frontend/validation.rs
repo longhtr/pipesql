@@ -201,8 +201,15 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                             expression.validate(&sources[..input.len()])?;
                             matches!(expression.data_type, DataType::Int64 | DataType::Double)
                         }
-                        (AggregateKind::Count, Some(AggregateArgument::Validity(column))) => {
+                        (AggregateKind::Count, Some(AggregateArgument::Column(column))) => {
                             matches!(column.data_type(), DataType::String | DataType::Date)
+                                && sources[..input.len()].contains(column)
+                        }
+                        (
+                            AggregateKind::Min | AggregateKind::Max,
+                            Some(AggregateArgument::Column(column)),
+                        ) => {
+                            matches!(column.data_type(), DataType::Date | DataType::String)
                                 && sources[..input.len()].contains(column)
                         }
                         _ => false,

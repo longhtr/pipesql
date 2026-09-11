@@ -539,6 +539,10 @@ impl Parser<'_> {
                 AggregateKind::Sum
             } else if text(self.source, name).eq_ignore_ascii_case("AVG") {
                 AggregateKind::Avg
+            } else if text(self.source, name).eq_ignore_ascii_case("MIN") {
+                AggregateKind::Min
+            } else if text(self.source, name).eq_ignore_ascii_case("MAX") {
+                AggregateKind::Max
             } else if text(self.source, name).eq_ignore_ascii_case("COUNT") {
                 AggregateKind::Count
             } else {
