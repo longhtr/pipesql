@@ -30,34 +30,36 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
-## Next: trace composed blocking execution
+## Next: complete scalar MIN and MAX aggregation
 
-COUNT(expression) is complete for the current scalar profile. Both full gates
-pass all 23 stages on matching frozen inputs, with 439 Rust tests per platform,
-no ignored tests, and one separate lease subprocess. The updated tutorial runs
-on both platforms. [Evidence](evidence.md#nullable-count-arguments) records
-semantics, failure coverage, source identity, and qualification limits.
+COUNT(expression) and the composed execution learning path are complete. The
+[example](../examples/composed.rs) verifies join multiplicity, nullable counts
+and sums, descending results, and cancellation/release under two budgets on
+macOS and Linux. The [evidence](evidence.md#composed-execution-example) separates
+its focused verification from the unchanged engine's full gates. Existing
+competing-reader coverage was reused; no duplicate harness or engine change was
+needed.
 
-Next make a join-to-group-to-order query understandable as a complete operation,
-including competing memory owners. Spend at most 45 minutes reviewing the
-existing joined aggregation, sorting, and composed-ownership checks before
-choosing the smallest missing learning workload. Do not reopen accepted work
-without a concrete defect or missing contract boundary.
+The next ordinary analytical gap is MIN/MAX. Start with at most 45 minutes
+reviewing the supported scalar profile, GoogleSQL semantics, argument capture,
+aggregate state, independent validation, and spill records. Establish exact
+NULL, NaN, signed-zero, STRING ordering, and DATE behavior from authoritative
+contracts before implementation. Record the smallest coherent representation
+and cheapest falsifiers here.
 
-Use a generated dataset with independently calculable join multiplicity and
-nullable aggregate results. Connect one runnable example to preparation,
-operator scheduling, memory admission, spill, cancellation, and release. Compare
-comfortable and constrained memory with observed temporary use; a small budget
-alone does not establish spill. Reuse existing fixtures and failure campaigns,
-adding a regression only where current coverage does not exercise a consequential
-boundary. Keep the explanation in the existing tutorial and execution owners.
+Complete global, grouped, repeated, and composed MIN/MAX for supported numeric
+expressions and direct STRING/DATE columns. Account for retained variable-width
+values and their release; avoid allocating per input row or adding a second
+aggregation engine. Preserve COUNT/SUM/AVG, demanded errors, diagnostics,
+resource refusal, cancellation, independent validation, and persistent bytes.
+Do not add DISTINCT aggregates, windows, new scalar types, or unrelated syntax.
 
-Finish with complete results, visible ownership and cleanup checks, applicable
-macOS/Linux verification, concise evidence, current documentation, and a local
-commit. Repair any concrete prerequisite defect without weakening contracts.
-Do not add new SQL features, speculative optimization, profiling infrastructure,
-or another test framework. Reassess after the bounded inspection if existing
-coverage already supplies the required operation and learning path.
+Deliver understandable state ownership, independent boundary regressions,
+actual memory/spill equivalence, a concise educational example, current language
+and resource contracts, required macOS/Linux verification, compact evidence,
+and coherent local commits. Platform qualification remains explicit. Reassess
+any approach whose state or temporary representation becomes harder to explain
+than the operation it implements.
 
 ## Applying DuckDB lessons
 
@@ -68,7 +70,7 @@ bounded changes to existing owners:
 | Lesson | PipeSQL action and acceptance check |
 | --- | --- |
 | Streaming alone does not bound blocking intermediates. | Retain the completed COUNT spill/refusal regressions. Apply the same complete-result and release checks to the composed workload. |
-| Operators compete for memory across a complete query. | Review an existing join-to-group-to-order workload with overlapping owners. Add a regression only for a concrete missing boundary; measure memory and temporary bytes separately. |
+| Operators compete for memory across a complete query. | The composed example now connects these owners. Preserve the existing competing-reader checks and measure memory and temporary bytes separately. |
 | Memory limits need interpretable measurements. | When addressing physical-memory qualification, reconcile existing logical counters with allocation measurements. Add diagnostics only where a missing observation prevents a decision. |
 | SQL regressions should expose queries and expected results. | Keep explicit independent expectations beside each new query. Use DuckDB for optional differential checks only after reconciling NULL, overflow, floating-point, ordering, and dialect semantics. |
 

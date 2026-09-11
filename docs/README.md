@@ -23,6 +23,8 @@ compact plan representation.
 Continue with [Planning](planning.md) for demanded inputs and the producer
 graph, then [Execution](execution.md#pipeline-state) for controller steps and
 [result ownership](execution.md#result-ownership) for completion and cleanup.
+Use the [joined workload](getting-started.md#follow-a-join-through-grouping-and-sorting)
+to trace several blocking operators sharing one memory budget.
 For the write path, read [Transactions](transactions.md) alongside its owners in
 the [source map](source-map.md#persistence-and-native-effects). Use the [catalog
 graph](storage.md#declared-table-catalog-graph) when you reach a stored

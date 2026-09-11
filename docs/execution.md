@@ -92,6 +92,46 @@ dropped. The example checks release after normal completion. The grouping
 [failure tests](../src/execution/aggregation/grouping/tests/failure.rs) exercise
 the cancellation and failed-cleanup contracts.
 
+## Follow the composed example
+
+Run [the joined workload](getting-started.md#follow-a-join-through-grouping-and-sorting)
+with [examples/composed.rs](../examples/composed.rs) open. Two occurrences of the
+same pinned table feed a join, followed by grouping and a separate descending
+sort. Two rows per key produce four joined pairs; NULL amounts affect COUNT and
+SUM without removing the group.
+
+1. The [binder](../src/frontend/binding.rs) resolves `s` and `copies` as distinct
+   source occurrences. The [physical plan](../src/execution/planning.rs) retains
+   both input edges and demands the left amount, both join keys, and the final
+   aggregate results. Sharing a table does not collapse the two occurrences.
+2. `Runtime::open_native` in [runtime.rs](../src/execution/runtime.rs) admits
+   source/output batches, both join sides, and final ordering before
+   `open_aggregates` spends remaining capacity on optional hash grouping.
+   These owners coexist under the same database memory authority; each operator
+   does not receive the full configured budget independently.
+3. `Runtime::advance` follows producer requests. When a consumer needs a batch,
+   it clears the consumed input and switches the active producer to that child.
+   [Join::step](../src/execution/blocking/join.rs) requests its two inputs,
+   sorts them, matches equal keys, and replays duplicates. The self-join must
+   enumerate all four pairs for each key.
+4. [Grouping](../src/execution/aggregation/grouping.rs) consumes those pairs.
+   If optional hash storage fills, it requests replay of the retained upstream
+   producer and reduces sorted argument records. It does not reopen a newer
+   table snapshot. The final [order controller](../src/execution/blocking/order.rs)
+   then sorts aggregate rows by descending region.
+5. [Scratch owners](../src/scratch.rs) charge temporary extents before writing.
+   The example samples the database total, so those bytes include all active
+   operators. It checks release after completion and after cancellation with
+   temporary storage already reserved. The prepared query remains charged
+   until separately dropped.
+
+This example shows competing owners within one query. The existing
+[composed-ownership caller](../tools/fixtures/composed-ownership.rs) checks a
+separate concern: a held grouped reader alongside another reader and a writer,
+including allocator observations, refusal, publication, and release. Reuse its
+[recorded coverage](../notes/evidence.md#composed-query-owners)
+when changing shared admission; the example's logical counters do not replace it.
+
 ## Producer execution
 
 Physical plans describe producer pipelines for scans, aggregates, joins,

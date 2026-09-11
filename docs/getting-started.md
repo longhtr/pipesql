@@ -111,3 +111,52 @@ to see what changes between these runs. When finished, remove the owned inputs:
 ```sh
 rm -r -- "$pipesql_grouping_dir"
 ```
+
+## Follow a join through grouping and sorting
+
+The [composed example](../examples/composed.rs) uses the same 4,096 regions, but
+makes some amounts NULL and joins each row to every row with the same region:
+
+```sql
+FROM sales AS s
+|> JOIN sales AS copies ON s.region = copies.region
+|> AGGREGATE COUNT(*) AS n, COUNT(s.amount) AS present, SUM(s.amount) AS total
+   GROUP BY s.region
+|> ORDER BY region DESC
+```
+
+Each region has two source rows, so the self-join produces four pairs. Each
+amount on the left occurs twice in the joined input. The example constructs
+these three cases and checks every result, from region 4095 down to 0:
+
+| Region remainder after division by 4 | Source amounts | Joined rows | Present amounts | Sum |
+| --- | --- | ---: | ---: | ---: |
+| 0 | NULL, NULL | 4 | 0 | NULL |
+| 1 | NULL, 3 | 4 | 2 | 6 |
+| 2 or 3 | 1, 3 | 4 | 4 | 8 |
+
+Run both budgets with fresh database paths:
+
+```sh
+pipesql_composed_dir=$(mktemp -d)
+cargo run --release --offline --locked --example composed -- "$pipesql_composed_dir/comfortable" 12000000
+cargo run --release --offline --locked --example composed -- "$pipesql_composed_dir/constrained" 2200000
+```
+
+Both must print `verified 4096 descending groups: four joined pairs per key, nullable counts and sums`.
+The next line reports sampled logical memory and temporary bytes. Unlike the
+preceding grouping-only example, this query uses temporary storage even with
+ample memory: its join and separate ORDER BY use sorted inputs. Total temporary
+bytes alone cannot identify which operator spilled. The constrained run checks
+that the composed query still completes with the same rows under a smaller
+shared memory budget; it does not establish a performance improvement.
+
+After checking successful completion and release, the program executes the
+query again, waits until temporary storage is reserved, cancels it, and checks
+that dropping the failed result restores the same reservation baseline.
+Follow [the composed execution path](execution.md#follow-the-composed-example)
+with the source open. When finished, remove the inputs:
+
+```sh
+rm -r -- "$pipesql_composed_dir"
+```

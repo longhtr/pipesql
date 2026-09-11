@@ -7,8 +7,8 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 12, 2026 (local time) complete gates passed all 23 stages on macOS and GNU
-arm64 Linux. The macOS environment was arm64 Darwin 25.6.0, Rust 1.98.1,
+The September 12, 2026 (local time) complete gates for `9639b12` passed all 23
+stages on macOS and GNU arm64 Linux. The macOS environment was arm64 Darwin 25.6.0, Rust 1.98.1,
 Python 3.14.7, and the native Apple toolchain. The Linux environment is identified
 below. Checks used release artifacts, offline locked dependencies, and
 warnings-denied compilation and documentation.
@@ -34,10 +34,11 @@ All stage statuses were zero, before/after manifests matched across both runs,
 and finalization reported no errors and removed owned build targets. The frozen
 manifest SHA-256 is
 `1c71891d7a9e04f4ca5b8afd0b5bdeee2dda703433aecf503f9b244aff9061bd`.
-Only the two notes files were finalized afterward. The other 659 manifested
-inputs have fingerprint
+At that checkpoint, only the two notes files were finalized afterward. The
+other 659 manifested inputs have fingerprint
 `4be67091821b95426832627764db3f3e7290f784df20b71e7eb888a4a7f2c0ee`.
-Recompute it from the repository root:
+This identifies that checkpoint; later example/documentation changes are
+qualified separately below. To fingerprint the currently checked-out inputs:
 
 ```sh
 python3 -B tools/source-manifest.py | python3 -c 'import hashlib, sys; print(hashlib.sha256("".join(line for line in sys.stdin if not line.split("  ", 1)[1].startswith("notes/")).encode()).hexdigest())'
@@ -82,6 +83,44 @@ Both CLI composition campaigns passed 285 cases, including numeric/STRING/DATE
 counts over empty and nonempty input while retaining COUNT(DISTINCT ...) refusal.
 The [tutorial](../docs/getting-started.md) explains the different results of
 COUNT(*) and COUNT(nullable_column) using the maintained declared-table example.
+
+## Composed execution example
+
+[examples/composed.rs](../examples/composed.rs) constructs two rows per integer
+key, self-joins them, counts rows and present amounts, sums nullable amounts,
+and orders the 4,096 groups descending. The
+[tutorial](../docs/getting-started.md#follow-a-join-through-grouping-and-sorting)
+owns fresh-input commands and the independent expected results. The
+[reading path](../docs/execution.md#follow-the-composed-example) follows source
+occurrences, scheduling, admission, shared sorting, replay, and cleanup.
+
+Release runs on the macOS and unprivileged GNU arm64 Linux environments below
+checked all rows, successful completion, and reservation release. Each run also
+cancelled a second execution after temporary storage was reserved and checked
+release again. The source SHA-256 was
+`16aa6d6370051ae59586f218951f4e07105754ced12ed512d0bf190837c6f01f`.
+
+| Platform | Configured memory bytes | Maximum sampled logical memory | Maximum sampled temporary bytes |
+| --- | ---: | ---: | ---: |
+| macOS | 12,000,000 | 7,570,914 | 1,263,448 |
+| macOS | 2,200,000 | 2,162,342 | 2,336,640 |
+| GNU/Linux | 12,000,000 | 7,570,817 | 1,263,448 |
+| GNU/Linux | 2,200,000 | 2,162,303 | 2,336,640 |
+
+The join and final sort use scratch even at the larger budget. These totals do
+not isolate grouping spills, count transferred bytes, bound physical memory, or
+establish performance. A macOS negative control inserted
+`WHERE copies.amount IS NOT NULL` after the join while preserving the expected
+results; the example rejected the changed multiplicity. Its temporary source,
+executable, and input were removed after the check.
+
+Verification included offline/locked release builds and warnings-denied Clippy
+for all examples on both platforms, formatting, 84 maintenance tests, 39
+independent fixtures, and documentation links. Engine, filesystem, test, tool,
+and dependency sources are unchanged from the full-gate checkpoint `9639b12`.
+Those gates and the composed-ownership campaign remain applicable to those
+unchanged sources; this is focused example verification, not a new full gate.
+No duplicate allocator harness or engine refactoring was needed.
 
 ## Linux native verification
 
