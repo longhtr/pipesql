@@ -191,9 +191,13 @@ mutex spans native I/O. Its native helpers share a 65,536-call admission
 counter, including optional mount lookups. Exhaustion propagates distinctly
 rather than becoming a naming fallback; no partial name is published. Native
 naming preserves case/normalization, firmlink spelling and the reviewed
-33-symlink rule within admission. Linux uses libc resolution; its resource
-bounds remain unqualified. Local regression evidence includes the native path
-checks, but does not establish whole-platform qualification.
+33-symlink rule within admission. Linux uses an explicit `lstat`/`readlink`
+traversal with the same native-call budget and a forty-symlink limit. Ordinary
+paths use fixed buffers; expanded pending suffixes can use overflow admitted by
+the caller's database memory authority. Neither resolver retries failed native
+calls or publishes a partial name. [Resources](resources.md#native-paths-stack-and-io)
+defines scratch and work bounds. Native regression checks do not establish
+whole-platform qualification.
 [Verification](verification.md) owns the remaining release obligations.
 
 ### Byte I/O and synchronization

@@ -379,9 +379,13 @@ fn database_open_resolves_catalog_history_and_owns_its_lease() {
         fixture.put(&fixture.path(object(4, ordinal)), &[]);
     }
     fs::remove_file(fixture.0.join(ROOT_B_NAME)).unwrap();
-    let path_bytes = pipesql_filesystem::canonicalize(&fixture.0)
-        .unwrap()
-        .capacity() as u64;
+    let memory = crate::resources::MemoryAuthority::new(u64::MAX);
+    let path_bytes = pipesql_filesystem::canonicalize(
+        &fixture.0,
+        &mut crate::path::CanonicalizeScratch::new(&memory),
+    )
+    .unwrap()
+    .capacity() as u64;
     let config = crate::Config::new(
         path_bytes
             + catalog::SNAPSHOT_SCRATCH_BYTES as u64

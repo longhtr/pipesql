@@ -74,28 +74,49 @@ pub fn open_read_write(path: impl AsRef<Path>) -> io::Result<File> {
     syscall::open_read_write(path.as_ref())
 }
 
-/// macOS work admission counts native helper entries, not kernel-internal work
-/// or wall time. It admits the retained 16,150-call deep-prefix case with room for
-/// fallback metadata lookups; more expensive shapes return a typed refusal.
+/// Per-resolution admission counts explicit native helper entries, not kernel
+/// work or elapsed time. Exhaustion refuses before the next native entry.
 pub const MAX_NATIVE_PATH_CALLS: u32 = 65_536;
 
-#[derive(Debug)]
-pub enum CanonicalizeError {
-    Io(io::Error),
-    WorkLimit,
+/// Caller-owned overflow storage. Growth preserves existing bytes and reserves
+/// physical storage through the caller's memory authority before publishing it.
+pub trait PathScratch {
+    type Error;
+
+    /// Initialized bytes available to the traversal; the caller retains ownership.
+    fn bytes(&mut self) -> &mut [u8];
+    /// Grow beyond the current length, preserving bytes on success and failure.
+    /// `required` never exceeds MAX_CANONICALIZE_SCRATCH_BYTES. Success must make
+    /// at least that many initialized bytes available through `bytes`.
+    fn grow(&mut self, required: usize) -> Result<(), Self::Error>;
 }
 
-impl From<io::Error> for CanonicalizeError {
+const LINUX_SYMLINKS: usize = 40;
+/// A bounded input plus at most forty bounded Linux symlink targets.
+pub const MAX_CANONICALIZE_SCRATCH_BYTES: usize = (LINUX_SYMLINKS + 1) * MAX_PATH_BYTES;
+
+#[derive(Debug)]
+pub enum CanonicalizeError<ScratchError = std::convert::Infallible> {
+    Io(io::Error),
+    WorkLimit,
+    Scratch(ScratchError),
+}
+
+impl<E> From<io::Error> for CanonicalizeError<E> {
     fn from(error: io::Error) -> Self {
         Self::Io(error)
     }
 }
 
-/// Canonicalize an absolute bounded pathname. macOS traversal has call-local
-/// state and a native-call budget; Linux's foreign resolver remains unqualified.
+/// Canonicalize an absolute bounded pathname with call-local state and native
+/// work admission. Linux pending suffixes can grow caller-accounted scratch;
+/// macOS uses fixed traversal storage and does not request overflow.
 /// Callers own cancellation around this synchronous operation and must validate
 /// physical identity independently. No partial name escapes on failure.
-pub fn canonicalize(path: impl AsRef<Path>) -> Result<std::path::PathBuf, CanonicalizeError> {
+pub fn canonicalize<S: PathScratch>(
+    path: impl AsRef<Path>,
+    scratch: &mut S,
+) -> Result<std::path::PathBuf, CanonicalizeError<S::Error>> {
     let path = path.as_ref();
     if !path.is_absolute() {
         return Err(CanonicalizeError::Io(io::ErrorKind::InvalidInput.into()));
@@ -103,10 +124,16 @@ pub fn canonicalize(path: impl AsRef<Path>) -> Result<std::path::PathBuf, Canoni
     let mut resolved = [0; MAX_PATH_BYTES + 1];
 
     #[cfg(target_os = "macos")]
-    let length = syscall::canonicalize(path, &mut resolved)?;
+    let _ = scratch;
+    #[cfg(target_os = "macos")]
+    let length = syscall::canonicalize(path, &mut resolved).map_err(|error| match error {
+        CanonicalizeError::Io(error) => CanonicalizeError::Io(error),
+        CanonicalizeError::WorkLimit => CanonicalizeError::WorkLimit,
+        CanonicalizeError::Scratch(never) => match never {},
+    })?;
 
     #[cfg(target_os = "linux")]
-    let length = syscall::canonicalize(path, &mut resolved).map_err(CanonicalizeError::Io)?;
+    let length = syscall::canonicalize(path, &mut resolved, scratch)?;
     let mut owned = std::path::PathBuf::new();
     owned
         .try_reserve_exact(length)

@@ -284,13 +284,29 @@ readers borrow an 8-KiB stack buffer and own one descriptor.
 The macOS resolver additionally uses fixed 1,024-byte path slots, a 1,052-byte
 native name record, and bounded scalar metadata scratch. A suffix cursor avoids
 input-controlled recursion and repeated suffix shifting. At most 33 symlink
-expansions refill that suffix. A resolution admits at most 65,536 native helper
-calls, including optional mount-name and prefix checks; the next call returns
+expansions refill that suffix.
+
+The Linux resolver traverses components using `lstat` and reads each encountered
+symlink once. It allows forty symlink expansions; the next returns `ELOOP`.
+Its fixed output, pending-input, and link-target arrays total 12,290 bytes.
+This array total excludes scalar state, compiler temporaries, and caller frames.
+Each link target is bounded to 4,096 bytes. A target exceeding that bound returns
+`ENAMETOOLONG`.
+
+Expanded pending suffixes may exceed the final pathname limit. Their capacity
+is bounded to `(40 + 1) * 4096 = 167936` bytes. The engine's pathname scratch
+owner admits overflow through the database memory authority before allocating.
+Growth uses power-of-two capacities capped at that bound, with a 4,096-byte
+allocator allowance per buffer. Admission includes old/new buffer overlap during
+copying; physical storage drops before its reservation. Ordinary paths need no
+overflow allocation. Allocation refusal propagates without a partial result or
+an unaccounted fallback.
+
+Both resolvers admit at most 65,536 native helper calls, including macOS's
+optional mount-name and prefix checks; the next call returns
 `Resource { owner: "pathname native calls", required: 65537, limit: 65536 }`
 before native entry. This bounds admitted calls, not kernel work or elapsed
-time. Scratch remains private and no partial resolved path escapes. Linux
-resolver resource attribution remains unfinished; macOS's bounds do not qualify
-it.
+time. Scratch remains private and no partial resolved path escapes.
 
 Measured small-stack regressions check the native-reported thread size against
 64 KiB. Requested size alone is insufficient, and reported size does not measure
@@ -298,6 +314,11 @@ live frames, VM mappings, residency, or runtime storage. The [platform
 exclusions](testing.md#platform-status) identify targets that cannot meet the
 tests' native thread-size premise. Native and failure-phase attribution remain
 separate from logical reservations.
+
+A separate GNU arm64 pathname test requests a 128-KiB thread and checks its
+native-reported size against a 144-KiB ceiling before exercising expanded-path
+creation, refusal, and reopen. It does not replace the 64-KiB qualifications or
+measure maximum live stack use.
 
 Synchronization borrows an existing file, allocates no buffer, and makes one
 native attempt using the platform's required durability primitive. Interruption
@@ -349,9 +370,10 @@ CLI capture does not release the original process argument/environment storage.
 Runtime bootstrap, resident stack, allocator-retained pages, and foreign-runtime
 allocations remain separate owners. The [native evidence
 record](../notes/evidence.md#native-boundaries-and-diagnostics) retains stock
-argument-padding and heap/residency counterexamples. Linux has native
-capture/decoder tests and stock declared-query coverage; publication,
-allocation-refusal, and native sink-failure campaigns remain unqualified there.
+argument-padding and heap/residency counterexamples. The macOS and GNU/Linux
+gates exercise capture/decoding, publication, allocation refusal, and native
+sink failure. Their recorded cases do not establish a whole-process memory cap
+or qualify every runtime and filesystem.
 
 ## Temporary and persistent bytes
 

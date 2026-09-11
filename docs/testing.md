@@ -272,9 +272,16 @@ decision](../notes/evidence.md#retired-implementations-and-gate-isolation).
 The full campaign set runs on macOS and GNU/Linux. Run it as an unprivileged
 user: root can bypass permission-refusal controls. Linux requires GNU
 `/usr/bin/time`; macOS uses its native implementation. Linux initialization checks
-libc `realpath` entry, while Darwin checks root metadata during its own traversal.
+root/component `lstat` and symlink `readlink` refusal, expanded pending suffixes,
+and overlapping callers. It also rejects calls to libc `realpath`. Darwin checks
+root metadata during its separate traversal.
 The Linux run does not exercise Darwin data-mount spelling or the two Darwin ACL
 recovery cells, and its existing stack exclusions remain explicit.
+
+On GNU/Linux, `python3 tools/check-diagnostic-allocation.py --pathname-only`
+sweeps allocation refusal during expanded-path creation and reopen. It checks
+released allocations and successful retry, plus the common mutex control. This
+focused command does not replace the complete allocation campaign.
 
 On either platform, `python3
 tools/check.py --scope core` runs the compiler, format, maintenance, ABI, model,

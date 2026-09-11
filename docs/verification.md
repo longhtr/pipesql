@@ -444,7 +444,7 @@ effects:
 
 | Caller | Required boundary and exclusions |
 | --- | --- |
-| Initialization | Root-stat refusal, overlapping initialization, subsequent attempts, explicit data-mount and 33-symlink names; finish owned threads before checking outcomes. This does not prove every pathname/backend or libc race freedom. |
+| Initialization | Darwin root-stat refusal, data-mount spelling, and 33-symlink names; Linux root/component lstat and readlink refusal, forty-link expanded suffixes, and no libc realpath calls. Check overlapping callers and subsequent attempts; finish owned threads before checking outcomes. Independent native comparisons cover names, byte ceilings, permissions, and consequential errors. Work-budget and scratch-refusal controls check their distinct admission boundaries. These cases do not prove every pathname/backend or race freedom. |
 | Synchronization | One attempt, original interruption/unsupported errors, no weaker flush; every observed create/load/repairing-open position, healed reopen/resolution/retry, and no query flushes. Keep the standard-library retry negative control. Recheck after toolchain/native dependency changes. No kernel-latency or power-loss claim follows. |
 | Byte I/O | Observed read/write/pread/pwrite positions, EINTR/EIO, positive short transfers, partial progress followed by refusal, and healed commit identity. Keep standard convenience-method controls. Narrow single-threaded local-file cases do not qualify every backend, concurrent native state, latency, or process memory. |
 

@@ -102,7 +102,7 @@ impl Database {
         }
         arena.resize(ARENA_REQUESTED_BYTES, 0);
 
-        let source = inspect_input(input, effects)?;
+        let source = inspect_input(input, &self.memory, effects)?;
         let first = scan_pass(
             &source,
             &mut arena[..MAX_CHUNK_BYTES],

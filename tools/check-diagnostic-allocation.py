@@ -42,12 +42,19 @@ def parse_options(argv):
         action="store_true",
         help="focused synchronized public ownership check",
     )
+    scope.add_argument(
+        "--pathname-only",
+        action="store_true",
+        help="focused Linux expanded-suffix scratch allocation check",
+    )
     arguments.add_argument(
         "--controls-only",
         action="store_true",
         help="development census only; not a passing allocation sweep",
     )
     options = arguments.parse_args(argv)
+    if options.pathname_only and sys.platform != "linux":
+        arguments.error("expanded-suffix allocation checks require GNU/Linux")
     if not __debug__:
         arguments.error("allocation checks require Python assertions")
     return options
@@ -266,6 +273,11 @@ def allocation_cells(options):
         ("q6-corrupt", "short", None),
         ("q6-corrupt", "path384", 384),
     ]
+    pathname_cells = [("create-expanded", "short", None), ("open-expanded", "short", None)]
+    if sys.platform == "linux":
+        cells += pathname_cells
+    if options.pathname_only:
+        return pathname_cells
     catalog_cells = [("catalog", "short", None), ("catalog", "path384", 384)]
     recovery_cells = [
         (f"catalog-recover-{kind}", label, length)
@@ -296,7 +308,9 @@ def allocation_cells(options):
 
 def required_outcomes(operation):
     required = []
-    if operation.startswith("catalog-recover-"):
+    if operation in {"create-expanded", "open-expanded"}:
+        required = ["returned pathname scratch allocation refusal", "pathname scratch healed", f"returned healthy {operation}"]
+    elif operation.startswith("catalog-recover-"):
         expected = (
             "expected"
             if operation
@@ -443,6 +457,7 @@ def main(argv=None):
             options.catalog_only
             or options.catalog_recovery_only
             or options.controls_only
+            or options.pathname_only
         ):
             check_ownership(work, run, failures)
             if options.ownership_only:
@@ -453,7 +468,7 @@ def main(argv=None):
 
         for mode in (
             []
-            if (options.catalog_only or options.catalog_recovery_only)
+            if (options.catalog_only or options.catalog_recovery_only or options.pathname_only)
             else ["control", "deny", "format-control", "format-deny"]
         ):
             run(mode, mode)
@@ -463,6 +478,9 @@ def main(argv=None):
         )
         if failures:
             raise SystemExit("public allocation regression:\n" + "\n".join(failures))
+    if options.pathname_only and not options.controls_only:
+        print("public allocation: expanded pathname allocation prefixes passed", flush=True)
+        return
     print(
         "public allocation: controls only; no prefix-sweep claim"
         if options.controls_only

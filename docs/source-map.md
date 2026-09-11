@@ -90,7 +90,7 @@ producers merely to reduce duplicated-looking checks.
 | [load/input.rs](../src/load/input.rs), [load/staging.rs](../src/load/staging.rs), [load/unit.rs](../src/load/unit.rs) | Two-pass source identity, admitted column streams, private-unit construction/readback, and publication handoff. |
 | [publication.rs](../src/publication.rs) | The shared root/fence publisher. `publish_snapshot` exposes replacement order and failure classification; `write_fence` and `write_root_next` own verified file preparation. |
 | [namespace.rs](../src/namespace.rs) | Persistent names, read-only graph inspection, exclusive recovery, metadata identity checks, and root/fence reconciliation. |
-| [path.rs](../src/path.rs) | Bounded lexical path admission and fallible pathname construction. |
+| [path.rs](../src/path.rs) | Bounded lexical path admission, fallible pathname construction, and caller-accounted canonicalization scratch. |
 | [load_input.rs](../src/load_input.rs) | Bounded lineitem parsing and two-pass fingerprints. |
 | [catalog_snapshot.rs](../src/catalog_snapshot.rs) | Snapshot and resolution pins, serialized writer/maintenance authority, and registry publication. |
 | [declare.rs](../src/catalog_snapshot/declare.rs) | Table declaration validation, identity assignment, and replacement catalog construction. |
@@ -104,6 +104,7 @@ producers merely to reduce duplicated-looking checks.
 | [effects.rs](../src/effects.rs) | Named filesystem attempts, checked effect counts, positional transfers with short-I/O injection, and test fault schedules. Callers retain ordering and recovery authority. |
 | [file_io.rs](../src/file_io.rs) | Concrete-file exact I/O, checked extents, and positive progress or terminal failure. |
 | [filesystem](../filesystem/src/lib.rs) | Private unsafe OS boundary: paths, metadata, directory cursors, native synchronization, and fallible stationary mutexes. |
+| [Linux pathname traversal](../filesystem/src/syscall/linux_path.rs), [macOS pathname traversal](../filesystem/src/syscall/path.rs) | Platform naming semantics, native-call admission, bounded symlink expansion, and private traversal state. |
 
 Namespace format 7 uses format-6 child codecs. Legacy storage uses format 4.
 Their distinct discriminators are documented in [Storage](storage.md); none is a

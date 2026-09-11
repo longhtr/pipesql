@@ -29,24 +29,31 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
-## Next: bound Linux pathname resolution
+## Next: resolve cross-platform stack qualification
 
-Linux canonicalization currently supplies bounded input/output buffers to
-`libc::realpath`, but its internal allocation, stack, and traversal work remain
-unqualified. Inspect that owner and establish explicit byte, symlink, native-call,
-and scratch limits for admitted absolute paths. First test whether the existing
-boundary can satisfy the resource contract with a defensible argument; replace
-opaque traversal only where needed. Limit initial design and falsification to
-60 minutes, then reassess the implementation approach.
+Linux pathname traversal now has explicit byte, symlink, native-call, and
+caller-accounted scratch bounds. Native comparisons, allocation refusal, healed
+outcomes, and the complete macOS/Linux gates passed. The
+[evidence record](evidence.md#linux-pathname-bounds) retains the consequential
+large-suffix counterexample and qualification limits.
 
-Preserve Linux naming and error behavior, macOS's separate native semantics,
-fallible construction, and filesystem identity checks. Use independent native
-comparisons and boundary/refusal controls; do not move an independent oracle into
-production or weaken limits to obtain passing checks. Keep the design with the
-native owners, without a general filesystem framework. Finish the implementation
-or supported resource argument, applicable full gates on frozen inputs, current
-contracts/evidence, and coherent local commits. Windows runtime availability must
-not block this work, and Linux success must not imply Windows qualification.
+The next bounded milestone is the twelve excluded GNU arm64 stack scenarios.
+Determine a defensible cross-platform stack contract from actual native thread
+minimums, engine call paths, and retained scenarios. Distinguish allocated thread
+size from engine stack consumption. Spend at most 90 minutes on initial design
+and falsification, then reassess from evidence before expanding instrumentation.
+
+Preserve every functional scenario and its independent expectations. Do not
+silently increase a ceiling, relabel an ordinary-thread pass as bounded-stack
+qualification, or claim live-stack use from a requested/reported thread size.
+If a contract needs redesign, explain the failed premise, resulting guarantee,
+per-target limits, and remaining uncertainty with its authoritative owner.
+Keep instrumentation proportional and separate from production behavior.
+
+Finish applicable native controls and regressions, complete verification on
+frozen inputs, reconcile discovery and exclusions, update the existing contracts
+and evidence, and commit coherent work locally. Do not add unrelated features or
+make unavailable Windows runtime resources a blocker for independent progress.
 
 ## Other release work
 

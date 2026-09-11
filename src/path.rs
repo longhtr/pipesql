@@ -3,12 +3,72 @@
 
 use crate::Error;
 use crate::error::io_error;
+use crate::resources::{MemoryAuthority, Reservation};
 use pipesql_filesystem as filesystem;
 use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 pub(crate) const MAX_PATH_BYTES: usize = filesystem::MAX_PATH_BYTES;
+
+/// Overflow traversal bytes drop before their reservation. Ordinary short paths
+/// use the native walker's inline storage and never grow this owner.
+pub(crate) struct CanonicalizeScratch<'database> {
+    bytes: Vec<u8>,
+    charge: Option<Reservation<'database>>,
+    memory: &'database MemoryAuthority,
+}
+
+impl<'database> CanonicalizeScratch<'database> {
+    pub(crate) fn new(memory: &'database MemoryAuthority) -> Self {
+        Self {
+            bytes: Vec::new(),
+            charge: None,
+            memory,
+        }
+    }
+}
+
+impl filesystem::PathScratch for CanonicalizeScratch<'_> {
+    type Error = Error;
+
+    fn bytes(&mut self) -> &mut [u8] {
+        &mut self.bytes
+    }
+
+    fn grow(&mut self, required: usize) -> Result<(), Error> {
+        assert!(required > self.bytes.len());
+        assert!(required <= filesystem::MAX_CANONICALIZE_SCRATCH_BYTES);
+        let capacity = required
+            .next_power_of_two()
+            .min(filesystem::MAX_CANONICALIZE_SCRATCH_BYTES);
+        let charge = self
+            .memory
+            .reserve(capacity as u64 + 4_096, "pathname scratch")?;
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(capacity)
+            .map_err(|_| Error::Resource {
+                owner: "pathname scratch allocation",
+                required: charge.bytes(),
+                limit: self.memory.limit(),
+            })?;
+        if bytes.capacity() > capacity {
+            return Err(Error::Resource {
+                owner: "pathname scratch capacity",
+                required: bytes.capacity() as u64,
+                limit: capacity as u64,
+            });
+        }
+        bytes.resize(capacity, 0);
+        bytes[..self.bytes.len()].copy_from_slice(&self.bytes);
+        // Both allocations are charged during copying. Release the old charge
+        // only after dropping its physical storage.
+        drop(std::mem::replace(&mut self.bytes, bytes));
+        self.charge = Some(charge);
+        Ok(())
+    }
+}
 
 // Unix Path::join semantics, with one bounded fallible allocation before either
 // push. PathBuf::join first clones the parent and may then grow infallibly.
@@ -78,5 +138,44 @@ pub(crate) fn validate_requested_path(path: &Path) -> Result<(), Error> {
     match path.file_name() {
         Some(name) if !name.as_bytes().is_empty() => Ok(()),
         _ => Err(Error::InvalidPath("path has no final component")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use filesystem::PathScratch;
+
+    #[test]
+    fn scratch_growth_admits_copy_overlap_and_preserves_state_on_refusal() {
+        // 8-KiB old storage and 16-KiB replacement each carry a 4-KiB allowance.
+        // One byte below their overlap must refuse, even though the final owner
+        // would fit. Refusal cannot damage bytes still needed by the traversal.
+        for limit in [32_767, 32_768] {
+            let memory = MemoryAuthority::new(limit);
+            let mut scratch = CanonicalizeScratch::new(&memory);
+            scratch.grow(4_097).unwrap();
+            scratch.bytes()[0] = 0xa5;
+            let result = scratch.grow(8_193);
+            if limit == 32_767 {
+                assert!(matches!(
+                    result,
+                    Err(Error::Resource {
+                        owner: "pathname scratch",
+                        required: 32_768,
+                        limit: 32_767,
+                    })
+                ));
+                assert_eq!(scratch.bytes().len(), 8_192);
+                assert_eq!(memory.reserved(), 12_288);
+            } else {
+                result.unwrap();
+                assert_eq!(scratch.bytes().len(), 16_384);
+                assert_eq!(memory.reserved(), 20_480);
+            }
+            assert_eq!(scratch.bytes()[0], 0xa5);
+            drop(scratch);
+            assert_eq!(memory.reserved(), 0);
+        }
     }
 }

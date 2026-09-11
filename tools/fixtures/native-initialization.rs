@@ -3,7 +3,13 @@ use pipesql::{Config, Database, Error};
 use std::path::{Path, PathBuf};
 unsafe extern "C" {
     fn probe_actor(value: i32);
-    fn probe_start(mode: i32, error: i32);
+    fn probe_start(mode: i32, error: i32, site: i32);
+    #[cfg(target_os = "linux")]
+    fn probe_lstats(actor: i32) -> u64;
+    #[cfg(target_os = "linux")]
+    fn probe_readlinks(actor: i32) -> u64;
+    #[cfg(target_os = "linux")]
+    fn probe_realpaths(actor: i32) -> u64;
     fn probe_release();
     fn probe_stop();
     fn probe_resolutions(actor: i32) -> u64;
@@ -27,7 +33,7 @@ fn authority(root: &Path) -> Vec<Vec<u8>> {
 }
 fn main() {
     let args: Vec<_> = std::env::args_os().collect();
-    assert_eq!(args.len(), 5);
+    assert_eq!(args.len(), 6);
     let root = PathBuf::from(&args[1]);
     let expected = PathBuf::from(&args[2]);
     assert!(root.is_absolute() && expected.is_absolute());
@@ -35,11 +41,17 @@ fn main() {
     let error = args[4].to_str().unwrap().parse::<i32>().unwrap();
     assert!((1..=4).contains(&mode));
     assert!([libc::EINTR, libc::EIO, libc::ENOMEM, libc::EACCES].contains(&error));
+    let site = match args[5].to_str().unwrap() {
+        "root" => 0,
+        "component" => 1,
+        "symlink" => 2,
+        _ => panic!("unknown native observation site"),
+    };
     let a = root.join("a");
     let b = root.join("b");
     let c = root.join("c");
     // SAFETY: the disposable child owns the shim; no invocation is outstanding.
-    unsafe { probe_start(mode, error) };
+    unsafe { probe_start(mode, error, site) };
     let (first, second) = if mode >= 3 {
         let path = a.clone();
         let first = std::thread::spawn(move || create(&path, 0));
@@ -77,7 +89,7 @@ fn main() {
             "unexpected first outcome: {first:?}"
         );
         assert!(
-            !a.exists(),
+            !expected.join("a").exists(),
             "failed pre-namespace operation published a directory"
         );
     } else {
@@ -98,11 +110,34 @@ fn main() {
         database.close().unwrap();
         assert_eq!(authority(&path), before);
     }
-    // Each public resolution enters Darwin root stat or Linux realpath separately.
+    // Each public resolution inspects root separately on either target.
     // A cached result must fail even if returned names happen to agree.
     // Mount counts remain observations, not an expected upstream implementation.
     assert_eq!(unsafe { probe_resolutions(0) }, 1);
     assert_eq!(unsafe { probe_resolutions(1) }, 2);
+    #[cfg(target_os = "linux")]
+    {
+        // These counters cover public creation, including metadata checks after
+        // canonicalization. They do not measure only the traversal's work.
+        for actor in [0, 1] {
+            assert!(unsafe { probe_lstats(actor) } > 0);
+            assert_eq!(
+                unsafe { probe_realpaths(actor) },
+                0,
+                "foreign resolver remained in stock creation"
+            );
+        }
+        if root != expected {
+            assert!(unsafe { probe_readlinks(1) } > 0);
+        }
+        println!(
+            "site={site} lstats={},{} readlinks={},{} foreign-realpaths=0",
+            unsafe { probe_lstats(0) },
+            unsafe { probe_lstats(1) },
+            unsafe { probe_readlinks(0) },
+            unsafe { probe_readlinks(1) }
+        );
+    }
     println!(
         "mode={mode} error={error} resolutions={},{} mounts={},{} outcomes=checked",
         unsafe { probe_resolutions(0) },

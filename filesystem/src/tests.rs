@@ -1,6 +1,31 @@
 use super::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+struct TestPathScratch(Vec<u8>);
+
+impl PathScratch for TestPathScratch {
+    type Error = io::Error;
+
+    fn bytes(&mut self) -> &mut [u8] {
+        &mut self.0
+    }
+
+    fn grow(&mut self, required: usize) -> Result<(), io::Error> {
+        assert!(required > self.0.len() && required <= MAX_CANONICALIZE_SCRATCH_BYTES);
+        self.0
+            .try_reserve_exact(required - self.0.len())
+            .map_err(|_| io::Error::from(io::ErrorKind::OutOfMemory))?;
+        self.0.resize(required, 0);
+        Ok(())
+    }
+}
+
+fn canonicalize(
+    path: impl AsRef<Path>,
+) -> Result<std::path::PathBuf, CanonicalizeError<io::Error>> {
+    super::canonicalize(path, &mut TestPathScratch(Vec::new()))
+}
+
 #[cfg(target_os = "macos")]
 fn fixture_record() -> Vec<u8> {
     let mut bytes = vec![0; 40];
@@ -136,7 +161,30 @@ impl Drop for Temp {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(target_os = "linux")]
+#[test]
+fn canonicalization_preserves_expanded_suffixes_with_a_short_final_name() {
+    let root = Temp::new();
+    let base = std::fs::canonicalize(&root.0).unwrap();
+    let leaf = base.join("leaf");
+    std::fs::create_dir(&leaf).unwrap();
+    // Each target fits Linux's symlink limit, but resolution accumulates suffixes
+    // from all forty links before consuming them. Final output size cannot bound
+    // the pending traversal state. A fixed 4-KiB pending buffer loses this case.
+    for index in (0..40).rev() {
+        let next = if index == 39 {
+            "leaf".to_owned()
+        } else {
+            format!("link{}", index + 1)
+        };
+        let target = next + &"/.".repeat(1_900);
+        std::os::unix::fs::symlink(target, base.join(format!("link{index}"))).unwrap();
+    }
+    let input = base.join("link0");
+    assert_eq!(std::fs::canonicalize(&input).unwrap(), leaf);
+    assert_eq!(canonicalize(&input).unwrap(), leaf);
+}
+
 #[test]
 fn native_canonical_names_match_reference_on_joined_workers() {
     let root = Temp::new();
@@ -170,13 +218,14 @@ fn native_canonical_names_match_reference_on_joined_workers() {
         base.join("CaseDir/cafe\u{0301}"),
         base.join("dangling"),
         base.join("cycle"),
-        std::path::Path::new("/System/Volumes/Data").join(base.strip_prefix("/").unwrap()),
     ];
-    // Keep all 33 reviewed source-corpus geometries in the ordinary production
-    // gate, rather than certifying only an easy subset of a disposable walker.
+    #[cfg(target_os = "macos")]
+    paths.push(std::path::Path::new("/System/Volumes/Data").join(base.strip_prefix("/").unwrap()));
+    let symlink_limit = if cfg!(target_os = "macos") { 33 } else { 40 };
+    // Exercise relative and absolute chains on both sides of the native limit.
     for absolute in [false, true] {
         let mut previous = directory.clone();
-        for depth in 1..=34 {
+        for depth in 1..=symlink_limit + 1 {
             let link = base.join(format!("link-{absolute}-{depth}"));
             if absolute {
                 std::os::unix::fs::symlink(&previous, &link).unwrap();
@@ -184,9 +233,9 @@ fn native_canonical_names_match_reference_on_joined_workers() {
                 std::os::unix::fs::symlink(previous.file_name().unwrap(), &link).unwrap();
             }
             previous = link;
-            if depth >= 31 {
+            if depth >= symlink_limit - 2 {
                 let expected = std::fs::canonicalize(&previous);
-                if depth <= 33 {
+                if depth <= symlink_limit {
                     assert!(expected.is_ok());
                 } else {
                     assert_eq!(expected.unwrap_err().raw_os_error(), Some(libc::ELOOP));
@@ -207,7 +256,7 @@ fn native_canonical_names_match_reference_on_joined_workers() {
         std::path::PathBuf::from("/dev"),
         std::path::PathBuf::from("/dev/null"),
     ]);
-    assert_eq!(paths.len(), 33);
+    assert_eq!(paths.len(), if cfg!(target_os = "macos") { 33 } else { 32 });
     // The reference and physical checks use std/OS independently of this decoder.
     let expected: Vec<_> = paths.iter().map(std::fs::canonicalize).collect();
     std::thread::scope(|scope| {
@@ -660,4 +709,77 @@ fn directory_total_bound_is_independent_of_per_call_work() {
     assert!(
         matches!(Directory::open_bounded(&root.0, &mut buffer, 0), Err(e) if e.kind() == io::ErrorKind::InvalidInput)
     );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn canonicalization_preserves_native_directory_permission_errors() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = Temp::new();
+    let closed = root.0.join("closed");
+    std::fs::create_dir(&closed).unwrap();
+    std::fs::write(closed.join("child"), b"existing child").unwrap();
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o0)).unwrap();
+    let observations: Vec<_> = ["", "/", "/.", "/..", "/child"]
+        .into_iter()
+        .map(|suffix| {
+            let mut path = closed.as_os_str().to_os_string();
+            path.push(suffix);
+            let path = std::path::PathBuf::from(path);
+            (suffix, canonicalize(&path), std::fs::canonicalize(&path))
+        })
+        .collect();
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o700)).unwrap();
+    for (suffix, observed, reference) in observations {
+        if suffix == "/child" {
+            assert_eq!(
+                reference.unwrap_err().raw_os_error(),
+                Some(libc::EACCES),
+                "run as an unprivileged user"
+            );
+            assert!(
+                matches!(observed, Err(CanonicalizeError::Io(error)) if error.raw_os_error() == Some(libc::EACCES))
+            );
+        } else {
+            assert_eq!(observed.unwrap(), reference.unwrap());
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn canonicalization_preserves_errors_at_the_native_name_ceiling() {
+    let root = Temp::new();
+    let base = std::fs::canonicalize(&root.0).unwrap();
+    let mut parent = base.clone();
+    while parent.as_os_str().len() < 4_093 {
+        let remaining = 4_093 - parent.as_os_str().len();
+        let component = if remaining <= 256 { remaining - 1 } else { 240 };
+        assert!(component > 0);
+        parent.push("d".repeat(component));
+        std::fs::create_dir(&parent).unwrap();
+    }
+    let file = parent.join("x");
+    assert_eq!(file.as_os_str().len(), 4_095);
+    std::fs::write(&file, b"boundary fixture").unwrap();
+    let alias = base.join("alias");
+    std::os::unix::fs::symlink(&file, &alias).unwrap();
+    assert_eq!(canonicalize(&file).unwrap(), file);
+    assert_eq!(canonicalize(&alias).unwrap(), file);
+    for (prefix, suffix) in [
+        (&file, "/"),
+        (&alias, "/"),
+        (&alias, "/."),
+        (&alias, "/.."),
+        (&alias, "/child"),
+    ] {
+        let mut path = prefix.as_os_str().to_os_string();
+        path.push(suffix);
+        let path = std::path::PathBuf::from(path);
+        let expected = std::fs::canonicalize(&path).unwrap_err();
+        assert_eq!(expected.raw_os_error(), Some(libc::ENAMETOOLONG));
+        assert!(
+            matches!(canonicalize(&path), Err(CanonicalizeError::Io(error)) if error.raw_os_error() == expected.raw_os_error())
+        );
+    }
 }

@@ -54,14 +54,16 @@ not grant publication or repair authority. Tests run Q6, Q1, and resolution on
 real threads against a damaged replica and require refusal without
 creating/replacing files; subsequent exclusive reopen performs the repair.
 
-macOS pathname resolution keeps traversal/root-device/work state local to each
-call. It adds no shared cache, callback or mutex. Canonical names are
+Pathname resolution keeps traversal and work state local to each call. macOS
+also keeps its root-device observation local; Linux overflow belongs to the
+caller's admitted scratch owner. Neither resolver adds a shared cache or mutex.
+Canonical names are
 observations of a namespace, not atomic snapshots or ownership capabilities;
 opened identity and physical lease checks remain necessary. Cancellation is
 checked around the whole synchronous resolution, not between its at-most-65,536
-native helper calls. The call bound and fixed scratch do not imply a wall-clock
-bound or make kernel calls interruptible. Linux's resolver and native-runtime
-internals remain separate qualification obligations.
+native helper calls. The [resource bounds](resources.md#native-paths-stack-and-io)
+do not imply a wall-clock bound or make kernel calls interruptible. Native-runtime
+internals remain a separate qualification obligation.
 
 ### Registry admission
 

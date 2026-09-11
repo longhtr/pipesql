@@ -83,7 +83,7 @@ recorded revision after a path move.
 | `check-filesystem-abi.py` | Native SDK/decoder agreement. |
 | `check-diagnostic-allocation.py` | Public library construction, errors, queries, catalog recovery, and composed ownership under allocator refusal. |
 | `check-cli-allocation.py` | CLI startup, parsing, output, publication tokens, and allocation refusal. |
-| `check-native-initialization.py` | Darwin traversal-entry and Linux realpath-entry observation, refusal, and overlapping callers. |
+| `check-native-initialization.py` | Darwin root-stat and Linux lstat/readlink observation, refusal, and overlapping callers. |
 | `check-native-sync.py` | Linked synchronization calls, refusal, and healed outcomes. |
 | `check-native-io.py` | Linked byte-I/O calls, partial progress, refusal, and healed outcomes. |
 | `check-catalog-interruption.py` | Stock catalog append/recovery process-termination cuts. |
@@ -92,6 +92,10 @@ recorded revision after a path move.
 These runners compile and execute code. C/Rust callers live in
 `fixtures/`; they are development scaffolding with their own unsafe and process
 ownership, not shipped adapters.
+
+On GNU/Linux, `check-diagnostic-allocation.py --pathname-only` selects expanded-path
+create/open allocation refusals, released-storage checks, successful retries,
+and the common mutex control. It does not qualify the other allocation cells.
 
 The graph runner's `--seed-only --output /absolute/new-directory` builds the stock
 caller and independently inspects its seed, then stops before corruption cases.

@@ -280,12 +280,15 @@ impl Database {
         let memory = MemoryAuthority::new(config.memory_limit_bytes);
         let mut path_charge = memory.reserve(MAX_PATH_BYTES as u64, "database pathname")?;
         effects.before(Effect::CanonicalizeParent)?;
-        let parent = filesystem::canonicalize(parent).map_err(|source| match source {
-            filesystem::CanonicalizeError::Io(source) => {
-                map_not_found("canonicalize database parent", source)
-            }
-            filesystem::CanonicalizeError::WorkLimit => native_path_work_limit(),
-        })?;
+        let parent =
+            filesystem::canonicalize(parent, &mut crate::path::CanonicalizeScratch::new(&memory))
+                .map_err(|source| match source {
+                filesystem::CanonicalizeError::Io(source) => {
+                    map_not_found("canonicalize database parent", source)
+                }
+                filesystem::CanonicalizeError::WorkLimit => native_path_work_limit(),
+                filesystem::CanonicalizeError::Scratch(source) => source,
+            })?;
         let root = joined_path(&parent, file_name)?;
         path_charge.shrink_to(root.capacity() as u64);
         let database_id = read_database_id(effects)?;
@@ -370,12 +373,15 @@ impl Database {
         let memory = MemoryAuthority::new(config.memory_limit_bytes);
         let mut path_charge = memory.reserve(MAX_PATH_BYTES as u64, "database pathname")?;
         effects.before(Effect::CanonicalizeDatabase)?;
-        let root = filesystem::canonicalize(path).map_err(|source| match source {
-            filesystem::CanonicalizeError::Io(source) => {
-                map_not_found("canonicalize database path", source)
-            }
-            filesystem::CanonicalizeError::WorkLimit => native_path_work_limit(),
-        })?;
+        let root =
+            filesystem::canonicalize(path, &mut crate::path::CanonicalizeScratch::new(&memory))
+                .map_err(|source| match source {
+                    filesystem::CanonicalizeError::Io(source) => {
+                        map_not_found("canonicalize database path", source)
+                    }
+                    filesystem::CanonicalizeError::WorkLimit => native_path_work_limit(),
+                    filesystem::CanonicalizeError::Scratch(source) => source,
+                })?;
         path_charge.shrink_to(root.capacity() as u64);
         let expected_lock = validate_lock_entry(&root, effects)?;
         let lock_path = joined_path(&root, LOCK_NAME)?;

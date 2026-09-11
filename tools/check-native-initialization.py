@@ -43,51 +43,58 @@ def main(argv=None):
         spellings = (
             ["private", "data-mount", "symlink33"]
             if sys.platform == "darwin"
-            else ["private", "symlink33"]
+            else ["private", "symlink33", "suffix40"]
         )
         for spelling in spellings:
-            for mode in [1, 2, 3, 4]:
-                for error in (
-                    [errno.EIO]
-                    if mode in [1, 3]
-                    else [errno.EINTR, errno.EIO, errno.ENOMEM, errno.EACCES]
-                ):
-                    cell = work / f"{spelling}-{mode}-{error}"
-                    cell.mkdir()
-                    # Darwin preserves its explicit data-mount spelling. Both
-                    # targets must resolve a 33-link chain to the same parent.
-                    expected = (
-                        str(cell)
-                        if spelling == "private" or sys.platform == "linux"
-                        else "/System/Volumes/Data" + str(cell)
-                    )
-                    requested = expected
-                    if spelling == "symlink33":
-                        for index in range(33):
-                            os.symlink(
-                                f"s{index+1}" if index < 32 else ".", cell / f"s{index}"
-                            )
-                        requested += "/s0"
-                    child = run_process(
-                        [
-                            str(work / "driver"),
-                            requested,
-                            expected,
-                            str(mode),
-                            str(error),
-                        ],
-                        env=observer_environment(observer),
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        preexec_fn=limits,
-                        timeout=30,
-                        cwd=work,
-                    )
-                    assert (
-                        child.returncode == 0 and b"outcomes=checked" in child.stdout
-                    ), (spelling, mode, error, child)
-                    print(spelling, child.stdout.decode().strip(), flush=True)
-                    count += 1
+            sites = ["root"] if sys.platform == "darwin" else ["root", "component"]
+            if sys.platform == "linux" and spelling != "private":
+                sites.append("symlink")
+            for site in sites:
+                for mode in [1, 2, 3, 4]:
+                    for error in (
+                        [errno.EIO]
+                        if mode in [1, 3]
+                        else [errno.EINTR, errno.EIO, errno.ENOMEM, errno.EACCES]
+                    ):
+                        cell = work / f"{spelling}-{site}-{mode}-{error}"
+                        cell.mkdir()
+                        # Darwin preserves its explicit data-mount spelling. Both
+                        # targets must resolve a 33-link chain to the same parent.
+                        expected = (
+                            str(cell)
+                            if spelling == "private" or sys.platform == "linux"
+                            else "/System/Volumes/Data" + str(cell)
+                        )
+                        requested = expected
+                        if spelling in {"symlink33", "suffix40"}:
+                            links = 40 if spelling == "suffix40" else 33
+                            for index in range(links):
+                                target = f"s{index+1}" if index < links - 1 else "."
+                                if spelling == "suffix40":
+                                    target += "/." * 1900
+                                os.symlink(target, cell / f"s{index}")
+                            requested += "/s0"
+                        child = run_process(
+                            [
+                                str(work / "driver"),
+                                requested,
+                                expected,
+                                str(mode),
+                                str(error),
+                                site,
+                            ],
+                            env=observer_environment(observer),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            preexec_fn=limits,
+                            timeout=30,
+                            cwd=work,
+                        )
+                        assert (
+                            child.returncode == 0 and b"outcomes=checked" in child.stdout
+                        ), (spelling, site, mode, error, child)
+                        print(spelling, child.stdout.decode().strip(), flush=True)
+                        count += 1
         print(
             f"native initialization: {count} fresh-process cells; public outcomes, names and healed bytes passed",
             flush=True,

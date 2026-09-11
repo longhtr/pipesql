@@ -131,32 +131,15 @@ pub(super) fn canonicalize(
 }
 
 #[cfg(target_os = "linux")]
-pub(super) fn canonicalize(
+mod linux_path;
+
+#[cfg(target_os = "linux")]
+pub(super) fn canonicalize<S: crate::PathScratch>(
     path: &Path,
     resolved: &mut [u8; MAX_PATH_BYTES + 1],
-) -> io::Result<usize> {
-    assert!(usize::try_from(libc::PATH_MAX).expect("positive ABI PATH_MAX") <= resolved.len());
-    let mut terminated = [0; MAX_PATH_BYTES + 1];
-    let name = path_name(path, &mut terminated)?;
-    // SAFETY: live terminated input and a distinct writable result buffer at
-    // least PATH_MAX bytes, as required by realpath's non-null-buffer contract.
-    // Neither pointer is retained. Core callers supply bounded absolute paths,
-    // avoiding cwd traversal. libc internal work remains a foreign-runtime owner.
-    let pointer = unsafe { libc::realpath(name.as_ptr(), resolved.as_mut_ptr().cast()) };
-    if pointer.is_null() {
-        return Err(io::Error::last_os_error());
-    }
-    if pointer != resolved.as_mut_ptr().cast() {
-        return Err(io::ErrorKind::InvalidData.into());
-    }
-    let length = resolved
-        .iter()
-        .position(|byte| *byte == 0)
-        .ok_or(io::ErrorKind::InvalidData)?;
-    if length == 0 || length > MAX_PATH_BYTES {
-        return Err(io::ErrorKind::InvalidData.into());
-    }
-    Ok(length)
+    scratch: &mut S,
+) -> Result<usize, crate::CanonicalizeError<S::Error>> {
+    linux_path::canonicalize(path.as_os_str().as_bytes(), resolved, scratch)
 }
 
 pub(super) fn create_dir(path: &Path) -> io::Result<()> {

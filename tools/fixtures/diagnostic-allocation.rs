@@ -140,12 +140,28 @@ fn lifecycle_probe(
 ) -> Result<(), Box<dyn std::error::Error>> {
     assert!(after.is_none_or(|prefix| prefix <= 128));
     std::fs::create_dir(root)?;
-    let path = root.join("database");
+    let canonical = root.join("database");
+    let expanded = operation.ends_with("-expanded");
+    let creating = operation.starts_with("create");
+    let path = if expanded {
+        assert!(cfg!(target_os = "linux"));
+        for index in 0..40 {
+            let next = if index == 39 {
+                ".".to_owned()
+            } else {
+                format!("s{}", index + 1)
+            };
+            std::os::unix::fs::symlink(next + &"/.".repeat(1_900), root.join(format!("s{index}")))?;
+        }
+        root.join("s0/database")
+    } else {
+        canonical.clone()
+    };
     let config = Config::new(2_000_000, 1_000_000)?;
-    if operation == "open" {
-        Database::create(&path, config)?.close()?;
+    if !creating {
+        Database::create(&canonical, config)?.close()?;
         for name in ["CONTROL", "ROOT.A", "ROOT.B", "WAL"] {
-            std::fs::copy(path.join(name), root.join(name))?;
+            std::fs::copy(canonical.join(name), root.join(name))?;
         }
     }
     println!("entered {operation} lifecycle probe");
@@ -155,10 +171,10 @@ fn lifecycle_probe(
     CALLS.store(0, Ordering::Relaxed);
     TRACK.store(true, Ordering::Relaxed);
     DENY.store(after.is_some(), Ordering::Relaxed);
-    let result = match operation {
-        "create" => Database::create(&path, config),
-        "open" => Database::open(&path, config),
-        _ => unreachable!("validated lifecycle operation"),
+    let result = if creating {
+        Database::create(&path, config)
+    } else {
+        Database::open(&path, config)
     };
     DENY.store(false, Ordering::Relaxed);
     TRACK.store(false, Ordering::Relaxed);
@@ -181,11 +197,31 @@ fn lifecycle_probe(
             Database::open(&path, config)?.close()?;
             println!("returned healthy {operation}");
         }
+        Err(Error::Resource {
+            owner: "pathname scratch allocation",
+            ..
+        }) if after.is_some() && expanded => {
+            if creating {
+                assert!(!canonical.exists(), "scratch refusal created a namespace");
+            }
+            println!("returned pathname scratch allocation refusal");
+            let healed = if creating {
+                Database::create(&path, config)?
+            } else {
+                Database::open(&path, config)?
+            };
+            assert_eq!(healed.path(), canonical);
+            healed.close()?;
+            println!("pathname scratch healed");
+        }
         Err(Error::Io { source, .. })
             if after.is_some() && source.kind() == std::io::ErrorKind::OutOfMemory =>
         {
-            if operation == "create" {
-                assert!(!path.exists(), "definite create failure left a namespace");
+            if creating {
+                assert!(
+                    !canonical.exists(),
+                    "definite create failure left a namespace"
+                );
             }
             println!("returned typed lifecycle allocation refusal");
         }
@@ -193,19 +229,21 @@ fn lifecycle_probe(
             generation: 0,
             source,
         }) if after.is_some()
-            && operation == "open"
+            && !creating
             && matches!(source.kind(), pipesql::CauseKind::Io { source, .. }
                     if source.kind() == std::io::ErrorKind::OutOfMemory) =>
         {
             println!("returned explicit open recovery debt");
         }
-        Err(Error::CleanupRequired { .. }) if after.is_some() && operation == "create" => {
+        Err(Error::CleanupRequired { .. }) if after.is_some() && creating => {
             // Cleanup failure must be explicit. Root is exclusively probe-owned;
             // the parent removes it after examining the bounded process outcome.
             println!("returned explicit create cleanup debt");
         }
         Err(unexpected) => panic!("unexpected lifecycle outcome: {unexpected:?}"),
     }
+    assert_eq!(LIVE_REQUESTED.load(Ordering::Relaxed), baseline_requested);
+    assert_eq!(LIVE_USABLE.load(Ordering::Relaxed), baseline_usable);
     Ok(())
 }
 
@@ -229,7 +267,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "catalog-recover-corrupt",
             "catalog-recover-permission",
             "create",
+            "create-expanded",
             "open",
+            "open-expanded",
             "load",
             "load-readonly",
             "q1",

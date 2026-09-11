@@ -945,3 +945,82 @@ fn bounded_short_control_io_fails_and_cleans_or_releases() {
     assert_eq!(open_short_count, 6);
     Database::open(&path, config()).unwrap().close().unwrap();
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn pathname_scratch_refusal_precedes_creation_and_preserves_reopen() {
+    pathname_scratch_case();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn pathname_scratch_fits_a_bounded_native_thread() {
+    std::thread::Builder::new()
+        .stack_size(128 * 1024)
+        .spawn(|| {
+            let reported = pipesql_filesystem::test_current_thread_stack_bytes();
+            println!("pathname native thread bytes={reported}");
+            assert!(reported > 0 && reported <= 144 * 1024);
+            pathname_scratch_case();
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[cfg(target_os = "linux")]
+fn pathname_scratch_case() {
+    let fixture = TempDir::new();
+    let leaf = fixture.0.join("leaf");
+    fs::create_dir(&leaf).unwrap();
+    for index in (0..40).rev() {
+        let next = if index == 39 {
+            "leaf".to_owned()
+        } else {
+            format!("link{}", index + 1)
+        };
+        std::os::unix::fs::symlink(
+            next + &"/.".repeat(1_900),
+            fixture.0.join(format!("link{index}")),
+        )
+        .unwrap();
+    }
+    let requested = fixture.0.join("link0/database");
+    let canonical = leaf.join("database");
+    let limited = Config::new(65_536, 1_048_576).unwrap();
+    assert!(matches!(
+        Database::create(&requested, limited),
+        Err(Error::Resource {
+            owner: "pathname scratch",
+            ..
+        })
+    ));
+    assert!(
+        !canonical.exists(),
+        "refused scratch must not create a namespace"
+    );
+    let database = Database::create(&requested, config()).unwrap();
+    assert_eq!(database.path(), canonical);
+    database.close().unwrap();
+    let before: Vec<_> = ["CONTROL", "ROOT.A", "ROOT.B", "WAL", "LOCK"]
+        .into_iter()
+        .map(|name| fs::read(canonical.join(name)).unwrap())
+        .collect();
+    let limited = Config::new(65_536, 1_048_576).unwrap();
+    assert!(matches!(
+        Database::open(&requested, limited),
+        Err(Error::Resource {
+            owner: "pathname scratch",
+            ..
+        })
+    ));
+    let reopened = Database::open(&requested, config()).unwrap();
+    assert_eq!(reopened.path(), canonical);
+    reopened.close().unwrap();
+    for (name, expected) in ["CONTROL", "ROOT.A", "ROOT.B", "WAL", "LOCK"]
+        .into_iter()
+        .zip(before)
+    {
+        assert_eq!(fs::read(canonical.join(name)).unwrap(), expected);
+    }
+}

@@ -57,7 +57,11 @@ impl InputSource {
     }
 }
 
-pub(super) fn inspect_input(path: &Path, effects: &mut Effects) -> Result<InputSource, Error> {
+pub(super) fn inspect_input(
+    path: &Path,
+    memory: &crate::resources::MemoryAuthority,
+    effects: &mut Effects,
+) -> Result<InputSource, Error> {
     validate_requested_path(path).map_err(|_| Error::Input {
         message: "input path must be absolute,bounded,and contain no dot components",
         byte_offset: 0,
@@ -79,10 +83,15 @@ pub(super) fn inspect_input(path: &Path, effects: &mut Effects) -> Result<InputS
     }
     let expected = InputIdentity::from_metadata(&metadata);
     effects.before(Effect::Load(LoadEffect::CanonicalizeInput))?;
-    let canonical = filesystem::canonicalize(path).map_err(|source| match source {
-        filesystem::CanonicalizeError::Io(source) => io_error("canonicalize load input", source),
-        filesystem::CanonicalizeError::WorkLimit => crate::path::native_path_work_limit(),
-    })?;
+    let canonical =
+        filesystem::canonicalize(path, &mut crate::path::CanonicalizeScratch::new(memory))
+            .map_err(|source| match source {
+                filesystem::CanonicalizeError::Io(source) => {
+                    io_error("canonicalize load input", source)
+                }
+                filesystem::CanonicalizeError::WorkLimit => crate::path::native_path_work_limit(),
+                filesystem::CanonicalizeError::Scratch(source) => source,
+            })?;
     Ok(InputSource {
         path: canonical,
         identity: expected,

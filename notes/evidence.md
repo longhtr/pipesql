@@ -17,12 +17,12 @@ The gates covered formatting, maintenance, filesystem ABI, rounding vectors,
 attempt models, Clippy, Rust tests, rustdoc, doctests, aggregate semantics and
 composition, public/CLI allocation, native initialization/synchronization/byte
 I/O, catalog interruption, and independent graph inspection. Maintenance passed
-83 tooling tests, 39 independent codec fixtures, and local documentation links.
-The new seed-only graph command also passed on both platforms; reuse of its
+84 tooling tests, 39 independent codec fixtures, and local documentation links.
+The seed-only graph command previously passed on both platforms; reuse of its
 output directory was rejected. Seed failure propagation and artifact identities
 have tooling regressions independent of engine execution.
 
-Rust suites executed 429 tests on macOS and 409 on GNU arm64. GNU arm64 explicitly
+Rust suites executed 430 tests on macOS and 418 on GNU arm64. GNU arm64 explicitly
 excluded twelve 64-KiB stack qualifications; macOS excluded none. Each suite also
 executed one selected lease subprocess, excluded from these totals. The twelve
 ordinary-thread counterparts passed on both platforms and share expectations
@@ -30,11 +30,14 @@ with their bounded-stack variants. Their functional success does not qualify
 GNU arm64 stack headroom. The public directory cleanup regression executed,
 including its isolated unwind control.
 
-Both gates used one frozen 659-file export containing 658 manifested inputs.
+Both gates used one frozen 660-file export containing 659 manifested inputs.
 All stage statuses were zero, before/after manifests matched across both runs,
-and finalization reported no errors and removed owned build targets. Only the
-two notes files were finalized afterward. The other 656 manifested inputs have
-fingerprint `6030ecdad6a9739b4841e5628100e7be5e1355239f18723f933e08cc80831e58`.
+and finalization reported no errors and removed owned build targets. The frozen manifest SHA-256 is
+`80b97c89c74f0975c8b64d3d91864ecf7e5383328ecb34648421f6df88a7cfe8`.
+The two notes files and the concurrency guide's description of Linux pathname
+ownership were finalized afterward; runtime inputs did not change. The final
+657 non-notes inputs have fingerprint
+`751a521fde97e246fb2f581ce986243611c39db1c05c67db36fd04ec034ac14a`.
 Recompute it from the repository root:
 
 ```sh
@@ -74,7 +77,7 @@ gate sets warnings-denied Rust and documentation flags. Keep database/output
 directories separate from a host-shared source mount.
 
 The September 11 run passed all 23 stages on the same frozen inputs described
-above. It executed 409 Rust tests, with 12 explicit stack exclusions and one
+above. It executed 418 Rust tests, with 12 explicit stack exclusions and one
 additional selected lease-subprocess execution. Both platforms passed 547 CLI
 allocation-prefix cases, 83 parser control/deny pairs, ambiguous publication
 resolving to aborted and durable outcomes, and closed/broken output sinks.
@@ -83,13 +86,13 @@ ownership controls, timeout cleanup, and wrong-row negative control. Linux omits
 the two Darwin ACL-specific recovery cells; it does exercise ordinary read-only
 construction refusal as an unprivileged user.
 
-Initialization passed 30 Darwin and 20 Linux cells. Darwin observes root stat in
-its traversal; Linux observes entry to libc `realpath`. Each checks distinct
-calls, scheduled overlap, injected refusal, a 33-link chain, correct names, and
-byte-preserving healed reopen. Darwin's extra cases cover its data-mount spelling.
-Linux entry observation does not expose or qualify libc's internal allocations,
-stack, synchronization, or traversal work. Both platforms passed 241 native
-synchronization cells, 1,028 byte-I/O cells, and the graph/interruption cases below.
+Initialization passed 30 Darwin and 80 Linux cells. Darwin observes root stat in
+its traversal, including data-mount spelling and a 33-link chain. Linux observes
+root/component `lstat` and `readlink`, with short, 33-link, and forty-link
+expanded-suffix paths. It rejects calls to libc `realpath`. Both check scheduled
+overlap, injected refusal, correct names, and byte-preserving healed reopen.
+Both platforms passed 241 native synchronization cells and 1,028 byte-I/O cells,
+plus the graph/interruption cases below.
 These checks do not qualify other libc implementations, static linking, all
 filesystems, native concurrency, or power-loss durability.
 
@@ -122,7 +125,7 @@ and Durable after data replacement; corresponding generations are 2, 2, and 3.
 Later appends must preserve old rows and receipts without reusing an aborted
 identity. Wrong-generation, row, and receipt controls must fail.
 
-The macOS graph campaign passed 43 cases, two oracle controls, three CLI limits,
+Both graph campaigns passed 43 cases, two oracle controls, three CLI limits,
 genesis, lease contention, and independent column-order checks. Both platforms'
 interruption campaigns passed 76 append cuts, 46 recovery cuts, and 249 independent
 graph checks, including the wrong-history, wrong-row, and wrong-receipt controls.
@@ -133,6 +136,38 @@ concurrent schedules. The graph inspector is an offline diagnostic, not repair
 or backup software.
 
 ## Resource ownership and admission
+
+### Linux pathname bounds
+
+Linux canonicalization uses an explicit native traversal with caller-admitted
+overflow. The [resource contract](../docs/resources.md#native-paths-stack-and-io)
+owns its byte, link, work, and allocation limits. A fixed output buffer did not
+bound the previous libc resolver's private growable scratch.
+
+The maintained regression starts with a short pathname whose forty symlinks add
+152,000 pending suffix bytes before resolving to a short final name. It prevents
+replacing that accepted behavior with a single 4-KiB pending buffer. Each link is
+read once; overflow retains the suffix rather than replaying a namespace that
+may have changed. Independent native comparisons cover names and errors, joined
+workers, permission refusal, and byte-ceiling error precedence. The GNU/Linux
+filesystem suite passed all eighteen tests. A mode-000 directory's `/.` and
+`/..` cases retain native behavior; a named child returns `EACCES`.
+
+Public creation and reopen checks exercise logical scratch refusal before
+namespace mutation, successful retry, and unchanged authoritative reopen bytes.
+The focused allocation campaign passed 38 create and 30 open refusal positions,
+two censuses, and two full-prefix controls. It requires typed scratch-allocation
+failure, released requested/usable allocations, and successful retry. A separate
+unit regression checks old/new buffer overlap admission at 32,767 and 32,768
+bytes and preserved state on refusal.
+
+The pathname-specific GNU arm64 thread reported 137,152 bytes with a 128-KiB
+request and passed creation, refusal, and reopen. This is within that test's
+144-KiB ceiling; it does not satisfy the twelve existing 64-KiB qualifications
+or measure live stack use. No pathname performance improvement, whole-process
+memory cap, or other-platform qualification follows from these checks.
+
+### Composed query owners
 
 The [composed ownership caller](../tools/fixtures/composed-ownership.rs) is run by
 `python3 tools/check-diagnostic-allocation.py --ownership-only`.

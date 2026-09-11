@@ -99,6 +99,30 @@ class GroupExpectations(unittest.TestCase):
 
 
 class AllocationInterpretation(unittest.TestCase):
+    def test_pathname_scope_runs_only_its_cells_and_common_mutex_control(self):
+        run = Mock(return_value=subprocess.CompletedProcess(
+            [], 0, "native mutex contention passed without Rust allocation\n", ""
+        ))
+        sweep = Mock()
+        ownership = Mock(side_effect=AssertionError("unrequested ownership campaign"))
+        with patch.object(ALLOCATION["sys"], "platform", "linux"), patch.dict(
+            ALLOCATION["main"].__globals__, {
+                "build_driver": Mock(),
+                "catalog_allocation_limit": Mock(return_value=128),
+                "run_cell": run,
+                "check_allocation_prefixes": sweep,
+                "check_ownership": ownership,
+            }
+        ), redirect_stdout(io.StringIO()):
+            ALLOCATION["main"](["--pathname-only"])
+        ownership.assert_not_called()
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[2:], ("mutex", "mutex"))
+        self.assertEqual(sweep.call_args.args[1], [
+            ("create-expanded", "short", None), ("open-expanded", "short", None)
+        ])
+        self.assertFalse(sweep.call_args.args[3])
+
     def run_sweep(self, *, controls_only=False, full_prefix_healthy=True, refusals=True):
         modes = []
         failures = []
