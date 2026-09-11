@@ -62,7 +62,7 @@ impl<'db> ArgumentBatch<'db> {
         if capacity == 0
             || capacity > BATCH_ROWS
             || shape.count > MAX_AGGREGATE_COLUMNS
-            || (shape.nonnull | shape.integers) >> shape.count != 0
+            || (shape.nonnull | shape.integers | shape.presence) >> shape.count != 0
         {
             return Err(Error::Corrupt("argument batch shape"));
         }

@@ -30,7 +30,7 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
-## Next: complete scalar MIN and MAX aggregation
+## Active: complete scalar MIN and MAX aggregation
 
 COUNT(expression) and the composed execution learning path are complete. The
 [example](../examples/composed.rs) verifies join multiplicity, nullable counts
@@ -46,6 +46,44 @@ aggregate state, independent validation, and spill records. Establish exact
 NULL, NaN, signed-zero, STRING ordering, and DATE behavior from authoritative
 contracts before implementation. Record the smallest coherent representation
 and cheapest falsifiers here.
+
+The primary [MIN/MAX reference](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions#min)
+requires input-typed results, NULL for empty/all-NULL groups, and NaN propagation.
+GoogleSQL's [type rules](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types)
+compare strings by Unicode code points and treat signed zeros as equal. PipeSQL
+preserves stored DOUBLE bits, unlike BigQuery's documented negative-zero storage
+behavior. Specify the extrema tie rule locally: retain the first NaN payload;
+when both zero signs occur, MIN chooses negative zero and MAX positive zero.
+Continue evaluating demanded arguments after a NaN so later scalar errors remain
+observable. UTF-8 byte ordering agrees with code-point ordering for valid text.
+
+The existing argument batch owns u64 values and validity only. General grouping
+sizes records as header + keys + eight bytes per argument. STRING extrema need
+captured bytes that survive source-batch release, checked variable-width spill
+payloads, and reusable retained result storage. Do not implement them as source
+pointers or numeric conversions. DATE retains its typed day value.
+
+Start with separate demanded MIN/MAX slots beside the existing sum state, sharing
+argument evaluation across calls. Allocate no sum cells for extrema-only input.
+For retained text, evaluate preallocated bounded slots before introducing an
+arena/compaction protocol: each demanded string extremum needs at most 65,536
+bytes per admitted group, plus length metadata. This is simple but expensive;
+include it in optional hash capacity and reassess the observed cost before
+accepting the representation. Disk reduction needs only one group's extrema.
+Argument capture should reserve at most 65,536 bytes per retained text argument
+for a batch, and flush replay batches when their byte capacity fills. A complete
+single argument row must always fit the admitted minimum.
+
+The first falsifiers are global empty/all-NULL and NaN/zero cases, shared
+COUNT/SUM/MIN/MAX programs with demanded errors, and strings that grow and shrink
+on successive replacements. Then force grouped replay across full-length text
+records and verify exact bytes, independent corruption rejection, admission,
+cancellation, and release. No public MIN/MAX support is implemented yet.
+
+The inspection found that argument-batch construction omitted the presence-mask
+tail check used by the record reader. Construction now rejects that malformed
+shape before reserving memory. A focused macOS test covers each mask tail, an
+empty shape with a presence bit, and valid construction/release; it passes.
 
 Complete global, grouped, repeated, and composed MIN/MAX for supported numeric
 expressions and direct STRING/DATE columns. Account for retained variable-width

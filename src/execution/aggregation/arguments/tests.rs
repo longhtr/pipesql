@@ -3,6 +3,48 @@ use crate::execution::aggregation::*;
 use crate::execution::blocking::test_support::Directory;
 
 #[test]
+fn argument_capture_rejects_mask_tails_before_reserving_memory() {
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("db"),
+        crate::Config::new(4_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    let baseline = database.reserved_memory_bytes();
+    let valid = ArgumentShape {
+        count: 1,
+        nonnull: 0,
+        integers: 0,
+        presence: 1,
+    };
+    for shape in [
+        ArgumentShape {
+            nonnull: 2,
+            ..valid
+        },
+        ArgumentShape {
+            integers: 2,
+            ..valid
+        },
+        ArgumentShape {
+            presence: 2,
+            ..valid
+        },
+        ArgumentShape { count: 0, ..valid },
+    ] {
+        assert!(matches!(
+            ArgumentBatch::new(&database, shape, 1),
+            Err(Error::Corrupt("argument batch shape"))
+        ));
+        assert_eq!(database.reserved_memory_bytes(), baseline);
+    }
+    let batch = ArgumentBatch::new(&database, valid, 1).unwrap();
+    drop(batch);
+    assert_eq!(database.reserved_memory_bytes(), baseline);
+    database.close().unwrap();
+}
+
+#[test]
 fn count_only_arguments_own_counters_and_share_numeric_work_when_needed() {
     let directory = Directory::new();
     let database = Database::create_empty(
