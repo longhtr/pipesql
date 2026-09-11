@@ -192,6 +192,19 @@ reducing what those slots can hold. The completed macOS gate observed charges of
 observed 2,693,101 and 2,693,275 bytes. Both readers completed on both platforms,
 and the departing reader restored the held owner's allocation totals.
 
+The current gate's held-group checkpoints also distinguish logical database
+charges from the caller's live requested and allocator-usable totals. Every row
+below has zero temporary bytes and six observed descriptors. Requested/usable
+totals include other allocations visible to the caller's allocator observer;
+they are not an isolated grouping allocation or a whole-process memory bound.
+
+| Platform and path | Logical charge | Requested bytes | Usable bytes |
+| --- | ---: | ---: | ---: |
+| macOS, short | 2,693,132 | 2,645,212 | 2,694,720 |
+| macOS, long | 2,693,291 | 2,646,451 | 2,696,112 |
+| GNU/Linux, short | 2,693,101 | 2,644,845 | 2,653,480 |
+| GNU/Linux, long | 2,693,275 | 2,646,307 | 2,655,064 |
+
 The repeated-aggregation cancellation test explicitly selects downstream disk
 execution before any input runs. The public native-I/O fixture uses a 1.1-MB
 budget that admits the query's blocking minimum and forces spill. Its census
