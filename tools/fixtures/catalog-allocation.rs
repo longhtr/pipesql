@@ -11,7 +11,8 @@ use pipesql::{
 use std::path::Path;
 
 const FIRST: &str = "first 雪";
-pub(super) const ALLOCATION_LIMIT: usize = 710;
+// Bounds campaign work, not engine memory. Every measured prefix is exercised.
+pub(super) const ALLOCATION_LIMIT: usize = 800;
 const SECOND: &str = "next \t\n";
 const QUERY: &str = "FROM facts |> SELECT note,amount";
 const COLUMNS: [ColumnDeclaration<'static>; 3] = [
@@ -32,7 +33,7 @@ const COLUMNS: [ColumnDeclaration<'static>; 3] = [
     },
 ];
 const AGGREGATE: &str = "FROM facts |> AGGREGATE SUM(amount) AS ignored, AVG(amount) AS ai, SUM(measure) AS total, AVG(measure) AS mean, COUNT(*) AS n |> SELECT total,mean,ai,n";
-const GROUPED: &str = "FROM facts |> SELECT note,amount+0 AS amount,measure |> AGGREGATE AVG(amount) AS ai,SUM(measure) AS total,AVG(measure) AS mean,COUNT(*) AS n GROUP AND ORDER BY note |> SELECT note,ai+0.0 AS ai,total+0.0 AS total,mean+0.0 AS mean,n+0 AS n";
+const GROUPED: &str = "FROM facts |> SELECT note,amount+0 AS amount,measure |> AGGREGATE AVG(amount) AS ai,SUM(measure) AS total,AVG(measure) AS mean,COUNT(*) AS n,MIN(amount) AS amin,MAX(amount) AS amax,MIN(note) AS tmin,MAX(note) AS tmax GROUP AND ORDER BY note |> SELECT note,ai+0.0 AS ai,total+0.0 AS total,mean+0.0 AS mean,n+0 AS n,amin,amax,tmin,tmax";
 const DISTINCT: &str = "FROM facts |> SELECT note,amount |> DISTINCT";
 const REPEATED: &str = "FROM facts |> AGGREGATE COUNT(*) AS n GROUP BY note |> AGGREGATE SUM(n) AS subtotal GROUP BY n |> AGGREGATE SUM(subtotal) AS total,COUNT(*) AS distinct_sizes";
 fn consume_repeated(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(), Error> {
@@ -77,7 +78,7 @@ fn consume_grouped(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(
             QueryStep::Rows(batch) => {
                 for row in 0..batch.len() {
                     assert!(expected != 0 && seen < 3);
-                    assert_eq!(batch.column_count(), 5);
+                    assert_eq!(batch.column_count(), 9);
                     match (seen, batch.value(row, 0)) {
                         (0, Some(Value::Null)) => (),
                         (1, Some(Value::String(text))) => assert_eq!(text.as_str(), FIRST),
@@ -106,6 +107,24 @@ fn consume_grouped(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(
                         batch.value(row, 4),
                         Some(Value::Int64(if seen == 0 { 2 } else { 1 }))
                     );
+                    for column in 5..7 {
+                        assert_eq!(
+                            batch.value(row, column),
+                            Some(Value::Int64(if seen == 0 {
+                                i64::MAX
+                            } else {
+                                9_007_199_254_740_993
+                            }))
+                        );
+                    }
+                    for column in 7..9 {
+                        match (seen, batch.value(row, column)) {
+                            (0, Some(Value::Null)) => (),
+                            (1, Some(Value::String(text))) => assert_eq!(text.as_str(), FIRST),
+                            (2, Some(Value::String(text))) => assert_eq!(text.as_str(), SECOND),
+                            _ => panic!("text extremum differs"),
+                        }
+                    }
                     seen += 1;
                 }
             }

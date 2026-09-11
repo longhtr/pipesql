@@ -100,16 +100,22 @@ full gates remain the earlier baseline recorded in [evidence](evidence.md).
 
 ### Remaining work, in order
 
-1. Review remaining composed/legacy regression coverage and verify the final
-   retained text representation across representative budgets and group counts.
-   Demanded-error/span, exact fallback admission, temporary exhaustion, and
-   cancellation checks now pass.
+1. Composed regressions now pass for joined, derived, and computed extrema;
+   repeated legacy STRING extrema also pass. Demanded-error/span, exact fallback
+   admission, temporary exhaustion, and cancellation checks pass. The existing
+   allocation campaign now demands numeric/text extrema and verifies their
+   results. Mac controls pass with 721 allocations on both short and 384-byte
+   paths. The campaign work ceiling is 800; it still sweeps every measured
+   prefix. Complete those sweeps in both full gates.
 2. Finish the ownership/readability review. Language, execution, resource,
    source-map, and test contracts now describe extrema. The existing grouping
    tutorial checks MIN=1 and MAX=3 for all 4,096 regions. Fresh macOS runs pass
    at 2 MB (memory 1,590,745 bytes; temporary 0) and 1.2 MB (memory 1,166,088;
-   temporary 803,016). Verify the updated example on GNU/Linux. Accumulator state
-   now lives in `accumulator.rs`; Clippy and all maintenance checks pass.
+   temporary 803,016). Unprivileged GNU/Linux runs also pass: memory 1,590,652
+   and 1,166,064 bytes, with temporary peaks 0 and 803,016. The example image is
+   `pipesql-verification-rust:1.98.1-time`; its owned container and outputs were
+   removed after completion. Accumulator state now lives in `accumulator.rs`;
+   Clippy and all maintenance checks passed before the latest campaign extension.
 3. Run focused checks for those changes, then complete required macOS and
    unprivileged GNU/Linux gates on matching frozen inputs and isolated targets.
    Reconcile executed tests, exclusions, fixtures/models, public/native campaigns,

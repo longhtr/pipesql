@@ -306,7 +306,7 @@ fn numeric_extrema_preserve_nulls_special_values_and_shared_aggregation() {
 }
 
 #[test]
-fn count_arguments_follow_repeated_derived_and_joined_inputs() {
+fn aggregates_follow_repeated_derived_and_joined_inputs() {
     let directory = Directory::new();
     let db = Database::create_empty(&directory.database(), config()).unwrap();
     let cancel = CancellationToken::new();
@@ -348,6 +348,22 @@ fn count_arguments_follow_repeated_derived_and_joined_inputs() {
     // Self-joining duplicates both rows for key 1; only two of those four
     // left-side values are present. Key 2 contributes one present row.
     for (sql, expected) in [
+        (
+            "FROM facts AS f |> JOIN facts AS d ON f.k = d.k |> AGGREGATE MIN(f.v) AS lo,MAX(d.v) AS hi,COUNT(f.v) AS present,COUNT(*) AS n",
+            vec![vec![10, 30, 3, 5]],
+        ),
+        (
+            "FROM facts AS f |> JOIN facts AS d ON f.k = d.k |> AGGREGATE MIN(f.v) AS lo,MAX(d.v) AS hi GROUP AND ORDER BY f.k",
+            vec![vec![1, 10, 10], vec![2, 30, 30]],
+        ),
+        (
+            "FROM (FROM facts |> AGGREGATE MIN(v) AS lo,MAX(v) AS hi GROUP BY k) AS g |> AGGREGATE MIN(g.lo) AS lo,MAX(g.hi) AS hi",
+            vec![vec![10, 30]],
+        ),
+        (
+            "FROM facts |> SELECT v*2 AS doubled |> AGGREGATE MIN(doubled) AS lo,MAX(doubled) AS hi",
+            vec![vec![20, 60]],
+        ),
         (
             "FROM facts AS f |> JOIN facts AS d ON f.k = d.k |> AGGREGATE COUNT(f.v) AS present,COUNT(*) AS n",
             vec![vec![3, 5]],

@@ -105,9 +105,8 @@ does not pass. It also checks that query reservations return to their baseline
 after dropping the result.
 
 Read the second output line to compare sampled logical memory and temporary
-bytes. With the reviewed macOS build, the first run uses no temporary bytes and
-the second reaches 803,016 temporary bytes. Verification of this extended example
-on GNU/Linux is pending. These observations
+bytes. With the reviewed macOS and GNU arm64 Linux builds, the first run uses no
+temporary bytes and the second reaches 803,016 temporary bytes. These observations
 are specific to this workload and build. A small budget alone does not establish spilling: the
 2,000,000-byte run still fits its groups in memory. Temporary bytes measure
 reserved scratch-file extents, not filesystem blocks, total I/O, or process RSS.

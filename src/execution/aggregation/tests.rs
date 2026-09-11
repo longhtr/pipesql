@@ -94,6 +94,40 @@ fn legacy_extrema_use_fixed_text_admission_and_preserve_typed_results() {
         assert_eq!(database.reserved_memory_bytes(), baseline);
         assert_eq!(database.reserved_temp_bytes(), 0);
     }
+    let query = database.prepare("FROM lineitem |> AGGREGATE MIN(l_returnflag) AS lo,MAX(l_linestatus) AS hi GROUP BY l_returnflag |> AGGREGATE MIN(lo) AS lo,MAX(hi) AS hi").unwrap();
+    let baseline = database.reserved_memory_bytes();
+    let mut result = database.execute(&query, &cancel).unwrap();
+    let mut rows = 0;
+    let mut finished = false;
+    for _ in 0..100_000 {
+        match result.step() {
+            QueryStep::Rows(batch) => {
+                for row in 0..batch.len() {
+                    assert_eq!(
+                        batch.value(row, 0),
+                        Some(Value::String(StringValue::new("A")))
+                    );
+                    assert_eq!(
+                        batch.value(row, 1),
+                        Some(Value::String(StringValue::new("F")))
+                    );
+                    rows += 1;
+                }
+            }
+            QueryStep::Progress => (),
+            QueryStep::Finished => {
+                finished = true;
+                break;
+            }
+            QueryStep::Failed(error) => panic!("repeated legacy extrema: {error}"),
+        }
+    }
+    assert!(finished);
+    assert_eq!(rows, 1);
+    drop(result);
+    assert_eq!(database.reserved_memory_bytes(), baseline);
+    assert_eq!(database.reserved_temp_bytes(), 0);
+    drop(query);
     database.close().unwrap();
 }
 
