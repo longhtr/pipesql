@@ -7,7 +7,7 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 12, 2026 (local time) complete gates for `8aceaee` passed all 23
+The September 12, 2026 (local time) complete gates for `e0f611a` passed all 23
 stages on macOS and GNU arm64 Linux. The macOS environment was arm64 Darwin 25.6.0, Rust 1.98.1,
 Python 3.14.7, and the native Apple toolchain. The Linux environment is identified
 below. Checks used release artifacts, offline locked dependencies, and
@@ -22,21 +22,22 @@ The seed-only graph command previously passed on both platforms; reuse of its
 output directory was rejected. Seed failure propagation and artifact identities
 have tooling regressions independent of engine execution.
 
-Rust suites executed 457 tests on each platform, with no failed or ignored
+Rust suites executed 463 tests on each platform, with no failed or ignored
 tests. Each suite also executed one selected lease subprocess, excluded from
 these totals. The twelve bounded-thread scenarios and their ordinary-thread
 counterparts passed on both targets. The independent native stack control and
 the Rust oversized-thread negative control passed. The public directory cleanup
 regression executed, including its isolated unwind control.
 
-Both gates used one frozen 664-file export containing 663 manifested inputs.
+Both gates used matching frozen inputs from 665 tracked files, containing 664
+manifested inputs. Linux used a read-only export of the tracked tree.
 All stage statuses were zero, before/after manifests matched across both runs,
 and finalization reported no errors and removed owned build targets. The frozen
 manifest SHA-256 is
-`163e2a845a501d8741f9926184fe12eb877b7c9b9cd79784fdd9aa66cb0e94d0`.
+`1666f2c90addc3533c9746a03d013f0ba935706edd3d5450e71eb9ba593ad9b8`.
 At that checkpoint, only the two notes files were finalized afterward. The
-other 661 manifested inputs have fingerprint
-`0ad61af2f2418fe75539c26b6994d472b4aba1f69ab7c986f3982baaac620441`.
+other 662 manifested inputs have fingerprint
+`eb74799a3f5e997c5e95fed229ed12f9cd607c859e0847f4ac25b71e305c7bac`.
 To fingerprint the currently checked-out inputs:
 
 ```sh
@@ -47,8 +48,8 @@ This fingerprint identifies maintained source, not reproducible binaries. Final
 documentation checks cover the finalized notes. At the earlier `827cad5` checkpoint, the declared-table example ran
 on both platforms and printed `north total=15 rows=3 present=2` and
 `south total=20 rows=1 present=1`. The frontend walkthrough also produced its
-complete INT64 result, 38, on macOS. The current gate stages took 1,551 seconds on macOS and
-747 seconds on Linux; these are verification costs, not query benchmarks.
+complete INT64 result, 38, on macOS. The current gate stages took 1,586 seconds on macOS and
+807 seconds on Linux; these are verification costs, not query benchmarks.
 Raw successful logs and retired source exports are not required inputs; current
 callers and fixtures reconstruct the generated cases.
 
@@ -56,6 +57,63 @@ Run `sh tools/check.sh --output /absolute/new-result-directory` with the
 [documented prerequisites](../docs/testing.md#complete-local-gate). The gate keeps
 stage logs and a JSON receipt, checks before/after source manifests, and removes
 its owned build target. Preserve failure context before disposing of a run.
+
+## EXTEND projection semantics
+
+EXTEND appends direct references or current numeric expressions while preserving
+input columns, identities, range members, and nonanalytic ordering. Each list
+binds against its original input; later EXTEND stages can use earlier aliases.
+Duplicate names remain visible but ambiguous when referenced. No aggregate,
+window, or additional scalar forms are admitted. The
+[language manifest](../docs/language.md#current-public-query-manifest) owns the
+accepted syntax and demand rules.
+
+The semantic review used GoogleSQL commit
+`0e7d7073ed0360be587a5efa0fa78abeee00f17b`. Its
+[EXTEND analyzer fixtures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/analyzer/testdata/pipe_extend.test)
+provide independent cases for sibling-alias rejection, repeated stages, duplicate
+names, and range preservation. `ResolvePipeExtend` and the input-name merge in
+`googlesql/analyzer/resolver_query.cc` establish direct-reference identity reuse
+and retained scope. `ResolvedProjectScan` in
+`googlesql/resolved_ast/gen_resolved_ast.py` propagates input ordering. These are
+pinned fixture and source observations, not a fresh upstream analyzer run.
+The reviewed source SHA-256 values are:
+
+| Source at that commit | SHA-256 |
+| --- | --- |
+| `pipe_extend.test` | `51774f9c05fa4f10bed268a5f9fd2e3939f2e030b777e181cb9ec80a4a236249` |
+| `resolver_query.cc` | `fc438f439784f0b02e7ba76437f2d0f4fc80ee97d19d701dd3f09755a97e5177` |
+| `gen_resolved_ast.py` | `28a2b60b1800d67b32a8bc41f069c294a2c6982d88907bfcc5771dd05cd7435e` |
+
+The implementation records only appended projection entries; repeated EXTEND
+stages inherit existing columns without exhausting the syntax-sized pool through
+copies. Independent validation checks combined width and definition scope. A
+prerequisite parser repair preserves direct STRING references named `aggregate`,
+which the existing grammar already allows as an identifier.
+
+The full gates add six Rust regressions and extend existing validator and
+cancellation checks. They cover all scalar types, NULL and empty input, retained
+ranges and identities, sibling and colliding aliases, 64-column admission,
+one-byte-short preparation refusal, hidden versus demanded overflow, exact
+source spans, and composition through filters, grouping, joins, ordering, and
+derived inputs. Both composition campaigns execute 293 cases. The catalog
+allocation campaign includes EXTEND and still passes all 723 injected prefixes
+plus healthy completion on ordinary and 384-byte paths. Cleanup and reservation
+release remain checked; there are no persistent-format changes.
+
+Replay the focused checks with:
+
+```sh
+cargo test --release --offline --locked --lib frontend:: -- --test-threads=1
+cargo test --release --offline --locked --test catalog_lifecycle computed:: -- --test-threads=1
+```
+
+The [learning example](../docs/getting-started.md#add-columns-while-retaining-the-input)
+ran from fresh databases on macOS and Linux. Both returned the same schema and
+three expected rows, then `row_count=3`, `status=queried`, and exit zero. Its SQL,
+setup program, and expected values are maintained inputs. Successful raw output
+and temporary source copies are not replay dependencies. Windows and production
+qualification remain open.
 
 ## Nullable COUNT arguments
 
@@ -189,7 +247,7 @@ gate sets warnings-denied Rust and documentation flags. Keep database/output
 directories separate from a host-shared source mount.
 
 The September 12 run passed all 23 stages on the same frozen inputs described
-above. It executed 454 Rust tests, with no ignored tests and one
+above. It executed 463 Rust tests, with no ignored tests and one
 additional selected lease-subprocess execution. Both platforms passed 547 CLI
 allocation-prefix cases, 83 parser control/deny pairs, ambiguous publication
 resolving to aborted and durable outcomes, and closed/broken output sinks.

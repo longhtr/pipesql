@@ -11,8 +11,8 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 23-stage gates for `8aceaee` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 457 Rust tests and 285
+The complete 23-stage gates for `e0f611a` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 463 Rust tests and 293
 composition cases, plus its applicable native and allocation campaigns. All twelve bounded-thread scenarios and their ordinary-thread
 counterparts execute on both platforms, with explicit target-specific ceilings.
 Two Darwin ACL-specific allocation cells remain excluded on Linux. Windows remains
@@ -30,58 +30,43 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
-## Active: EXTEND with the current expression profile
+## Next: complete the column transformation profile
 
-Compact hash text storage is implemented and verified. The
-[comparison](evidence.md#compact-hash-text-storage) records the short-string
-reservation reduction, eliminated 256-group spill at 4 MB, and increased
-transient peak for wide values. Further optional storage tuning needs a new
-concrete limitation; do not reopen the completed study without one.
+EXTEND is implemented and verified. The [semantic evidence](evidence.md#extend-projection-semantics)
+records its accepted profile, independent cases, resource/failure coverage, and
+cross-platform example. Compact hash storage also remains complete; its
+[comparison](evidence.md#compact-hash-text-storage) retains the short-string
+reservation benefit and accepted transient cost for wide values. Reopen either
+only for a concrete defect or limitation.
 
-Implement the next column operator from the [language direction](../docs/language.md#deliberate-profile):
-`EXTEND` should preserve the input row and add expressions from the currently
-supported projection profile. First resolve names, aliases, identity, duplicate
-names, range visibility, and order semantics against the pinned GoogleSQL
-sources. Retain reduced independent cases for the accepted forms. Do not infer
-those rules solely from SELECT or introduce unrelated scalar functions.
+Complete `SET`, `DROP`, and `RENAME` from the
+[language direction](../docs/language.md#deliberate-profile) as one bounded
+column-transformation milestone. Together with SELECT, EXTEND, and AS, these
+let learners change a pipeline's row shape without repeatedly spelling every
+unchanged column. Keep SET expressions within the existing projection profile;
+do not add functions, windows, or unrelated operators.
 
-The pinned [analyzer fixtures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/analyzer/testdata/pipe_extend.test)
-confirm input-column preservation, direct-reference identity reuse, retained
-range variables, duplicate-name ambiguity, and sibling-alias rejection. Separate
-EXTEND stages can use earlier aliases. The pinned resolver retains input names;
-its ProjectScan definition propagates input ordering for nonanalytic projections.
-This is fixture and source evidence, not a newly executed upstream analyzer.
-Accept direct references and current numeric expressions, with explicit AS or
-bare aliases; keep aggregate/window calls and other scalar forms unsupported.
+First resolve target lookup, simultaneous versus sequential definitions,
+duplicate/ambiguous names, identity, range visibility, ordering, and dropped-value
+demand against the pinned GoogleSQL sources. Establish reduced independent
+accepted and rejected cases before choosing the representation. Plan the changes
+through existing parser, binder, semantic validation, and demand owners. Avoid
+copying inherited columns into the syntax-sized projection pool or adding an
+execution wrapper for a name-only transformation.
 
-Retain EXTEND as a contextual pipe word so existing identifiers named `extend`
-keep working. Add a semantic EXTEND stage that records only new projection
-entries and inherits its input columns. Expanding every inherited column into
-the projection pool would violate the existing syntax-sized admission bound.
-Bind all new expressions against the unchanged input scope, then append outputs
-without changing existing ranges. Independent validation must check the combined
-width and definitions against that original input. Reuse scalar lowering and
-demand propagation; no new execution controller is needed.
+Preserve values, exact spans, demanded failures, persistent bytes, bounded work,
+resource admission, cancellation, and cleanup. Exercise these operators through
+EXTEND, filtering, grouping, joins, ordering, and derived inputs. Include wrong
+targets, duplicates, empty/NULL input, limits, hidden errors, and independent
+validator controls. Extend the existing learning example and authoritative
+contracts rather than creating a parallel tutorial or test framework.
 
-Use the existing frontend, validated plan, and execution owners. Preserve
-original columns and demanded-error behavior through filtering, grouping,
-joins, sorting, and derived inputs. Bound output width and work; maintain exact
-diagnostic spans, resource admission, cancellation, and cleanup. Unsupported
-forms must fail explicitly. Add a short executable learning example and update
-the language manifest and reading path without duplicating their contracts.
-
-Implementation and focused checks now cover retained identity/ranges, typed
-NULLs and empty input, alias conflicts, exact-width and one-byte-short admission,
-independent validator mutations, demanded overflow spans, and cancellation
-through composed operators. The shared identifier regression also preserves
-STRING columns named `aggregate`. The executable SQL example reuses the declared
-table walkthrough. Remaining work is frozen macOS/Linux gate verification,
-compact evidence, final documentation reconciliation, commits, and cleanup.
-
-Complete focused semantic and failure checks, required frozen full verification
-on macOS and available GNU/Linux, documentation checks, and coherent local
-commits. Keep Windows and production qualification limits explicit. Close the
-milestone once its accepted manifest and verification are complete.
+Finish focused checks, required frozen macOS and available GNU/Linux gates,
+example/command verification, compact evidence, coherent local commits, and
+owned-artifact cleanup. Unavailable Windows resources do not block portable
+implementation; keep qualification limits explicit. Do not push or modify remote
+refs. Close the milestone promptly at these completion criteria, then choose the
+next useful bounded outcome from the actual tree and remaining qualification.
 
 ## Applying DuckDB lessons
 
