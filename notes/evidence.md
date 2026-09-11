@@ -19,14 +19,15 @@ The Rust suites executed 417 tests with no failures or exclusions. The lease
 subprocess additionally executed one selected test; it is not counted twice.
 The public directory cleanup regression executed, including its isolated unwind
 control. Maintenance checked 81 tooling tests, 39 independent codec fixtures,
-and documentation links. The declared-table example printed `north 15` and
-`south 20`; reuse of its database path returned `AlreadyExists` with exit 1.
+and 374 local documentation links. The unchanged declared-table example was
+previously exercised at baseline `36b7823`: it printed `north 15` and `south 20`;
+reuse of its database path returned `AlreadyExists` with exit 1.
 
 Both platform runs used the same frozen 656-file export. Their before/after
 manifests matched, all stage exit statuses were zero, and finalization reported
 no errors. Only the two notes files were finalized after runtime verification.
 The remaining 654 inputs match the final source. Their manifest fingerprint is
-`00ad2c8d519c3be28401e0e39990a4c6f64f1400881299de2b8975cfeeb17633`.
+`995c7dd284df278e1ddb1a58d5684ec6f6d42dea53e23d5f2de25268c57b7002`.
 Recompute it from the repository root:
 
 ```sh
@@ -45,24 +46,39 @@ its owned build target. Preserve failure context before disposing of a run.
 
 ## Linux native verification
 
-The maintained Linux core and native campaigns exercise dynamically linked
+The maintained full Linux gate exercises dynamically linked
 64-bit GNU/Linux callers. The reviewed environment is arm64 Linux
 7.0.12-linuxkit, glibc 2.36, Rust 1.98.1, and Python 3.11.2, with database files
 on native `overlayfs` and sources mounted read-only. The compiler image starts
 from `rust@sha256:9a73a5088750b4c95158ab26629c854c3d6fc4b173cb7bc8079ad252d8ed7bfa`
 (arm64 manifest `09e98f39fa15751de9476fefafe4be0e4ef92b292d608410595bbbde9ebdd375`),
-with Clippy and rustfmt provisioned before disabling networking.
+with Clippy, rustfmt, and Debian GNU time 1.9-0.2 provisioned before disabling
+networking. Campaigns ran as UID/GID 1000, with writable temporary output on the
+container filesystem. A root-run allocation control had correctly failed because
+root could bypass read-only directory permissions; it is not passing evidence.
 
-Set `RUSTUP_TOOLCHAIN=1.98.1-aarch64-unknown-linux-gnu`,
-`RUSTFLAGS='-D warnings'`, and `RUSTDOCFLAGS='-D warnings'`. Run the core gate,
-then synchronization, byte-I/O, and catalog interruption sequentially using the
-[documented commands](../docs/testing.md#complete-local-gate).
-Keep database/output directories separate from a host-shared source mount.
-The September 11 run passed all 14 core stages and the three native campaigns
-on the same frozen inputs described above. It executed 397 Rust tests, with 12
-explicit stack exclusions and one additional selected lease-subprocess execution.
-Both native platforms passed 241 synchronization cells, 1,088 byte-I/O cells,
-and the interruption cases described below.
+Set `RUSTUP_TOOLCHAIN=1.98.1-aarch64-unknown-linux-gnu` and run the
+[full gate](../docs/testing.md#complete-local-gate) as an unprivileged user. The
+gate sets warnings-denied Rust and documentation flags. Keep database/output
+directories separate from a host-shared source mount.
+
+The September 11 run passed all 23 stages on the same frozen inputs described
+above. It executed 397 Rust tests, with 12 explicit stack exclusions and one
+additional selected lease-subprocess execution. Both platforms passed 547 CLI
+allocation-prefix cases, 83 parser control/deny pairs, ambiguous publication
+resolving to aborted and durable outcomes, and closed/broken output sinks.
+Public allocation passed its complete applicable prefix sweeps, short/long
+ownership controls, timeout cleanup, and wrong-row negative control. Linux omits
+the two Darwin ACL-specific recovery cells; it does exercise ordinary read-only
+construction refusal as an unprivileged user.
+
+Initialization passed 30 Darwin and 20 Linux cells. Darwin observes root stat in
+its traversal; Linux observes entry to libc `realpath`. Each checks distinct
+calls, scheduled overlap, injected refusal, a 33-link chain, correct names, and
+byte-preserving healed reopen. Darwin's extra cases cover its data-mount spelling.
+Linux entry observation does not expose or qualify libc's internal allocations,
+stack, synchronization, or traversal work. Both platforms passed 241 native
+synchronization cells, 1,088 byte-I/O cells, and the graph/interruption cases below.
 These checks do not qualify other libc implementations, static linking, all
 filesystems, native concurrency, or power-loss durability.
 

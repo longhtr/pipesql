@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
+#include "native-interpose.h"
+
+NATIVE_BIND(rename);
 
 static unsigned at, calls;
 
@@ -20,9 +23,6 @@ static int observed_rename(const char *source, const char *destination) {
         errno = EIO;
         return -1;
     }
-    return rename(source, destination);
+    return NATIVE_REAL(rename)(source, destination);
 }
-__attribute__((used)) static struct { const void *replacement; const void *original; }
-rename_pair __attribute__((section("__DATA,__interpose"))) = {
-    (const void *)(uintptr_t)&observed_rename, (const void *)(uintptr_t)&rename
-};
+NATIVE_INTERPOSE(observed_rename, rename);

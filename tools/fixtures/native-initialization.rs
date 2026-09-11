@@ -6,7 +6,7 @@ unsafe extern "C" {
     fn probe_start(mode: i32, error: i32);
     fn probe_release();
     fn probe_stop();
-    fn probe_roots(actor: i32) -> u64;
+    fn probe_resolutions(actor: i32) -> u64;
     fn probe_mounts(actor: i32) -> u64;
     fn probe_wait() -> i32;
     fn probe_pending() -> i32;
@@ -43,12 +43,12 @@ fn main() {
     let (first, second) = if mode >= 3 {
         let path = a.clone();
         let first = std::thread::spawn(move || create(&path, 0));
-        // SAFETY: bounded wait for the public resolver's native root-stat call.
+        // SAFETY: bounded wait for the public resolver's observed native entry.
         let reached = unsafe { probe_wait() };
         if reached != 1 {
             unsafe { probe_release() };
             first.join().unwrap().unwrap();
-            panic!("native root initialization boundary not reached");
+            panic!("native resolution boundary not reached");
         }
         let pending_before = unsafe { probe_pending() };
         let second = create(&b, 1);
@@ -98,15 +98,15 @@ fn main() {
         database.close().unwrap();
         assert_eq!(authority(&path), before);
     }
-    // Each public resolution now owns its root observation. Restoring a shared
-    // cache must fail even if returned names happen to agree on this filesystem.
+    // Each public resolution enters Darwin root stat or Linux realpath separately.
+    // A cached result must fail even if returned names happen to agree.
     // Mount counts remain observations, not an expected upstream implementation.
-    assert_eq!(unsafe { probe_roots(0) }, 1);
-    assert_eq!(unsafe { probe_roots(1) }, 2);
+    assert_eq!(unsafe { probe_resolutions(0) }, 1);
+    assert_eq!(unsafe { probe_resolutions(1) }, 2);
     println!(
-        "mode={mode} error={error} roots={},{} mounts={},{} outcomes=checked",
-        unsafe { probe_roots(0) },
-        unsafe { probe_roots(1) },
+        "mode={mode} error={error} resolutions={},{} mounts={},{} outcomes=checked",
+        unsafe { probe_resolutions(0) },
+        unsafe { probe_resolutions(1) },
         unsafe { probe_mounts(0) },
         unsafe { probe_mounts(1) }
     );

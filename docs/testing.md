@@ -34,8 +34,8 @@ from checks actually performed; it is not a release-support promise.
 | Filesystem effects | Native path, metadata, directory, locking, and synchronization implementations; scoped failure campaigns exercised. | Twelve native filesystem tests pass. Synchronization, byte-I/O failure, and catalog interruption campaigns are implemented and exercised on GNU arm64. Resolver resource attribution and durability qualification remain unfinished. | No implementation yet. |
 | Declared-table lifecycle and queries | Public integration and failure tests exercised; full release qualification remains open. | Public catalog integration runs on Linux. GNU arm64 explicitly excludes four tests requiring a native-reported stack at most 64 KiB; see below. | Cannot build until the native boundary is implemented. |
 | Legacy lineitem loader | Available on the reviewed path. | Implemented; internal fault schedules and public load/query/receipt tests run natively. Native sync/I/O failure and healed receipt outcomes are exercised; durability remains unqualified. | Unavailable. |
-| CLI argument capture | Native startup capture exercised. | Bounded `/proc/self/cmdline` capture and its unit tests run; the public allocation campaign remains unqualified. | Native argument capture is missing. |
-| Complete regression gate | The complete gate runs here; retained evidence identifies its tested inputs. | Core plus synchronization, byte-I/O, and catalog interruption checks are available. Initialization and allocation campaigns have not transferred; this is not the complete gate. | No complete gate available. |
+| CLI argument capture | Native startup capture exercised. | Bounded `/proc/self/cmdline` capture and its unit tests run; CLI allocation and publication callers are implemented; retained evidence identifies exercised coverage. | Native argument capture is missing. |
+| Complete regression gate | The complete gate runs here; retained evidence identifies its tested inputs. | All gate stages are implemented. GNU arm64 stack tests and Darwin-specific ACL recovery observations remain excluded; retained evidence identifies completed runs. | No complete gate available. |
 
 For a Linux cross-compilation check, provision the `x86_64-unknown-linux-gnu`
 target before offline use, then run:
@@ -214,7 +214,14 @@ shared-resource bounds and descendant-cleanup evidence; see the [campaign
 isolation
 decision](../notes/evidence.md#retired-implementations-and-gate-isolation).
 
-The full campaign set currently requires macOS. On macOS or Linux, `python3
+The full campaign set runs on macOS and GNU/Linux. Run it as an unprivileged
+user: root can bypass permission-refusal controls. Linux requires GNU
+`/usr/bin/time`; macOS uses its native implementation. Linux initialization checks
+libc `realpath` entry, while Darwin checks root metadata during its own traversal.
+The Linux run does not exercise Darwin data-mount spelling or the two Darwin ACL
+recovery cells, and its existing stack exclusions remain explicit.
+
+On either platform, `python3
 tools/check.py --scope core` runs the compiler, format, maintenance, ABI, model,
 Rust-test, and documentation stages only. Its receipt explicitly says `core`; it
 does not establish a passing full gate or qualify excluded platform tests.

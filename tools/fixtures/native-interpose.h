@@ -1,8 +1,9 @@
 #ifndef PIPESQL_NATIVE_INTERPOSE_H
 #define PIPESQL_NATIVE_INTERPOSE_H
 
-// Disposable, single-threaded observers only. Resolve forwarding targets before
-// main, while fault injection is disarmed. Missing symbols terminate the caller;
+// Disposable observers. Resolve immutable forwarding targets before main, while
+// fault injection is disarmed. Each caller synchronizes its own mutable fault
+// state if it uses multiple threads. Missing symbols terminate the caller;
 // they cannot turn an unobserved operation into a successful campaign cell.
 #if defined(__APPLE__)
 #define NATIVE_BIND(name)

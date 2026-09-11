@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Public create/reopen across per-call Darwin root observation and refusal."""
+"""Public create/reopen across target-native resolution entry and refusal."""
 from pathlib import Path
 import argparse
 import errno
@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 
-from check_support import build_library, native_library, rust_driver
+from check_support import build_library, native_library, observer_environment, rust_driver
 
 from check_process import run as run_process
 
@@ -19,8 +19,8 @@ def main(argv=None):
     parser.parse_args(argv)
     if not __debug__:
         parser.error("native initialization checks require Python assertions")
-    if sys.platform != "darwin":
-        parser.error("native initialization checks require macOS")
+    if sys.platform not in {"darwin", "linux"}:
+        parser.error("native initialization checks require macOS or Linux")
 
     import resource
 
@@ -29,18 +29,23 @@ def main(argv=None):
 
     with tempfile.TemporaryDirectory(prefix="pipesql-native-init-") as directory:
         work = Path(directory).resolve()
-        dylib = native_library(work, "native-initialization.c", "native_probe")
+        observer = native_library(work, "native-initialization.c", "native_probe")
         release = build_library(work)
         rust_driver(
             work, release, "native-initialization.rs", "native_probe", ("libc",)
         )
-        for path in [dylib, work / "driver", work / "target/release/libpipesql.rlib"]:
+        for path in [observer, work / "driver", work / "target/release/libpipesql.rlib"]:
             print(
                 f"native initialization {path.name} sha256={hashlib.sha256(path.read_bytes()).hexdigest()}",
                 flush=True,
             )
         count = 0
-        for spelling in ["private", "data-mount", "symlink33"]:
+        spellings = (
+            ["private", "data-mount", "symlink33"]
+            if sys.platform == "darwin"
+            else ["private", "symlink33"]
+        )
+        for spelling in spellings:
             for mode in [1, 2, 3, 4]:
                 for error in (
                     [errno.EIO]
@@ -49,11 +54,11 @@ def main(argv=None):
                 ):
                     cell = work / f"{spelling}-{mode}-{error}"
                     cell.mkdir()
-                    # Explicit mount spelling and the 33-link input are previously
-                    # accepted inputs that defeated a proposed F_GETPATH replacement.
+                    # Darwin preserves its explicit data-mount spelling. Both
+                    # targets must resolve a 33-link chain to the same parent.
                     expected = (
                         str(cell)
-                        if spelling == "private"
+                        if spelling == "private" or sys.platform == "linux"
                         else "/System/Volumes/Data" + str(cell)
                     )
                     requested = expected
@@ -71,7 +76,7 @@ def main(argv=None):
                             str(mode),
                             str(error),
                         ],
-                        env={**os.environ, "DYLD_INSERT_LIBRARIES": str(dylib)},
+                        env=observer_environment(observer),
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         preexec_fn=limits,

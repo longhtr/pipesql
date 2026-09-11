@@ -42,8 +42,8 @@ sh tools/check.sh
 ```
 
 [Build and test](docs/testing.md) explains prerequisites, focused commands, full
-verification, and failure diagnosis. The full gate currently requires macOS;
-Linux can run its documented core subset. The full gate includes independent
+verification, failure diagnosis, and target-specific exclusions. The full gate
+runs on macOS and GNU/Linux as an unprivileged user. It includes independent
 fixtures, warnings-denied compilation, Rust tests, and semantic, resource, and
 native failure campaigns. A green local gate is not production certification.
 

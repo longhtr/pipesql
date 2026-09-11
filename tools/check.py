@@ -285,10 +285,6 @@ def main(argv=None):
         parser.error(
             "native process ownership is currently implemented for macOS and Linux"
         )
-    if options.scope == "full" and sys.platform != "darwin":
-        parser.error(
-            "full native campaigns currently require macOS; --scope core is an explicitly incomplete subset"
-        )
     revision = source_revision(ROOT)
     output = prepare_output(options.output, ROOT)
     print(f"gate scope={options.scope} output={output}", flush=True)

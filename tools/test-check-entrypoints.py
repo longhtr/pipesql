@@ -126,7 +126,8 @@ class CampaignEntryPoints(unittest.TestCase):
     def test_native_campaigns_refuse_unsupported_platforms(self):
         with forbid_campaign_work(), without_unix_modules():
             for name, platform in (
-                ("check-native-initialization.py", "linux"),
+                ("check-native-initialization.py", "win32"),
+                ("check-cli-allocation.py", "win32"),
                 ("check-native-sync.py", "win32"),
                 ("check-native-io.py", "win32"),
                 ("check-catalog-graph.py", "win32"),

@@ -13,7 +13,7 @@ import tempfile
 import sys
 
 from check_process import run as run_process
-from check_support import build_cli, dependency
+from check_support import build_cli, dependency, native_library, observer_environment
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -299,26 +299,7 @@ def check_publication(work, compile, empty, input_path, heal_ambiguous):
     # Allocation refusal reaches durable ambiguity here. Native rename refusal
     # separately covers the first data-root replacement, before it takes effect.
     # Four renames are the issuance A/B and data A/B publication protocol.
-    observer = work / "libcli_publication.dylib"
-    run_process(
-        [
-            "clang",
-            "-std=c11",
-            "-O2",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            "-Wconversion",
-            "-dynamiclib",
-            str(ROOT / "tools/fixtures/cli-publication.c"),
-            f"-Wl,-install_name,{observer}",
-            "-o",
-            str(observer),
-        ],
-        check=True,
-        timeout=30,
-        cwd=ROOT,
-    )
+    observer = native_library(work, "cli-publication.c", "cli_publication")
     native_compile = list(compile)
     native_compile[
         native_compile.index(str(ROOT / "tools/fixtures/cli-allocation.rs"))
@@ -345,7 +326,7 @@ def check_publication(work, compile, empty, input_path, heal_ambiguous):
             env={
                 **os.environ,
                 "PIPESQL_RENAME_CUT": str(cut),
-                "DYLD_INSERT_LIBRARIES": str(observer),
+                **observer_environment(observer),
             },
             capture_output=True,
             preexec_fn=limits,
@@ -547,8 +528,8 @@ def main(argv=None):
     parser.parse_args(argv)
     if not __debug__:
         parser.error("allocation checks require Python assertions")
-    if sys.platform != "darwin":
-        parser.error("CLI publication/allocation observers require macOS")
+    if sys.platform not in {"darwin", "linux"}:
+        parser.error("CLI publication/allocation observers require macOS or Linux")
     with tempfile.TemporaryDirectory(prefix="pipesql-cli-gate-") as directory:
         work = Path(directory).resolve()
         compile = build_probes(work)

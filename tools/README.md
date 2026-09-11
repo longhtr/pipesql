@@ -83,7 +83,7 @@ recorded revision after a path move.
 | `check-filesystem-abi.py` | Native SDK/decoder agreement. |
 | `check-diagnostic-allocation.py` | Public library construction, errors, queries, catalog recovery, and composed ownership under allocator refusal. |
 | `check-cli-allocation.py` | CLI startup, parsing, output, publication tokens, and allocation refusal. |
-| `check-native-initialization.py` | Darwin pathname observation and native refusal. |
+| `check-native-initialization.py` | Darwin traversal-entry and Linux realpath-entry observation, refusal, and overlapping callers. |
 | `check-native-sync.py` | Linked synchronization calls, refusal, and healed outcomes. |
 | `check-native-io.py` | Linked byte-I/O calls, partial progress, refusal, and healed outcomes. |
 | `check-catalog-interruption.py` | Stock catalog append/recovery process-termination cuts. |

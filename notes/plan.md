@@ -11,26 +11,33 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The full macOS gate and Linux core, synchronization, byte-I/O, and interruption
-checks passed on the inputs identified in the evidence record. This establishes
-those checks, not production readiness. Windows remains unfinished, and twelve
-GNU arm64 stack scenarios remain explicitly excluded. The
-[platform matrix](../docs/testing.md#platform-status) owns the coverage details.
+The full 23-stage gates pass on macOS and GNU arm64 Linux for the inputs in the
+[evidence record](evidence.md). Windows remains unfinished. Twelve GNU arm64 stack
+scenarios and two Darwin ACL-specific allocation cells remain excluded on Linux;
+the [platform matrix](../docs/testing.md#platform-status) distinguishes those
+limits from exercised behavior. The Linux campaigns require an unprivileged user
+and GNU time. No production-readiness claim follows from a passing local gate.
 
-## Next: close Linux verification gaps
+## Next: make grouping admission proportionate to its input
 
-Complete the remaining Linux allocation and initialization campaigns before
-claiming coverage equivalent to macOS. Inspect their native premises, use the
-existing callers and independent expectations, and preserve resource accounting,
-commit outcomes, cleanup, and durability contracts. Implement prerequisite
-portability repairs where needed; do not convert unavailable observations into
-passing exclusions.
+The composed ownership caller shows that optional hash grouping can reserve nearly
+the remaining memory budget even for few groups, refusing a competing reader.
+Trace admission through the grouping controller, hash storage, and resource
+reservation owner. Establish a public regression with overlapping readers and
+independent complete-row expectations before choosing a repair.
 
-Completion requires target-native execution on identified filesystems, exercised
-negative controls, exact source identities, honest test discovery, and current
-platform documentation. Keep the GNU arm64 stack minimum and host-shared filesystem
-identity failure visible until separate evidence resolves them. Add CI using the
-same maintained commands once the required runners are available.
+Bound optional allocation using justified input information or incremental growth
+while preserving the admitted spill minimum. Do not add an arbitrary fairness
+percentage, an unbounded estimate, or a separate execution path. Keep NULL/key
+semantics, aggregate results, refusal, cancellation, spill/replay, and cleanup
+intact. Explain the chosen representation and admission invariant beside their
+owners so the implementation remains useful for learning.
+
+Completion requires the competing-reader regression, relevant grouping and
+allocation/failure tests, an updated resource contract and evidence record, and
+coherent verified local commits. Assess whether the first candidate changes the
+counterexample before extending the design. Whole-process memory qualification,
+Windows, and general scheduling fairness remain separate work.
 
 ## Other release work
 
