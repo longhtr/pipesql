@@ -138,6 +138,7 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
             | Stage::Limit(_)
             | Stage::Distinct(_) => input.len(),
             Stage::Select { len, .. } => usize::from(*len),
+            Stage::Extend { len, .. } => input.len() + usize::from(*len),
             Stage::Aggregate(aggregate_index) => plan
                 .aggregates
                 .get(usize::from(*aggregate_index))
@@ -253,7 +254,7 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                     return Err(Error::Corrupt("aggregate output identity limit"));
                 }
             }
-            Stage::Select { start, len } => {
+            Stage::Select { start, len } | Stage::Extend { start, len } => {
                 let end = usize::from(*start) + usize::from(*len);
                 if *len == 0
                     || usize::from(*len) > MAX_COLUMNS

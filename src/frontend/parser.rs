@@ -34,6 +34,11 @@ pub(super) enum ParsedStage {
         start: u8,
         len: u8,
     },
+    Extend {
+        start: u8,
+        len: u8,
+        span: SourceSpan,
+    },
     Where {
         column: SourceSpan,
         comparison: Comparison,
@@ -796,8 +801,15 @@ impl Parser<'_> {
                     parsed.aggregate_group_count = group_end as u8;
                     ParsedStage::Aggregate(range)
                 }
-                Kind::Select => {
-                    self.take(Kind::Select)?;
+                Kind::Select | Kind::Identifier
+                    if self.peek() == Kind::Select || self.is_word("EXTEND") =>
+                {
+                    let extend = self.is_word("EXTEND");
+                    if extend {
+                        self.word("EXTEND")?;
+                    } else {
+                        self.take(Kind::Select)?;
+                    }
                     let start = parsed.projection_count;
                     let mut len = 0;
                     loop {
@@ -819,6 +831,7 @@ impl Parser<'_> {
                                     matches!(
                                         token.kind,
                                         Kind::Identifier
+                                            | Kind::Aggregate
                                             | Kind::Dot
                                             | Kind::LeftParen
                                             | Kind::RightParen
@@ -827,6 +840,10 @@ impl Parser<'_> {
                         let expression = parsed.push_expression(expression)?;
                         let alias = if self.peek() == Kind::As {
                             self.take(Kind::As)?;
+                            self.take(Kind::Identifier)?
+                        } else if extend
+                            && matches!(self.peek(), Kind::Identifier | Kind::Aggregate)
+                        {
                             self.take(Kind::Identifier)?
                         } else {
                             ZERO_SPAN
@@ -850,9 +867,15 @@ impl Parser<'_> {
                         }
                         self.take(Kind::Comma)?;
                     }
-                    ParsedStage::Select {
-                        start,
-                        len: u8::try_from(len).expect("bounded columns"),
+                    let len = u8::try_from(len).expect("bounded columns");
+                    if extend {
+                        ParsedStage::Extend {
+                            start,
+                            len,
+                            span: pipe,
+                        }
+                    } else {
+                        ParsedStage::Select { start, len }
                     }
                 }
                 Kind::Where => {

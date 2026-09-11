@@ -235,7 +235,11 @@ fn pipeline_end(plan: &frontend::Plan, mut relation: RelationId) -> RelationId {
         if node.input == relation
             && matches!(
                 node.stage,
-                Stage::Alias | Stage::Derived | Stage::Select { .. } | Stage::Where(_)
+                Stage::Alias
+                    | Stage::Derived
+                    | Stage::Select { .. }
+                    | Stage::Extend { .. }
+                    | Stage::Where(_)
             )
         {
             relation = RelationId(index as u8 + 1);

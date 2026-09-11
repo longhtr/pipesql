@@ -80,7 +80,7 @@ pub(super) fn demand_masks(plan: &frontend::Plan) -> Result<[ColumnSet; MAX_PIPE
             }
             Stage::Source(_) => (),
             Stage::Alias | Stage::Derived | Stage::Limit(_) => masks[input] |= output,
-            Stage::Select { .. } => {
+            Stage::Select { .. } | Stage::Extend { .. } => {
                 for id in plan.relation_columns(node.input)?.iter() {
                     masks[input] |= output & bit(id);
                 }

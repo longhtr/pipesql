@@ -232,27 +232,31 @@ fn repeated_aggregate_legacy_empty_chain_respects_identity_limit() {
 #[test]
 fn computed_definitions_reject_invalid_scope_identity_and_provenance() {
     let (_temp, database) = database(4_000_000);
-    let sql = "FROM lineitem |> SELECT l_quantity+1 AS x |> SELECT x*2 AS y";
-    for mutation in 0..8 {
-        let mut query = database.prepare(sql).unwrap();
-        let second = query.plan.computed[1].column;
-        match mutation {
-            0 => query.plan.computed[0].column = second,
-            1 => query.plan.computed[1].input = RelationId::SOURCE,
-            2 => query.plan.computed[0].span = ZERO_SPAN,
-            3 => query.plan.computed[0].span.end = u16::MAX,
-            4 => query.plan.computed[0].expression.ops[0] = Op::Column(second),
-            5 => query.plan.computed[0].expression.data_type = DataType::Int64,
-            6 => {
-                query.plan.computed.pop();
+    for sql in [
+        "FROM lineitem |> SELECT l_quantity+1 AS x |> SELECT x*2 AS y",
+        "FROM lineitem |> EXTEND l_quantity+1 AS x |> EXTEND x*2 AS y",
+    ] {
+        for mutation in 0..8 {
+            let mut query = database.prepare(sql).unwrap();
+            let second = query.plan.computed[1].column;
+            match mutation {
+                0 => query.plan.computed[0].column = second,
+                1 => query.plan.computed[1].input = RelationId::SOURCE,
+                2 => query.plan.computed[0].span = ZERO_SPAN,
+                3 => query.plan.computed[0].span.end = u16::MAX,
+                4 => query.plan.computed[0].expression.ops[0] = Op::Column(second),
+                5 => query.plan.computed[0].expression.data_type = DataType::Int64,
+                6 => {
+                    query.plan.computed.pop();
+                }
+                7 => query.plan.projections[1] = query.plan.computed[0].column.identity(),
+                _ => unreachable!(),
             }
-            7 => query.plan.projections[1] = query.plan.computed[0].column.identity(),
-            _ => unreachable!(),
+            assert!(
+                validate(&query.plan).is_err(),
+                "computed mutation {mutation}"
+            );
         }
-        assert!(
-            validate(&query.plan).is_err(),
-            "computed mutation {mutation}"
-        );
     }
     println!(
         "computed storage Parsed={} Plan={} Computed={}",
@@ -1100,5 +1104,124 @@ fn exact_prepared_admission_and_concurrent_owners() {
             );
         });
         assert_eq!(db.reserved_memory_bytes(), db.path_memory_bytes());
+    }
+}
+
+#[test]
+fn extend_preserves_input_identity_ranges_and_input_only_alias_scope() {
+    let (_directory, db) = database(4_000_000);
+    let query = db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity AS q,t.l_quantity+1 n |> EXTEND n+1 AS m |> SELECT t.l_quantity,q,n,m").unwrap();
+    assert_eq!(query.result_column_count(), 4);
+    assert_eq!(query.plan.outputs[0].id, query.plan.outputs[1].id);
+    assert_ne!(query.plan.outputs[1].id, query.plan.outputs[2].id);
+    assert_ne!(query.plan.outputs[2].id, query.plan.outputs[3].id);
+    assert_eq!(query.plan.computed.len(), 2);
+    for (index, name) in ["l_quantity", "q", "n", "m"].into_iter().enumerate() {
+        assert_eq!(query.result_column(index).unwrap().name, Some(name));
+    }
+    let extended = db.prepare("FROM lineitem |> EXTEND l_quantity").unwrap();
+    assert_eq!(extended.result_column_count(), 8);
+    assert_eq!(extended.plan.outputs[0].id, extended.plan.outputs[7].id);
+    assert!(
+        db.prepare("FROM lineitem |> EXTEND l_quantity |> SELECT l_quantity")
+            .is_err()
+    );
+    let sibling = "FROM lineitem |> EXTEND l_quantity+1 AS n,n+1 AS m";
+    let Err(Error::Bind { span, .. }) = db.prepare(sibling) else {
+        panic!("a sibling alias cannot enter the input scope");
+    };
+    assert_eq!(&sibling[span.start()..span.end()], "n");
+    db.prepare("FROM lineitem |> SELECT l_quantity AS extend |> EXTEND extend+1 AS n")
+        .unwrap();
+    db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS n |> SELECT t.l_quantity,n")
+        .unwrap();
+    assert!(
+        db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS n |> SELECT t.n")
+            .is_err()
+    );
+    for unsupported in ["*", "SUM(l_quantity)", "1 OVER ()", "'text'"] {
+        assert!(
+            db.prepare(&format!("FROM lineitem |> EXTEND {unsupported}"))
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn extend_entries_are_syntax_bounded_and_validated_independently() {
+    let (_directory, db) = database(4_000_000);
+    let sql = "FROM lineitem |> EXTEND 1 AS a |> EXTEND 2 AS b |> EXTEND 3 AS c |> EXTEND 4 AS d |> EXTEND 5 AS e |> EXTEND 6 AS f |> EXTEND 7 AS g |> EXTEND 8 AS h |> EXTEND 9 AS i";
+    let query = db.prepare(sql).unwrap();
+    assert_eq!(query.result_column_count(), 16);
+    assert_eq!(
+        query.plan.projection_count, 9,
+        "inherited columns consume no new projection entries"
+    );
+    drop(query);
+    let widest = format!("FROM lineitem |> EXTEND {}", vec!["1"; 57].join(","));
+    assert_eq!(db.prepare(&widest).unwrap().result_column_count(), 64);
+    assert!(matches!(
+        db.prepare(&format!("{widest},1")),
+        Err(Error::Bind { .. })
+    ));
+    for mutation in 0..3 {
+        let mut query = db
+            .prepare("FROM lineitem |> EXTEND l_quantity+1 AS n")
+            .unwrap();
+        match mutation {
+            0 => query.plan.stages[0].columns -= 1,
+            1 => query.plan.stages[0].stage = Stage::Select { start: 0, len: 1 },
+            2 => query.plan.projections[0] = ColumnId::new(99),
+            _ => unreachable!(),
+        }
+        assert!(validate(&query.plan).is_err(), "EXTEND mutation {mutation}");
+    }
+}
+
+#[test]
+fn projection_preserves_nonreserved_operator_identifiers() {
+    let (_directory, db) = database(4_000_000);
+    for sql in [
+        "FROM lineitem |> SELECT l_returnflag AS aggregate |> SELECT aggregate",
+        "FROM lineitem |> EXTEND l_returnflag aggregate |> SELECT aggregate",
+    ] {
+        let query = db.prepare(sql).unwrap();
+        let column = query.result_column(0).unwrap();
+        assert_eq!(column.name, Some("aggregate"));
+        assert_eq!(column.data_type, DataType::String);
+    }
+}
+
+#[test]
+fn extend_prepared_admission_refuses_one_byte_short_and_releases_owners() {
+    let sql = "FROM lineitem AS t |> EXTEND t.l_quantity+1 AS x |> EXTEND x*2 AS y";
+    let (directory, db) = database(4_000_000);
+    let resident = db.reserved_memory_bytes();
+    let required = db.prepare(sql).unwrap().accounted_memory_bytes();
+    assert_eq!(db.reserved_memory_bytes(), resident);
+    db.close().unwrap();
+    for available in [required - 1, required] {
+        let limit = resident + available;
+        let db =
+            Database::open(&directory.database(), crate::Config::new(limit, 1).unwrap()).unwrap();
+        match db.prepare(sql) {
+            Ok(query) => {
+                assert_eq!(available, required);
+                assert_eq!(db.reserved_memory_bytes(), limit);
+                drop(query);
+            }
+            Err(Error::Resource {
+                required: need,
+                limit: actual,
+                ..
+            }) => {
+                assert_eq!(available, required - 1);
+                assert_eq!(need, resident + required);
+                assert_eq!(actual, limit);
+            }
+            Err(error) => panic!("unexpected admission failure: {error}"),
+        }
+        assert_eq!(db.reserved_memory_bytes(), resident);
+        db.close().unwrap();
     }
 }

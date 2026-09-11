@@ -89,6 +89,7 @@ separate from this query manifest.
 | `FROM (pipe_query) [AS alias]` | Uses the child query’s ordinary outputs as an independent input. A JOIN may also use this form. See [table subqueries](#table-subqueries) for scope and ordering. |
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
 | `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`. Star expansion and other scalar expressions remain unsupported. |
+| `EXTEND expression [[AS] alias], ...` | Appends columns using the same direct-reference and numeric-expression profile as SELECT. Preserves all input columns, their identities, ranges, and order. Star expansion, aggregate calls, window expressions, and other scalar forms remain unsupported. |
 | `WHERE name comparison constant` | Accepts `<`, `<=`, `=`, `!=`, `>=`, `>` over numeric, DATE or STRING columns and compatible constants. |
 | `WHERE name IS [NOT] NULL` | Tests a visible column, including a computed or aggregate output. IS NULL retains NULL values; IS NOT NULL retains non-NULL values, including zero, empty text and NaN. Both tests preserve column demand and input order. |
 | `WHERE` Boolean expression | Comparisons and NULL tests compose with NOT, AND, OR and parentheses. NOT binds above AND, which binds above OR. Each leaf consumes one normalized stage; inclusive BETWEEN consumes two. See the demand rules below. |
@@ -109,16 +110,16 @@ occurrences of the same identity cannot distinguish an earlier tie. Expressions,
 collations and legacy format-4 standalone sorting are rejected during
 preparation.
 
-Each order stage preserves the visible row and ranges. SELECT, WHERE, ORDER BY
+Each order stage preserves the visible row and ranges. SELECT, EXTEND, WHERE, ORDER BY
 and LIMIT may repeat before and after aggregation. Group columns precede
 aggregate entries in the aggregate output. Aggregation replaces the visible
 relation; earlier non-grouping source names are no longer available. A final
 SELECT is optional, and every accepted relational prefix is executable.
 
-Each SELECT resolves all names against its complete input before publishing any
+Each SELECT or EXTEND resolves all names against its complete input before publishing any
 alias. A column reference, including parentheses around it, retains its identity
 and implicit name. Numeric unary `+` retains identity but has no implicit name;
-other numeric computations receive fresh identities and are unnamed without AS.
+other numeric computations receive fresh identities and are unnamed without an alias.
 `ResultColumn.name` is None for an unnamed output. Such outputs remain in the
 row and can be used by ORDER BY ordinal, but cannot be referenced by name.
 Duplicate names are permitted in output and become a bind error when
@@ -126,8 +127,15 @@ subsequently referenced ambiguously, even if both names refer to the same
 identity. Dropped names disappear. An aggregate producer assigns new identities
 to aggregate outputs; their aliases and later positions are not their identity.
 
+EXTEND appends its expressions in written order after all input columns. Its
+aliases become visible to later stages, never to sibling expressions in the same
+list. An alias that duplicates an input name does not replace that input. Existing
+range variables retain their original members; an appended alias is an ordinary
+column name, not a new member of an earlier range. The 64-column relation limit
+includes inherited and appended columns.
+
 Direct references may use `range.column` in projections, predicates, numeric
-arguments and grouping keys. WHERE preserves ranges. SELECT and AGGREGATE remove
+arguments and grouping keys. WHERE and EXTEND preserve ranges. SELECT and AGGREGATE remove
 earlier ranges; a following AS names the resulting row. Duplicate range names
 are rejected. Duplicate member names are ambiguous even when their identities
 are equal.
@@ -421,7 +429,7 @@ establishes a bounded ordered list of binder-resolved column identities,
 directions, and effective NULL placements; display names and physical positions
 are not order keys. `LIMIT` observes order only when order is known at that
 point. Each operator has an explicit order-transfer rule. A nonanalytic
-`SELECT`, `WHERE` and `AS` preserve the complete incoming order. `JOIN` and
+`SELECT`, `EXTEND`, `WHERE` and `AS` preserve the complete incoming order. `JOIN` and
 ordinary `AGGREGATE` clear it; GROUP AND ORDER BY establishes its own key order.
 A later ORDER BY replaces the earlier ordered-key list. Rows tied on all
 declared keys have no promised relative order.
@@ -512,16 +520,16 @@ short-circuiting cannot selectively trust corrupt bytes in that block.
 
 ### Computed projection demand
 
-Numeric SELECT expressions extend the demand behavior of direct projections and
-aggregate results. A SELECT defines values; encountering its syntax does not
+Numeric SELECT and EXTEND expressions extend the demand behavior of direct projections and
+aggregate results. These operators define values; encountering its syntax does not
 force their evaluation.
 
-Within a consecutive sequence of nonanalytic SELECT, WHERE and AS stages, WHERE
+Within a consecutive sequence of nonanalytic SELECT, EXTEND, WHERE and AS stages, WHERE
 expressions run in written order. Each expression demands leaf dependencies
 under the Boolean rules above, only for rows retained by preceding WHERE stages.
 A rejected row does not demand later WHERE stages or remaining projected values.
 Surviving rows then demand the columns required by query output or the next
-consuming relational operator. Dependencies resolve against each SELECT's input
+consuming relational operator. Dependencies resolve against each projection's input
 scope; this rule does not make same-list aliases or later definitions visible.
 
 For example, on INT64 input `[1, 2]`, this query returns INT64_MAX:
@@ -551,14 +559,14 @@ required input value across these boundaries unless the rewrite preserves the
 documented values and failures.
 
 Aggregate output finalization remains demand-driven through the following
-SELECT/WHERE/AS sequence. In particular, replacing an INT64 output reference `s`
+SELECT/EXTEND/WHERE/AS sequence. In particular, replacing an INT64 output reference `s`
 with `s + 0` cannot force final SUM overflow in a group rejected by an earlier
 predicate that does not need `s`. Aggregate input arguments remain demanded
 under the existing aggregate rule, even when a later predicate rejects the
 group.
 
 Binding checks every projection expression's syntax, names, types and literal
-ranges, including unused expressions. Arithmetic inside a computed SELECT is
+ranges, including unused expressions. Arithmetic inside a computed projection is
 runtime work: an empty input or an unused result does not demand it, even for
 constant expressions. Existing preparation-time evaluation of WHERE and LIMIT
 constants is unchanged. Scalar operand evaluation and NULL behavior follow the
@@ -580,7 +588,7 @@ complete-or-absent.
 
 Arithmetic diagnostics use the complete numeric constant expression for
 preparation failures and the enclosing aggregate call for runtime argument or
-finalization failures. A computed SELECT operation uses its complete expression
+finalization failures. A computed projection operation uses its complete expression
 span, excluding an output alias. A failure in an aggregate supplying that
 expression retains the aggregate call's span. Call spans exclude output aliases.
 If demanded calls share argument evaluation, an argument failure names a

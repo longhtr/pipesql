@@ -33,7 +33,7 @@ const COLUMNS: [ColumnDeclaration<'static>; 3] = [
     },
 ];
 const AGGREGATE: &str = "FROM facts |> AGGREGATE SUM(amount) AS ignored, AVG(amount) AS ai, SUM(measure) AS total, AVG(measure) AS mean, COUNT(*) AS n |> SELECT total,mean,ai,n";
-const GROUPED: &str = "FROM facts |> SELECT note,amount+0 AS amount,measure |> AGGREGATE AVG(amount) AS ai,SUM(measure) AS total,AVG(measure) AS mean,COUNT(*) AS n,MIN(amount) AS amin,MAX(amount) AS amax,MIN(note) AS tmin,MAX(note) AS tmax GROUP AND ORDER BY note |> SELECT note,ai+0.0 AS ai,total+0.0 AS total,mean+0.0 AS mean,n+0 AS n,amin,amax,tmin,tmax";
+const GROUPED: &str = "FROM facts |> EXTEND amount+0 AS adjusted |> SELECT note,adjusted AS amount,measure |> AGGREGATE AVG(amount) AS ai,SUM(measure) AS total,AVG(measure) AS mean,COUNT(*) AS n,MIN(amount) AS amin,MAX(amount) AS amax,MIN(note) AS tmin,MAX(note) AS tmax GROUP AND ORDER BY note |> SELECT note,ai+0.0 AS ai,total+0.0 AS total,mean+0.0 AS mean,n+0 AS n,amin,amax,tmin,tmax";
 const DISTINCT: &str = "FROM facts |> SELECT note,amount |> DISTINCT";
 const REPEATED: &str = "FROM facts |> AGGREGATE COUNT(*) AS n GROUP BY note |> AGGREGATE SUM(n) AS subtotal GROUP BY n |> AGGREGATE SUM(subtotal) AS total,COUNT(*) AS distinct_sizes";
 fn consume_repeated(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(), Error> {

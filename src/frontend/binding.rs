@@ -673,6 +673,9 @@ impl Binder<'_, '_> {
             ParsedStage::Order { start, len } => self.bind_order(start, len)?,
             ParsedStage::Aggregate(aggregate) => self.bind_aggregate(aggregate)?,
             ParsedStage::Select { start, len } => self.bind_select(start, len, input)?,
+            ParsedStage::Extend { start, len, span } => {
+                self.bind_extend(start, len, input, span)?
+            }
             ParsedStage::WhereNull { column, negated } => Stage::Where(Filter {
                 column: self.resolve(column)?,
                 predicate: Predicate::IsNull { negated },
@@ -1031,6 +1034,43 @@ impl Binder<'_, '_> {
         }
         self.ranges.clear();
         Ok(Stage::Select { start, len })
+    }
+
+    fn bind_extend(
+        &mut self,
+        start: u8,
+        len: u8,
+        input: RelationId,
+        span: SourceSpan,
+    ) -> Result<Stage, Error> {
+        let inherited = usize::from(self.plan.output_count);
+        let count = inherited + usize::from(len);
+        if count > MAX_COLUMNS {
+            return Err(bind_error("EXTEND output limit exceeded", span));
+        }
+        let begin = usize::from(start);
+        let end = begin + usize::from(len);
+        let columns = self
+            .parsed
+            .projections
+            .get(begin..end)
+            .ok_or(Error::Corrupt("parsed EXTEND projection range"))?;
+        let mut next = self.plan.outputs;
+        // Resolve the complete list against the original input. Publishing an
+        // alias early would incorrectly allow a sibling expression to use it.
+        for (output, entry) in next[inherited..count].iter_mut().zip(columns) {
+            *output = self.bind_projection(entry, input)?;
+        }
+        for (id, output) in self.plan.projections[begin..end]
+            .iter_mut()
+            .zip(&next[inherited..count])
+        {
+            *id = output.id;
+        }
+        self.plan.outputs = next;
+        self.plan.output_count = count as u8;
+        // Existing range variables still describe their original columns.
+        Ok(Stage::Extend { start, len })
     }
 
     fn bind_projection(

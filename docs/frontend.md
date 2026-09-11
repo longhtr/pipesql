@@ -71,6 +71,13 @@ The `computed_definitions_reject_invalid_scope_identity_and_provenance` and
 `repeated_aggregate_binding_preserves_identity_and_transitive_demand` tests in
 [binding tests](../src/frontend/binding/tests.rs) exercise these distinctions.
 
+EXTEND uses the same expression binder but retains the input row. Follow
+`bind_extend` to see all new expressions bound before their names are published.
+`Stage::Extend` records only appended projection entries: inherited columns are
+read through its input relation. Repeated EXTEND stages therefore do not copy
+the growing row into the syntax-sized projection pool. The independent validator
+checks combined width and expression definitions against the original input.
+
 ## Bounds
 
 The shared token and stage budgets constrain the whole query. Individual limits

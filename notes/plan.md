@@ -30,7 +30,7 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
-## Next: EXTEND with the current expression profile
+## Active: EXTEND with the current expression profile
 
 Compact hash text storage is implemented and verified. The
 [comparison](evidence.md#compact-hash-text-storage) records the short-string
@@ -45,12 +45,38 @@ names, range visibility, and order semantics against the pinned GoogleSQL
 sources. Retain reduced independent cases for the accepted forms. Do not infer
 those rules solely from SELECT or introduce unrelated scalar functions.
 
+The pinned [analyzer fixtures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/analyzer/testdata/pipe_extend.test)
+confirm input-column preservation, direct-reference identity reuse, retained
+range variables, duplicate-name ambiguity, and sibling-alias rejection. Separate
+EXTEND stages can use earlier aliases. The pinned resolver retains input names;
+its ProjectScan definition propagates input ordering for nonanalytic projections.
+This is fixture and source evidence, not a newly executed upstream analyzer.
+Accept direct references and current numeric expressions, with explicit AS or
+bare aliases; keep aggregate/window calls and other scalar forms unsupported.
+
+Retain EXTEND as a contextual pipe word so existing identifiers named `extend`
+keep working. Add a semantic EXTEND stage that records only new projection
+entries and inherits its input columns. Expanding every inherited column into
+the projection pool would violate the existing syntax-sized admission bound.
+Bind all new expressions against the unchanged input scope, then append outputs
+without changing existing ranges. Independent validation must check the combined
+width and definitions against that original input. Reuse scalar lowering and
+demand propagation; no new execution controller is needed.
+
 Use the existing frontend, validated plan, and execution owners. Preserve
 original columns and demanded-error behavior through filtering, grouping,
 joins, sorting, and derived inputs. Bound output width and work; maintain exact
 diagnostic spans, resource admission, cancellation, and cleanup. Unsupported
 forms must fail explicitly. Add a short executable learning example and update
 the language manifest and reading path without duplicating their contracts.
+
+Implementation and focused checks now cover retained identity/ranges, typed
+NULLs and empty input, alias conflicts, exact-width and one-byte-short admission,
+independent validator mutations, demanded overflow spans, and cancellation
+through composed operators. The shared identifier regression also preserves
+STRING columns named `aggregate`. The executable SQL example reuses the declared
+table walkthrough. Remaining work is frozen macOS/Linux gate verification,
+compact evidence, final documentation reconciliation, commits, and cleanup.
 
 Complete focused semantic and failure checks, required frozen full verification
 on macOS and available GNU/Linux, documentation checks, and coherent local

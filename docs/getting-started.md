@@ -53,6 +53,38 @@ The CLI can open and query this database. Table declaration and typed append
 currently require the library; the CLI's `create` and `load` commands use the
 legacy `lineitem` schema.
 
+## Add columns while retaining the input
+
+Before removing the database, run [examples/extend.sql](../examples/extend.sql)
+through the CLI:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/extend.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+The first EXTEND keeps `region` and `amount` and appends `doubled`. The second
+can use that alias to compute `adjusted`. Each list resolves names against its
+input, so putting `doubled + 1` in the first list would fail preparation.
+The range `s` still names the original columns. The NULL amount produces NULL
+computed values, and the filter removes that row before sorting.
+
+The CLI reports schema, rows, and completion. Its decoded result is:
+
+| region | amount | doubled | adjusted |
+| --- | ---: | ---: | ---: |
+| north | 5 | 10 | 11 |
+| north | 10 | 20 | 21 |
+| south | 20 | 40 | 41 |
+
+Require `status=queried` and a successful process exit before accepting the
+result. To follow the implementation, start with `bind_extend` in the
+[binder](../src/frontend/binding.rs), then read the [projection demand
+rules](language.md#computed-projection-demand). The operator adds definitions;
+it does not allocate a new execution controller for each stage.
+
 ## Finish and clean up
 
 If the program reports an error, do not treat any printed rows as a complete

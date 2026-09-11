@@ -17,7 +17,7 @@ pub(crate) use validation::validate;
 
 const MAX_SOURCE_BYTES: usize = 4096;
 const MAX_TOKENS: usize = 160;
-// Each SELECT output consumes a name and a separator or stage prefix. Bound
+// Each explicit SELECT or EXTEND output consumes a name and a separator or stage prefix. Bound
 // total projection entries by syntax size, not row width times stage count.
 const MAX_PROJECTIONS: usize = MAX_TOKENS / 2;
 pub(crate) const MAX_ORDER_ITEMS: usize = MAX_TOKENS / 2;
@@ -548,6 +548,11 @@ pub(crate) enum Stage {
         start: u8,
         len: u8,
     },
+    // Only appended entries occupy the projection pool; input columns are inherited.
+    Extend {
+        start: u8,
+        len: u8,
+    },
     Where(Filter),
 }
 
@@ -602,6 +607,22 @@ impl RelationColumns<'_> {
                 | Stage::Where(_)
                 | Stage::Order { .. }
                 | Stage::Limit(_) => relation = node.input,
+                Stage::Extend { start, len } => {
+                    let inherited = self.plan.relation_columns(node.input).ok()?.len();
+                    if index < inherited {
+                        relation = node.input;
+                    } else {
+                        index -= inherited;
+                        if index >= usize::from(len) {
+                            return None;
+                        }
+                        return self
+                            .plan
+                            .projections
+                            .get(usize::from(start) + index)
+                            .copied();
+                    }
+                }
                 Stage::Select { start, len } => {
                     if index >= usize::from(len) {
                         return None;
@@ -926,9 +947,11 @@ impl Plan {
         while relation != RelationId::SOURCE {
             let node = self.node(relation)?;
             match node.stage {
-                Stage::Alias | Stage::Derived | Stage::Where(_) | Stage::Select { .. } => {
-                    relation = node.input
-                }
+                Stage::Alias
+                | Stage::Derived
+                | Stage::Where(_)
+                | Stage::Select { .. }
+                | Stage::Extend { .. } => relation = node.input,
                 Stage::Aggregate(_)
                 | Stage::Distinct(_)
                 | Stage::Source(_)
@@ -966,9 +989,11 @@ impl Plan {
         while relation != RelationId::SOURCE {
             let node = self.node(relation)?;
             match node.stage {
-                Stage::Alias | Stage::Select { .. } | Stage::Where(_) | Stage::Limit(_) => {
-                    relation = node.input
-                }
+                Stage::Alias
+                | Stage::Select { .. }
+                | Stage::Extend { .. }
+                | Stage::Where(_)
+                | Stage::Limit(_) => relation = node.input,
                 Stage::Order { start, len } => {
                     return Ok(self.order_items(start, len)?.get(index).copied());
                 }
@@ -1026,7 +1051,7 @@ impl Plan {
                         needed[key.column.value() as usize] = true;
                     }
                 }
-                Stage::Select { start, len } => {
+                Stage::Select { start, len } | Stage::Extend { start, len } => {
                     for id in self.projections
                         [usize::from(start)..usize::from(start) + usize::from(len)]
                         .iter()

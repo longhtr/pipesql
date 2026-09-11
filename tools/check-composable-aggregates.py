@@ -911,6 +911,56 @@ def check_text_null_and_boolean_filters(queries):
         )
 
 
+
+def check_extend(queries):
+    # The independently encoded rows have quantities 10, 20, 90 and flags A,A,B.
+    for label, sql, expected, database in [
+        (
+            "extend-original-range",
+            "FROM lineitem AS t |> EXTEND t.l_quantity+1 AS x"
+            " |> SELECT t.l_quantity,x",
+            [[encoded(v), encoded(v + 1)] for v in [10.0, 20.0, 90.0]],
+            "repeated",
+        ),
+        (
+            "extend-separate-aliases",
+            "FROM lineitem |> EXTEND l_quantity+1 x"
+            " |> EXTEND x*2 y |> SELECT y",
+            [[encoded(v)] for v in [22.0, 42.0, 182.0]],
+            "repeated",
+        ),
+        (
+            "extend-group-order",
+            "FROM lineitem |> AGGREGATE SUM(l_quantity) AS s"
+            " GROUP AND ORDER BY l_returnflag |> EXTEND s+1 AS x |> SELECT x",
+            [[encoded(31.0)], [encoded(91.0)]],
+            "repeated",
+        ),
+        (
+            "extend-hidden-overflow",
+            "FROM lineitem |> EXTEND l_quantity*1e308 AS x |> SELECT l_quantity",
+            [[encoded(v)] for v in [10.0, 20.0, 90.0]],
+            "repeated",
+        ),
+        (
+            "extend-empty",
+            "FROM lineitem |> EXTEND 9223372036854775807+1 AS x",
+            [],
+            "empty",
+        ),
+    ]:
+        queries.composed(label, sql, expected, database)
+    for expression in ["l_quantity AS x,x+1 AS y", "SUM(l_quantity)", "*"]:
+        call = queries.run("repeated", "FROM lineitem |> EXTEND " + expression)
+        assert call.returncode == 1 and not parse_rows(call.stdout), (
+            expression, call.stdout, call.stderr
+        )
+        queries.observations.append(
+            {"case": "extend-rejected-expression", "expression": expression,
+             "outcome": "refused"}
+        )
+
+
 def check_repeated_aggregation(queries):
     queries.composed(
         "average-of-group-sums",
@@ -1230,6 +1280,7 @@ def campaign(cli, work):
     check_numeric_failures(queries, work, encoder)
     check_derived_queries(queries, work, encoder)
     check_text_null_and_boolean_filters(queries)
+    check_extend(queries)
     check_repeated_aggregation(queries)
     check_post_aggregate_demand(queries, rows)
     check_stored_corruption_and_bits(queries, work, encoder, rows)

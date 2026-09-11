@@ -187,7 +187,11 @@ fn select_producer(
                         as u8,
                 }
             }
-            Stage::Alias | Stage::Derived | Stage::Select { .. } | Stage::Where(_) => {
+            Stage::Alias
+            | Stage::Derived
+            | Stage::Select { .. }
+            | Stage::Extend { .. }
+            | Stage::Where(_) => {
                 return Ok(None);
             }
             Stage::Empty => return Err(Error::Corrupt("empty producer")),

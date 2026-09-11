@@ -157,7 +157,7 @@ entry-to-state mapping to a demanded call; final SUM overflow uses the SUM
 entry's own source span. The mapping is resolved on failure, without per-row
 state, query-text reparsing or diagnostic fields in spill records.
 
-Computed numeric SELECT runs within the existing producer: each predicate
+Computed numeric SELECT and EXTEND run within the existing producer: each predicate
 requests its dependencies for surviving rows, followed by remaining output
 requirements. In particular, aggregate final values must remain available on
 demand until those predicates finish; a projection wrapper cannot first

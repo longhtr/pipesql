@@ -274,6 +274,8 @@ fn public_computed_cancellation_releases_source_and_consuming_owners() {
     let baseline = db.reserved_memory_bytes();
     for sql in [
         "FROM facts |> SELECT v+1 AS x |> WHERE x > 0",
+        "FROM facts |> EXTEND v+1 AS x |> WHERE x > 0",
+        "FROM facts AS f |> EXTEND v+1 AS x |> JOIN dimensions AS d ON f.k=d.k |> ORDER BY x |> AGGREGATE SUM(x) AS s |> EXTEND s+1 AS total",
         "FROM facts |> SELECT k+1 AS k,v+1 AS x |> ORDER BY x |> AGGREGATE SUM(x) AS s GROUP BY k |> SELECT s+1 AS x",
         "FROM facts |> SELECT k,v+1 AS v |> AS f |> JOIN dimensions AS d ON f.k=d.k |> SELECT f.v+1 AS x |> ORDER BY x |> LIMIT 3 |> SELECT x+1 AS y",
     ] {
@@ -307,4 +309,106 @@ fn public_computed_cancellation_releases_source_and_consuming_owners() {
             assert_eq!(db.reserved_temp_bytes(), 0);
         }
     }
+}
+
+#[test]
+fn extend_executes_through_projection_filters_groups_joins_and_derived_inputs() {
+    let (_directory, db) = join_fixture();
+    for (sql, expected) in [
+        (
+            "FROM facts |> EXTEND v*2 twice |> SELECT v,twice |> ORDER BY v",
+            vec![
+                vec![Cell::Integer(10), Cell::Integer(20)],
+                vec![Cell::Integer(20), Cell::Integer(40)],
+                vec![Cell::Integer(30), Cell::Integer(60)],
+                vec![Cell::Integer(40), Cell::Integer(80)],
+            ],
+        ),
+        (
+            "FROM facts |> EXTEND 9223372036854775807+1 AS bad |> SELECT v |> ORDER BY v",
+            integers(&[10, 20, 30, 40]),
+        ),
+        (
+            "FROM facts |> EXTEND k*9223372036854775807 AS bad |> WHERE k < 2 |> SELECT bad",
+            integers(&[i64::MAX, i64::MAX]),
+        ),
+        (
+            "FROM facts |> EXTEND 9223372036854775807+1 AS bad |> WHERE v < 0 |> SELECT bad",
+            vec![],
+        ),
+        (
+            "FROM facts AS f |> EXTEND v+1 AS n |> JOIN (FROM facts |> SELECT k,v) AS d ON f.k=d.k |> AGGREGATE SUM(n) AS total",
+            integers(&[95]),
+        ),
+        (
+            "FROM (FROM facts |> EXTEND v*2 AS twice) AS d |> WHERE d.twice > 40 |> SELECT d.v |> ORDER BY v",
+            integers(&[30, 40]),
+        ),
+        (
+            "FROM facts |> EXTEND v*2 AS twice |> AGGREGATE SUM(twice) AS s GROUP AND ORDER BY k |> EXTEND s+1 AS next |> SELECT next",
+            integers(&[81, 61, 61]),
+        ),
+        (
+            "FROM facts |> ORDER BY v DESC |> EXTEND v+1 AS next |> SELECT next",
+            integers(&[41, 31, 21, 11]),
+        ),
+        (
+            "FROM facts |> EXTEND k+1 AS next |> SELECT next |> ORDER BY next NULLS FIRST",
+            vec![
+                vec![Cell::Null],
+                vec![Cell::Integer(2)],
+                vec![Cell::Integer(2)],
+                vec![Cell::Integer(3)],
+            ],
+        ),
+    ] {
+        query(&db, sql, expected);
+    }
+    failure(
+        &db,
+        "FROM facts |> EXTEND v*9223372036854775807 AS bad |> SELECT bad",
+        "multiplication",
+        "v*9223372036854775807",
+    );
+}
+
+#[test]
+fn extend_retains_typed_values_nulls_and_original_range_members() {
+    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    query(
+        &db,
+        "FROM facts AS f |> EXTEND s AS text,d AS day |> ORDER BY id |> SELECT f.s,text,f.d,day",
+        vec![
+            vec![
+                Cell::Text("present".into()),
+                Cell::Text("present".into()),
+                Cell::Day(0),
+                Cell::Day(0),
+            ],
+            vec![Cell::Null, Cell::Null, Cell::Day(0), Cell::Day(0)],
+            vec![
+                Cell::Text("".into()),
+                Cell::Text("".into()),
+                Cell::Day(0),
+                Cell::Day(0),
+            ],
+            vec![
+                Cell::Text("é".into()),
+                Cell::Text("é".into()),
+                Cell::Null,
+                Cell::Null,
+            ],
+        ],
+    );
+    // The second expression resolves the original id, despite the new alias.
+    query(
+        &db,
+        "FROM facts |> EXTEND id+100 AS id,id+1 AS next |> SELECT next |> ORDER BY next",
+        integers(&[1, 2, 3, 4]),
+    );
+    query(
+        &db,
+        "FROM facts |> WHERE id < 0 |> EXTEND s AS text,d AS day",
+        vec![],
+    );
 }

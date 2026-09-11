@@ -48,7 +48,7 @@ those operations are outside the original stack contract.
 | `append.rs`, `snapshots.rs` | Append failure/drop, date admission, pinned generations, reopen, reclamation, and receipts. |
 | `aggregates.rs`, `grouping.rs`, `spooling.rs` | Global arithmetic and typed extrema, grouped keys, demanded errors, mixed typed results, and memory/disk output. |
 | `joins.rs`, `join_corpus.rs` | Join composition, snapshots, duplicate pairs, and the independent nullable-row oracle. |
-| `computed.rs`, `boolean.rs`, `text_filter.rs`, `null_predicate.rs` | Expression demand and scalar/predicate semantics. |
+| `computed.rs`, `boolean.rs`, `text_filter.rs`, `null_predicate.rs` | SELECT/EXTEND expression demand and scalar/predicate semantics. |
 | `order.rs`, `distinct.rs`, `limit.rs` | Materialization, complete-row equality, ordering, and prefix boundaries. |
 | `wide.rs` | Full-width schemas, late columns, repeated outputs, and scan admission. |
 
