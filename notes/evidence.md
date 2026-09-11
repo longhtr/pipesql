@@ -7,7 +7,7 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 12, 2026 (local time) complete gates for `9639b12` passed all 23
+The September 12, 2026 (local time) complete gates for `827cad5` passed all 23
 stages on macOS and GNU arm64 Linux. The macOS environment was arm64 Darwin 25.6.0, Rust 1.98.1,
 Python 3.14.7, and the native Apple toolchain. The Linux environment is identified
 below. Checks used release artifacts, offline locked dependencies, and
@@ -22,23 +22,22 @@ The seed-only graph command previously passed on both platforms; reuse of its
 output directory was rejected. Seed failure propagation and artifact identities
 have tooling regressions independent of engine execution.
 
-Rust suites executed 439 tests on each platform, with no failed or ignored
+Rust suites executed 454 tests on each platform, with no failed or ignored
 tests. Each suite also executed one selected lease subprocess, excluded from
 these totals. The twelve bounded-thread scenarios and their ordinary-thread
 counterparts passed on both targets. The independent native stack control and
 the Rust oversized-thread negative control passed. The public directory cleanup
 regression executed, including its isolated unwind control.
 
-Both gates used one frozen 662-file export containing 661 manifested inputs.
+Both gates used one frozen 663-file export containing 662 manifested inputs.
 All stage statuses were zero, before/after manifests matched across both runs,
 and finalization reported no errors and removed owned build targets. The frozen
 manifest SHA-256 is
-`1c71891d7a9e04f4ca5b8afd0b5bdeee2dda703433aecf503f9b244aff9061bd`.
+`56fe5841848f6efed996eb231aec967d4ac2706baec25abb46f7e39a355b3b73`.
 At that checkpoint, only the two notes files were finalized afterward. The
-other 659 manifested inputs have fingerprint
-`4be67091821b95426832627764db3f3e7290f784df20b71e7eb888a4a7f2c0ee`.
-This identifies that checkpoint; later example/documentation changes are
-qualified separately below. To fingerprint the currently checked-out inputs:
+other 660 manifested inputs have fingerprint
+`b0087231c7cef7c5ad444f12bce9579ccad484a51d315e69daf156a8de1a2e79`.
+To fingerprint the currently checked-out inputs:
 
 ```sh
 python3 -B tools/source-manifest.py | python3 -c 'import hashlib, sys; print(hashlib.sha256("".join(line for line in sys.stdin if not line.split("  ", 1)[1].startswith("notes/")).encode()).hexdigest())'
@@ -48,8 +47,8 @@ This fingerprint identifies maintained source, not reproducible binaries. Final
 documentation checks cover the finalized notes. The declared-table example ran
 on both platforms and printed `north total=15 rows=3 present=2` and
 `south total=20 rows=1 present=1`. The frontend walkthrough also produced its
-complete INT64 result, 38, on macOS. Gate stages took 1,559 seconds on macOS and
-877 seconds on Linux; these are verification costs, not query benchmarks.
+complete INT64 result, 38, on macOS. Gate stages took 1,558 seconds on macOS and
+774 seconds on Linux; these are verification costs, not query benchmarks.
 Raw successful logs and retired source exports are not required inputs; current
 callers and fixtures reconstruct the generated cases.
 
@@ -84,6 +83,54 @@ counts over empty and nonempty input while retaining COUNT(DISTINCT ...) refusal
 The [tutorial](../docs/getting-started.md) explains the different results of
 COUNT(*) and COUNT(nullable_column) using the maintained declared-table example.
 
+## Typed MIN and MAX
+
+The implementation through `827cad5` adds numeric-expression and direct
+STRING/DATE extrema to the existing global, grouped, repeated, and composed
+execution paths. The full gates above execute the regressions and allocation
+campaigns described here.
+
+The design follows Google's [MIN/MAX rules](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions#min)
+and [type ordering](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
+PipeSQL's signed-zero and NaN-payload choices are specified in the
+[language contract](../docs/language.md#current-declared-table-queries); they are not guarantees
+about other GoogleSQL implementations.
+
+The full gates cover empty/all-NULL input, empty text, Unicode ordering,
+typed DATE results, INT64 extremes, infinities, signed zeros, and first-NaN
+payload retention. Joined, derived, computed, and repeated legacy inputs pass.
+Global and grouped demanded-error tests place NaN in one input unit and an
+overflowing multiplication in a later unit: MIN/MAX still report the exact
+aggregate-call span. Hidden extrema do not introduce undemanded failures.
+
+The full-length text regression exercises memory grouping and forced disk
+fallback with 65,536-byte values, empty strings, Unicode, and all-NULL groups.
+It observes opened scratch storage and reduction, checks complete independent
+results, and verifies cancellation and exhausted temporary capacity without
+publishing unfinished groups. Every path releases its query-owned reservations.
+Capture/replay controls cover producer release, full byte arenas, shorter
+replacements, and group reuse. Independent controls reject incompatible slots,
+source domains, mask tails, and checksum-valid invalid UTF-8, lengths, NULL
+payloads, or DATE ranges.
+Two wide-row fixtures were expanded to remain above the enlarged temporary
+argument-record maximum; their boundary assertions remain intact.
+
+Admission checks compare constructed owners with their required bytes, including
+one-byte-shortfall refusal. Nine numeric extrema exposed an omitted capacity
+term; the repaired hash admission passes at 8,000, 32,000, 128,000, and 1,000,000
+available bytes. Legacy STRING extrema retain one-byte slots and pass global,
+two-key, and repeated aggregation under 2 MB. Declared STRING extrema reserve
+65,536 bytes per slot per group regardless of actual length. This is an accepted
+capacity cost for allocation-free replacement and explicit bounded fallback,
+not a compact-string or performance claim. Persistent formats are unchanged.
+
+The extended public allocation caller checks numeric and text extrema alongside
+its existing COUNT/SUM/AVG results. Both platform gates execute exactly 721
+allocation-refusal prefixes and the full healthy prefix on each short and
+384-byte path. The campaign ceiling increased from 710 to 800 to admit that
+control; it does not truncate the measured sweep. Refusal paths retain recovery,
+same-handle retry, complete-result, and release checks.
+
 ## Composed execution example
 
 [examples/composed.rs](../examples/composed.rs) constructs two rows per integer
@@ -102,10 +149,10 @@ release again. The source SHA-256 was
 
 | Platform | Configured memory bytes | Maximum sampled logical memory | Maximum sampled temporary bytes |
 | --- | ---: | ---: | ---: |
-| macOS | 12,000,000 | 7,570,914 | 1,263,448 |
-| macOS | 2,200,000 | 2,162,342 | 2,336,640 |
-| GNU/Linux | 12,000,000 | 7,570,817 | 1,263,448 |
-| GNU/Linux | 2,200,000 | 2,162,303 | 2,336,640 |
+| macOS | 12,000,000 | 7,571,276 | 1,263,448 |
+| macOS | 2,200,000 | 2,162,705 | 2,336,640 |
+| GNU/Linux | 12,000,000 | 7,571,173 | 1,263,448 |
+| GNU/Linux | 2,200,000 | 2,162,659 | 2,336,640 |
 
 The join and final sort use scratch even at the larger budget. These totals do
 not isolate grouping spills, count transferred bytes, bound physical memory, or
@@ -114,13 +161,12 @@ establish performance. A macOS negative control inserted
 results; the example rejected the changed multiplicity. Its temporary source,
 executable, and input were removed after the check.
 
-Verification included offline/locked release builds and warnings-denied Clippy
-for all examples on both platforms, formatting, 84 maintenance tests, 39
-independent fixtures, and documentation links. Engine, filesystem, test, tool,
-and dependency sources are unchanged from the full-gate checkpoint `9639b12`.
-Those gates and the composed-ownership campaign remain applicable to those
-unchanged sources; this is focused example verification, not a new full gate.
-No duplicate allocator harness or engine refactoring was needed.
+These observations use the current `827cad5` frozen source. Fresh executions of
+the declared-table example and both composed-example budgets pass on both
+platforms after the full gates. The example checks completion, cancellation,
+and release itself. Its owned databases, build targets, and container were
+removed afterward. The full gates cover warnings-denied Clippy for all examples,
+formatting, tooling tests, independent fixtures, and documentation links.
 
 ## Linux native verification
 
@@ -143,7 +189,7 @@ gate sets warnings-denied Rust and documentation flags. Keep database/output
 directories separate from a host-shared source mount.
 
 The September 12 run passed all 23 stages on the same frozen inputs described
-above. It executed 439 Rust tests, with no ignored tests and one
+above. It executed 454 Rust tests, with no ignored tests and one
 additional selected lease-subprocess execution. Both platforms passed 547 CLI
 allocation-prefix cases, 83 parser control/deny pairs, ambiguous publication
 resolving to aborted and durable outcomes, and closed/broken output sinks.
@@ -307,20 +353,23 @@ proposing a performance change; preserve PipeSQL's own semantic contracts.
 
 [The runnable example](../examples/grouping.rs) generates 8,192 declared-table
 rows across 4,096 integer keys. Each key occurs with amounts 1 and 3. It verifies
-every ordered key, count 2, and sum 4, requires successful completion, and checks
-that dropping the result restores the prepared-query reservation baseline.
+every ordered key, count 2, sum 4, minimum 1, and maximum 3. It requires
+successful completion and checks that dropping the result restores the
+prepared-query reservation baseline.
 [The walkthrough](../docs/getting-started.md#observe-grouping-with-less-memory)
 contains the fresh-input commands and cleanup instructions.
 
-Focused release runs on the macOS and GNU arm64 Linux environments above
-observed these logical database counters, sampled after query steps:
+Focused release runs of the extended MIN/MAX example on the macOS and GNU arm64
+Linux environments above observed these logical database counters, sampled after
+query steps. The example source SHA-256 was
+`4fe28dba8a1837f3ee24ad622dd8b01811d8c112551c3eefbd29ccc2ca2cc86a`.
 
 | Platform | Query memory limit | Maximum sampled memory | Maximum sampled temporary bytes |
 | --- | ---: | ---: | ---: |
-| macOS | 2,000,000 | 1,576,883 | 0 |
-| macOS | 1,200,000 | 1,162,145 | 803,016 |
-| GNU/Linux | 2,000,000 | 1,576,835 | 0 |
-| GNU/Linux | 1,200,000 | 1,162,043 | 803,016 |
+| macOS | 2,000,000 | 1,590,745 | 0 |
+| macOS | 1,200,000 | 1,166,088 | 803,016 |
+| GNU/Linux | 2,000,000 | 1,590,652 | 0 |
+| GNU/Linux | 1,200,000 | 1,166,064 | 803,016 |
 
 Both runs returned all 4,096 expected groups on each platform. Grouping supplies
 the requested order itself, so a separate ORDER BY operator cannot account for
