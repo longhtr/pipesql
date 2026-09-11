@@ -11,7 +11,7 @@ use crate::execution::runtime::Runtime;
 use crate::execution::scan::Source;
 use crate::execution::{BATCH_ROWS, QueryStep, RESULT_BYTES, State};
 use crate::frontend::Comparison;
-use crate::frontend::{DataType, FilterLiteral, MAX_COLUMNS, Predicate};
+use crate::frontend::{DataType, FilterLiteral, MAX_ROW_VALUES, Predicate};
 use crate::namespace::inspect_namespace;
 use crate::storage_format::{BlockDescriptor, RootState};
 use crate::{CancellationToken, Database, DateValue, Error, Value};
@@ -659,7 +659,7 @@ fn admission_before_io_and_physical_validation() {
         .unwrap();
         changed_predicate = *plan.scan().filters[0].predicate;
         match mutation {
-            0 => plan.scan_mut().column_count = MAX_COLUMNS + 1,
+            0 => plan.scan_mut().column_count = MAX_ROW_VALUES + 1,
             1 => plan.scan_mut().columns[0] = 3,
             2 => plan.scan_mut().filter_count = 0,
             3 => {

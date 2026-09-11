@@ -305,7 +305,7 @@ fn join_pipelines_bind_both_inputs_and_validate_positions_independently() {
         .unwrap();
         match mutation {
             0 => plan.pipelines[0].producer = Producer::Scan(1),
-            1 => plan.pipelines[1].column_count = MAX_COLUMNS + 1,
+            1 => plan.pipelines[1].column_count = MAX_ROW_VALUES + 1,
             2 => plan.pipelines[2].columns[0] = 1,
             3 => plan.pipelines[2].filters[0].column = 1,
             4 => plan.pipelines[2].relation = RelationId(u8::MAX),
@@ -338,7 +338,7 @@ fn join_pipelines_bind_both_inputs_and_validate_positions_independently() {
                     right_key: 0,
                 };
                 plan.pipelines[0].column_count = 0;
-                plan.pipelines[1].column_count = MAX_COLUMNS + 1;
+                plan.pipelines[1].column_count = MAX_ROW_VALUES + 1;
             }
             _ => unreachable!(),
         }
@@ -405,4 +405,103 @@ fn join_pipelines_bind_both_inputs_and_validate_positions_independently() {
     drop(plan);
     drop(query);
     database.close().unwrap();
+}
+
+#[test]
+fn retained_qualified_payloads_have_independent_identity_validation() {
+    let directory = Directory(
+        std::env::temp_dir().join(format!("pipesql-physical-retained-{}", std::process::id())),
+    );
+    let db = Database::create_empty(
+        &directory.0,
+        crate::Config::new(4_000_000, 2_000_000).unwrap(),
+    )
+    .unwrap();
+    db.declare_table(
+        "facts",
+        &["a", "b"].map(|name| crate::ColumnDeclaration {
+            name,
+            data_type: DataType::Int64,
+            nullable: false,
+        }),
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    let query = db
+        .prepare("FROM facts AS f |> DROP a |> ORDER BY b |> SELECT f.a")
+        .unwrap();
+    for mutation in 0..5 {
+        let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
+        let input = &mut plan.pipelines[0];
+        assert_eq!(input.column_count, 2);
+        assert_eq!(input.identities[0].value(), 2);
+        assert_eq!(input.identities[1].value(), 1);
+        match mutation {
+            0 => (),
+            1 => {
+                input.column_count = 1;
+                input.columns[1] = 0;
+                input.identities[1] = ColumnId::EMPTY;
+            }
+            2 => input.identities[1] = input.identities[0],
+            3 => input.columns[1] = input.columns[0],
+            4 => input.identities[1] = ColumnId::EMPTY,
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            validate_physical(&plan, &query, &db, RootState::Empty, 0).is_ok(),
+            mutation == 0,
+            "mutation {mutation}"
+        );
+    }
+}
+
+#[test]
+fn typed_copy_slots_preserve_fresh_identity_without_numeric_storage() {
+    let directory = Directory(
+        std::env::temp_dir().join(format!("pipesql-physical-copy-{}", std::process::id())),
+    );
+    let db = Database::create_empty(
+        &directory.0,
+        crate::Config::new(4_000_000, 2_000_000).unwrap(),
+    )
+    .unwrap();
+    db.declare_table(
+        "facts",
+        &[
+            crate::ColumnDeclaration {
+                name: "a",
+                data_type: DataType::Int64,
+                nullable: false,
+            },
+            crate::ColumnDeclaration {
+                name: "b",
+                data_type: DataType::String,
+                nullable: true,
+            },
+        ],
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    let query = db
+        .prepare("FROM facts AS f |> SET a=b |> ORDER BY a |> SELECT a,f.a")
+        .unwrap();
+    for mutation in 0..5 {
+        let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
+        let copy = query.plan.computed[0].column.identity();
+        assert_eq!(plan.pipelines[0].slots[copy.value() as usize], 1);
+        match mutation {
+            0 => (),
+            1 => plan.pipelines[0].slots[copy.value() as usize] = 0,
+            2 => plan.pipelines[0].slots[copy.value() as usize] = MAX_ROW_VALUES as u8,
+            3 => plan.pipelines[0].columns[0] = 0,
+            4 => plan.pipelines[1].columns[0] = 1,
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            validate_physical(&plan, &query, &db, RootState::Empty, 0).is_ok(),
+            mutation == 0,
+            "mutation {mutation}",
+        );
+    }
 }

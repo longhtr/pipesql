@@ -43,16 +43,28 @@ impl BindingBudget {
                 })
                 .ok_or(Error::Corrupt("prepared aggregate size overflow"))?
         };
-        let computed_count = parsed.projections[..usize::from(parsed.projection_count)]
-            .iter()
-            .filter(|entry| {
-                !(entry.expression.len == 1
-                    && matches!(
-                        parsed.numeric_ops[usize::from(entry.expression.start)],
-                        ParsedOp::Column(_)
-                    ))
-            })
-            .count();
+        let mut computed_count = 0;
+        for stage in &parsed.stages[..usize::from(parsed.len)] {
+            let (start, len, fresh) = match *stage {
+                ParsedStage::Set { start, len } => (start, len, true),
+                ParsedStage::Select { start, len } | ParsedStage::Extend { start, len, .. } => {
+                    (start, len, false)
+                }
+                _ => continue,
+            };
+            computed_count += parsed.projections
+                [usize::from(start)..usize::from(start) + usize::from(len)]
+                .iter()
+                .filter(|entry| {
+                    fresh
+                        || !(entry.expression.len == 1
+                            && matches!(
+                                parsed.numeric_ops[usize::from(entry.expression.start)],
+                                ParsedOp::Column(_)
+                            ))
+                })
+                .count();
+        }
         let computed_bytes = if computed_count == 0 {
             0
         } else {

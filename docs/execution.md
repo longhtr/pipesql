@@ -336,7 +336,7 @@ observed block passes its checksum before decoding. The stored key and DATE
 domains are checked on demanded values. Ingestion, key decoding and dense group
 indexing share the validated fixed-text type: ASCII space through tilde,
 excluding `|`. Source and aggregate output use the same typed batch owner. Each
-batch contains at most 64 columns and 256 rows, with a validity bitmap per
+batch contains at most 128 internal values and 256 rows, with a validity bitmap per
 column; its row count is published only after all demanded values are written.
 
 ### Scalar expression evaluation

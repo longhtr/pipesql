@@ -10,7 +10,7 @@ use crate::execution::COMPUTE_ROWS;
 use crate::execution::computed::{BatchLayout, BatchScratch};
 use crate::execution::planning::{PhysicalPlan, Pipeline};
 use crate::execution::predicate::BranchScratch;
-use crate::frontend::{DataType, MAX_COLUMNS, PreparedQuery};
+use crate::frontend::{DataType, MAX_COLUMNS, MAX_ROW_VALUES, PreparedQuery};
 use crate::namespace::UNITS_NAME;
 use crate::resources::allocate;
 use crate::storage_format;
@@ -231,8 +231,8 @@ pub(in crate::execution) fn admit<'db>(
         .table
         .ok_or(Error::Corrupt("catalog query table absent"))?;
     let demand = source.raw_demand()?;
-    let mut types = [DataType::Double; MAX_COLUMNS];
-    let mut text = [None; MAX_COLUMNS];
+    let mut types = [DataType::Double; MAX_ROW_VALUES];
+    let mut text = [None; MAX_ROW_VALUES];
     for (index, column) in source.output_columns(&query.plan).enumerate() {
         types[index] = column.data_type();
         if types[index] == DataType::String {
@@ -240,8 +240,8 @@ pub(in crate::execution) fn admit<'db>(
         }
     }
     let count = source.column_count;
-    let mut output_types = [DataType::Double; MAX_COLUMNS];
-    let mut output_text = [None; MAX_COLUMNS];
+    let mut output_types = [DataType::Double; MAX_ROW_VALUES];
+    let mut output_text = [None; MAX_ROW_VALUES];
     let mut output_count = 0;
     if let Some(output) = output {
         for column in output.output_columns(&query.plan) {

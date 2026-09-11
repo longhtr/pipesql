@@ -1,4 +1,5 @@
 use super::*;
+use crate::frontend::MAX_COLUMNS;
 
 #[test]
 fn controller_drives_native_replay_sort_reduction_and_private_publication() {

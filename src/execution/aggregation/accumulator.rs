@@ -9,8 +9,8 @@ use crate::Error;
 use crate::batch::Batch;
 use crate::execution::{BATCH_ROWS, MAX_AGGREGATE_ROWS};
 use crate::frontend::{
-    AggregateArgument, AggregateKind, AggregatePlan, DataType, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS,
-    SemanticColumn,
+    AggregateArgument, AggregateKind, AggregatePlan, DataType, MAX_AGGREGATE_COLUMNS,
+    MAX_ROW_VALUES, SemanticColumn,
 };
 use crate::resources::{MemoryAuthority, Reservation, allocate};
 use crate::scalar::ArithmeticFailure;
@@ -45,7 +45,7 @@ pub(super) struct AggregateState<'db> {
     pub(super) inputs: [Option<&'db AggregateArgument>; MAX_AGGREGATE_COLUMNS],
     pub(super) scratch: Vec<u64>,
     pub(super) lanes: usize,
-    pub(super) input_columns: [Option<SemanticColumn>; MAX_COLUMNS],
+    pub(super) input_columns: [Option<SemanticColumn>; MAX_ROW_VALUES],
     pub(super) states: usize,
     // Demanded aggregate entries with identical arguments share one state.
     // COUNT(*) and undemanded entries have no argument state (usize::MAX).
@@ -61,7 +61,7 @@ pub(super) struct AggregateLayout<'db> {
     plan: &'db AggregatePlan,
     demand: u16,
     pub(super) inputs: [Option<&'db AggregateArgument>; MAX_AGGREGATE_COLUMNS],
-    input_columns: [Option<SemanticColumn>; MAX_COLUMNS],
+    input_columns: [Option<SemanticColumn>; MAX_ROW_VALUES],
     pub(super) states: usize,
     entry_states: [usize; MAX_AGGREGATE_COLUMNS],
     value_slots: [u8; MAX_AGGREGATE_COLUMNS],
@@ -92,7 +92,7 @@ impl<'db> AggregateLayout<'db> {
     ) -> Self {
         let mut inputs: [Option<&AggregateArgument>; MAX_AGGREGATE_COLUMNS] =
             [None; MAX_AGGREGATE_COLUMNS];
-        let mut input_columns = [None; MAX_COLUMNS];
+        let mut input_columns = [None; MAX_ROW_VALUES];
         for (index, column) in columns.enumerate() {
             input_columns[index] = Some(column);
         }
@@ -563,7 +563,7 @@ impl<'db> AggregateState<'db> {
         if batch.is_empty() {
             return Ok(());
         }
-        let mut numeric = [None; MAX_COLUMNS];
+        let mut numeric = [None; MAX_ROW_VALUES];
         for (index, input) in self.input_columns.iter().enumerate() {
             if let Some(input) = input
                 && matches!(input.data_type(), DataType::Int64 | DataType::Double)

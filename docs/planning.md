@@ -31,7 +31,7 @@ limits and aggregates through those edges; native construction retains a
 separate cursor for each source occurrence. There is no cost optimizer. Declared
 grouping and equality joins reuse the external sorter.
 
-Order transfer follows `language.md`: nonanalytic SELECT, EXTEND, WHERE, AS and LIMIT
+Order transfer follows `language.md`: nonanalytic SELECT, EXTEND, SET, DROP, RENAME, WHERE, AS and LIMIT
 preserve the ordered-key list, including hidden identities; JOIN, DISTINCT and
 ordinary AGGREGATE clear it. Ordered grouping and standalone ORDER BY establish
 their declared keys. WHERE preservation is PipeSQL's explicit stronger
@@ -73,15 +73,24 @@ identities and producer-local positions. Transparent aliases, projections and
 filters fuse with their producer. Backwards demand retains join and ordering
 keys and needed aggregate arguments while omitting unused source payloads. Root
 projection preserves duplicate output entries; intermediate batches carry each
-demanded identity once.
+demanded identity once. A visible row has at most 64 columns. Qualified ranges
+can retain up to 64 original identities after SET or DROP, so intermediate
+pipelines, batches, and sorted rows admit up to 128 values. Native scan schemas
+and their demand masks remain limited to 64 source columns. The final result
+contains only the visible row.
 
 Computed numeric definitions form a bounded, acyclic graph over semantic
 identities. Each pipeline borrows that graph and maps identities to its raw
 producer positions or local computed slots. A materialized input maps to a raw
-position and is not recomputed across the boundary. Demand uses a fixed bitset
+position and is not recomputed across the boundary. Raw positions occupy slots
+0 through 127; higher slots identify numeric definitions. Typed SET copies
+receive fresh semantic identities but share the original value slot within a
+producer. After materialization, the copied identity has its own input position.
+Independent validation follows copy provenance only within the current producer.
+Demand uses a fixed bitset
 sized from the frontend identity ceiling, including fresh DISTINCT outputs and
 hidden keys. Repeated references never expand the graph into expression trees.
-Within each consecutive SELECT/EXTEND/WHERE/AS sequence, demand follows predicate order
+Within each consecutive sequence of projections, column transformations, WHERE and AS, demand follows predicate order
 and then surviving-row outputs, as specified in `language.md`. Column pruning
 alone is insufficient: the planner must preserve which rows demand a definition.
 A separate eager projection producer cannot force aggregate finalization before

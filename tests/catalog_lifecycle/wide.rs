@@ -264,3 +264,50 @@ fn check_complete_declared_schema(small_stack: bool) {
         .unwrap();
     worker.join().unwrap();
 }
+
+#[test]
+fn ordering_retains_original_values_beyond_visible_row_width() {
+    let directory = Directory::new();
+    let cancel = CancellationToken::new();
+    let db = Database::create_empty(
+        &directory.database(),
+        Config::new(64_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    let names: Vec<_> = (0..64).map(|index| format!("c{index}")).collect();
+    let columns: Vec<_> = names
+        .iter()
+        .map(|name| ColumnDeclaration {
+            name,
+            data_type: DataType::Int64,
+            nullable: false,
+        })
+        .collect();
+    db.declare_table("wide", &columns, &cancel).unwrap();
+    let values = [2, 1];
+    let inputs: Vec<_> = names
+        .iter()
+        .map(|_| ColumnInput {
+            values: ColumnValues::Int64(&values),
+            validity: &[3],
+        })
+        .collect();
+    let mut append = db
+        .begin_append(
+            "wide",
+            AppendLimits {
+                batches: 1,
+                encoded_bytes: 100_000,
+            },
+            &cancel,
+        )
+        .unwrap();
+    append.write(&inputs, &cancel).unwrap();
+    append.commit(&cancel).unwrap();
+    // Sorting needs all 64 visible keys plus the original c0 requested later.
+    let sql = format!(
+        "FROM wide AS w |> SET c0=c0+1 |> ORDER BY {} |> SELECT w.c0",
+        names.join(",")
+    );
+    order::query(&db, &sql, order::integers(&[1, 2]));
+}

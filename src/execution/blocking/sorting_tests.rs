@@ -332,7 +332,7 @@ fn wide_rows_sort_by_key_without_losing_nonkey_payloads() {
     )
     .unwrap();
     let baseline = database.reserved_memory_bytes();
-    let mut types = [DataType::Int64; MAX_COLUMNS];
+    let mut types = [DataType::Int64; MAX_ROW_VALUES];
     types[0] = DataType::String;
     types[1] = DataType::Double;
     types[2] = DataType::Date;
@@ -354,7 +354,7 @@ fn wide_rows_sort_by_key_without_losing_nonkey_payloads() {
         3,
     )
     .unwrap();
-    assert_eq!(layout.count, MAX_COLUMNS);
+    assert_eq!(layout.count, MAX_ROW_VALUES);
     assert_eq!(layout.key_count, 1);
     let record_bytes = RECORD_HEADER + layout.max_bytes;
     assert!(record_bytes > MAX_ARGUMENT_RECORD_BYTES);
@@ -399,7 +399,7 @@ fn wide_rows_sort_by_key_without_losing_nonkey_payloads() {
     };
     for row in 0..keys.len() {
         batch.clear();
-        for column in 0..MAX_COLUMNS {
+        for column in 0..MAX_ROW_VALUES {
             batch.set(0, column, value(row, column)).unwrap();
         }
         batch.publish_rows(1);
@@ -442,7 +442,7 @@ fn wide_rows_sort_by_key_without_losing_nonkey_payloads() {
             )
             .unwrap();
         assert_eq!(cursor.record.ordinal(), row as u64);
-        for stored in 0..MAX_COLUMNS {
+        for stored in 0..MAX_ROW_VALUES {
             let original = match stored {
                 0 => 3,
                 3 => 0,

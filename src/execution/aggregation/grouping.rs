@@ -16,7 +16,7 @@ use crate::execution::{BATCH_ROWS, COMPUTE_ROWS, ConsumerInput, ConsumerStep, MA
 
 #[cfg(test)]
 use crate::frontend::AggregateKind;
-use crate::frontend::{AggregatePlan, DataType, MAX_COLUMNS, SemanticColumn, SourceColumn};
+use crate::frontend::{AggregatePlan, DataType, MAX_ROW_VALUES, SemanticColumn, SourceColumn};
 use crate::frontend::{Direction, NullPlacement};
 use crate::resources::{Reservation, allocate};
 use crate::storage_format;
@@ -36,7 +36,7 @@ pub(super) fn key_layout(
         nullable: false,
         direction: Direction::Ascending,
         nulls: NullPlacement::First,
-    }; MAX_COLUMNS];
+    }; MAX_ROW_VALUES];
     let count = usize::from(plan.group_count);
     if count == 0 || count > MAX_KEYS {
         return Err(Error::Corrupt("general group key count"));
@@ -111,7 +111,7 @@ enum Phase {
 }
 
 struct OutputLayout {
-    columns: [(DataType, bool); MAX_COLUMNS],
+    columns: [(DataType, bool); MAX_ROW_VALUES],
     count: usize,
     max_bytes: usize,
     tag: u32,
@@ -125,16 +125,16 @@ impl OutputLayout {
         aggregate: &AggregateState<'_>,
     ) -> Result<Self, Error> {
         let count = plan.column_count;
-        if !(1..=MAX_COLUMNS).contains(&count) {
+        if !(1..=MAX_ROW_VALUES).contains(&count) {
             return Err(Error::Corrupt("group result width"));
         }
-        let mut columns = [(DataType::Int64, false); MAX_COLUMNS];
+        let mut columns = [(DataType::Int64, false); MAX_ROW_VALUES];
         for (index, output) in columns[..count].iter_mut().enumerate() {
             let column = usize::from(plan.columns[index]);
-            *output = if column >= MAX_COLUMNS {
+            *output = if column >= MAX_ROW_VALUES {
                 let definition = plan
                     .computed
-                    .get(column - MAX_COLUMNS)
+                    .get(column - MAX_ROW_VALUES)
                     .ok_or(Error::Corrupt("computed group result slot"))?;
                 (definition.column.data_type(), definition.column.nullable())
             } else if column < keys.count {
@@ -159,12 +159,15 @@ impl OutputLayout {
         Self::from_columns(columns, count)
     }
 
-    fn from_columns(columns: [(DataType, bool); MAX_COLUMNS], count: usize) -> Result<Self, Error> {
-        if !(1..=MAX_COLUMNS).contains(&count) {
+    fn from_columns(
+        columns: [(DataType, bool); MAX_ROW_VALUES],
+        count: usize,
+    ) -> Result<Self, Error> {
+        if !(1..=MAX_ROW_VALUES).contains(&count) {
             return Err(Error::Corrupt("group result width"));
         }
         let mut bytes = RECORD_HEADER;
-        let mut descriptor = [0_u8; 1 + MAX_COLUMNS * 2];
+        let mut descriptor = [0_u8; 1 + MAX_ROW_VALUES * 2];
         descriptor[0] = count as u8;
         for (index, output) in columns[..count].iter().enumerate() {
             let (tag, width) = match output.0 {
@@ -308,10 +311,10 @@ impl<'db> General<'db> {
         input_columns: impl Iterator<Item = SemanticColumn>,
         output_columns: impl Iterator<Item = SemanticColumn>,
     ) -> Result<Admission<'db>, Error> {
-        let mut inputs = [SourceColumn::QUANTITY.semantic(); MAX_COLUMNS];
+        let mut inputs = [SourceColumn::QUANTITY.semantic(); MAX_ROW_VALUES];
         let mut count = 0;
         for column in input_columns {
-            if count == MAX_COLUMNS {
+            if count == MAX_ROW_VALUES {
                 return Err(Error::Corrupt("group input width"));
             }
             inputs[count] = column;
@@ -321,10 +324,10 @@ impl<'db> General<'db> {
         let layout = AggregateLayout::new(semantic, demand, inputs[..count].iter().copied());
         let shape =
             ArgumentShape::from_inputs(&layout.inputs[..layout.states], layout.count_only_states());
-        let mut columns = [(DataType::Int64, false); MAX_COLUMNS];
+        let mut columns = [(DataType::Int64, false); MAX_ROW_VALUES];
         let mut output_count = 0;
         for column in output_columns {
-            if output_count == MAX_COLUMNS {
+            if output_count == MAX_ROW_VALUES {
                 return Err(Error::Corrupt("group result width"));
             }
             columns[output_count] = (column.data_type(), column.nullable());

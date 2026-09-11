@@ -1,6 +1,6 @@
 //! Shared sorter fixtures; platform-specific tests own their own target guards.
 use super::{KeyColumn, RowLayout};
-use crate::frontend::{DataType, Direction, MAX_COLUMNS, NullPlacement};
+use crate::frontend::{DataType, Direction, MAX_ROW_VALUES, NullPlacement};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -32,7 +32,7 @@ pub(in crate::execution) fn schema(specs: &[(DataType, bool)]) -> RowLayout {
         nullable: false,
         direction: Direction::Ascending,
         nulls: NullPlacement::First,
-    }; MAX_COLUMNS];
+    }; MAX_ROW_VALUES];
     let mut max_bytes = 0;
     for (index, (kind, nullable)) in specs.iter().copied().enumerate() {
         columns[index] = KeyColumn {

@@ -18,7 +18,7 @@ preparation](frontend.md#trace-a-query-through-preparation). Keep the
 corresponding source open as you read: follow `bind_plan` into
 `Binder::bind_stage`, then inspect one projection or aggregate operation. The
 example connects SQL names to typed column identities before introducing the
-compact plan representation. Try the [EXTEND example](getting-started.md#add-columns-while-retaining-the-input)
+compact plan representation. Try the [EXTEND example](getting-started.md#transform-columns-while-retaining-the-original-values)
 to follow preserved columns, new definitions, and alias scope.
 
 Continue with [Planning](planning.md) for demanded inputs and the producer

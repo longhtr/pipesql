@@ -5,7 +5,7 @@ use crate::effects::Effects;
 use crate::execution::computed::RowValues;
 use crate::execution::planning::{self, Pipeline};
 use crate::execution::{ConsumerInput, ConsumerStep};
-use crate::frontend::{Direction, MAX_COLUMNS, NullPlacement, SemanticColumn};
+use crate::frontend::{Direction, MAX_ROW_VALUES, NullPlacement, SemanticColumn};
 use crate::resources::{Reservation, allocate};
 use crate::value::Value;
 use crate::{CancellationToken, Database, Error};
@@ -41,10 +41,10 @@ impl<'db> Order<'db> {
         inputs: impl Iterator<Item = SemanticColumn> + Clone,
     ) -> Result<Vec<Self>, Error> {
         let count = inputs.clone().count();
-        if count == 0 || count > MAX_COLUMNS {
+        if count == 0 || count > MAX_ROW_VALUES {
             return Err(Error::Corrupt("DISTINCT input width"));
         }
-        let keys = std::array::from_fn::<_, MAX_COLUMNS, _>(|column| planning::OrderColumn {
+        let keys = std::array::from_fn::<_, MAX_ROW_VALUES, _>(|column| planning::OrderColumn {
             column: column as u8,
             direction: Direction::Ascending,
             nulls: NullPlacement::First,

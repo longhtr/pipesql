@@ -86,7 +86,7 @@ reuse row counts, so Q1 needs no integer storage or nullable counters. The
 expression stack depth times admitted lanes times eight bytes determines scratch
 payload. Zero numeric states require no scratch. Lanes shrink to one before
 typed refusal. The scalar call also uses 1,024 fixed stack bytes for 32 validity
-bitmaps, plus its type stack. At most 64 borrowed numeric-input descriptors
+bitmaps, plus its type stack. At most 128 borrowed numeric-input descriptors
 carry identity, payload and validity references; they allocate nothing and die
 after consumption. The result carries four validity words and borrows the
 existing scratch payload.
@@ -124,6 +124,12 @@ graph. Unused source columns allocate no payload buffers. Earlier layout
 measurements are retained in the [semantic-input
 study](../notes/evidence.md#query-semantics-and-accepted-costs); they do not
 measure the current physical plan or establish allocator/RSS bounds.
+
+Intermediate batches and row layouts admit up to 128 values: at most 64 visible
+columns and 64 original values retained by qualified ranges. Actual batch charges
+follow demanded types and widths; native source buffers still follow the 64-column
+schema bound. Slot, layout, and scratch arrays use the larger internal capacity
+and remain included in their owners' charges.
 
 Result steps reuse admitted data buffers. Bounded native-unit and scratch
 pathname construction may allocate from memory reserved before execution. All

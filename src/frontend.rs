@@ -5,6 +5,9 @@ mod lexer;
 mod parser;
 mod validation;
 
+mod column_set;
+pub(crate) use column_set::ColumnSet;
+
 use crate::date::DateValue;
 use crate::resources::Reservation;
 use crate::scalar::{Expression, Op};
@@ -27,6 +30,9 @@ const MAX_NAME_BYTES: usize = 32;
 const PREPARED_ALLOCATION_ALLOWANCE: usize = 4096;
 pub(crate) const MAX_STAGES: usize = 16;
 pub(crate) const MAX_COLUMNS: usize = crate::catalog_schema::MAX_COLUMNS;
+// A producer can carry the visible row plus original values retained by ranges.
+// Source schemas and public result rows remain bounded by MAX_COLUMNS.
+pub(crate) const MAX_ROW_VALUES: usize = MAX_COLUMNS * 2;
 pub(crate) const MAX_AGGREGATE_COLUMNS: usize = 10;
 const _: () = assert!(MAX_AGGREGATE_COLUMNS < u16::BITS as usize);
 
@@ -548,6 +554,15 @@ pub(crate) enum Stage {
         start: u8,
         len: u8,
     },
+    Rename,
+    Set {
+        start: u8,
+        len: u8,
+    },
+    // Bit i retains visible input position i; the input row has at most 64 columns.
+    Drop {
+        keep: u64,
+    },
     // Only appended entries occupy the projection pool; input columns are inherited.
     Extend {
         start: u8,
@@ -603,10 +618,32 @@ impl RelationColumns<'_> {
             let node = self.plan.node(relation).ok()?;
             match node.stage {
                 Stage::Alias
+                | Stage::Rename
                 | Stage::Derived
                 | Stage::Where(_)
                 | Stage::Order { .. }
                 | Stage::Limit(_) => relation = node.input,
+                Stage::Drop { mut keep } => {
+                    for _ in 0..index {
+                        keep &= keep.checked_sub(1)?;
+                    }
+                    if keep == 0 {
+                        return None;
+                    }
+                    index = keep.trailing_zeros() as usize;
+                    relation = node.input;
+                }
+                Stage::Set { start, len } => {
+                    let end = usize::from(start) + usize::from(len);
+                    let assignments = self.plan.assignments.get(usize::from(start)..end)?;
+                    if let Some(assignment) = assignments
+                        .iter()
+                        .find(|entry| usize::from(entry.position) == index)
+                    {
+                        return Some(assignment.column);
+                    }
+                    relation = node.input;
+                }
                 Stage::Extend { start, len } => {
                     let inherited = self.plan.relation_columns(node.input).ok()?.len();
                     if index < inherited {
@@ -668,6 +705,20 @@ impl RelationColumns<'_> {
         (0..self.len()).map(move |index| self.get(index).expect("validated relation output"))
     }
 
+    fn identity_set(self) -> Result<ColumnSet, Error> {
+        let mut set = ColumnSet::EMPTY;
+        for index in 0..self.len() {
+            let id = self
+                .get(index)
+                .ok_or(Error::Corrupt("relation output absent"))?;
+            if id.value() == 0 || id.value() as usize > MAX_QUERY_COLUMNS {
+                return Err(Error::Corrupt("relation identity outside plan"));
+            }
+            set.insert(id);
+        }
+        Ok(set)
+    }
+
     pub(crate) fn contains(self, id: ColumnId) -> bool {
         self.iter().any(|column| column == id)
     }
@@ -692,10 +743,82 @@ pub(crate) const MAX_COMPUTED: usize = MAX_PROJECTIONS;
 pub(crate) const MAX_QUERY_COLUMNS: usize =
     MAX_COLUMNS + MAX_COMPUTED + MAX_AGGREGATE_COLUMNS + MAX_STAGES * MAX_COLUMNS;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SetAssignment {
+    column: ColumnId,
+    position: u8,
+}
+
+impl SetAssignment {
+    const EMPTY: Self = Self {
+        column: ColumnId::EMPTY,
+        position: 0,
+    };
+}
+
+// Inline programs keep one admitted descriptor allocation; boxing each numeric
+// expression would add another fallible owner per assignment.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum Computation {
+    Copy(SemanticColumn),
+    Numeric(Expression),
+}
+
+impl Computation {
+    pub(crate) fn columns(&self) -> impl Iterator<Item = SemanticColumn> {
+        let (copy, expression) = match self {
+            Self::Copy(column) => (Some(*column), None),
+            Self::Numeric(expression) => (None, Some(expression)),
+        };
+        copy.into_iter()
+            .chain(expression.into_iter().flat_map(|expression| {
+                expression.ops[..usize::from(expression.len)]
+                    .iter()
+                    .filter_map(|op| {
+                        if let Op::Column(column) = op {
+                            Some(*column)
+                        } else {
+                            None
+                        }
+                    })
+            }))
+    }
+
+    pub(crate) fn numeric(&self) -> Result<&Expression, Error> {
+        match self {
+            Self::Numeric(expression) => Ok(expression),
+            Self::Copy(_) => Err(Error::Corrupt("typed copy reached a numeric kernel")),
+        }
+    }
+
+    fn data_type(&self) -> DataType {
+        match self {
+            Self::Copy(column) => column.data_type(),
+            Self::Numeric(expression) => expression.data_type,
+        }
+    }
+
+    fn nullable(&self) -> bool {
+        match self {
+            Self::Copy(column) => column.nullable(),
+            Self::Numeric(expression) => expression.nullable(),
+        }
+    }
+
+    fn validate(&self, available: &[SemanticColumn]) -> Result<(), Error> {
+        match self {
+            Self::Copy(column) if available.contains(column) => Ok(()),
+            Self::Copy(_) => Err(Error::Corrupt("copy input outside scope")),
+            Self::Numeric(expression) => expression.validate(available),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Computed {
     pub(crate) column: SemanticColumn,
-    pub(crate) expression: Expression,
+    pub(crate) expression: Computation,
     pub(crate) span: SourceSpan,
     pub(crate) input: RelationId,
 }
@@ -710,6 +833,9 @@ pub(crate) struct Plan {
     catalog_columns: [u32; MAX_COLUMNS],
     source_count: u8,
     stages: [Node; MAX_STAGES],
+    range_columns: [ColumnSet; MAX_STAGES + 1],
+    assignments: [SetAssignment; MAX_PROJECTIONS],
+    assignment_count: u8,
     count: u8,
     projections: [ColumnId; MAX_PROJECTIONS],
     projection_count: u8,
@@ -728,6 +854,10 @@ pub(crate) struct OwnedPlan {
 }
 
 impl OwnedPlan {
+    fn as_mut(&mut self) -> &mut Plan {
+        &mut self.values[0]
+    }
+
     fn new(plan: Plan, limit: u64) -> Result<Self, Error> {
         let mut values = Vec::new();
         values.try_reserve_exact(1).map_err(|_| Error::Resource {
@@ -924,6 +1054,14 @@ impl Plan {
         Ok(node)
     }
 
+    pub(crate) fn available_columns(&self, relation: RelationId) -> Result<ColumnSet, Error> {
+        let columns = *self
+            .range_columns
+            .get(usize::from(relation.0))
+            .ok_or(Error::Corrupt("range scope outside plan"))?;
+        Ok(columns | self.relation_columns(relation)?.identity_set()?)
+    }
+
     pub(crate) fn relation_columns(
         &self,
         relation: RelationId,
@@ -948,10 +1086,13 @@ impl Plan {
             let node = self.node(relation)?;
             match node.stage {
                 Stage::Alias
+                | Stage::Rename
+                | Stage::Drop { .. }
                 | Stage::Derived
                 | Stage::Where(_)
                 | Stage::Select { .. }
-                | Stage::Extend { .. } => relation = node.input,
+                | Stage::Extend { .. }
+                | Stage::Set { .. } => relation = node.input,
                 Stage::Aggregate(_)
                 | Stage::Distinct(_)
                 | Stage::Source(_)
@@ -990,8 +1131,11 @@ impl Plan {
             let node = self.node(relation)?;
             match node.stage {
                 Stage::Alias
+                | Stage::Rename
+                | Stage::Drop { .. }
                 | Stage::Select { .. }
                 | Stage::Extend { .. }
+                | Stage::Set { .. }
                 | Stage::Where(_)
                 | Stage::Limit(_) => relation = node.input,
                 Stage::Order { start, len } => {
@@ -1063,12 +1207,23 @@ impl Plan {
                                 .iter()
                                 .find(|definition| definition.column.identity() == *id)
                         {
-                            for op in
-                                &definition.expression.ops[..usize::from(definition.expression.len)]
-                            {
-                                if let Op::Column(column) = op {
-                                    needed[column.identity().value() as usize] = true;
-                                }
+                            for column in definition.expression.columns() {
+                                needed[column.identity().value() as usize] = true;
+                            }
+                        }
+                    }
+                }
+                Stage::Set { start, len } => {
+                    for assignment in
+                        &self.assignments[usize::from(start)..usize::from(start) + usize::from(len)]
+                    {
+                        if needed[assignment.column.value() as usize]
+                            && let Some(definition) = self.computed.iter().find(|definition| {
+                                definition.column.identity() == assignment.column
+                            })
+                        {
+                            for column in definition.expression.columns() {
+                                needed[column.identity().value() as usize] = true;
                             }
                         }
                     }

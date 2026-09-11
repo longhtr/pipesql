@@ -1,7 +1,7 @@
 //! Bounded numeric programs shared by binding and execution.
 #[cfg(test)]
 use crate::frontend::SourceColumn;
-use crate::frontend::{DataType, MAX_COLUMNS, SemanticColumn};
+use crate::frontend::{DataType, MAX_ROW_VALUES, SemanticColumn};
 use crate::{Error, SourceSpan};
 use std::ops::Range;
 
@@ -262,7 +262,7 @@ impl Expression {
     ) -> Result<NumericOutput<'scratch>, ArithmeticFailure> {
         assert!(range.start < range.end && range.end <= MAX_ROWS);
         let rows = range.end - range.start;
-        assert!(columns.len() <= MAX_COLUMNS && scratch.len() / rows >= self.stack_depth());
+        assert!(columns.len() <= MAX_ROW_VALUES && scratch.len() / rows >= self.stack_depth());
         for (index, input) in columns.iter().enumerate() {
             if let Some(input) = input {
                 assert!(range.end <= input.len(), "scalar input extent");

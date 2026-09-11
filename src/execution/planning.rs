@@ -12,7 +12,7 @@ pub(super) use validate::validate_physical;
 
 use super::predicate::PhysicalFilter;
 use crate::frontend::{
-    self, ColumnId, Computed, Direction, MAX_COLUMNS, MAX_ORDER_ITEMS, MAX_QUERY_COLUMNS,
+    self, ColumnId, Computed, Direction, MAX_ORDER_ITEMS, MAX_QUERY_COLUMNS, MAX_ROW_VALUES,
     MAX_STAGES, NullPlacement, PreparedQuery, RelationId, SemanticColumn, Stage,
 };
 use crate::resources::Reservation;
@@ -93,12 +93,12 @@ pub(super) struct Pipeline<'query> {
     end: RelationId,
     pub(super) filters: [PhysicalFilter<'query>; MAX_STAGES],
     pub(super) filter_count: usize,
-    pub(super) columns: [u8; MAX_COLUMNS],
+    pub(super) columns: [u8; MAX_ROW_VALUES],
     pub(super) column_count: usize,
-    identities: [ColumnId; MAX_COLUMNS],
+    identities: [ColumnId; MAX_ROW_VALUES],
     pub(super) computed: &'query [Computed],
     // Indexed by semantic ColumnId; u8::MAX means the identity is not demanded.
-    // Raw producer positions are below MAX_COLUMNS; higher slots name shared
+    // Raw producer positions are below MAX_ROW_VALUES; higher slots name shared
     // definitions. Materialized definitions map to raw input positions instead.
     pub(super) slots: [u8; MAX_QUERY_COLUMNS + 1],
 }
@@ -236,6 +236,9 @@ fn pipeline_end(plan: &frontend::Plan, mut relation: RelationId) -> RelationId {
             && matches!(
                 node.stage,
                 Stage::Alias
+                    | Stage::Rename
+                    | Stage::Set { .. }
+                    | Stage::Drop { .. }
                     | Stage::Derived
                     | Stage::Select { .. }
                     | Stage::Extend { .. }

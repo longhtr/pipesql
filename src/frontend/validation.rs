@@ -1,9 +1,9 @@
 //! Independent semantic-plan validation. Does not call the parser or binder.
 use super::{
-    AggregateArgument, AggregateKind, ColumnId, DataType, Error, Group, MAX_AGGREGATE_COLUMNS,
-    MAX_COLUMNS, MAX_COMPUTED, MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_QUERY_COLUMNS,
-    MAX_SOURCE_BYTES, MAX_STAGES, Name, Node, OrderKey, Output, Plan, RelationId, SourceColumn,
-    SourceOccurrence, Stage, initial_outputs,
+    AggregateArgument, AggregateKind, ColumnId, ColumnSet, DataType, Error, Group,
+    MAX_AGGREGATE_COLUMNS, MAX_COLUMNS, MAX_COMPUTED, MAX_ORDER_ITEMS, MAX_PROJECTIONS,
+    MAX_QUERY_COLUMNS, MAX_ROW_VALUES, MAX_SOURCE_BYTES, MAX_STAGES, Name, Node, OrderKey, Output,
+    Plan, RelationId, SetAssignment, SourceColumn, SourceOccurrence, Stage, initial_outputs,
 };
 
 pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
@@ -73,6 +73,14 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
     {
         return Err(Error::Corrupt("invalid catalog origin tail"));
     }
+    let initial_ranges = plan.relation_columns(RelationId::SOURCE)?.identity_set()?;
+    if plan.range_columns[0] != initial_ranges
+        || plan.range_columns[usize::from(plan.count) + 1..]
+            .iter()
+            .any(|set| *set != ColumnSet::EMPTY)
+    {
+        return Err(Error::Corrupt("invalid range scope envelope"));
+    }
     let mut distinct_cursor = 0;
     if plan.distinct.len() > MAX_STAGES || plan.distinct.capacity() != plan.distinct.len() {
         return Err(Error::Corrupt("DISTINCT descriptor capacity"));
@@ -90,6 +98,14 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
         return Err(Error::Corrupt("computed definition capacity"));
     }
     let mut projection_cursor = 0;
+    let mut assignment_cursor = 0;
+    if usize::from(plan.assignment_count) > MAX_PROJECTIONS
+        || plan.assignments[usize::from(plan.assignment_count)..]
+            .iter()
+            .any(|assignment| *assignment != SetAssignment::EMPTY)
+    {
+        return Err(Error::Corrupt("invalid SET assignment envelope"));
+    }
     let mut order_cursor = 0;
     if usize::from(plan.order_count) > MAX_ORDER_ITEMS {
         return Err(Error::Corrupt("order item count"));
@@ -100,6 +116,8 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
     for (index, node) in plan.stages[..usize::from(plan.count)].iter().enumerate() {
         plan.node(RelationId(index as u8 + 1))?;
         let input = plan.relation_columns(node.input)?;
+        validate_range_scope(plan, index, node)?;
+        let available = plan.available_columns(node.input)?;
         let width = match &node.stage {
             Stage::Source(source) => {
                 if *source == 0
@@ -118,9 +136,10 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                 left_key,
                 right_key,
             } => {
+                let right_available = plan.available_columns(*right)?;
                 let right = plan.relation_columns(*right)?;
-                if !input.contains(*left_key)
-                    || !right.contains(*right_key)
+                if !available.contains(*left_key)
+                    || !right_available.contains(*right_key)
                     || plan.column_type(*left_key).map(|facts| facts.0)
                         != plan.column_type(*right_key).map(|facts| facts.0)
                 {
@@ -132,11 +151,14 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                     .ok_or(Error::Corrupt("join width overflow"))?
             }
             Stage::Alias
+            | Stage::Rename
+            | Stage::Set { .. }
             | Stage::Derived
             | Stage::Where(_)
             | Stage::Order { .. }
             | Stage::Limit(_)
             | Stage::Distinct(_) => input.len(),
+            Stage::Drop { keep } => keep.count_ones() as usize,
             Stage::Select { len, .. } => usize::from(*len),
             Stage::Extend { len, .. } => input.len() + usize::from(*len),
             Stage::Aggregate(aggregate_index) => plan
@@ -167,13 +189,17 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                     return Err(Error::Corrupt("order producer range"));
                 }
                 for item in plan.order_items(*start, *len)? {
-                    if !input.contains(item.column) || plan.column_type(item.column).is_none() {
+                    if !available.contains(item.column) || plan.column_type(item.column).is_none() {
                         return Err(Error::Corrupt("order key outside input"));
                     }
                 }
                 order_cursor += usize::from(*len);
             }
-            Stage::Source(_) | Stage::Alias | Stage::Derived | Stage::Join { .. } => (),
+            Stage::Source(_)
+            | Stage::Alias
+            | Stage::Rename
+            | Stage::Derived
+            | Stage::Join { .. } => (),
             Stage::Aggregate(aggregate_index) => {
                 let aggregate = plan
                     .aggregates
@@ -189,8 +215,8 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                 {
                     return Err(Error::Corrupt("invalid aggregate shape"));
                 }
-                let mut sources = [SourceColumn::QUANTITY.semantic(); MAX_COLUMNS];
-                for (source, id) in sources.iter_mut().zip(input.iter()) {
+                let mut sources = [SourceColumn::QUANTITY.semantic(); MAX_ROW_VALUES];
+                for (source, id) in sources.iter_mut().zip(available.iter()) {
                     *source = plan
                         .column(id)
                         .ok_or(Error::Corrupt("aggregate input has no semantic facts"))?;
@@ -199,19 +225,19 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                     let valid = match (entry.kind, &entry.argument) {
                         (AggregateKind::Count, None) => true,
                         (_, Some(AggregateArgument::Numeric(expression))) => {
-                            expression.validate(&sources[..input.len()])?;
+                            expression.validate(&sources[..available.len()])?;
                             matches!(expression.data_type, DataType::Int64 | DataType::Double)
                         }
                         (AggregateKind::Count, Some(AggregateArgument::Column(column))) => {
                             matches!(column.data_type(), DataType::String | DataType::Date)
-                                && sources[..input.len()].contains(column)
+                                && sources[..available.len()].contains(column)
                         }
                         (
                             AggregateKind::Min | AggregateKind::Max,
                             Some(AggregateArgument::Column(column)),
                         ) => {
                             matches!(column.data_type(), DataType::Date | DataType::String)
-                                && sources[..input.len()].contains(column)
+                                && sources[..available.len()].contains(column)
                         }
                         _ => false,
                     };
@@ -239,7 +265,7 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                             && (group.input.data_type(), group.input.nullable())
                                 != (DataType::String, false))
                         || !group.name.valid()
-                        || !input.contains(group.input.identity)
+                        || !available.contains(group.input.identity)
                         || aggregate.groups[..index]
                             .iter()
                             .any(|prior| prior.input.identity == group.input.identity)
@@ -254,6 +280,53 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                     return Err(Error::Corrupt("aggregate output identity limit"));
                 }
             }
+            Stage::Drop { keep } => {
+                let allowed = u64::MAX >> (64 - input.len());
+                if *keep == 0 || *keep == allowed || *keep & !allowed != 0 {
+                    return Err(Error::Corrupt("invalid DROP column mask"));
+                }
+            }
+            Stage::Set { start, len } => {
+                let end = usize::from(*start) + usize::from(*len);
+                if *len == 0
+                    || usize::from(*start) != assignment_cursor
+                    || end > usize::from(plan.assignment_count)
+                {
+                    return Err(Error::Corrupt("invalid SET assignment range"));
+                }
+                let mut positions = 0_u64;
+                let mut columns = [SourceColumn::QUANTITY.semantic(); MAX_ROW_VALUES];
+                for (slot, id) in columns.iter_mut().zip(available.iter()) {
+                    *slot = plan.column(id).ok_or(Error::Corrupt("SET input facts"))?;
+                }
+                for assignment in &plan.assignments[assignment_cursor..end] {
+                    let position = usize::from(assignment.position);
+                    if position >= input.len() || positions & (1_u64 << position) != 0 {
+                        return Err(Error::Corrupt("invalid SET target position"));
+                    }
+                    positions |= 1_u64 << position;
+                    let definition = plan
+                        .computed
+                        .get(computed_cursor)
+                        .ok_or(Error::Corrupt("SET definition absent"))?;
+                    if definition.column.identity() != assignment.column
+                        || assignment.column.value() != next_identity
+                        || definition.input != node.input
+                        || definition.span.start >= definition.span.end
+                        || definition.span.end > plan.source_bytes
+                        || definition.column.data_type() != definition.expression.data_type()
+                        || definition.column.nullable() != definition.expression.nullable()
+                    {
+                        return Err(Error::Corrupt("invalid SET definition"));
+                    }
+                    definition
+                        .expression
+                        .validate(&columns[..available.len()])?;
+                    next_identity += 1;
+                    computed_cursor += 1;
+                }
+                assignment_cursor = end;
+            }
             Stage::Select { start, len } | Stage::Extend { start, len } => {
                 let end = usize::from(*start) + usize::from(*len);
                 if *len == 0
@@ -264,14 +337,14 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                     return Err(Error::Corrupt("invalid projection range"));
                 }
                 let outputs = &plan.projections[projection_cursor..end];
-                let mut visible = [SourceColumn::QUANTITY.semantic(); MAX_COLUMNS];
-                for (slot, id) in visible.iter_mut().zip(input.iter()) {
+                let mut visible = [SourceColumn::QUANTITY.semantic(); MAX_ROW_VALUES];
+                for (slot, id) in visible.iter_mut().zip(available.iter()) {
                     *slot = plan
                         .column(id)
                         .ok_or(Error::Corrupt("projection input facts"))?;
                 }
                 for output in outputs {
-                    if input.contains(*output) {
+                    if available.contains(*output) {
                         continue;
                     }
                     let definition = plan
@@ -283,12 +356,14 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                         || definition.input != node.input
                         || definition.span.start >= definition.span.end
                         || definition.span.end > plan.source_bytes
-                        || definition.column.data_type() != definition.expression.data_type
+                        || definition.column.data_type() != definition.expression.data_type()
                         || definition.column.nullable() != definition.expression.nullable()
                     {
                         return Err(Error::Corrupt("invalid computed definition"));
                     }
-                    definition.expression.validate(&visible[..input.len()])?;
+                    definition
+                        .expression
+                        .validate(&visible[..available.len()])?;
                     next_identity += 1;
                     computed_cursor += 1;
                 }
@@ -320,7 +395,7 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                     .is_some_and(|(data_type, _)| filter.predicate.valid_for(data_type))
                     || filter.span.start >= filter.span.end
                     || filter.span.end > plan.source_bytes
-                    || !input.contains(filter.column)
+                    || !available.contains(filter.column)
                 {
                     return Err(Error::Corrupt("invalid filter semantics"));
                 }
@@ -407,6 +482,59 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
         if output.id != expected || !(output.name == Name::EMPTY || output.name.valid()) {
             return Err(Error::Corrupt("invalid final output"));
         }
+    }
+    if assignment_cursor != usize::from(plan.assignment_count) {
+        return Err(Error::Corrupt("unused SET assignments"));
+    }
+    Ok(())
+}
+
+fn validate_range_scope(plan: &Plan, index: usize, node: &Node) -> Result<(), Error> {
+    let input = plan.range_columns[usize::from(node.input.0)];
+    let actual = plan.range_columns[index + 1];
+    if actual.len() > MAX_COLUMNS {
+        return Err(Error::Corrupt("qualified column limit"));
+    }
+    let visible =
+        |relation| -> Result<ColumnSet, Error> { plan.relation_columns(relation)?.identity_set() };
+    let expected = match node.stage {
+        Stage::Source(_) => visible(RelationId(index as u8 + 1))?,
+        Stage::Alias | Stage::Derived => {
+            // Anonymous outputs have no qualified name. A derived input may
+            // also omit its alias entirely; either boundary can only expose
+            // identities in its own visible row.
+            if actual & visible(node.input)? == actual {
+                return Ok(());
+            }
+            return Err(Error::Corrupt("range exposes an input outside its row"));
+        }
+        Stage::Select { .. } | Stage::Aggregate(_) => ColumnSet::EMPTY,
+        Stage::Join { right, .. } => input | plan.range_columns[usize::from(right.0)],
+        Stage::Distinct(descriptor) => {
+            let descriptor = plan
+                .distinct
+                .get(usize::from(descriptor))
+                .ok_or(Error::Corrupt("range DISTINCT descriptor"))?;
+            let mut mapped = ColumnSet::EMPTY;
+            for id in input.iter() {
+                if let Some(output) = descriptor.output_for(id) {
+                    mapped.insert(output);
+                }
+            }
+            mapped
+        }
+        Stage::Drop { .. } | Stage::Set { .. } => {
+            // SET and DROP may remove colliding ranges, but cannot introduce a
+            // qualified member or revive one removed by an earlier boundary.
+            if actual & input == actual {
+                return Ok(());
+            }
+            return Err(Error::Corrupt("column transform widens range scope"));
+        }
+        _ => input,
+    };
+    if actual != expected {
+        return Err(Error::Corrupt("range scope transition"));
     }
     Ok(())
 }

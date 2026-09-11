@@ -90,6 +90,9 @@ separate from this query manifest.
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
 | `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`. Star expansion and other scalar expressions remain unsupported. |
 | `EXTEND expression [[AS] alias], ...` | Appends columns using the same direct-reference and numeric-expression profile as SELECT. Preserves all input columns, their identities, ranges, and order. Star expansion, aggregate calls, window expressions, and other scalar forms remain unsupported. |
+| `SET name=expression, ...` | Replaces each named ordinary column in place with a fresh identity. Accepts direct references of any supported type and the SELECT numeric-expression profile. Every expression sees the original input; replacements can change type and NULLability. |
+| `DROP name, ...` | Removes all ordinary columns matching each name, including duplicate names. Rejects removal of the entire row. |
+| `RENAME old AS new, ...` | Renames one unambiguous ordinary column per target without changing its value, position, type, or identity. Simultaneous swaps and new duplicate names are valid. |
 | `WHERE name comparison constant` | Accepts `<`, `<=`, `=`, `!=`, `>=`, `>` over numeric, DATE or STRING columns and compatible constants. |
 | `WHERE name IS [NOT] NULL` | Tests a visible column, including a computed or aggregate output. IS NULL retains NULL values; IS NOT NULL retains non-NULL values, including zero, empty text and NaN. Both tests preserve column demand and input order. |
 | `WHERE` Boolean expression | Comparisons and NULL tests compose with NOT, AND, OR and parentheses. NOT binds above AND, which binds above OR. Each leaf consumes one normalized stage; inclusive BETWEEN consumes two. See the demand rules below. |
@@ -110,7 +113,7 @@ occurrences of the same identity cannot distinguish an earlier tie. Expressions,
 collations and legacy format-4 standalone sorting are rejected during
 preparation.
 
-Each order stage preserves the visible row and ranges. SELECT, EXTEND, WHERE, ORDER BY
+Each order stage preserves the visible row and ranges. SELECT, EXTEND, SET, DROP, RENAME, WHERE, ORDER BY
 and LIMIT may repeat before and after aggregation. Group columns precede
 aggregate entries in the aggregate output. Aggregation replaces the visible
 relation; earlier non-grouping source names are no longer available. A final
@@ -134,8 +137,20 @@ range variables retain their original members; an appended alias is an ordinary
 column name, not a new member of an earlier range. The 64-column relation limit
 includes inherited and appended columns.
 
+SET, DROP, and RENAME targets are unqualified identifiers. Missing targets and
+case-insensitive repeated targets are bind errors. SET and RENAME reject ambiguous
+targets; DROP removes every matching ordinary column. Each list resolves against
+the original input before publishing changes. These operators preserve order.
+
+Original range members retain their names and values after all three operators.
+Thus `FROM facts AS f |> SET value=value+1` exposes the replacement as `value`
+and the original as `f.value`; DROP removes only the ordinary output. SET and
+DROP remove a range whose own name matches a target. RENAME rejects that target.
+An unqualified range name takes precedence over a colliding ordinary column;
+whole-row scalar values are unsupported, so use a qualified member instead.
+
 Direct references may use `range.column` in projections, predicates, numeric
-arguments and grouping keys. WHERE and EXTEND preserve ranges. SELECT and AGGREGATE remove
+arguments, ordering, and grouping keys. WHERE and EXTEND preserve ranges. SELECT and AGGREGATE remove
 earlier ranges; a following AS names the resulting row. Duplicate range names
 are rejected. Duplicate member names are ambiguous even when their identities
 are equal.
@@ -429,7 +444,7 @@ establishes a bounded ordered list of binder-resolved column identities,
 directions, and effective NULL placements; display names and physical positions
 are not order keys. `LIMIT` observes order only when order is known at that
 point. Each operator has an explicit order-transfer rule. A nonanalytic
-`SELECT`, `EXTEND`, `WHERE` and `AS` preserve the complete incoming order. `JOIN` and
+`SELECT`, `EXTEND`, `SET`, `DROP`, `RENAME`, `WHERE` and `AS` preserve the complete incoming order. `JOIN` and
 ordinary `AGGREGATE` clear it; GROUP AND ORDER BY establishes its own key order.
 A later ORDER BY replaces the earlier ordered-key list. Rows tied on all
 declared keys have no promised relative order.
@@ -520,11 +535,11 @@ short-circuiting cannot selectively trust corrupt bytes in that block.
 
 ### Computed projection demand
 
-Numeric SELECT and EXTEND expressions extend the demand behavior of direct projections and
+Numeric SELECT, EXTEND, and SET expressions extend the demand behavior of direct projections and
 aggregate results. These operators define values; encountering its syntax does not
 force their evaluation.
 
-Within a consecutive sequence of nonanalytic SELECT, EXTEND, WHERE and AS stages, WHERE
+Within a consecutive sequence of nonanalytic SELECT, EXTEND, SET, DROP, RENAME, WHERE and AS stages, WHERE
 expressions run in written order. Each expression demands leaf dependencies
 under the Boolean rules above, only for rows retained by preceding WHERE stages.
 A rejected row does not demand later WHERE stages or remaining projected values.
@@ -559,7 +574,7 @@ required input value across these boundaries unless the rewrite preserves the
 documented values and failures.
 
 Aggregate output finalization remains demand-driven through the following
-SELECT/EXTEND/WHERE/AS sequence. In particular, replacing an INT64 output reference `s`
+sequence of projections, column transformations, WHERE and AS. In particular, replacing an INT64 output reference `s`
 with `s + 0` cannot force final SUM overflow in a group rejected by an earlier
 predicate that does not need `s`. Aggregate input arguments remain demanded
 under the existing aggregate rule, even when a later predicate rejects the

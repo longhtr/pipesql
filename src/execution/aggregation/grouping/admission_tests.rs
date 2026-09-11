@@ -20,10 +20,10 @@ fn fallback_minimum_matches_constructed_owners_and_refusal_releases_them() {
     ] {
         for width in [1, MAX_AGGREGATE_COLUMNS - 1] {
             for arguments in [0, 1, MAX_AGGREGATE_COLUMNS] {
-                for output_width in [1, MAX_COLUMNS] {
+                for output_width in [1, MAX_ROW_VALUES] {
                     let keys = schema(&[(kind, true); MAX_AGGREGATE_COLUMNS - 1][..width]);
                     let output = OutputLayout::from_columns(
-                        [(DataType::String, true); MAX_COLUMNS],
+                        [(DataType::String, true); MAX_ROW_VALUES],
                         output_width,
                     )
                     .unwrap();
@@ -52,7 +52,7 @@ fn fallback_minimum_matches_constructed_owners_and_refusal_releases_them() {
                         let before = database.reserved_memory_bytes();
                         let keys = schema(&[(kind, true); MAX_AGGREGATE_COLUMNS - 1][..width]);
                         let output = OutputLayout::from_columns(
-                            [(DataType::String, true); MAX_COLUMNS],
+                            [(DataType::String, true); MAX_ROW_VALUES],
                             output_width,
                         )
                         .unwrap();
@@ -262,7 +262,7 @@ fn text_fallback_minimum_admits_owned_arenas_and_refuses_one_byte_less() {
         };
         let keys = schema(&[(DataType::Int64, false)]);
         let output =
-            OutputLayout::from_columns([(DataType::String, true); MAX_COLUMNS], text_arguments)
+            OutputLayout::from_columns([(DataType::String, true); MAX_ROW_VALUES], text_arguments)
                 .unwrap();
         let required = Minimum::required(&keys, &output, shape).unwrap();
         for shortfall in [0, 1] {
@@ -273,9 +273,11 @@ fn text_fallback_minimum_admits_owned_arenas_and_refuses_one_byte_less() {
                 )
                 .unwrap();
             let keys = schema(&[(DataType::Int64, false)]);
-            let output =
-                OutputLayout::from_columns([(DataType::String, true); MAX_COLUMNS], text_arguments)
-                    .unwrap();
+            let output = OutputLayout::from_columns(
+                [(DataType::String, true); MAX_ROW_VALUES],
+                text_arguments,
+            )
+            .unwrap();
             let limits = Limits {
                 arguments: 1,
                 run_rows: 1,

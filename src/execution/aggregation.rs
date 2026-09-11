@@ -12,7 +12,7 @@ use crate::execution::computed::RowValues;
 use crate::execution::planning::Pipeline;
 use crate::execution::{BATCH_ROWS, COMPUTE_ROWS, ConsumerInput, ConsumerStep};
 use crate::fixed_text::{KEY_DOMAIN, StringValue as FixedKey};
-use crate::frontend::{AggregatePlan, MAX_COLUMNS, SemanticColumn, SourceColumn};
+use crate::frontend::{AggregatePlan, MAX_ROW_VALUES, SemanticColumn, SourceColumn};
 use crate::{CancellationToken, Database, Error, StringValue, Value};
 use accumulator::{AggregateLayout, AggregateState, TextDomain};
 
@@ -132,7 +132,7 @@ impl<'db> Groups<'db> {
         demand: u16,
         columns: impl Iterator<Item = SemanticColumn>,
     ) -> Result<Self, Error> {
-        let mut inputs = [SourceColumn::QUANTITY.semantic(); MAX_COLUMNS];
+        let mut inputs = [SourceColumn::QUANTITY.semantic(); MAX_ROW_VALUES];
         let mut count = 0;
         for column in columns {
             inputs[count] = column;

@@ -7,8 +7,9 @@ use super::{
     snapshot_matches,
 };
 use crate::execution::predicate::PhysicalFilter;
-use crate::frontend::{self, ColumnId, MAX_COLUMNS, MAX_STAGES, PreparedQuery, RelationId, Stage};
-use crate::scalar::Op;
+use crate::frontend::{
+    self, ColumnId, MAX_ROW_VALUES, MAX_STAGES, PreparedQuery, RelationId, Stage,
+};
 use crate::storage_format::RootState;
 use crate::{Database, Error};
 
@@ -39,7 +40,7 @@ pub(in crate::execution) fn validate_physical(
     let mut order_end = 0;
     for (index, pipeline) in plan.pipelines.iter().enumerate() {
         if pipeline.filter_count > MAX_STAGES
-            || pipeline.column_count > MAX_COLUMNS
+            || pipeline.column_count > MAX_ROW_VALUES
             || pipeline.end != pipeline_end(semantic, pipeline.relation)
         {
             return Err(Error::Corrupt("physical pipeline envelope"));
@@ -207,24 +208,20 @@ fn validate_computations(
                 pipeline.producer,
                 pipeline.relation,
                 position,
-            )?
-            .value() as usize
-                != identity
+            )? != value_identity(semantic, pipeline.relation, identity as u32)?
         {
             return Err(Error::Corrupt("physical computation mapping"));
         }
     }
     for definition in pipeline.computed {
         if semantic.producer(definition.input)? == pipeline.relation {
-            for op in &definition.expression.ops[..usize::from(definition.expression.len)] {
-                if let Op::Column(column) = op {
-                    // Unused definitions may reference undemanded materialized
-                    // inputs. Every demanded dependency is checked by demand_masks.
-                    if masks[usize::from(definition.input.0)].contains(column.identity())
-                        && pipeline.slots[column.identity().value() as usize] == u8::MAX
-                    {
-                        return Err(Error::Corrupt("missing computed input mapping"));
-                    }
+            for column in definition.expression.columns() {
+                // Unused definitions may reference undemanded materialized
+                // inputs. Every demanded dependency is checked by demand_masks.
+                if masks[usize::from(definition.input.0)].contains(column.identity())
+                    && pipeline.slots[column.identity().value() as usize] == u8::MAX
+                {
+                    return Err(Error::Corrupt("missing computed input mapping"));
                 }
             }
         }
@@ -253,7 +250,7 @@ fn validate_filters(
                 pipeline.producer,
                 pipeline.relation,
                 physical.column,
-            )? != filter.column
+            )? != value_identity(semantic, pipeline.relation, filter.column.value())?
                 || *physical.predicate != filter.predicate
                 || physical.control != filter.control
             {
@@ -294,11 +291,38 @@ fn validate_outputs(
                 pipeline.producer,
                 pipeline.relation,
                 pipeline.columns[outputs],
-            )? != id
+            )? != value_identity(semantic, pipeline.relation, id.value())?
         {
             return Err(Error::Corrupt("physical output differs from binder"));
         }
         outputs += 1;
+    }
+    if pipeline.end != semantic.final_relation() {
+        let available = semantic.available_columns(pipeline.end)?;
+        for index in outputs..pipeline.column_count {
+            let id = pipeline.identities[index];
+            if !available.contains(id)
+                || !demand.contains(id)
+                || seen.contains(id)
+                || identity_at(
+                    inputs,
+                    semantic,
+                    pipeline.producer,
+                    pipeline.relation,
+                    pipeline.columns[index],
+                )? != value_identity(semantic, pipeline.relation, id.value())?
+            {
+                return Err(Error::Corrupt("invalid retained physical input"));
+            }
+            seen.insert(id);
+        }
+        if available
+            .iter()
+            .any(|id| demand.contains(id) && !seen.contains(id))
+        {
+            return Err(Error::Corrupt("retained physical input absent"));
+        }
+        outputs = pipeline.column_count;
     }
     if outputs != pipeline.column_count
         || pipeline.columns[outputs..]
@@ -313,6 +337,36 @@ fn validate_outputs(
     Ok(())
 }
 
+// A typed copy changes semantic identity without changing its value. Follow
+// only definitions in this producer; materialized inputs retain their new ID.
+fn value_identity(
+    semantic: &frontend::Plan,
+    relation: RelationId,
+    mut identity: u32,
+) -> Result<ColumnId, Error> {
+    for _ in 0..=semantic.computed.len() {
+        let Some(definition) = semantic
+            .computed
+            .iter()
+            .find(|definition| definition.column.identity().value() == identity)
+        else {
+            return semantic
+                .available_columns(relation)?
+                .iter()
+                .find(|id| id.value() == identity)
+                .ok_or(Error::Corrupt("physical identity outside producer"));
+        };
+        if semantic.producer(definition.input)? == relation
+            && let frontend::Computation::Copy(column) = &definition.expression
+        {
+            identity = column.identity().value();
+            continue;
+        }
+        return Ok(definition.column.identity());
+    }
+    Err(Error::Corrupt("cyclic semantic copy"))
+}
+
 // Validation resolves positions back to identities instead of repeating the
 // planner's identity-to-position search.
 fn identity_at(
@@ -323,13 +377,16 @@ fn identity_at(
     position: u8,
 ) -> Result<ColumnId, Error> {
     let position = usize::from(position);
-    if position >= MAX_COLUMNS {
+    if position >= MAX_ROW_VALUES {
         let definition = semantic
             .computed
-            .get(position - MAX_COLUMNS)
+            .get(position - MAX_ROW_VALUES)
             .ok_or(Error::Corrupt("computed slot outside definitions"))?;
         if semantic.producer(definition.input)? != relation {
             return Err(Error::Corrupt("computed slot belongs to another producer"));
+        }
+        if !matches!(definition.expression, frontend::Computation::Numeric(_)) {
+            return Err(Error::Corrupt("typed copy mapped to numeric slot"));
         }
         return Ok(definition.column.identity());
     }

@@ -1,7 +1,7 @@
 //! Shared blocking-operator infrastructure: bounded row records, runs, merge buffers, and sorting.
 use crate::effects::Effects;
 use crate::execution::{BATCH_ROWS, MAX_AGGREGATE_ROWS};
-use crate::frontend::{MAX_AGGREGATE_COLUMNS, MAX_COLUMNS};
+use crate::frontend::{MAX_AGGREGATE_COLUMNS, MAX_ROW_VALUES};
 use crate::resources::{Reservation, allocate};
 use crate::value::Value;
 use crate::{CancellationToken, Database, Error, storage_format};
@@ -136,13 +136,13 @@ impl<'db> SortedInput<'db> {
         Ok(true)
     }
 
-    fn values(&self) -> Result<[Value<'_>; MAX_COLUMNS], Error> {
+    fn values(&self) -> Result<[Value<'_>; MAX_ROW_VALUES], Error> {
         let record = self
             .sort
             .sorted_cursor()
             .record()
             .ok_or(Error::Corrupt("sorted payload requires a loaded row"))?;
-        let mut values = [Value::Null; MAX_COLUMNS];
+        let mut values = [Value::Null; MAX_ROW_VALUES];
         let mut remaining = record.key();
         for field in &self.layout.columns[..self.layout.count] {
             values[field.input] = read_value(&mut remaining, field.kind, field.nullable)?;
@@ -167,7 +167,7 @@ pub(super) const MAX_ARGUMENT_RECORD_BYTES: usize =
 const MAX_RECORD_BYTES: usize = MAX_FRAME_BYTES;
 // A projection may repeat a text key in every result column.
 pub(super) const MAX_FRAME_BYTES: usize =
-    RECORD_HEADER + MAX_COLUMNS * (5 + crate::batch::MAX_TEXT_BYTES);
+    RECORD_HEADER + MAX_ROW_VALUES * (5 + crate::batch::MAX_TEXT_BYTES);
 const _: () = assert!(MAX_ARGUMENT_RECORD_BYTES <= MAX_RECORD_BYTES);
 
 #[derive(Clone, Copy)]

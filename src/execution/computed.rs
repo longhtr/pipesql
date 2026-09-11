@@ -1,6 +1,6 @@
 //! Demand evaluation inside a producer, without crossing materialization boundaries.
 use super::{Error, Pipeline, Value};
-use crate::frontend::{DataType, MAX_COLUMNS, MAX_COMPUTED};
+use crate::frontend::{DataType, MAX_COLUMNS, MAX_COMPUTED, MAX_ROW_VALUES};
 use crate::scalar::{MAX_OPS, NumericInput, NumericValues, Op};
 
 // One live producer step owns these fixed arrays. The result reserves their
@@ -8,7 +8,7 @@ use crate::scalar::{MAX_OPS, NumericInput, NumericValues, Op};
 // and compiler spill space remain part of the separately observed stack bound.
 pub(super) const ROW_SCRATCH_BYTES: u64 =
     (std::mem::size_of::<[Option<Option<u64>>; MAX_COMPUTED]>()
-        + std::mem::size_of::<[bool; MAX_COLUMNS + MAX_COMPUTED]>()
+        + std::mem::size_of::<[bool; MAX_ROW_VALUES + MAX_COMPUTED]>()
         + std::mem::size_of::<[Option<crate::frontend::SemanticColumn>; MAX_OPS]>()
         + std::mem::size_of::<[Option<NumericInput<'static>>; MAX_OPS]>()
         + 3 * std::mem::size_of::<[u64; MAX_OPS]>()
@@ -36,10 +36,10 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
     where
         F: FnMut(u8) -> Result<Value<'row>, Error>,
     {
-        if usize::from(slot) < MAX_COLUMNS {
+        if usize::from(slot) < MAX_ROW_VALUES {
             return (self.raw)(slot);
         }
-        let target = usize::from(slot) - MAX_COLUMNS;
+        let target = usize::from(slot) - MAX_ROW_VALUES;
         let definition = self
             .plan
             .computed
@@ -47,7 +47,7 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
             .ok_or(Error::Corrupt("computed value slot"))?;
         let cache = self.cache.get_or_insert([None; MAX_COMPUTED]);
         let needed = self.plan.dependencies(&[slot])?;
-        for (index, needed) in needed[MAX_COLUMNS..=MAX_COLUMNS + target]
+        for (index, needed) in needed[MAX_ROW_VALUES..=MAX_ROW_VALUES + target]
             .iter()
             .enumerate()
         {
@@ -55,11 +55,12 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
                 continue;
             }
             let current = &self.plan.computed[index];
+            let expression = current.expression.numeric()?;
             let mut columns = [None; MAX_OPS];
             let mut bits = [[0_u64; 1]; MAX_OPS];
             let mut valid = [[0_u64; 1]; MAX_OPS];
             let mut count = 0;
-            for op in &current.expression.ops[..usize::from(current.expression.len)] {
+            for op in &expression.ops[..usize::from(expression.len)] {
                 let Op::Column(column) = *op else {
                     continue;
                 };
@@ -67,11 +68,11 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
                     continue;
                 }
                 let slot = self.plan.slots[column.identity().value() as usize];
-                let value = if usize::from(slot) < MAX_COLUMNS {
+                let value = if usize::from(slot) < MAX_ROW_VALUES {
                     (self.raw)(slot)?
                 } else {
                     let bits = cache
-                        .get(usize::from(slot) - MAX_COLUMNS)
+                        .get(usize::from(slot) - MAX_ROW_VALUES)
                         .copied()
                         .flatten()
                         .ok_or(Error::Corrupt("computed dependency not evaluated"))?;
@@ -102,8 +103,7 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
                 inputs[index] = Some(NumericInput::new(column, values, Some(&valid[index]))?);
             }
             let mut scratch = [0; MAX_OPS];
-            let output = current
-                .expression
+            let output = expression
                 .evaluate_batch(&inputs[..count], 0..1, &mut scratch)
                 .map_err(|failure| failure.into_error(current.span))?;
             cache[index] = Some(output.value(0));
@@ -159,22 +159,22 @@ impl Pipeline<'_> {
         Ok(demand)
     }
 
-    fn dependencies(&self, slots: &[u8]) -> Result<[bool; MAX_COLUMNS + MAX_COMPUTED], Error> {
-        let mut needed = [false; MAX_COLUMNS + MAX_COMPUTED];
+    fn dependencies(&self, slots: &[u8]) -> Result<[bool; MAX_ROW_VALUES + MAX_COMPUTED], Error> {
+        let mut needed = [false; MAX_ROW_VALUES + MAX_COMPUTED];
         for &slot in slots {
             *needed
                 .get_mut(usize::from(slot))
                 .ok_or(Error::Corrupt("computed slot bound"))? = true;
         }
         for index in (0..self.computed.len()).rev() {
-            if !needed[MAX_COLUMNS + index] {
+            if !needed[MAX_ROW_VALUES + index] {
                 continue;
             }
-            let expression = &self.computed[index].expression;
+            let expression = self.computed[index].expression.numeric()?;
             for op in &expression.ops[..usize::from(expression.len)] {
                 if let Op::Column(column) = op {
                     let slot = usize::from(self.slots[column.identity().value() as usize]);
-                    if slot >= MAX_COLUMNS + index {
+                    if slot >= MAX_ROW_VALUES + index {
                         return Err(Error::Corrupt(
                             "computed dependency must precede definition",
                         ));
@@ -191,6 +191,12 @@ impl Pipeline<'_> {
             return Ok(slots.iter().fold(0, |mask, slot| mask | (1_u64 << slot)));
         }
         let needed = self.dependencies(slots)?;
+        if needed[MAX_COLUMNS..MAX_ROW_VALUES]
+            .iter()
+            .any(|needed| *needed)
+        {
+            return Err(Error::Corrupt("scan dependency outside source schema"));
+        }
         Ok(needed[..MAX_COLUMNS]
             .iter()
             .enumerate()
@@ -203,17 +209,17 @@ impl Pipeline<'_> {
         self.has_computed_outputs()
             || self.filters[..self.filter_count]
                 .iter()
-                .any(|filter| usize::from(filter.column) >= MAX_COLUMNS)
+                .any(|filter| usize::from(filter.column) >= MAX_ROW_VALUES)
     }
 
     pub(super) fn has_computed_outputs(&self) -> bool {
         self.columns[..self.column_count]
             .iter()
-            .any(|column| usize::from(*column) >= MAX_COLUMNS)
+            .any(|column| usize::from(*column) >= MAX_ROW_VALUES)
     }
 }
 
-const SLOTS: usize = MAX_COLUMNS + MAX_COMPUTED;
+const SLOTS: usize = MAX_ROW_VALUES + MAX_COMPUTED;
 const ROWS: usize = crate::scalar::MAX_ROWS;
 const WORDS_PER_COLUMN: usize = ROWS + ROWS / 64;
 
@@ -233,14 +239,14 @@ impl BatchLayout {
     pub(super) const MAX_BYTES: u64 =
         ((SLOTS * WORDS_PER_COLUMN + MAX_OPS * ROWS) * 8 + 4096) as u64;
     pub(super) fn new(plan: &Pipeline) -> Result<Self, Error> {
-        let mut targets = [0; MAX_COLUMNS + crate::frontend::MAX_STAGES];
+        let mut targets = [0; MAX_ROW_VALUES + crate::frontend::MAX_STAGES];
         let mut count = 0;
         for slot in plan.columns[..plan.column_count].iter().copied().chain(
             plan.filters[..plan.filter_count]
                 .iter()
                 .map(|filter| filter.column),
         ) {
-            if usize::from(slot) >= MAX_COLUMNS {
+            if usize::from(slot) >= MAX_ROW_VALUES {
                 targets[count] = slot;
                 count += 1;
             }
@@ -251,8 +257,11 @@ impl BatchLayout {
             if *needed {
                 layout.mapping[slot] = layout.buffers;
                 layout.buffers += 1;
-                if slot >= MAX_COLUMNS {
-                    let depth = plan.computed[slot - MAX_COLUMNS].expression.stack_depth();
+                if slot >= MAX_ROW_VALUES {
+                    let depth = plan.computed[slot - MAX_ROW_VALUES]
+                        .expression
+                        .numeric()?
+                        .stack_depth();
                     layout.depth = layout.depth.max(depth as u8);
                 }
             }
@@ -315,10 +324,10 @@ impl BatchScratch {
         }
         self.rows = selection.len();
         self.ready.fill(false);
-        let mut computed = [0; MAX_COLUMNS];
+        let mut computed = [0; MAX_ROW_VALUES];
         let mut count = 0;
         for &slot in targets {
-            if usize::from(slot) >= MAX_COLUMNS {
+            if usize::from(slot) >= MAX_ROW_VALUES {
                 computed[count] = slot;
                 count += 1;
             }
@@ -328,14 +337,15 @@ impl BatchScratch {
             .data
             .split_at_mut(usize::from(self.layout.buffers) * WORDS_PER_COLUMN);
         for index in 0..plan.computed.len() {
-            let slot = MAX_COLUMNS + index;
+            let slot = MAX_ROW_VALUES + index;
             if !needed[slot] {
                 continue;
             }
             let definition = &plan.computed[index];
+            let expression = definition.expression.numeric()?;
             // Gather each source dependency once for this selection. No I/O occurs
             // here: the scan loaded these checked payloads in earlier steps.
-            for op in &definition.expression.ops[..usize::from(definition.expression.len)] {
+            for op in &expression.ops[..usize::from(expression.len)] {
                 let Op::Column(column) = op else {
                     continue;
                 };
@@ -343,7 +353,7 @@ impl BatchScratch {
                 if self.ready[input] {
                     continue;
                 }
-                if input >= MAX_COLUMNS {
+                if input >= MAX_ROW_VALUES {
                     return Err(Error::Corrupt("computed batch dependency not ready"));
                 }
                 let offset = usize::from(self.layout.mapping[input]) * WORDS_PER_COLUMN;
@@ -371,7 +381,7 @@ impl BatchScratch {
             let mut inputs = [None; MAX_OPS];
             let mut columns = [None; MAX_OPS];
             let mut input_count = 0;
-            for op in &definition.expression.ops[..usize::from(definition.expression.len)] {
+            for op in &expression.ops[..usize::from(expression.len)] {
                 let Op::Column(column) = *op else {
                     continue;
                 };
@@ -394,8 +404,7 @@ impl BatchScratch {
                 columns[input_count] = Some(column);
                 input_count += 1;
             }
-            let output = definition
-                .expression
+            let output = expression
                 .evaluate_batch(&inputs[..input_count], 0..self.rows, scratch)
                 .map_err(|failure| failure.into_error(definition.span))?;
             let offset = usize::from(self.layout.mapping[slot]) * WORDS_PER_COLUMN;
@@ -422,12 +431,17 @@ impl BatchScratch {
         row: usize,
     ) -> Result<Value<'static>, Error> {
         let slot = usize::from(slot);
-        if row >= self.rows || !(MAX_COLUMNS..SLOTS).contains(&slot) || !self.ready[slot] {
+        if row >= self.rows || !(MAX_ROW_VALUES..SLOTS).contains(&slot) || !self.ready[slot] {
             return Err(Error::Corrupt("computed batch value is not ready"));
         }
         let offset = usize::from(self.layout.mapping[slot]) * WORDS_PER_COLUMN;
         let bits = (self.data[offset + ROWS + row / 64] & (1 << (row % 64)) != 0)
             .then_some(self.data[offset + row]);
-        number(bits, plan.computed[slot - MAX_COLUMNS].column.data_type())
+        number(
+            bits,
+            plan.computed[slot - MAX_ROW_VALUES].column.data_type(),
+        )
     }
 }
+
+const _: () = assert!(MAX_ROW_VALUES + MAX_COMPUTED < u8::MAX as usize);

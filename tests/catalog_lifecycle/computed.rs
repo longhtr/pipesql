@@ -275,6 +275,8 @@ fn public_computed_cancellation_releases_source_and_consuming_owners() {
     for sql in [
         "FROM facts |> SELECT v+1 AS x |> WHERE x > 0",
         "FROM facts |> EXTEND v+1 AS x |> WHERE x > 0",
+        "FROM facts AS f |> SET v=v+1 |> RENAME v AS adjusted |> DROP k |> WHERE f.k>0 |> ORDER BY adjusted |> SELECT f.v,adjusted",
+        "FROM dimensions |> SET label=label |> DISTINCT |> ORDER BY label |> LIMIT 2",
         "FROM facts AS f |> EXTEND v+1 AS x |> JOIN dimensions AS d ON f.k=d.k |> ORDER BY x |> AGGREGATE SUM(x) AS s |> EXTEND s+1 AS total",
         "FROM facts |> SELECT k+1 AS k,v+1 AS x |> ORDER BY x |> AGGREGATE SUM(x) AS s GROUP BY k |> SELECT s+1 AS x",
         "FROM facts |> SELECT k,v+1 AS v |> AS f |> JOIN dimensions AS d ON f.k=d.k |> SELECT f.v+1 AS x |> ORDER BY x |> LIMIT 3 |> SELECT x+1 AS y",
@@ -410,5 +412,224 @@ fn extend_retains_typed_values_nulls_and_original_range_members() {
         &db,
         "FROM facts |> WHERE id < 0 |> EXTEND s AS text,d AS day",
         vec![],
+    );
+}
+
+#[test]
+fn rename_preserves_values_order_and_qualified_inputs_through_composition() {
+    let (_directory, db) = join_fixture();
+    query(
+        &db,
+        "FROM facts AS f |> ORDER BY v DESC |> RENAME v AS amount |> SELECT f.v,amount",
+        [40, 30, 20, 10]
+            .map(|value| vec![Cell::Integer(value), Cell::Integer(value)])
+            .to_vec(),
+    );
+    query(
+        &db,
+        "FROM (FROM facts |> RENAME v AS amount) AS f |> JOIN dimensions AS d ON f.k=d.k |> AGGREGATE SUM(f.amount) AS total |> RENAME total AS amount",
+        integers(&[90]),
+    );
+    query(
+        &db,
+        "FROM facts |> EXTEND v+1 AS adjusted |> RENAME adjusted AS amount |> WHERE amount > 30 |> ORDER BY amount |> LIMIT 1 |> SELECT amount",
+        integers(&[31]),
+    );
+}
+
+#[test]
+fn drop_removes_ordinary_outputs_and_undemanded_computations() {
+    let (_directory, db) = join_fixture();
+    for sql in [
+        "FROM facts |> DROP k |> ORDER BY v",
+        "FROM facts |> DROP k |> DISTINCT |> ORDER BY v",
+        "FROM facts |> EXTEND v*9223372036854775807 AS bad |> DROP bad,k |> ORDER BY v",
+        "FROM facts |> SELECT k AS discarded,k AS discarded,v |> DROP discarded |> ORDER BY v",
+    ] {
+        query(&db, sql, integers(&[10, 20, 30, 40]));
+    }
+    assert!(matches!(
+        db.prepare("FROM facts AS k |> DROP k |> SELECT k.v"),
+        Err(Error::Bind { .. })
+    ));
+}
+
+#[test]
+fn drop_retains_qualified_inputs_through_filters_and_blocking_operators() {
+    let (_directory, db) = join_fixture();
+    query(
+        &db,
+        "FROM facts AS f |> DROP k |> AGGREGATE SUM(v) AS total GROUP AND ORDER BY f.k",
+        vec![
+            vec![Cell::Null, Cell::Integer(40)],
+            vec![Cell::Integer(1), Cell::Integer(30)],
+            vec![Cell::Integer(2), Cell::Integer(30)],
+        ],
+    );
+    query(
+        &db,
+        "FROM facts AS f |> DROP k |> WHERE f.k > 1 |> SELECT v",
+        integers(&[30]),
+    );
+    query(
+        &db,
+        "FROM facts AS f |> DROP k |> ORDER BY v DESC |> SELECT f.k",
+        vec![
+            vec![Cell::Null],
+            vec![Cell::Integer(2)],
+            vec![Cell::Integer(1)],
+            vec![Cell::Integer(1)],
+        ],
+    );
+    query(
+        &db,
+        "FROM facts AS f |> DROP k |> JOIN dimensions AS d ON f.k=d.k |> SELECT f.v |> ORDER BY v",
+        integers(&[10, 10, 20, 20, 30]),
+    );
+}
+
+#[test]
+fn set_replacements_preserve_original_inputs_and_typed_values() {
+    let (_directory, db) = join_fixture();
+    query(
+        &db,
+        "FROM facts AS f |> SET k=v,v=k |> ORDER BY k |> SELECT k,v,f.k,f.v",
+        vec![
+            vec![
+                Cell::Integer(10),
+                Cell::Integer(1),
+                Cell::Integer(1),
+                Cell::Integer(10),
+            ],
+            vec![
+                Cell::Integer(20),
+                Cell::Integer(1),
+                Cell::Integer(1),
+                Cell::Integer(20),
+            ],
+            vec![
+                Cell::Integer(30),
+                Cell::Integer(2),
+                Cell::Integer(2),
+                Cell::Integer(30),
+            ],
+            vec![Cell::Integer(40), Cell::Null, Cell::Null, Cell::Integer(40)],
+        ],
+    );
+    query(
+        &db,
+        "FROM dimensions AS d |> SET label=d.label |> WHERE k=2 |> ORDER BY label |> SELECT label,d.label",
+        vec![vec![Cell::Text("c".into()), Cell::Text("c".into())]],
+    );
+    query(
+        &db,
+        "FROM facts AS f |> SET v=v+1 |> ORDER BY v |> SELECT v-f.v AS difference",
+        integers(&[1, 1, 1, 1]),
+    );
+}
+
+#[test]
+fn set_copies_date_nulls_and_changes_type_without_losing_original_values() {
+    let directory = Directory::new();
+    let db = Database::create_empty(&directory.database(), config()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "dates",
+        &[
+            ColumnDeclaration {
+                name: "ordinal",
+                data_type: DataType::Int64,
+                nullable: false,
+            },
+            ColumnDeclaration {
+                name: "day",
+                data_type: DataType::Date,
+                nullable: true,
+            },
+        ],
+        &cancel,
+    )
+    .unwrap();
+    let sql = "FROM dates AS d |> SET ordinal=day |> ORDER BY ordinal |> SELECT ordinal,d.ordinal";
+    query(&db, sql, vec![]);
+    let days = [0, -719162, 2932896].map(|day| DateValue::from_days_since_unix_epoch(day).unwrap());
+    let mut append = db.begin_append("dates", limits(), &cancel).unwrap();
+    append
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::Int64(&[0, 1, 2]),
+                    validity: &[7],
+                },
+                ColumnInput {
+                    values: ColumnValues::Date(&days),
+                    validity: &[6],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    append.commit(&cancel).unwrap();
+    let prepared = db.prepare(sql).unwrap();
+    assert_eq!(prepared.result_column(0).unwrap().data_type, DataType::Date);
+    assert!(prepared.result_column(0).unwrap().nullable);
+    assert_eq!(
+        prepared.result_column(1).unwrap().data_type,
+        DataType::Int64
+    );
+    assert!(!prepared.result_column(1).unwrap().nullable);
+    drop(prepared);
+    query(
+        &db,
+        sql,
+        vec![
+            vec![Cell::Null, Cell::Integer(0)],
+            vec![Cell::Day(-719162), Cell::Integer(1)],
+            vec![Cell::Day(2932896), Cell::Integer(2)],
+        ],
+    );
+    query(
+        &db,
+        "FROM dates |> SET day=day |> SET day=day |> DISTINCT |> ORDER BY day |> LIMIT 2 |> SELECT day",
+        vec![vec![Cell::Null], vec![Cell::Day(-719162)]],
+    );
+    query(
+        &db,
+        "FROM dates AS ordinal |> SET ordinal=day |> AGGREGATE MIN(ordinal) AS lo,MAX(ordinal) AS hi,COUNT(ordinal) AS n",
+        vec![vec![
+            Cell::Day(-719162),
+            Cell::Day(2932896),
+            Cell::Integer(2),
+        ]],
+    );
+    assert!(matches!(
+        db.prepare("FROM dates AS d |> SET day=day |> DISTINCT |> SELECT d.day"),
+        Err(Error::Bind { .. })
+    ));
+}
+
+#[test]
+fn set_preserves_demanded_overflow_and_prunes_replaced_definitions() {
+    let (_directory, db) = join_fixture();
+    failure(
+        &db,
+        "FROM facts |> SET v=v*9223372036854775807 |> SELECT v",
+        "multiplication",
+        "v*9223372036854775807",
+    );
+    query(
+        &db,
+        "FROM facts |> SET v=v*9223372036854775807 |> SET v=1 |> SELECT v",
+        integers(&[1, 1, 1, 1]),
+    );
+    query(
+        &db,
+        "FROM facts |> SET v=v*9223372036854775807 |> WHERE k<0 |> SELECT v",
+        vec![],
+    );
+    query(
+        &db,
+        "FROM facts |> EXTEND v*9223372036854775807 AS bad |> SET bad=1 |> SELECT bad",
+        integers(&[1, 1, 1, 1]),
     );
 }

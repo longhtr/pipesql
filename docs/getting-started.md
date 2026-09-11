@@ -53,7 +53,7 @@ The CLI can open and query this database. Table declaration and typed append
 currently require the library; the CLI's `create` and `load` commands use the
 legacy `lineitem` schema.
 
-## Add columns while retaining the input
+## Transform columns while retaining the original values
 
 Before removing the database, run [examples/extend.sql](../examples/extend.sql)
 through the CLI:
@@ -65,25 +65,30 @@ cargo run --release --offline --locked --bin pipesql -- query \
   --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
 ```
 
-The first EXTEND keeps `region` and `amount` and appends `doubled`. The second
-can use that alias to compute `adjusted`. Each list resolves names against its
-input, so putting `doubled + 1` in the first list would fail preparation.
-The range `s` still names the original columns. The NULL amount produces NULL
-computed values, and the filter removes that row before sorting.
+EXTEND keeps `region` and `amount` and appends `doubled`. SET replaces the ordinary
+`amount` with that value. RENAME changes its name to `subtotal`, and DROP removes
+the temporary `doubled` output. The final EXTEND computes `adjusted` from the
+subtotal. Each expression list sees its complete input before publishing changes.
+
+The range `s` still names the original columns, so `s.amount` returns the amount
+before SET. SET assigns a new identity; RENAME preserves that identity. The NULL
+amount produces NULL computed values, and the filter removes that row before
+sorting.
 
 The CLI reports schema, rows, and completion. Its decoded result is:
 
-| region | amount | doubled | adjusted |
+| region | amount | subtotal | adjusted |
 | --- | ---: | ---: | ---: |
 | north | 5 | 10 | 11 |
 | north | 10 | 20 | 21 |
 | south | 20 | 40 | 41 |
 
 Require `status=queried` and a successful process exit before accepting the
-result. To follow the implementation, start with `bind_extend` in the
+result. To follow the implementation, read `bind_extend`, `bind_set`,
+`bind_rename`, and `bind_drop` in the
 [binder](../src/frontend/binding.rs), then read the [projection demand
-rules](language.md#computed-projection-demand). The operator adds definitions;
-it does not allocate a new execution controller for each stage.
+rules](language.md#computed-projection-demand). These transformations share their
+producer's execution controller; only demanded numeric definitions are evaluated.
 
 ## Finish and clean up
 

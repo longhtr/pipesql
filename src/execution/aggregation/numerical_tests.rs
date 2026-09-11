@@ -25,7 +25,7 @@ fn shared_scaled_average_matches_independent_intervals() {
         let rows: Vec<_> = fields[0]
             .split(',')
             .map(|raw| {
-                let mut row = [Value::Null; MAX_COLUMNS];
+                let mut row = [Value::Null; MAX_ROW_VALUES];
                 row[0] = Value::Double(f64::from_bits(u64::from_str_radix(raw, 16).unwrap()));
                 row
             })

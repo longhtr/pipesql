@@ -4,7 +4,7 @@ use super::{MAX_FRAME_BYTES, RECORD_HEADER, RECORD_MAGIC};
 use crate::batch::Batch;
 use crate::execution::{MAX_AGGREGATE_ROWS, planning};
 use crate::frontend::{
-    self, DataType, Direction, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS, NullPlacement, SemanticColumn,
+    self, DataType, Direction, MAX_AGGREGATE_COLUMNS, MAX_ROW_VALUES, NullPlacement, SemanticColumn,
 };
 use crate::resources::allocate;
 use crate::value::{DateValue, StringValue, Value};
@@ -21,7 +21,7 @@ pub(in crate::execution) struct KeyColumn {
 }
 
 pub(in crate::execution) struct RowLayout {
-    pub(in crate::execution) columns: [KeyColumn; MAX_COLUMNS],
+    pub(in crate::execution) columns: [KeyColumn; MAX_ROW_VALUES],
     pub(in crate::execution) count: usize,
     pub(in crate::execution) key_count: usize,
     pub(in crate::execution) max_bytes: usize,
@@ -55,11 +55,11 @@ impl RowLayout {
             nullable: false,
             direction: Direction::Ascending,
             nulls: NullPlacement::First,
-        }; MAX_COLUMNS];
+        }; MAX_ROW_VALUES];
         let mut count = 0;
         let mut max_bytes = 0_usize;
         for column in inputs {
-            if count == MAX_COLUMNS {
+            if count == MAX_ROW_VALUES {
                 return Err(Error::Corrupt("sorted row column bound"));
             }
             columns[count] = KeyColumn {
@@ -104,7 +104,7 @@ impl RowLayout {
             key_count += 1;
         }
         // The transient frame belongs to this permutation and comparison policy.
-        let mut layout = [0_u8; 2 + MAX_COLUMNS * 5];
+        let mut layout = [0_u8; 2 + MAX_ROW_VALUES * 5];
         layout[0] = count as u8;
         layout[1] = key_count as u8;
         for (index, column) in columns[..count].iter().enumerate() {

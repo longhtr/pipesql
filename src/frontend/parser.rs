@@ -34,6 +34,19 @@ pub(super) enum ParsedStage {
         start: u8,
         len: u8,
     },
+    Drop {
+        start: u8,
+        len: u8,
+        span: SourceSpan,
+    },
+    Set {
+        start: u8,
+        len: u8,
+    },
+    Rename {
+        start: u8,
+        len: u8,
+    },
     Extend {
         start: u8,
         len: u8,
@@ -801,11 +814,61 @@ impl Parser<'_> {
                     parsed.aggregate_group_count = group_end as u8;
                     ParsedStage::Aggregate(range)
                 }
-                Kind::Select | Kind::Identifier
-                    if self.peek() == Kind::Select || self.is_word("EXTEND") =>
+                Kind::Identifier if self.is_word("RENAME") || self.is_word("DROP") => {
+                    let drop = self.is_word("DROP");
+                    self.take(Kind::Identifier)?;
+                    let start = parsed.projection_count;
+                    loop {
+                        let target = self.take(Kind::Identifier)?;
+                        let alias = if drop {
+                            ZERO_SPAN
+                        } else {
+                            self.take(Kind::As)?;
+                            self.take(Kind::Identifier)?
+                        };
+                        let mut reference = ParsedExpression::EMPTY;
+                        reference.span = target;
+                        reference.push(ParsedOp::Column(target), target)?;
+                        let expression = parsed.push_expression(reference)?;
+                        let index = usize::from(parsed.projection_count);
+                        if index == MAX_PROJECTIONS {
+                            return Err(Error::Parse {
+                                message: "projection entry limit exceeded",
+                                span: pipe,
+                            });
+                        }
+                        parsed.projections[index] = ParsedProjection {
+                            expression,
+                            alias,
+                            direct: true,
+                        };
+                        parsed.projection_count += 1;
+                        if self.peek() != Kind::Comma {
+                            break;
+                        }
+                        self.take(Kind::Comma)?;
+                    }
+                    let len = parsed.projection_count - start;
+                    if drop {
+                        ParsedStage::Drop {
+                            start,
+                            len,
+                            span: pipe,
+                        }
+                    } else {
+                        ParsedStage::Rename { start, len }
+                    }
+                }
+                Kind::Select | Kind::Identifier | Kind::Reserved
+                    if self.peek() == Kind::Select
+                        || self.is_word("EXTEND")
+                        || self.is_word("SET") =>
                 {
                     let extend = self.is_word("EXTEND");
-                    if extend {
+                    let set = self.is_word("SET");
+                    if set {
+                        self.word("SET")?;
+                    } else if extend {
                         self.word("EXTEND")?;
                     } else {
                         self.take(Kind::Select)?;
@@ -819,6 +882,13 @@ impl Parser<'_> {
                                 span: pipe,
                             });
                         }
+                        let target = if set {
+                            let target = self.take(Kind::Identifier)?;
+                            self.take(Kind::Compare(Comparison::Equal))?;
+                            target
+                        } else {
+                            ZERO_SPAN
+                        };
                         let first = self.position;
                         let expression = self.numeric_expression()?;
                         // Parentheses retain an AST path reference; unary plus
@@ -838,7 +908,9 @@ impl Parser<'_> {
                                     )
                                 });
                         let expression = parsed.push_expression(expression)?;
-                        let alias = if self.peek() == Kind::As {
+                        let alias = if set {
+                            target
+                        } else if self.peek() == Kind::As {
                             self.take(Kind::As)?;
                             self.take(Kind::Identifier)?
                         } else if extend
@@ -868,7 +940,9 @@ impl Parser<'_> {
                         self.take(Kind::Comma)?;
                     }
                     let len = u8::try_from(len).expect("bounded columns");
-                    if extend {
+                    if set {
+                        ParsedStage::Set { start, len }
+                    } else if extend {
                         ParsedStage::Extend {
                             start,
                             len,

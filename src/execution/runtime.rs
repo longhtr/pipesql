@@ -5,7 +5,7 @@ use crate::execution::aggregation::Aggregation;
 use crate::execution::planning::{MAX_PIPELINES, PhysicalPlan, Pipeline, Producer};
 use crate::execution::scan::{AdmittedScan, ScanCursor, declared};
 use crate::execution::{Advance, ConsumerInput, ConsumerStep, blocking, limit};
-use crate::frontend::{self, DataType, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS, PreparedQuery};
+use crate::frontend::{self, DataType, MAX_AGGREGATE_COLUMNS, MAX_ROW_VALUES, PreparedQuery};
 use crate::resources::{Reservation, allocate};
 use crate::{CancellationToken, Database, Error};
 use std::mem::size_of;
@@ -718,8 +718,8 @@ fn producer_output<'db>(
     query: &PreparedQuery<'_>,
     pipeline: &Pipeline,
 ) -> Result<OwnedBatch<'db>, Error> {
-    let mut types = [DataType::Int64; MAX_COLUMNS];
-    let mut text = [None; MAX_COLUMNS];
+    let mut types = [DataType::Int64; MAX_ROW_VALUES];
+    let mut text = [None; MAX_ROW_VALUES];
     for (index, column) in pipeline.output_columns(&query.plan).enumerate() {
         types[index] = column.data_type();
         if types[index] == DataType::String && query.snapshot.is_some() {

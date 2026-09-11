@@ -5,7 +5,7 @@ use crate::execution::blocking::{
     ArgumentShape, RECORD_HEADER, RowLayout, SortRecord, append_bytes,
 };
 use crate::execution::{BATCH_ROWS, MAX_AGGREGATE_ROWS};
-use crate::frontend::{AggregateArgument, DataType, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS};
+use crate::frontend::{AggregateArgument, DataType, MAX_AGGREGATE_COLUMNS, MAX_ROW_VALUES};
 use crate::resources::{Reservation, allocate};
 
 use crate::{CancellationToken, Database, Error};
@@ -152,7 +152,7 @@ impl<'db> ArgumentBatch<'db> {
         if rows == 0 {
             return Ok(());
         }
-        let mut numeric = [None; MAX_COLUMNS];
+        let mut numeric = [None; MAX_ROW_VALUES];
         for (index, source) in aggregate.input_columns.iter().enumerate() {
             if let Some(source) = source
                 && matches!(source.data_type(), DataType::Int64 | DataType::Double)

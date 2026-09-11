@@ -6,7 +6,7 @@ use super::{
 };
 use crate::execution::predicate::PhysicalFilter;
 use crate::frontend::{
-    self, ColumnId, MAX_COLUMNS, MAX_ORDER_ITEMS, MAX_QUERY_COLUMNS, MAX_STAGES, PreparedQuery,
+    self, ColumnId, MAX_ORDER_ITEMS, MAX_QUERY_COLUMNS, MAX_ROW_VALUES, MAX_STAGES, PreparedQuery,
     RelationId, Stage,
 };
 use crate::resources::allocate;
@@ -48,22 +48,23 @@ pub(in crate::execution) fn lower<'db>(
             end,
             filters: [PhysicalFilter::EMPTY; MAX_STAGES],
             filter_count: 0,
-            columns: [0; MAX_COLUMNS],
+            columns: [0; MAX_ROW_VALUES],
             column_count: 0,
-            identities: [ColumnId::EMPTY; MAX_COLUMNS],
+            identities: [ColumnId::EMPTY; MAX_ROW_VALUES],
             computed: &semantic.computed,
             slots: [u8::MAX; MAX_QUERY_COLUMNS + 1],
         };
-        for id in semantic.relation_columns(relation)?.iter() {
+        for id in semantic.available_columns(relation)?.iter() {
             if masks[index].contains(id) {
                 pipeline.slots[id.value() as usize] =
                     base_position(&pipelines, semantic, producer, relation, id)?;
             }
         }
-        for (index, definition) in semantic.computed.iter().enumerate() {
+        for definition in &semantic.computed {
             if semantic.producer(definition.input)? == relation {
-                pipeline.slots[definition.column.identity().value() as usize] =
-                    (MAX_COLUMNS + index) as u8;
+                let id = definition.column.identity();
+                pipeline.slots[id.value() as usize] =
+                    base_position(&pipelines, semantic, producer, relation, id)?;
             }
         }
         for node in semantic.nodes() {
@@ -78,13 +79,21 @@ pub(in crate::execution) fn lower<'db>(
                 pipeline.filter_count += 1;
             }
         }
-        for id in semantic.relation_columns(end)?.iter() {
+        let visible = semantic.relation_columns(end)?;
+        let available = semantic.available_columns(end)?;
+        let retained = available
+            .iter()
+            .filter(|id| end != semantic.final_relation() && !visible.contains(*id));
+        for id in visible.iter().chain(retained) {
             if !masks[usize::from(end.0)].contains(id)
                 || (end != semantic.final_relation() && pipeline.position(id).is_some())
             {
                 continue;
             }
             let index = pipeline.column_count;
+            if index >= pipeline.columns.len() {
+                return Err(Error::Corrupt("physical payload exceeds column capacity"));
+            }
             pipeline.columns[index] = base_position(&pipelines, semantic, producer, relation, id)?;
             pipeline.identities[index] = id;
             pipeline.column_count += 1;
@@ -188,6 +197,9 @@ fn select_producer(
                 }
             }
             Stage::Alias
+            | Stage::Rename
+            | Stage::Set { .. }
+            | Stage::Drop { .. }
             | Stage::Derived
             | Stage::Select { .. }
             | Stage::Extend { .. }
@@ -207,52 +219,63 @@ fn base_position(
     relation: RelationId,
     id: ColumnId,
 ) -> Result<u8, Error> {
-    let position = match producer {
-        Producer::Scan(source) => semantic
-            .occurrence_columns(source)?
-            .iter()
-            .find(|column| column.semantic().identity() == id)
-            .map(|column| usize::from(column.storage_slot())),
-        Producer::Distinct { input, descriptor } => semantic
-            .distinct
-            .get(usize::from(descriptor))
-            .and_then(|bound| bound.input_for(id))
-            .and_then(|column| pipelines.get(input.index())?.position(column.identity())),
-        Producer::Aggregate { aggregate, .. } => semantic
-            .aggregates
-            .get(usize::from(aggregate))
-            .and_then(|aggregate| aggregate.output_position(id)),
-        Producer::Order { input, .. } | Producer::Limit { input, .. } => pipelines
-            .get(input.index())
-            .and_then(|input| input.position(id)),
-        Producer::Join { left, right, .. } => {
-            let left = pipelines
-                .get(left.index())
-                .ok_or(Error::Corrupt("join left pipeline absent"))?;
-            let right = pipelines
-                .get(right.index())
-                .ok_or(Error::Corrupt("join right pipeline absent"))?;
-            left.position(id).or_else(|| {
-                right
-                    .position(id)
-                    .map(|position| left.column_count + position)
-            })
-        }
-    };
-    let Some(position) = position else {
-        for (index, definition) in semantic.computed.iter().enumerate() {
-            if definition.column.identity() == id
-                && semantic.producer(definition.input)? == relation
-            {
-                return Ok((MAX_COLUMNS + index) as u8);
+    let mut id = id;
+    // Copies retain distinct semantic identities while borrowing the same
+    // physical value until the producer materializes its output.
+    for _ in 0..=semantic.computed.len() {
+        let position = match producer {
+            Producer::Scan(source) => semantic
+                .occurrence_columns(source)?
+                .iter()
+                .find(|column| column.semantic().identity() == id)
+                .map(|column| usize::from(column.storage_slot())),
+            Producer::Distinct { input, descriptor } => semantic
+                .distinct
+                .get(usize::from(descriptor))
+                .and_then(|bound| bound.input_for(id))
+                .and_then(|column| pipelines.get(input.index())?.position(column.identity())),
+            Producer::Aggregate { aggregate, .. } => semantic
+                .aggregates
+                .get(usize::from(aggregate))
+                .and_then(|aggregate| aggregate.output_position(id)),
+            Producer::Order { input, .. } | Producer::Limit { input, .. } => pipelines
+                .get(input.index())
+                .and_then(|input| input.position(id)),
+            Producer::Join { left, right, .. } => {
+                let left = pipelines
+                    .get(left.index())
+                    .ok_or(Error::Corrupt("join left pipeline absent"))?;
+                let right = pipelines
+                    .get(right.index())
+                    .ok_or(Error::Corrupt("join right pipeline absent"))?;
+                left.position(id).or_else(|| {
+                    right
+                        .position(id)
+                        .map(|position| left.column_count + position)
+                })
             }
+        };
+        if let Some(position) = position {
+            if position >= MAX_ROW_VALUES || !semantic.available_columns(relation)?.contains(id) {
+                return Err(Error::Corrupt("physical producer position outside its row"));
+            }
+            return Ok(position as u8);
         }
-        return Err(Error::Corrupt(
-            "physical producer does not provide demanded identity",
-        ));
-    };
-    if position >= MAX_COLUMNS || !semantic.relation_columns(relation)?.contains(id) {
-        return Err(Error::Corrupt("physical producer position outside its row"));
+        let (index, definition) = semantic
+            .computed
+            .iter()
+            .enumerate()
+            .find(|(_, definition)| {
+                definition.column.identity() == id
+                    && semantic.producer(definition.input).ok() == Some(relation)
+            })
+            .ok_or(Error::Corrupt(
+                "physical producer does not provide demanded identity",
+            ))?;
+        match &definition.expression {
+            frontend::Computation::Numeric(_) => return Ok((MAX_ROW_VALUES + index) as u8),
+            frontend::Computation::Copy(column) => id = column.identity(),
+        }
     }
-    Ok(position as u8)
+    Err(Error::Corrupt("cyclic physical copy mapping"))
 }

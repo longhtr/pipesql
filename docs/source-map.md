@@ -20,7 +20,7 @@ concerns still share one source file.
 
 | Owner | Responsibility |
 | --- | --- |
-| [frontend.rs](../src/frontend.rs) | Semantic identities, relation state, immutable plans, prepared-query ownership, and read-only column facts. |
+| [frontend.rs](../src/frontend.rs), [column_set.rs](../src/frontend/column_set.rs) | Semantic identities, visible rows and retained input sets, immutable plans, prepared-query ownership, and read-only column facts. |
 | [lexer.rs](../src/frontend/lexer.rs), [parser.rs](../src/frontend/parser.rs) | Bounded tokens, identifier policy, parsed syntax, and source spans. Boolean syntax lowering lives under the parser. |
 | [binding.rs](../src/frontend/binding.rs), [admission.rs](../src/frontend/binding/admission.rs) | Catalog source facts, mutable name scope, per-stage binding, and exact prepared-plan admission. Start with `bind_plan`; follow `Binder::bind_stage` to each operation. |
 | [validation.rs](../src/frontend/validation.rs), [distinct.rs](../src/frontend/distinct.rs) | Independent semantic-plan checks and DISTINCT identity mapping. Neither validator depends on the binder. |

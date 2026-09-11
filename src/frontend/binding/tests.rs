@@ -244,8 +244,17 @@ fn computed_definitions_reject_invalid_scope_identity_and_provenance() {
                 1 => query.plan.computed[1].input = RelationId::SOURCE,
                 2 => query.plan.computed[0].span = ZERO_SPAN,
                 3 => query.plan.computed[0].span.end = u16::MAX,
-                4 => query.plan.computed[0].expression.ops[0] = Op::Column(second),
-                5 => query.plan.computed[0].expression.data_type = DataType::Int64,
+                4 | 5 => {
+                    let Computation::Numeric(expression) = &mut query.plan.computed[0].expression
+                    else {
+                        unreachable!()
+                    };
+                    if mutation == 4 {
+                        expression.ops[0] = Op::Column(second);
+                    } else {
+                        expression.data_type = DataType::Int64;
+                    }
+                }
                 6 => {
                     query.plan.computed.pop();
                 }
@@ -951,6 +960,25 @@ fn diagnostics_identify_exact_source_bytes() {
         }
         outcome => panic!("unexpected bind outcome: {}", outcome.err().unwrap()),
     }
+    for suffix in [
+        "SET missing=1",
+        "DROP missing",
+        "RENAME missing AS renamed",
+        "SET l_quantity=1,L_QUANTITY=2",
+        "DROP l_quantity,L_QUANTITY",
+        "RENAME l_quantity AS a,L_QUANTITY AS b",
+    ] {
+        let sql = format!("FROM lineitem |> {suffix}");
+        let Err(Error::Bind { span, .. }) = database.prepare(&sql) else {
+            panic!("missing target diagnostic: {sql}");
+        };
+        let expected = if suffix.contains("missing") {
+            "missing"
+        } else {
+            "L_QUANTITY"
+        };
+        assert_eq!(&sql[span.start()..span.end()], expected, "{sql}");
+    }
     let offset = Q6.find("l_quantity <").unwrap();
     let invalid = Q6.replacen("l_quantity", "@_quantity", 1);
     match database.prepare(&invalid) {
@@ -1194,7 +1222,21 @@ fn projection_preserves_nonreserved_operator_identifiers() {
 
 #[test]
 fn extend_prepared_admission_refuses_one_byte_short_and_releases_owners() {
-    let sql = "FROM lineitem AS t |> EXTEND t.l_quantity+1 AS x |> EXTEND x*2 AS y";
+    check_prepared_admission("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS x |> EXTEND x*2 AS y");
+}
+
+#[test]
+fn column_transform_admission_refuses_one_byte_short_and_releases_owners() {
+    for sql in [
+        "FROM lineitem |> SET l_quantity=l_quantity+1",
+        "FROM lineitem |> SET l_quantity=l_returnflag",
+        "FROM lineitem |> RENAME l_quantity AS quantity |> DROP l_discount",
+    ] {
+        check_prepared_admission(sql);
+    }
+}
+
+fn check_prepared_admission(sql: &str) {
     let (directory, db) = database(4_000_000);
     let resident = db.reserved_memory_bytes();
     let required = db.prepare(sql).unwrap().accounted_memory_bytes();
@@ -1223,5 +1265,208 @@ fn extend_prepared_admission_refuses_one_byte_short_and_releases_owners() {
         }
         assert_eq!(db.reserved_memory_bytes(), resident);
         db.close().unwrap();
+    }
+}
+
+#[test]
+fn column_transforms_preserve_original_ranges_and_set_creates_fresh_identity() {
+    let (_directory, db) = database(4_000_000);
+    let set = db.prepare("FROM lineitem AS t |> SET l_returnflag=l_linestatus |> SELECT l_returnflag,t.l_returnflag,t.l_linestatus").unwrap();
+    assert_eq!(set.result_column_count(), 3);
+    assert_ne!(set.plan.outputs[0].id, set.plan.outputs[1].id);
+    assert_ne!(set.plan.outputs[0].id, set.plan.outputs[2].id);
+    for index in 0..3 {
+        assert_eq!(
+            set.result_column(index).unwrap().data_type,
+            DataType::String
+        );
+    }
+    let dropped = db
+        .prepare("FROM lineitem AS t |> DROP l_quantity |> SELECT t.l_quantity,l_returnflag")
+        .unwrap();
+    assert_eq!(dropped.result_column(0).unwrap().name, Some("l_quantity"));
+    let renamed = db
+        .prepare("FROM lineitem AS t |> RENAME l_quantity AS q |> SELECT q,t.l_quantity")
+        .unwrap();
+    assert_eq!(renamed.plan.outputs[0].id, renamed.plan.outputs[1].id);
+}
+
+#[test]
+fn column_transform_targets_use_the_complete_input_name_list() {
+    let (_directory, db) = database(4_000_000);
+    let prefix = "FROM lineitem |> SELECT l_quantity AS x,l_returnflag AS y";
+    let renamed = db
+        .prepare(&format!("{prefix} |> RENAME x AS y,y AS x"))
+        .unwrap();
+    assert_eq!(renamed.result_column(0).unwrap().name, Some("y"));
+    assert_eq!(
+        renamed.result_column(0).unwrap().data_type,
+        DataType::Double
+    );
+    assert_eq!(renamed.result_column(1).unwrap().name, Some("x"));
+    assert_eq!(
+        renamed.result_column(1).unwrap().data_type,
+        DataType::String
+    );
+    let set = db.prepare(&format!("{prefix} |> SET x=y,y=x")).unwrap();
+    assert_eq!(set.result_column(0).unwrap().data_type, DataType::String);
+    assert_eq!(set.result_column(1).unwrap().data_type, DataType::Double);
+
+    let duplicate = "FROM lineitem |> SELECT l_quantity AS x,l_discount AS x,l_returnflag AS keep";
+    let dropped = db.prepare(&format!("{duplicate} |> DROP x")).unwrap();
+    assert_eq!(dropped.result_column_count(), 1);
+    assert_eq!(dropped.result_column(0).unwrap().name, Some("keep"));
+    for suffix in ["SET x=1", "RENAME x AS z"] {
+        assert!(matches!(
+            db.prepare(&format!("{duplicate} |> {suffix}")),
+            Err(Error::Bind { .. })
+        ));
+    }
+    for sql in [
+        format!("{prefix} |> DROP x,y"),
+        format!("{prefix} |> DROP missing"),
+        format!("{prefix} |> DROP x,X"),
+        format!("{prefix} |> SET x=1,X=2"),
+        format!("{prefix} |> RENAME x AS a,X AS b"),
+        format!("{prefix} |> RENAME x AS y |> SELECT y"),
+    ] {
+        assert!(matches!(db.prepare(&sql), Err(Error::Bind { .. })), "{sql}");
+    }
+}
+
+#[test]
+fn rename_preserves_identity_and_ranges_without_rebinding_sibling_names() {
+    let (_directory, db) = database(4_000_000);
+    let query = db
+        .prepare("FROM lineitem AS t |> RENAME l_quantity AS q |> SELECT q,t.l_quantity")
+        .unwrap();
+    assert_eq!(query.plan.outputs[0].id, query.plan.outputs[1].id);
+    let swapped = db
+        .prepare(
+            "FROM lineitem |> SELECT l_quantity AS x,l_returnflag AS y |> RENAME x AS y,y AS x",
+        )
+        .unwrap();
+    assert_eq!(swapped.result_column(0).unwrap().name, Some("y"));
+    assert_eq!(
+        swapped.result_column(0).unwrap().data_type,
+        DataType::Double
+    );
+    assert_eq!(swapped.result_column(1).unwrap().name, Some("x"));
+    assert_eq!(
+        swapped.result_column(1).unwrap().data_type,
+        DataType::String
+    );
+    for suffix in [
+        "RENAME missing AS x",
+        "RENAME l_quantity AS x,L_QUANTITY AS y",
+        "RENAME l_quantity AS l_returnflag |> SELECT l_returnflag",
+        "AS l_quantity |> RENAME l_quantity AS x",
+    ] {
+        assert!(
+            matches!(
+                db.prepare(&format!("FROM lineitem |> {suffix}")),
+                Err(Error::Bind { .. })
+            ),
+            "{suffix}"
+        );
+    }
+    for mutation in 0..2 {
+        let mut query = db
+            .prepare("FROM lineitem |> RENAME l_quantity AS q")
+            .unwrap();
+        if mutation == 0 {
+            query.plan.projections[0] = ColumnId::new(99);
+        } else {
+            query.plan.stages[0].columns -= 1;
+        }
+        assert!(validate(&query.plan).is_err());
+    }
+}
+
+#[test]
+fn table_ranges_take_precedence_over_colliding_scalar_names() {
+    let (_directory, db) = database(4_000_000);
+    for sql in [
+        "FROM lineitem AS l_quantity |> SELECT l_quantity",
+        "FROM lineitem |> RENAME l_quantity AS lineitem |> SELECT lineitem",
+        "FROM lineitem |> EXTEND l_quantity AS lineitem |> SELECT lineitem",
+    ] {
+        assert!(matches!(db.prepare(sql), Err(Error::Bind { .. })), "{sql}");
+    }
+    db.prepare("FROM lineitem AS l_quantity |> SELECT l_quantity.l_quantity")
+        .unwrap();
+    db.prepare("FROM lineitem |> SELECT l_quantity AS lineitem |> SELECT lineitem")
+        .unwrap();
+}
+
+#[test]
+fn drop_preserves_survivor_positions_and_removes_duplicate_names() {
+    let (_directory, db) = database(4_000_000);
+    let sql = "FROM lineitem |> SELECT l_quantity AS x,l_discount AS x,l_returnflag AS keep |> DROP x |> EXTEND keep AS copy |> RENAME keep AS original";
+    let query = db.prepare(sql).unwrap();
+    assert_eq!(query.result_column_count(), 2);
+    assert_eq!(query.result_column(0).unwrap().name, Some("original"));
+    assert_eq!(query.result_column(1).unwrap().name, Some("copy"));
+    assert_eq!(query.plan.outputs[0].id, query.plan.outputs[1].id);
+    assert_eq!(query.plan.projection_count, 4);
+    for sql in [
+        "FROM lineitem |> DROP l_quantity,L_QUANTITY",
+        "FROM lineitem |> DROP absent",
+        "FROM lineitem |> SELECT l_quantity |> DROP l_quantity",
+    ] {
+        assert!(matches!(db.prepare(sql), Err(Error::Bind { .. })), "{sql}");
+    }
+    for keep in [0, u64::MAX, 127] {
+        let mut query = db.prepare("FROM lineitem |> DROP l_quantity").unwrap();
+        query.plan.stages[0].stage = Stage::Drop { keep };
+        assert!(validate(&query.plan).is_err());
+    }
+}
+
+#[test]
+fn qualified_inputs_survive_drop_but_not_scope_replacement() {
+    let (_directory, db) = database(4_000_000);
+    db.prepare("FROM lineitem AS l |> DROP l_quantity |> SELECT l.l_quantity")
+        .unwrap();
+    for sql in [
+        "FROM lineitem AS l |> DROP l_quantity |> SELECT l_quantity",
+        "FROM lineitem AS l |> DROP l_quantity |> AS renamed_scope |> SELECT renamed_scope.l_quantity",
+        "FROM lineitem AS l |> DROP l_quantity |> SELECT l_discount |> SELECT l.l_quantity",
+        "FROM lineitem AS l |> DROP l_quantity |> AGGREGATE COUNT(*) AS n |> SELECT l.l_quantity",
+    ] {
+        assert!(matches!(db.prepare(sql), Err(Error::Bind { .. })), "{sql}");
+    }
+    for (sql, relation) in [
+        ("FROM lineitem", 0),
+        ("FROM lineitem |> SELECT l_discount", 1),
+        ("FROM lineitem |> AGGREGATE COUNT(*) AS n", 1),
+        ("FROM lineitem |> DROP l_quantity", 1),
+    ] {
+        let mut query = db.prepare(sql).unwrap();
+        query.plan.range_columns[relation].insert(ColumnId::new(99));
+        assert!(validate(&query.plan).is_err(), "{sql}");
+    }
+}
+
+#[test]
+fn set_assignments_and_typed_copies_are_validated_independently() {
+    let (_directory, db) = database(4_000_000);
+    let sql = "FROM lineitem |> SELECT l_quantity AS x,l_returnflag AS y |> SET x=y,y=x";
+    for mutation in 0..8 {
+        let mut query = db.prepare(sql).unwrap();
+        match mutation {
+            0 => query.plan.assignments[1].position = query.plan.assignments[0].position,
+            1 => query.plan.assignments[0].position = 64,
+            2 => query.plan.assignments[0].column = query.plan.projections[0],
+            3 => query.plan.assignment_count -= 1,
+            4 => query.plan.computed[0].span = ZERO_SPAN,
+            5 => query.plan.computed[0].input = RelationId::SOURCE,
+            6 => {
+                query.plan.computed[0].expression = Computation::Copy(query.plan.computed[1].column)
+            }
+            7 => query.plan.assignments[2] = query.plan.assignments[0],
+            _ => unreachable!(),
+        }
+        assert!(validate(&query.plan).is_err(), "mutation {mutation}");
     }
 }

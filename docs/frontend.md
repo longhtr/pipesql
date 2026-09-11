@@ -78,6 +78,19 @@ read through its input relation. Repeated EXTEND stages therefore do not copy
 the growing row into the syntax-sized projection pool. The independent validator
 checks combined width and expression definitions against the original input.
 
+SET keeps a bounded list of replacement positions and fresh identities. Every
+right-hand expression binds before the replacement row is published. `Computation`
+distinguishes typed copies from numeric programs; the validator checks a copy's
+input identity, type, and NULLability against the original scope. RENAME changes
+names only, and DROP records surviving visible positions in a 64-bit mask.
+Neither consumes semantic projection entries or creates an execution producer.
+
+Visible outputs and qualified inputs have different lifetimes. The plan records
+the retained range identities at each relation in `ColumnSet`; it does not retain
+mutable name tables. Validation checks scope transitions separately from visible
+row shape, so a dropped original can remain qualified without reviving a value
+removed by SELECT, AGGREGATE, or a replacement range alias.
+
 ## Bounds
 
 The shared token and stage budgets constrain the whole query. Individual limits
@@ -89,7 +102,9 @@ are not independently attainable maxima.
 | Tokens and shared parsed numeric operations | 160 each |
 | Normalized stages and nested-input frames | 16 each |
 | Source columns across all occurrences | 64 |
-| Columns in one relation or final output | 64 |
+| Visible columns in one relation or final output | 64 |
+| Qualified range members | 64 |
+| Distinct visible and retained identities at one relation | 128 |
 | Projection entries across the query | 80 |
 | Ordering terms across the query | 80 |
 | Operations in one numeric expression | 32 |
@@ -254,7 +269,7 @@ cycles, overlapping IDs and invalid spans. The conservative query bound is
 sets of at most 64 DISTINCT replacements. The shared token and stage bounds
 usually admit fewer.
 The 64-source-column bound covers all occurrences together, including repeated
-table schemas. Each relation and final output is independently bounded to 64
+table schemas. Each visible relation and final output is independently bounded to 64
 columns; these are current limits, not the full release profile.
 
 ### DISTINCT

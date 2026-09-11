@@ -1,19 +1,19 @@
 //! Owned typed columns for bounded execution and borrowed result exchange.
 use crate::Error;
 use crate::fixed_text::StringValue as FixedKey;
-use crate::frontend::{DataType, MAX_COLUMNS};
+use crate::frontend::{DataType, MAX_ROW_VALUES};
 use crate::resources::{Reservation, allocate};
 use crate::value::{DateValue, StringValue, Value};
 use std::mem::size_of;
 
 pub(crate) const ROWS: usize = 256;
 const _: () = assert!(ROWS <= crate::scalar::MAX_ROWS);
-pub(crate) const MAX_BYTES: u64 = (MAX_COLUMNS * (size_of::<Column>() + ROWS * 8)) as u64;
+pub(crate) const MAX_BYTES: u64 = (MAX_ROW_VALUES * (size_of::<Column>() + ROWS * 8)) as u64;
 
 pub(crate) const MAX_TEXT_BYTES: usize = 65_536;
 // A variable-text owner dominates every supported fixed-width column payload.
 pub(crate) const MAX_BYTES_WITH_TEXT: u64 =
-    (MAX_COLUMNS * (size_of::<Column>() + size_of::<TextColumn>() + MAX_TEXT_BYTES)) as u64;
+    (MAX_ROW_VALUES * (size_of::<Column>() + size_of::<TextColumn>() + MAX_TEXT_BYTES)) as u64;
 
 #[derive(Clone, Copy)]
 struct TextSpan {
@@ -133,7 +133,7 @@ impl<'db> OwnedBatch<'db> {
     ) -> Result<Self, Error> {
         Self::new_with_text(
             types,
-            &[None; MAX_COLUMNS][..types.len().min(MAX_COLUMNS)],
+            &[None; MAX_ROW_VALUES][..types.len().min(MAX_ROW_VALUES)],
             reservation,
         )
     }
@@ -177,14 +177,17 @@ impl Batch {
     }
 
     pub(crate) fn required_bytes(types: &[DataType]) -> Result<u64, Error> {
-        Self::required_bytes_with_text(types, &[None; MAX_COLUMNS][..types.len().min(MAX_COLUMNS)])
+        Self::required_bytes_with_text(
+            types,
+            &[None; MAX_ROW_VALUES][..types.len().min(MAX_ROW_VALUES)],
+        )
     }
 
     pub(crate) fn required_bytes_with_text(
         types: &[DataType],
         text: &[Option<usize>],
     ) -> Result<u64, Error> {
-        if types.len() > MAX_COLUMNS || types.len() != text.len() {
+        if types.len() > MAX_ROW_VALUES || types.len() != text.len() {
             return Err(Error::Corrupt("batch column limit"));
         }
         let mut bytes = types
@@ -227,7 +230,7 @@ impl Batch {
     pub(crate) fn new(types: &[DataType], limit: u64) -> Result<Self, Error> {
         Self::new_with_text(
             types,
-            &[None; MAX_COLUMNS][..types.len().min(MAX_COLUMNS)],
+            &[None; MAX_ROW_VALUES][..types.len().min(MAX_ROW_VALUES)],
             limit,
         )
     }

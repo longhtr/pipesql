@@ -58,6 +58,50 @@ Run `sh tools/check.sh --output /absolute/new-result-directory` with the
 stage logs and a JSON receipt, checks before/after source manifests, and removes
 its owned build target. Preserve failure context before disposing of a run.
 
+## Column transformation semantics
+
+The SET, DROP, and RENAME contract comes from GoogleSQL revision
+`0e7d7073ed0360be587a5efa0fa78abeee00f17b`, specifically the analyzer fixtures
+[pipe_set.test](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/analyzer/testdata/pipe_set.test),
+[pipe_drop.test](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/analyzer/testdata/pipe_drop.test), and
+[pipe_rename.test](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/analyzer/testdata/pipe_rename.test),
+together with `ResolvePipeSet`, `ResolvePipeDrop`, `ResolvePipeRename`, and the
+name-scope implementation. This is source and fixture evidence, not a fresh
+upstream analyzer execution. The respective fixture SHA-256 values are:
+
+- `efb519559a8bdff538d59b4302f6674751f6a718735cf8464682283175a665c3`
+- `c088818f5c9ceefa5825445083995e78319aa113010c4fa2ce00bd61ac591420`
+- `5664b7886de4ffaae069c51cdc0904b427135f2659e0c53d60b931c06b451bde`
+
+Reduced regressions in the frontend and public computation tests preserve
+simultaneous assignments, ambiguous and missing targets, duplicate targets,
+fresh typed copies, original range members, type/NULLability, exact spans, and
+hidden versus demanded failures. The [language manifest](../docs/language.md#current-public-query-manifest)
+owns the accepted profile. `check_column_transforms` in the ordinary composition
+campaign compares output against independently encoded input rows; its expected
+answers do not come from the binder or physical planner.
+
+Two prerequisite defects have durable regressions. Qualified original values
+must survive DROP/SET even when absent from ordinary outputs; grouping and numeric
+binding must use that scope too. Sorting all 64 visible keys plus one original
+value requires 65 intermediate values. Internal owners now admit at most 128
+values while native schemas and public rows stay at 64. Larger inline arrays
+remain charged to their existing owners; this is an accepted capacity cost,
+not a performance improvement. The unchanged small-stack regression exposed
+stack growth during preparation. Allocating the admitted plan in a separate
+construction frame before binding repaired that failure.
+
+Focused macOS checks pass: the 353-test library run, then 41 frontend/physical
+checks including added admission and corruption controls; 67 lifecycle tests,
+three SET runtime tests, the 128-value sorter, and the small-stack regression.
+The revised column-transformation tutorial returns its three documented rows
+and successful CLI completion. The independent composition campaign passes all
+298 cases using stock CLI SHA-256
+`b90d2c27915c108c407063ad74db4660f3b4559e34e1aa9f7211715af018604f`.
+Added cancellation checks, maintenance (84 tool tests and 39 codec fixtures),
+and warnings-denied workspace Clippy also pass. The complete gates are still
+pending; the earlier full checkpoint above does not cover these changes.
+
 ## EXTEND projection semantics
 
 EXTEND appends direct references or current numeric expressions while preserving
@@ -108,7 +152,7 @@ cargo test --release --offline --locked --lib frontend:: -- --test-threads=1
 cargo test --release --offline --locked --test catalog_lifecycle computed:: -- --test-threads=1
 ```
 
-The [learning example](../docs/getting-started.md#add-columns-while-retaining-the-input)
+The [learning example](../docs/getting-started.md#transform-columns-while-retaining-the-original-values)
 ran from fresh databases on macOS and Linux. Both returned the same schema and
 three expected rows, then `row_count=3`, `status=queried`, and exit zero. Its SQL,
 setup program, and expected values are maintained inputs. Successful raw output

@@ -7,11 +7,12 @@ use super::parser::{
 use super::validate;
 use super::{
     AggregateArgument, AggregateEntry, AggregateKind, AggregatePlan, ColumnFacts, ColumnId,
-    Comparison, Computed, DataType, Database, DateValue, DistinctPlan, Error, Expression, Filter,
-    FilterLiteral, Group, LimitBounds, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS, MAX_ORDER_ITEMS,
-    MAX_PROJECTIONS, MAX_QUERY_COLUMNS, MAX_STAGES, Name, Node, Op, OrderKey, Output, OwnedPlan,
-    PREPARED_ALLOCATION_ALLOWANCE, Plan, Predicate, PreparedQuery, RelationId, SemanticColumn,
-    SourceColumn, SourceOccurrence, SourceSpan, Stage, bind_error, initial_outputs, text,
+    Comparison, Computation, Computed, DataType, Database, DateValue, DistinctPlan, Error,
+    Expression, Filter, FilterLiteral, Group, LimitBounds, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS,
+    MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_QUERY_COLUMNS, MAX_STAGES, Name, Node, Op, OrderKey,
+    Output, OwnedPlan, PREPARED_ALLOCATION_ALLOWANCE, Plan, Predicate, PreparedQuery, RelationId,
+    SemanticColumn, SetAssignment, SourceColumn, SourceOccurrence, SourceSpan, Stage, bind_error,
+    initial_outputs, text,
 };
 use crate::date::DatePart;
 use std::mem::size_of;
@@ -108,6 +109,28 @@ impl Ranges {
     fn clear(&mut self) {
         self.count = 0;
         self.len = 0;
+    }
+
+    fn remove(&mut self, name: &str) {
+        let mut count = 0;
+        let mut members = 0;
+        for index in 0..self.count {
+            let mut range = self.ranges[index];
+            if range.name.as_str().eq_ignore_ascii_case(name) {
+                continue;
+            }
+            let start = usize::from(range.start);
+            let len = usize::from(range.len);
+            self.members.copy_within(start..start + len, members);
+            range.start = members as u8;
+            self.ranges[count] = range;
+            count += 1;
+            members += len;
+        }
+        self.ranges[count..self.count].fill(Range::EMPTY);
+        self.members[members..self.len].fill(Output::EMPTY);
+        self.count = count;
+        self.len = members;
     }
 
     fn add(&mut self, source: &str, alias: SourceSpan, outputs: &[Output]) -> Result<(), Error> {
@@ -329,6 +352,12 @@ fn resolve(
             &ranges.members[start..start + usize::from(range.len)],
         )
     } else {
+        if ranges.ranges[..ranges.count]
+            .iter()
+            .any(|range| range.name.as_str().eq_ignore_ascii_case(reference))
+        {
+            return Err(bind_error("table alias is not a scalar column", span));
+        }
         (reference, outputs)
     };
     let mut found = None;
@@ -406,13 +435,17 @@ fn bind_expression(
             ParsedOp::Empty => return Err(Error::Corrupt("empty parsed scalar operation")),
         };
     }
-    let mut visible = [SourceColumn::QUANTITY.semantic(); MAX_COLUMNS];
-    for (slot, output) in visible.iter_mut().zip(outputs) {
-        *slot = facts
-            .column(output.id)
-            .ok_or(Error::Corrupt("expression input has no semantic facts"))?;
+    let mut inputs = [SourceColumn::QUANTITY.semantic(); crate::scalar::MAX_OPS];
+    let mut count = 0;
+    for op in &expression.ops[..usize::from(expression.len)] {
+        if let Op::Column(column) = op
+            && !inputs[..count].contains(column)
+        {
+            inputs[count] = *column;
+            count += 1;
+        }
     }
-    expression.data_type = expression.infer(&visible[..outputs.len()])?;
+    expression.data_type = expression.infer(&inputs[..count])?;
     Ok(expression)
 }
 
@@ -566,33 +599,25 @@ fn bind_plan<'db>(
         None
     };
     let descriptors = budget.allocate()?;
-    let mut plan = Plan {
-        database: database.database_identity(),
+    let mut owned = allocate_plan(
+        database,
+        source,
+        parsed,
+        &sources,
         generation,
-        occurrences: sources.occurrences,
-        occurrence_count: parsed.source_count,
-        source_columns: sources.columns,
-        catalog_columns: sources.catalog,
-        source_count: sources.count,
-        source_bytes: u16::try_from(source.len()).expect("source bound"),
-        stages: [Node::EMPTY; MAX_STAGES],
-        count: parsed.len,
-        projections: [ColumnId::EMPTY; MAX_PROJECTIONS],
-        projection_count: parsed.projection_count,
-        order_items: [OrderKey::EMPTY; MAX_ORDER_ITEMS],
-        order_count: parsed.order_count,
         outputs,
         output_count,
-        aggregates: Vec::new(),
-        computed: Vec::new(),
-        distinct: Vec::new(),
-    };
+    )?;
+    let plan = owned.as_mut();
+    for output in &ranges.members[..ranges.len] {
+        plan.range_columns[0].insert(output.id);
+    }
     let descriptors = {
         let mut binder = Binder {
             source,
             parsed,
             sources: &sources,
-            plan: &mut plan,
+            plan,
             next_identity: u32::from(sources.count) + 1,
             ranges,
             descriptors,
@@ -615,12 +640,52 @@ fn bind_plan<'db>(
     plan.aggregates = descriptors.aggregates;
     plan.computed = descriptors.computed;
     plan.distinct = descriptors.distinct;
-    validate(&plan)?;
+    validate(plan)?;
     Ok(PreparedQuery {
-        plan: OwnedPlan::new(plan, database.config().memory_limit_bytes())?,
+        plan: owned,
         snapshot: None,
         reservation,
     })
+}
+
+// Construct the admitted heap owner before binding and validation. Keeping
+// this value construction in a separate frame avoids retaining a maximum plan
+// on the stack while those phases use their own bounded scratch.
+#[inline(never)]
+fn allocate_plan(
+    database: &Database,
+    source: &str,
+    parsed: &Parsed,
+    sources: &SourceBindings,
+    generation: u64,
+    outputs: [Output; MAX_COLUMNS],
+    output_count: u8,
+) -> Result<OwnedPlan, Error> {
+    let plan = Plan {
+        database: database.database_identity(),
+        generation,
+        occurrences: sources.occurrences,
+        occurrence_count: parsed.source_count,
+        source_columns: sources.columns,
+        catalog_columns: sources.catalog,
+        source_count: sources.count,
+        source_bytes: u16::try_from(source.len()).expect("source bound"),
+        stages: [Node::EMPTY; MAX_STAGES],
+        range_columns: [super::ColumnSet::EMPTY; MAX_STAGES + 1],
+        assignments: [SetAssignment::EMPTY; MAX_PROJECTIONS],
+        assignment_count: 0,
+        count: parsed.len,
+        projections: [ColumnId::EMPTY; MAX_PROJECTIONS],
+        projection_count: 0,
+        order_items: [OrderKey::EMPTY; MAX_ORDER_ITEMS],
+        order_count: parsed.order_count,
+        outputs,
+        output_count,
+        aggregates: Vec::new(),
+        computed: Vec::new(),
+        distinct: Vec::new(),
+    };
+    OwnedPlan::new(plan, database.config().memory_limit_bytes())
 }
 
 /// Mutable name scope and descriptors under construction. It has no execution
@@ -672,6 +737,9 @@ impl Binder<'_, '_> {
             } => Stage::Limit(self.bind_limit(count, offset, span)?),
             ParsedStage::Order { start, len } => self.bind_order(start, len)?,
             ParsedStage::Aggregate(aggregate) => self.bind_aggregate(aggregate)?,
+            ParsedStage::Drop { start, len, span } => self.bind_drop(start, len, span)?,
+            ParsedStage::Rename { start, len } => self.bind_rename(start, len)?,
+            ParsedStage::Set { start, len } => self.bind_set(start, len, input)?,
             ParsedStage::Select { start, len } => self.bind_select(start, len, input)?,
             ParsedStage::Extend { start, len, span } => {
                 self.bind_extend(start, len, input, span)?
@@ -694,6 +762,11 @@ impl Binder<'_, '_> {
         } else {
             self.plan.output_count
         };
+        let mut qualified = super::ColumnSet::EMPTY;
+        for member in &self.ranges.members[..self.ranges.len] {
+            qualified.insert(member.id);
+        }
+        self.plan.range_columns[index + 1] = qualified;
         Ok(Node {
             input,
             stage,
@@ -831,15 +904,14 @@ impl Binder<'_, '_> {
             )?;
         let first = self.resolve(left)?;
         let second = self.resolve(right)?;
+        let left_ranges = self.plan.range_columns[usize::from(left_input.0)];
+        let right_ranges = self.plan.range_columns[index];
+        let outputs = &self.plan.outputs[..usize::from(self.plan.output_count)];
         let is_left = |id| {
-            self.plan.outputs[..left_width]
-                .iter()
-                .any(|output| output.id == id)
+            left_ranges.contains(id) || outputs[..left_width].iter().any(|output| output.id == id)
         };
         let is_right = |id| {
-            self.plan.outputs[left_width..usize::from(self.plan.output_count)]
-                .iter()
-                .any(|output| output.id == id)
+            right_ranges.contains(id) || outputs[left_width..].iter().any(|output| output.id == id)
         };
         let (left_key, right_key) = if is_left(first) && is_right(second) {
             (first, second)
@@ -994,6 +1066,7 @@ impl Binder<'_, '_> {
         }
         let output = self.plan.outputs[..usize::from(self.plan.output_count)]
             .iter()
+            .chain(self.ranges.members[..self.ranges.len].iter())
             .find(|output| {
                 output.id == id
                     && output
@@ -1026,6 +1099,10 @@ impl Binder<'_, '_> {
         }
         self.plan.outputs = next;
         self.plan.output_count = len;
+        let start = self.plan.projection_count;
+        let begin = usize::from(start);
+        let end = begin + usize::from(len);
+        self.plan.projection_count = end as u8;
         for (id, output) in self.plan.projections[begin..end]
             .iter_mut()
             .zip(self.plan.outputs)
@@ -1034,6 +1111,180 @@ impl Binder<'_, '_> {
         }
         self.ranges.clear();
         Ok(Stage::Select { start, len })
+    }
+
+    fn bind_drop(&mut self, start: u8, len: u8, span: SourceSpan) -> Result<Stage, Error> {
+        let begin = usize::from(start);
+        let end = begin + usize::from(len);
+        let entries = self
+            .parsed
+            .projections
+            .get(begin..end)
+            .ok_or(Error::Corrupt("parsed DROP target range"))?;
+        let count = usize::from(self.plan.output_count);
+        let mut keep = u64::MAX >> (64 - count);
+        for (index, entry) in entries.iter().enumerate() {
+            let expression = self.parsed.expression(entry.expression)?;
+            let target = expression.span;
+            let name = text(self.source, target);
+            for prior in &entries[..index] {
+                let previous = self.parsed.expression(prior.expression)?;
+                if text(self.source, previous.span).eq_ignore_ascii_case(name) {
+                    return Err(bind_error("duplicate DROP target", target));
+                }
+            }
+            let mut found = false;
+            for (position, output) in self.plan.outputs[..count].iter().enumerate() {
+                if output.name.as_str().eq_ignore_ascii_case(name) {
+                    keep &= !(1_u64 << position);
+                    found = true;
+                }
+            }
+            if !found {
+                return Err(bind_error("DROP target is not visible", target));
+            }
+        }
+        if keep == 0 {
+            return Err(bind_error("DROP removes all columns", span));
+        }
+        let mut next = [Output::EMPTY; MAX_COLUMNS];
+        let mut written = 0;
+        for (position, output) in self.plan.outputs[..count].iter().enumerate() {
+            if keep & (1_u64 << position) != 0 {
+                next[written] = *output;
+                written += 1;
+            }
+        }
+        for entry in entries {
+            let expression = self.parsed.expression(entry.expression)?;
+            self.ranges.remove(text(self.source, expression.span));
+        }
+        self.plan.outputs = next;
+        self.plan.output_count = written as u8;
+        Ok(Stage::Drop { keep })
+    }
+
+    fn bind_set(&mut self, start: u8, len: u8, input: RelationId) -> Result<Stage, Error> {
+        let begin = usize::from(start);
+        let entries = self
+            .parsed
+            .projections
+            .get(begin..begin + usize::from(len))
+            .ok_or(Error::Corrupt("parsed SET target range"))?;
+        let mut next = self.plan.outputs;
+        let assignment_start = self.plan.assignment_count;
+        for (index, entry) in entries.iter().enumerate() {
+            let name = text(self.source, entry.alias);
+            if entries[..index]
+                .iter()
+                .any(|prior| text(self.source, prior.alias).eq_ignore_ascii_case(name))
+            {
+                return Err(bind_error("duplicate SET target", entry.alias));
+            }
+            let mut matches = self.plan.outputs[..usize::from(self.plan.output_count)]
+                .iter()
+                .enumerate()
+                .filter(|(_, output)| output.name.as_str().eq_ignore_ascii_case(name));
+            let (position, _) = matches
+                .next()
+                .ok_or_else(|| bind_error("SET target is not visible", entry.alias))?;
+            if matches.next().is_some() {
+                return Err(bind_error("ambiguous SET target", entry.alias));
+            }
+            let syntax = self.parsed.expression(entry.expression)?;
+            let expression = if entry.direct
+                && let [ParsedOp::Column(span)] = &syntax.ops[..usize::from(syntax.len)]
+            {
+                Computation::Copy(
+                    self.facts()
+                        .column(self.resolve(*span)?)
+                        .ok_or(Error::Corrupt("SET copy has no semantic facts"))?,
+                )
+            } else {
+                Computation::Numeric(self.bind_expression(&syntax)?)
+            };
+            let column = SemanticColumn::new(
+                self.next_identity,
+                expression.data_type(),
+                expression.nullable(),
+            );
+            self.next_identity += 1;
+            assert!(
+                self.descriptors.computed.len() < self.descriptors.computed.capacity(),
+                "parsed SET allocation bound"
+            );
+            self.descriptors.computed.push(Computed {
+                column,
+                expression,
+                span: syntax.span,
+                input,
+            });
+            let assignment = self
+                .plan
+                .assignments
+                .get_mut(usize::from(self.plan.assignment_count))
+                .ok_or(Error::Corrupt("SET assignment capacity"))?;
+            *assignment = SetAssignment {
+                column: column.identity(),
+                position: position as u8,
+            };
+            self.plan.assignment_count += 1;
+            next[position].id = column.identity();
+        }
+        // All expressions see the original row and ranges, including swaps.
+        for entry in entries {
+            self.ranges.remove(text(self.source, entry.alias));
+        }
+        self.plan.outputs = next;
+        Ok(Stage::Set {
+            start: assignment_start,
+            len,
+        })
+    }
+
+    fn bind_rename(&mut self, start: u8, len: u8) -> Result<Stage, Error> {
+        let begin = usize::from(start);
+        let end = begin + usize::from(len);
+        let entries = self
+            .parsed
+            .projections
+            .get(begin..end)
+            .ok_or(Error::Corrupt("parsed RENAME target range"))?;
+        let mut next = self.plan.outputs;
+        for (index, entry) in entries.iter().enumerate() {
+            let expression = self.parsed.expression(entry.expression)?;
+            let ParsedOp::Column(target) = expression.ops[0] else {
+                return Err(Error::Corrupt("RENAME target is not a column"));
+            };
+            let name = text(self.source, target);
+            for prior in &entries[..index] {
+                let previous = self.parsed.expression(prior.expression)?;
+                if text(self.source, previous.span).eq_ignore_ascii_case(name) {
+                    return Err(bind_error("duplicate RENAME target", target));
+                }
+            }
+            if self.ranges.ranges[..self.ranges.count]
+                .iter()
+                .any(|range| range.name.as_str().eq_ignore_ascii_case(name))
+            {
+                return Err(bind_error("RENAME target is a table alias", target));
+            }
+            // Every target sees the original names, allowing atomic swaps.
+            let outputs = &self.plan.outputs[..usize::from(self.plan.output_count)];
+            let mut matches = outputs
+                .iter()
+                .enumerate()
+                .filter(|(_, output)| output.name.as_str().eq_ignore_ascii_case(name));
+            let (position, _) = matches
+                .next()
+                .ok_or_else(|| bind_error("RENAME target is not visible", target))?;
+            if matches.next().is_some() {
+                return Err(bind_error("ambiguous RENAME target", target));
+            }
+            next[position].name = Name::new(text(self.source, entry.alias));
+        }
+        self.plan.outputs = next;
+        Ok(Stage::Rename)
     }
 
     fn bind_extend(
@@ -1061,6 +1312,10 @@ impl Binder<'_, '_> {
         for (output, entry) in next[inherited..count].iter_mut().zip(columns) {
             *output = self.bind_projection(entry, input)?;
         }
+        let start = self.plan.projection_count;
+        let begin = usize::from(start);
+        let end = begin + usize::from(len);
+        self.plan.projection_count = end as u8;
         for (id, output) in self.plan.projections[begin..end]
             .iter_mut()
             .zip(&next[inherited..count])
@@ -1111,7 +1366,7 @@ impl Binder<'_, '_> {
                 );
                 self.descriptors.computed.push(Computed {
                     column,
-                    expression,
+                    expression: Computation::Numeric(expression),
                     span: syntax.span,
                     input,
                 });

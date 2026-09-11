@@ -9,7 +9,7 @@ use crate::execution::computed::{BatchLayout, BatchScratch};
 use crate::execution::planning::PhysicalPlan;
 use crate::execution::predicate::{BranchScratch, PhysicalFilter};
 use crate::fixed_text::StringValue as FixedKey;
-use crate::frontend::{DataType, FilterLiteral, MAX_COLUMNS, Predicate, PreparedQuery};
+use crate::frontend::{DataType, FilterLiteral, MAX_ROW_VALUES, Predicate, PreparedQuery};
 use crate::namespace::{UNIT_NAME, UNITS_NAME};
 use crate::resources::{Reservation, allocate};
 use crate::storage_format::{self, BlockDescriptor, UnitMetadata};
@@ -324,9 +324,9 @@ pub(in crate::execution) struct Layout {
     computation: BatchLayout,
     branch_rows: usize,
     offsets: [usize; 8],
-    input_types: [DataType; MAX_COLUMNS],
+    input_types: [DataType; MAX_ROW_VALUES],
     input_count: usize,
-    output_types: [DataType; MAX_COLUMNS],
+    output_types: [DataType; MAX_ROW_VALUES],
     output_count: usize,
 }
 
@@ -380,13 +380,13 @@ impl Layout {
                 .checked_add(bytes)
                 .expect("seven bounded column buffers");
         }
-        let mut input_types = [DataType::Double; MAX_COLUMNS];
+        let mut input_types = [DataType::Double; MAX_ROW_VALUES];
         let mut input_count = 0;
         for column in physical.scan().output_columns(&query.plan) {
             input_types[input_count] = column.data_type();
             input_count += 1;
         }
-        let mut output_types = [DataType::Double; MAX_COLUMNS];
+        let mut output_types = [DataType::Double; MAX_ROW_VALUES];
         let output_count = physical
             .aggregate_pipeline()
             .map_or(0, |pipeline| pipeline.column_count);

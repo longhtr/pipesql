@@ -8,7 +8,7 @@ use crate::execution::computed::BatchScratch;
 use crate::execution::planning::Pipeline;
 use crate::execution::predicate::{BranchScratch, PhysicalFilter};
 use crate::execution::{Advance, BATCH_ROWS, COMPUTE_ROWS};
-use crate::frontend::MAX_COLUMNS;
+use crate::frontend::{MAX_COLUMNS, MAX_ROW_VALUES};
 use crate::resources::Reservation;
 use crate::{CancellationToken, Error, Value};
 
@@ -140,7 +140,7 @@ impl ScanCursor<'_> {
         filter: PhysicalFilter<'_>,
         plan: &Pipeline,
     ) -> Result<(), Error> {
-        if usize::from(filter.column) >= MAX_COLUMNS {
+        if usize::from(filter.column) >= MAX_ROW_VALUES {
             let source = &self.source;
             self.computation
                 .evaluate(plan, &[filter.column], selection, |column, row| {
@@ -272,7 +272,7 @@ impl ScanCursor<'_> {
             )?;
             for index in start..end {
                 for (position, &column) in plan.columns[..plan.column_count].iter().enumerate() {
-                    let value = if usize::from(column) < MAX_COLUMNS {
+                    let value = if usize::from(column) < MAX_ROW_VALUES {
                         source.value(column, self.selection[index] as usize)?
                     } else {
                         self.computation.value(plan, column, index - start)?

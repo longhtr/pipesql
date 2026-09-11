@@ -3,57 +3,13 @@
 
 use super::MAX_PIPELINES;
 use crate::Error;
-use crate::frontend::{self, ColumnId, MAX_QUERY_COLUMNS, RelationId, Stage};
-use crate::scalar::Op;
+use crate::frontend::{self, ColumnId, RelationId, Stage};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct ColumnSet([u64; (MAX_QUERY_COLUMNS + 1).div_ceil(64)]);
-
-impl ColumnSet {
-    pub(super) const EMPTY: Self = Self([0; (MAX_QUERY_COLUMNS + 1).div_ceil(64)]);
-
-    pub(super) fn insert(&mut self, id: ColumnId) {
-        *self |= bit(id);
-    }
-
-    pub(super) fn contains(self, id: ColumnId) -> bool {
-        self & bit(id) != Self::EMPTY
-    }
-}
-
-impl std::ops::BitOr for ColumnSet {
-    type Output = Self;
-
-    fn bitor(mut self, rhs: Self) -> Self {
-        self |= rhs;
-        self
-    }
-}
-
-impl std::ops::BitOrAssign for ColumnSet {
-    fn bitor_assign(&mut self, rhs: Self) {
-        for (left, right) in self.0.iter_mut().zip(rhs.0) {
-            *left |= right;
-        }
-    }
-}
-
-impl std::ops::BitAnd for ColumnSet {
-    type Output = Self;
-
-    fn bitand(mut self, rhs: Self) -> Self {
-        for (left, right) in self.0.iter_mut().zip(rhs.0) {
-            *left &= right;
-        }
-        self
-    }
-}
+pub(super) use crate::frontend::ColumnSet;
 
 fn bit(id: ColumnId) -> ColumnSet {
-    let id = id.value() as usize;
-    assert!(id > 0 && id <= MAX_QUERY_COLUMNS);
     let mut set = ColumnSet::EMPTY;
-    set.0[id / 64] = 1 << (id % 64);
+    set.insert(id);
     set
 }
 
@@ -79,21 +35,21 @@ pub(super) fn demand_masks(plan: &frontend::Plan) -> Result<[ColumnSet; MAX_PIPE
                 }
             }
             Stage::Source(_) => (),
-            Stage::Alias | Stage::Derived | Stage::Limit(_) => masks[input] |= output,
-            Stage::Select { .. } | Stage::Extend { .. } => {
-                for id in plan.relation_columns(node.input)?.iter() {
+            Stage::Alias
+            | Stage::Rename
+            | Stage::Drop { .. }
+            | Stage::Derived
+            | Stage::Limit(_) => masks[input] |= output,
+            Stage::Select { .. } | Stage::Extend { .. } | Stage::Set { .. } => {
+                for id in plan.available_columns(node.input)?.iter() {
                     masks[input] |= output & bit(id);
                 }
                 for definition in &plan.computed {
                     if definition.input == node.input
                         && output.contains(definition.column.identity())
                     {
-                        for op in
-                            &definition.expression.ops[..usize::from(definition.expression.len)]
-                        {
-                            if let Op::Column(column) = op {
-                                masks[input] |= bit(column.identity());
-                            }
+                        for column in definition.expression.columns() {
+                            masks[input] |= bit(column.identity());
                         }
                     }
                 }
@@ -106,10 +62,10 @@ pub(super) fn demand_masks(plan: &frontend::Plan) -> Result<[ColumnSet; MAX_PIPE
             } => {
                 masks[input] |= bit(left_key);
                 masks[usize::from(right.0)] |= bit(right_key);
-                for id in plan.relation_columns(node.input)?.iter() {
+                for id in plan.available_columns(node.input)?.iter() {
                     masks[input] |= output & bit(id);
                 }
-                for id in plan.relation_columns(right)?.iter() {
+                for id in plan.available_columns(right)?.iter() {
                     masks[usize::from(right.0)] |= output & bit(id);
                 }
             }

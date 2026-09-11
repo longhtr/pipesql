@@ -30,7 +30,7 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
-## Next: complete the column transformation profile
+## Active: complete the column transformation profile
 
 EXTEND is implemented and verified. The [semantic evidence](evidence.md#extend-projection-semantics)
 records its accepted profile, independent cases, resource/failure coverage, and
@@ -46,27 +46,37 @@ let learners change a pipeline's row shape without repeatedly spelling every
 unchanged column. Keep SET expressions within the existing projection profile;
 do not add functions, windows, or unrelated operators.
 
-First resolve target lookup, simultaneous versus sequential definitions,
-duplicate/ambiguous names, identity, range visibility, ordering, and dropped-value
-demand against the pinned GoogleSQL sources. Establish reduced independent
-accepted and rejected cases before choosing the representation. Plan the changes
-through existing parser, binder, semantic validation, and demand owners. Avoid
-copying inherited columns into the syntax-sized projection pool or adding an
-execution wrapper for a name-only transformation.
+The implementation and [semantic evidence](evidence.md#column-transformation-semantics)
+cover simultaneous SET, fresh typed copies, identity-preserving RENAME, DROP of
+ordinary outputs, and retained qualified inputs. Source schemas and final rows
+remain bounded to 64 columns; internal payloads admit 128 visible/retained values.
+Plan construction uses its admitted heap owner before binding to preserve the
+existing stack allowance. The tutorial and authoritative contracts are updated.
 
-Preserve values, exact spans, demanded failures, persistent bytes, bounded work,
-resource admission, cancellation, and cleanup. Exercise these operators through
-EXTEND, filtering, grouping, joins, ordering, and derived inputs. Include wrong
-targets, duplicates, empty/NULL input, limits, hidden errors, and independent
-validator controls. Extend the existing learning example and authoritative
-contracts rather than creating a parallel tutorial or test framework.
+Focused checks pass: 353 library tests before the final test additions, then
+41 frontend/physical checks; 67 lifecycle tests and three SET-specific runtime
+checks; the wide sorter and small-stack regressions; warnings-denied Clippy and
+local documentation links. The revised example completes with the documented
+three rows. The added cancellation checks pass, and the independent composition campaign
+passes all 298 cases. Maintenance and warnings-denied workspace Clippy pass.
+The allocator campaign now composes EXTEND, SET, DROP, and RENAME without
+changing its expected result oracle; its full run remains part of the gates.
 
-Finish focused checks, required frozen macOS and available GNU/Linux gates,
-example/command verification, compact evidence, coherent local commits, and
-owned-artifact cleanup. Unavailable Windows resources do not block portable
-implementation; keep qualification limits explicit. Do not push or modify remote
-refs. Close the milestone promptly at these completion criteria, then choose the
-next useful bounded outcome from the actual tree and remaining qualification.
+Finish in this order:
+
+1. Execute the remaining focused cases and review the final code/contract diff.
+   Preserve exact admission, failure, cancellation, and cleanup contracts.
+2. Commit the coherent implementation locally, freeze the tracked inputs, and
+   run complete macOS and available GNU/Linux gates in isolated targets. Compare
+   input manifests and reconcile test discovery and explicit platform exclusions.
+3. Consolidate final evidence within 641,696 bytes, update this plan, commit the
+   verified result, and remove owned temporary inputs, outputs, and build artifacts.
+   Finish with a clean tree and close the goal promptly. Then choose the next
+   bounded milestone from the actual tree and remaining qualification.
+
+Do not push or modify remote refs. Windows remains unqualified; unavailable
+platform resources do not block the available verification. Do not add unrelated
+operators, optimization, or a parallel workflow.
 
 ## Applying DuckDB lessons
 

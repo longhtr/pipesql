@@ -7,7 +7,7 @@ use crate::effects::Effects;
 use crate::execution::ConsumerInput;
 use crate::execution::computed::RowValues;
 use crate::execution::planning::Pipeline;
-use crate::frontend::{MAX_COLUMNS, SemanticColumn};
+use crate::frontend::{MAX_ROW_VALUES, SemanticColumn};
 use crate::resources::{Reservation, allocate};
 use crate::value::Value;
 use crate::{CancellationToken, Database, Error};
@@ -89,7 +89,9 @@ impl<'db> Join<'db> {
     ) -> Result<Vec<Self>, Error> {
         let left = RowLayout::for_join(left, usize::from(keys.0))?;
         let right = RowLayout::for_join(right, usize::from(keys.1))?;
-        if left.columns[0].kind != right.columns[0].kind || left.count + right.count > MAX_COLUMNS {
+        if left.columns[0].kind != right.columns[0].kind
+            || left.count + right.count > MAX_ROW_VALUES
+        {
             return Err(Error::Corrupt("join input type or width"));
         }
         let reservation = database.reserve_memory(

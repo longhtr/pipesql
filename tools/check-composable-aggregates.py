@@ -912,7 +912,7 @@ def check_text_null_and_boolean_filters(queries):
 
 
 
-def check_extend(queries):
+def check_column_transforms(queries):
     # The independently encoded rows have quantities 10, 20, 90 and flags A,A,B.
     for label, sql, expected, database in [
         (
@@ -940,6 +940,40 @@ def check_extend(queries):
             "extend-hidden-overflow",
             "FROM lineitem |> EXTEND l_quantity*1e308 AS x |> SELECT l_quantity",
             [[encoded(v)] for v in [10.0, 20.0, 90.0]],
+            "repeated",
+        ),
+        (
+            "set-original-range",
+            "FROM lineitem AS t |> SET l_quantity=l_quantity+1"
+            " |> SELECT l_quantity,t.l_quantity",
+            [[encoded(v + 1), encoded(v)] for v in [10.0, 20.0, 90.0]],
+            "repeated",
+        ),
+        (
+            "set-changed-type",
+            "FROM lineitem |> SET l_quantity=l_returnflag |> SELECT l_quantity",
+            [["string:41"], ["string:41"], ["string:42"]],
+            "repeated",
+        ),
+        (
+            "drop-qualified-input",
+            "FROM lineitem AS t |> DROP l_quantity |> WHERE t.l_quantity>10"
+            " |> SELECT t.l_quantity",
+            [[encoded(20.0)], [encoded(90.0)]],
+            "repeated",
+        ),
+        (
+            "rename-original-range",
+            "FROM lineitem AS t |> RENAME l_quantity AS quantity"
+            " |> SELECT quantity,t.l_quantity",
+            [[encoded(v), encoded(v)] for v in [10.0, 20.0, 90.0]],
+            "repeated",
+        ),
+        (
+            "set-pruned-overflow",
+            "FROM lineitem |> SET l_quantity=l_quantity*1e308"
+            " |> SET l_quantity=1 |> SELECT l_quantity",
+            [["int64:1"], ["int64:1"], ["int64:1"]],
             "repeated",
         ),
         (
@@ -1280,7 +1314,7 @@ def campaign(cli, work):
     check_numeric_failures(queries, work, encoder)
     check_derived_queries(queries, work, encoder)
     check_text_null_and_boolean_filters(queries)
-    check_extend(queries)
+    check_column_transforms(queries)
     check_repeated_aggregation(queries)
     check_post_aggregate_demand(queries, rows)
     check_stored_corruption_and_bits(queries, work, encoder, rows)

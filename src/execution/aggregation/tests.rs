@@ -666,15 +666,15 @@ fn aggregate_workspace_and_mappings_are_independently_checked() {
                 groups.aggregate.lanes = 0;
             }
             2 => groups.aggregate.inputs[0] = None,
-            3 => groups.aggregate.entry_states[0] = MAX_COLUMNS,
+            3 => groups.aggregate.entry_states[0] = MAX_ROW_VALUES,
             4 => groups.aggregate.input_columns[0] = None,
             5 => groups.aggregate.cells.sum_states ^= 1,
             6 => groups.keys[0] = 0,
-            7 => groups.aggregate.states = MAX_COLUMNS + 1,
+            7 => groups.aggregate.states = MAX_ROW_VALUES + 1,
             8 => groups.aggregate.lanes = 0,
             9 => groups.aggregate.lanes = BATCH_ROWS + 1,
             10 => {
-                groups.aggregate.input_columns[MAX_COLUMNS - 1] =
+                groups.aggregate.input_columns[MAX_ROW_VALUES - 1] =
                     Some(SourceColumn::QUANTITY.semantic())
             }
             _ => unreachable!(),
