@@ -174,7 +174,7 @@ their actual spill, temporary refusal, cancellation, and release assertions rema
 initial gate failures, and qualification limits. Owned outputs are removed and
 changes are committed locally without publication.
 
-## Next: grouped-query allocation bounds
+## Current: grouped-query allocation bounds
 
 The same healthy catalog controls expose a macOS GROUPED prepared-query/result
 excess of 111,496 bytes on the short path and 112,080 on the 384-byte path.
@@ -183,8 +183,9 @@ both. The [measured inputs](evidence.md#attribution-of-composed-memory) and
 [catalog caller](../tools/fixtures/catalog-allocation.rs) identify the exact query,
 checkpoint, independent nullable/extrema row expectations, and public entry path.
 
-Reproduce that healthy observation on current inputs and trace retained owners
-before choosing a repair. Bound actual allocation geometry before effects,
+The healthy controls reproduce both deficits on current runtime inputs, with
+the same library hash as the full gate. They do not repeat the refusal sweep.
+Trace retained owners before choosing a repair. Bound actual allocation geometry before effects,
 preserving independent attribution, full rows, hash growth and fallback,
 spill/replay, exact/short admission, allocation refusal, cancellation, and release.
 Qualify affected stock allocator/size premises on macOS and native-storage GNU/Linux;

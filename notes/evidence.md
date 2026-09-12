@@ -589,7 +589,7 @@ owner excess. For short/384-byte paths, macOS reports charges of
 This sample includes the GROUPED prepared query and result immediately after
 execution admission in [catalog-allocation.rs](../tools/fixtures/catalog-allocation.rs).
 Its requested-byte assertion passes; it does not yet enforce a usable-byte bound.
-The [next repair](plan.md#next-grouped-query-allocation-bounds) must first trace
+The [current repair](plan.md#current-grouped-query-allocation-bounds) must first trace
 those actual owners and preserve its independent full-row oracle.
 
 Append's ceiling is a qualified premise for the exercised stock allocators and
