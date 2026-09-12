@@ -6,6 +6,7 @@ use pipesql::{
     DataType, Database, QueryStep, Value,
 };
 use std::path::Path;
+use std::time::Instant;
 
 const GROUPS: usize = 4096;
 const BATCH_ROWS: usize = 256;
@@ -33,13 +34,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::open(Path::new(&path), config)?;
     let query = db.prepare(QUERY)?;
     let baseline = db.reserved_memory_bytes();
+    // Include admission, complete row validation, and result destruction. Setup,
+    // preparation, the second cancellation exercise, and close stay outside.
+    let start = Instant::now();
     let mut result = db.execute(&query, &cancel)?;
+    let mut progress_steps = 0_u64;
+    let mut row_steps = 0_u64;
     let mut peak_memory = db.reserved_memory_bytes();
     let mut peak_temp = db.reserved_temp_bytes();
     let mut groups = 0;
     loop {
         match result.step() {
             QueryStep::Rows(batch) => {
+                row_steps += 1;
                 for row in 0..batch.len() {
                     let (
                         Some(Value::Int64(region)),
@@ -76,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     groups += 1;
                 }
             }
-            QueryStep::Progress => (),
+            QueryStep::Progress => progress_steps += 1,
             QueryStep::Finished => break,
             QueryStep::Failed(_) => {
                 return Err(result.into_error().ok_or("missing query error")?.into());
@@ -89,6 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("query finished without all expected groups".into());
     }
     drop(result);
+    let elapsed = start.elapsed();
     if db.reserved_memory_bytes() != baseline || db.reserved_temp_bytes() != 0 {
         return Err("query resources remain after dropping the result".into());
     }
@@ -122,6 +130,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "verified {groups} descending groups: four joined pairs per key, nullable counts and sums"
     );
     println!("sampled logical bytes: memory={peak_memory}, temporary={peak_temp}");
+    println!("successful query steps: progress={progress_steps}, rows={row_steps}, finished=1");
+    println!(
+        "execution and validation seconds={:.6}",
+        elapsed.as_secs_f64()
+    );
     Ok(())
 }
 

@@ -303,9 +303,20 @@ cargo run --release --offline --locked --example composed -- "$pipesql_composed_
 ```
 
 Both must print `verified 4096 descending groups: four joined pairs per key, nullable counts and sums`.
-The next line reports sampled logical memory and temporary bytes. Unlike the
-preceding grouping-only example, this query uses temporary storage even with
-ample memory: its join and separate ORDER BY use sorted inputs. Total temporary
+The next lines report sampled logical memory and temporary bytes, successful-query
+step counts, and execution/validation time. That timer includes admission,
+every checked result, completion, and result destruction. It excludes setup,
+opening, preparation, the later cancellation exercise, and close. Whole-process time
+includes those operations, so compare it separately.
+
+`Progress` counts bounded work returns without output; `rows` counts returned
+batches, not result rows. The [scheduler](execution.md#runtime-scheduling) performs
+one producer quantum per call, including input requests and sorter work. A larger
+count alone does not establish a scheduling defect or explain where time was
+spent.
+
+This query uses temporary storage even with ample memory: its join and separate
+ORDER BY use sorted inputs. Total temporary
 bytes alone cannot identify which operator spilled. The constrained run checks
 that the composed query still completes with the same rows under a smaller
 shared memory budget; it does not establish a performance improvement.

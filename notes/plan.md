@@ -286,27 +286,24 @@ identities, selected scope, setup reassessment, and instrumentation limits.
 Owned outputs are removed and changes committed locally without publication.
 Do not repeat this qualification without an affected boundary or new report.
 
-## Current: composed execution cost
+## Completed: composed execution cost
 
-The composed ownership observation takes 848,808/549,765 Progress steps at
-2.2 MB/12 MB, plus 4,096 result batches. The scheduler deliberately performs
-bounded producer/sorter work per public step, so these counts alone do not
-justify a scheduling change. The maintained composed learning example checks
-correctness, resources, and cancellation but does not expose query time or steps.
+The composed learning example now reports successful-query time and public
+Progress/Rows counts while preserving its invocation, independent complete
+results, resource release, and separate cancellation exercise. The walkthrough
+explains the timer boundary and the scheduler's bounded work.
 
-Add successful-query execution/validation timing and Progress/Rows counts to the
-existing example, preserving its input, invocation, and complete independent
-oracle. Exclude setup, preparation, the second cancellation execution, and close
-from that timer. Measure three repetitions at each documented budget on macOS
-and native-storage GNU arm64 Linux, with fresh databases and stock artifacts.
-Compare whole-process time separately and retain cancellation/release outcomes.
-Bound initial profiling and interpretation to 20 minutes per platform. Add no
-benchmark framework; record whether a concrete later optimization is justified.
+Three repetitions at 2.2 MB/12 MB complete on macOS and GNU arm64 Linux, with
+fresh inputs and all cancellation/release checks. Median query times are about
+136/114 ms on macOS and 123/103 ms on Linux. Counts and temporary peaks match
+the prior allocation observation. The [cost record](evidence.md#composed-execution-cost)
+retains whole-process ranges, source identity, and scope. This finite profile
+does not attribute a material cost to a particular owner or justify changing
+scheduler work bounds. Do not repeat it without a concrete new question.
 
-The example and documented work-quanta contracts have been inspected. No
-implementation or measurement has started, and no owned scratch output or
-process is active. Finish both documented Cargo commands, an independent wrong-row
-control, required checks, concise evidence, cleanup, and local commits.
+Both Cargo commands and the wrong-sum control pass their expected outcomes;
+formatting, Clippy, and maintenance pass. No engine implementation changed.
+Owned outputs are removed and changes committed locally without publication.
 
 ## Applying DuckDB lessons
 

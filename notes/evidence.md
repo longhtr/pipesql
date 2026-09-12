@@ -41,7 +41,8 @@ example and walkthrough changes are qualified in the
 [grouping cost record](#grouping-capacity-cost) and
 [explicit batch checks](#explicit-string-append-batches); later caller changes add
 [composed ownership checks](#composed-query-allocation-boundaries) and
-[pathname sanitizer qualification](#pathname-sanitizer-qualification). These focused
+[pathname sanitizer qualification](#pathname-sanitizer-qualification). The later
+[composed example measurements](#composed-execution-cost) add observation only. These focused
 checks did not rerun the complete
 gate. Engine source is unchanged. This identifies source, not reproducible binaries.
 
@@ -681,6 +682,82 @@ also fit: charge 3,957,784 at both paths, macOS usable 3,917,040/3,917,360 and L
 3,907,536/3,907,840. The catalog census is now 795 allocations at each pathname
 length, and every refusal prefix executes. Other schemas, allocator histories,
 transient peaks, Windows, and whole-process/RSS memory remain unqualified.
+
+### Composed execution cost
+
+The maintained [composed example](../examples/composed.rs) now reports successful
+query time and public Progress/Rows counts. Its input, ordered NULL/count/sum
+oracle, completion, resource release, and separate cancellation exercise remain
+unchanged. The caller SHA-256 is
+`ececd20274affdcbd25e4a339b1edb919e606788fc1a146da115bc0c48077e12`.
+The [walkthrough](../docs/getting-started.md#follow-a-join-through-grouping-and-sorting)
+owns the two current commands and timing scope.
+
+The finite September 12 profile runs three repetitions at 2.2 MB and 12 MB per
+platform, using fresh databases. Budget order is low/high, high/low, low/high.
+Both platforms use the same caller against unchanged `986b673` runtime sources,
+Rust 1.98.1 stock release libraries, offline locked dependencies, and
+`RUSTFLAGS=-Dwarnings`. Callers link with `rustc --edition=2024 -O -C debuginfo=2
+-Dwarnings --extern pipesql=LIBRARY -L dependency=DEPS`. macOS uses arm64 Darwin
+25.6.0/Python 3.14.7; GNU arm64 Linux uses Python 3.11.2, the retained image,
+UID/GID 1000, read-only sources, and native container storage. Platforms run
+sequentially to avoid measurement contention.
+
+Every measured process checks all 4,096 descending groups and successful query
+release, then reaches temporary storage in a second execution, cancels it, and
+checks release again. Parent monotonic time around `check_process.run` includes
+setup, opening/preparation, both executions, close, output, and subprocess
+supervision. The query's Instant interval includes admission, every result check,
+Finished, and result destruction, excluding the second cancellation execution.
+All 12 processes complete within their 120-second deadlines. These are recently
+constructed inputs, not cold-cache or sustained service measurements.
+
+Times below are milliseconds, median [minimum, maximum]; the larger first macOS
+whole-process sample is retained rather than discarded.
+
+| Platform | Query budget | Whole process ms | Successful query ms |
+| --- | ---: | ---: | ---: |
+| macOS | 2,200,000 | 478.490 [471.649, 1065.343] | 136.323 [133.263, 138.464] |
+| macOS | 12,000,000 | 440.300 [435.057, 457.017] | 114.248 [110.920, 114.277] |
+| GNU arm64 Linux | 2,200,000 | 161.925 [161.834, 165.564] | 123.036 [122.913, 124.318] |
+| GNU arm64 Linux | 12,000,000 | 140.384 [139.999, 140.953] | 103.205 [102.985, 103.304] |
+
+Every low-budget run returns 848,808 Progress steps and 4,096 Rows steps with
+2,336,640 sampled temporary bytes. At 12 MB those figures are 549,765, 4,096,
+and 1,263,448 bytes. Each query also returns Finished once. These match the
+prior allocation workload's observation. Rows counts final output batches;
+intermediate join rows and producer completions can return Progress to the public
+caller. The scheduler performs bounded producer/sorter work, so the counts are
+neither per-operator CPU attribution nor evidence of wasted work.
+
+This profile establishes a baseline and the cost of the two configured budgets.
+It does not identify a specific scheduler optimization: successful query time is
+roughly 0.10–0.14 seconds, and the larger whole-process remainder includes several
+unseparated operations. Reducing Progress counts or increasing batch size alone
+would not establish a useful speedup and could weaken work/cancellation bounds.
+No scheduler or engine change is justified by this finite observation; reopen
+with an affected workload or profile that attributes a material cost to an owner.
+
+Sampled logical memory peaks are 2,187,429/7,435,103 bytes on macOS and
+2,187,348/7,435,022 bytes on Linux for the low/high budgets. All remain within
+the configured limits; these counters do not bound allocator-usable bytes or RSS.
+The stock-linked caller executable SHA-256 values are
+`fb7e3e7fbad6f7847d8e33a3feaf7f993a113a5b3d4f15a45d4c245f183fd565`
+(macOS) and
+`fcce7b779541ded71b3c928bf0dd339bc4cdd55421237ef4676149bde9c338ab`
+(Linux).
+
+Measurement-record SHA-256 values are
+`874a9c59b07bb33e1bcec96274cee1b5bc682716be641ecbfdf80ae7ad065983`
+(macOS) and
+`fe62571571d6435bbebd100f70a32cc111c891147fa887742e6f7d0036d71a36`
+(Linux). Both documented Cargo commands pass on both platforms. A macOS caller
+with the wrong expected sum fails at the full-row oracle before printing a
+successful observation. Formatting, all-target macOS Clippy, Linux example
+Clippy, and maintenance pass (95 tooling tests, 44 codec fixtures, and 503 final
+local documentation links). These are focused example checks, not a rerun of
+the complete engine gate. Owned outputs are removed; image/toolchains and all
+qualification limitations are preserved.
 
 ### Composed-query allocation boundaries
 
