@@ -197,6 +197,10 @@ def run_cell(work, failures, mode, label, database_bytes=None, mmap_threshold=No
 
 def check_ownership(work, run, failures):
     for label, length in [("short", None), ("path384", 384)]:
+        analytic = run("analytic-shapes", f"analytic-{label}", length)
+        print(analytic.stdout + analytic.stderr, end="", flush=True)
+        if "analytic shapes passed: 7 cases; rows, attribution and release" not in analytic.stdout:
+            failures.append(f"incomplete analytic allocation checks: {label}")
         prepared = run("prepared-aggregate-shapes", f"prepared-aggregates-{label}", length)
         print(prepared.stdout + prepared.stderr, end="", flush=True)
         if "prepared aggregate shapes passed: 14 accepted and 54 rejected; attribution, rows and release" not in prepared.stdout:
@@ -278,6 +282,7 @@ def check_ownership(work, run, failures):
                 f"ownership-{label}: missing composed ownership completion"
             )
     for mode, expected in [
+        ("analytic-attribution-negative", "execution ownership attribution: analytic-admitted"),
         ("prepared-aggregate-attribution-negative", "prepared ownership attribution"),
         ("legacy-constant-attribution-negative", "execution ownership attribution: legacy-text"),
         ("joined-attribution-negative", "joined usable ownership attribution"),

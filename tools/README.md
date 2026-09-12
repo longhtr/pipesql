@@ -118,6 +118,12 @@ Prepared aggregate cases cover widths 1–10 and four partitions of the ten-entr
 budget across repeated stages. Widths 11–64 must reject and release preparation
 ownership. The caller checks each retained-vector allowance independently,
 executes COUNT results over 512 source rows, and rejects a wrong allowance.
+Analytic count cases cover empty input, one/nineteen counts, typed rows, 64 output
+columns, consecutive analytic stages and grouped composition. Twenty repeated
+calls must reject at the token bound without retaining preparation ownership.
+The caller samples requested/usable admission after every step and independently
+reconciles nonheap allowances at admission, first spill, emission and completion.
+Both pathname lengths run all seven cases; a one-byte attribution error must fail.
 Composed-reader bound failures are reported after the
 barrier participants join. This selection also checks the complete append
 allocation-size ranges and full-width maximum-column growth, reuse, publication,

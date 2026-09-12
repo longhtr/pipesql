@@ -47,11 +47,12 @@ allocation ownership before changing its execution strategy.
    gates. Update navigation and concise evidence, remove owned artifacts and
    commit verified changes locally.
 
-Initial tracing confirms that count adds no preparation descriptor beyond the
-existing computation vector. Execution uses the sorted-input owner and its
-bootstrap reservation. The existing typed-reader observation samples after
-spill; the new selection must also distinguish constructor, emission and release
-boundaries. No new ownership measurement or repair has run yet.
+The existing caller now contains seven analytic cases. Preparation attribution
+and admission/first-spill/emission/terminal equations pass the focused macOS
+probe, with requested/usable samples after every step and complete release.
+The parser's 160-token bound admits nineteen repeated calls; twenty reject.
+No engine discrepancy has been observed. Complete ownership selections on both
+platforms, tooling interpretation checks, documentation and final cleanup remain.
 
 ## Next engineering priorities
 

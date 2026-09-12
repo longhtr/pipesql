@@ -12,6 +12,237 @@ const ROWS: usize = 4096;
 const MEMORY: u64 = 4_000_000;
 const TEMP: u64 = 8_000_000;
 
+// Row-evaluation payload on the qualified 64-bit targets: 80 optional nullable
+// values (16 bytes), 208 demand flags, 32 optional column identities (8 bytes),
+// 32 optional numeric inputs (48 bytes), three 32-word arrays, 32 four-word
+// vectors and 32 type tags. This equation does not call engine admission code.
+const ANALYTIC_ROW_SCRATCH: usize = 80 * 16 + 208 + 32 * 8 + 32 * 48 + 3 * 32 * 8 + 32 * 32 + 32;
+
+pub(super) fn analytic_shapes(
+    root: &Path,
+    wrong_attribution: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use pipesql::DateValue;
+    std::fs::create_dir(root)?;
+    let path = root.join("database");
+    let cancel = CancellationToken::new();
+    let db = Database::create_empty(&path, Config::new(32_000_000, 32_000_000)?)?;
+    for table in ["empty", "facts"] {
+        db.declare_table(
+            table,
+            &[
+                ColumnDeclaration {
+                    name: "v",
+                    data_type: DataType::Int64,
+                    nullable: false,
+                },
+                ColumnDeclaration {
+                    name: "d",
+                    data_type: DataType::Date,
+                    nullable: false,
+                },
+                ColumnDeclaration {
+                    name: "t",
+                    data_type: DataType::String,
+                    nullable: true,
+                },
+            ],
+            &cancel,
+        )?;
+    }
+    let text = "雪\0".repeat(32);
+    let day = DateValue::from_days_since_unix_epoch(-1).unwrap();
+    let mut append = db.begin_append(
+        "facts",
+        AppendLimits {
+            batches: 2,
+            encoded_bytes: 200_000,
+        },
+        &cancel,
+    )?;
+    for start in [0, 256] {
+        let values: [i64; 256] = std::array::from_fn(|i| (start + i) as i64);
+        append.write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::Int64(&values),
+                    validity: &[255; 32],
+                },
+                ColumnInput {
+                    values: ColumnValues::Date(&[day; 256]),
+                    validity: &[255; 32],
+                },
+                ColumnInput {
+                    values: ColumnValues::String(&[text.as_str(); 256]),
+                    validity: &[0x55; 32],
+                },
+            ],
+            &cancel,
+        )?;
+    }
+    append.commit(&cancel)?;
+    let repeated = format!(
+        "FROM facts |> SELECT {}",
+        vec!["COUNT(*) OVER ()"; 19].join(",")
+    );
+    // Four stage tokens plus seven per call and separators admit nineteen.
+    let rejected = format!(
+        "FROM facts |> SELECT {}",
+        vec!["COUNT(*) OVER ()"; 20].join(",")
+    );
+    let rejected_heap = Heap::now();
+    assert!(matches!(db.prepare(&rejected), Err(Error::Parse { .. })));
+    assert_eq!(Heap::now(), rejected_heap);
+    let wide = format!(
+        "FROM facts |> SELECT {},COUNT(*) OVER () AS n",
+        vec!["t"; 63].join(",")
+    );
+    let queries = [
+        "FROM empty |> SELECT COUNT(*) OVER () AS n",
+        "FROM facts |> SELECT COUNT(*) OVER () AS n",
+        &repeated,
+        "FROM facts |> SELECT v,d,t,COUNT(*) OVER () AS n",
+        &wide,
+        "FROM facts |> SELECT COUNT(*) OVER () AS n |> EXTEND COUNT(*) OVER () AS second",
+        "FROM facts |> EXTEND COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total GROUP BY v |> AGGREGATE SUM(total) AS total",
+    ];
+    println!("entered analytic ownership shapes");
+    let path_bytes = std::fs::canonicalize(&path)?.as_os_str().len() + "/units".len();
+    let resident = db.reserved_memory_bytes();
+    for (case, sql) in queries.into_iter().enumerate() {
+        let before = Live::now();
+        let query = prepare_observed(&db, sql, "analytic", if case == 6 { 5 } else { 2 }, false)?;
+        let prepared_heap = Heap::now();
+        let mut result = db.execute(&query, &cancel)?;
+        let inline = std::mem::size_of::<QueryResult<'_, '_>>();
+        let running_nonheap = inline + 4096 + 8192 - path_bytes + ANALYTIC_ROW_SCRATCH;
+        if case < 6 {
+            Owner {
+                charge: result.accounted_memory_bytes(),
+                heap: Heap::now().increase_from(prepared_heap),
+            }
+            .report(
+                "analytic-admitted",
+                (running_nonheap
+                    + if case == 5 { 16384 } else { 8192 }
+                    + usize::from(wrong_attribution)) as u64,
+            );
+        }
+        let mut seen = 0;
+        let mut finished = false;
+        let mut sampled_rows = false;
+        let mut sampled_spill = false;
+        let mut peak_temp = 0;
+        let mut minimum_headroom = i128::MAX;
+        let mut steps = 0;
+        loop {
+            let charge = query.accounted_memory_bytes() + result.accounted_memory_bytes();
+            assert_eq!(db.reserved_memory_bytes(), resident + charge);
+            let heap = Heap::now().increase_from(Heap {
+                requested: before.requested,
+                usable: before.usable,
+            });
+            assert!(
+                heap.requested as u64 <= charge,
+                "analytic requested admission"
+            );
+            minimum_headroom = minimum_headroom.min(i128::from(charge) - heap.usable as i128);
+            peak_temp = peak_temp.max(db.reserved_temp_bytes());
+            if !finished && !sampled_spill && peak_temp != 0 && case < 6 {
+                Owner {
+                    charge: result.accounted_memory_bytes(),
+                    heap: Heap::now().increase_from(prepared_heap),
+                }
+                .report("analytic-spilled", running_nonheap as u64);
+                sampled_spill = true;
+            }
+            if finished {
+                break;
+            }
+            steps += 1;
+            assert!(steps < 200_000, "analytic query did not finish");
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Finished => finished = true,
+                QueryStep::Failed(error) => panic!("analytic case {case}: {error}"),
+                QueryStep::Rows(batch) => {
+                    let width = match case {
+                        2 => 19,
+                        4 => 64,
+                        3 => 4,
+                        5 => 2,
+                        _ => 1,
+                    };
+                    assert_eq!(batch.column_count(), width);
+                    for row in 0..batch.len() {
+                        assert!(seen < if case == 6 { 1 } else { 512 });
+                        for column in 0..width {
+                            let expected = match (case, column) {
+                                (3, 0) => Value::Int64(seen as i64),
+                                (3, 1) => Value::Date(day),
+                                (3, 2) | (4, 0..=62) => {
+                                    if seen % 2 == 0 {
+                                        let Some(Value::String(actual)) = batch.value(row, column)
+                                        else {
+                                            panic!("analytic text value");
+                                        };
+                                        assert_eq!(actual.as_str(), text);
+                                        continue;
+                                    } else {
+                                        Value::Null
+                                    }
+                                }
+                                (6, _) => Value::Int64(262_144),
+                                _ => Value::Int64(512),
+                            };
+                            assert_eq!(batch.value(row, column), Some(expected));
+                        }
+                        seen += 1;
+                    }
+                    if !sampled_rows && case < 6 {
+                        Owner {
+                            charge: result.accounted_memory_bytes(),
+                            heap: Heap::now().increase_from(prepared_heap),
+                        }
+                        .report("analytic-emitting", running_nonheap as u64);
+                        sampled_rows = true;
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            seen,
+            match case {
+                0 => 0,
+                6 => 1,
+                _ => 512,
+            }
+        );
+        assert!(case == 0 || peak_temp > 0, "analytic input must spill");
+        Owner {
+            charge: result.accounted_memory_bytes(),
+            heap: Heap::now().increase_from(prepared_heap),
+        }
+        .report("analytic-finished", inline as u64);
+        assert!(
+            minimum_headroom >= 0,
+            "analytic usable ownership attribution"
+        );
+        drop(result);
+        assert_eq!(Heap::now(), prepared_heap);
+        drop(query);
+        assert_eq!(Live::now(), before);
+        assert_eq!(db.reserved_memory_bytes(), resident);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        println!(
+            "analytic case={case} rows={seen} steps={steps} minimum-usable-headroom={minimum_headroom} temporary={peak_temp} release=complete"
+        );
+    }
+    db.close()?;
+    println!("analytic shapes passed: 7 cases; rows, attribution and release");
+    Ok(())
+}
+
 pub(super) fn prepared_aggregate_shapes(
     root: &Path,
     wrong_attribution: bool,

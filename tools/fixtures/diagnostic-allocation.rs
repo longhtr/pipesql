@@ -254,6 +254,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::path::PathBuf::from(args.next().expect("owned probe directory"));
     let mode = args.next().expect("probe mode");
     assert!(args.next().is_none());
+    if mode == "analytic-shapes" || mode == "analytic-attribution-negative" {
+        return ownership::analytic_shapes(&root, mode == "analytic-attribution-negative");
+    }
     if mode == "joined-shapes" || mode == "joined-attribution-negative" {
         return ownership::joined_shapes(&root, mode == "joined-attribution-negative");
     }
