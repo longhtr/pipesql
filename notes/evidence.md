@@ -7,6 +7,59 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
+Both complete 24-stage gates for `b8f1b8f` pass on macOS arm64 Darwin 25.6.0
+and GNU arm64 Linux. Both use Rust 1.98.1, release artifacts, locked offline
+builds, and warnings-denied compilation and documentation. Linux uses uid/gid
+1000, glibc 2.36 and native overlay storage with read-only source. The 671 inputs
+match before/after and across gates. Their manifest SHA-256 is
+`15a3c0a0e4b36661ef6cb8ec6b85a78931afc7a8c38ea2dbbf9598cb9ed825c8`.
+Only the two notes files change during finalization.
+
+Each platform executes 507 ordinary Rust tests, including all 80 public catalog
+tests, and the separate lease subprocess. No ordinary test is ignored or
+filtered; the selected lease child reports six filtered siblings. Maintenance
+passes 96 tooling tests, 44 independent codec fixtures and 504 local links.
+Independent aggregate semantics pass 24 cases and composition passes 304 cases.
+Both complete allocation campaigns retain positions 0–862 and healthy control
+863 at each pathname length. Native checks pass, including 1,028 I/O cells;
+interruption checks retain 76 append cuts, 46 recovery cuts and 249 independent
+graph checks. All 43 graph cases and their negative controls pass. Linux retains
+the two Darwin ACL exclusions.
+
+Both receipts have zero finalization errors. Stage times total 1,546.990 seconds
+on macOS and 781.665 seconds on Linux; these overlapping verification runs are
+not performance benchmarks. Receipt SHA-256 values are respectively
+`40844a134f0611491aea3d2eb7529d250a01f39cbaf3dc762b5fce276dd8d8de` and
+`4290a398036767640d15ae8a3813fc2bc6963aa448de526ba5134e63697de014`.
+Owned gate/control outputs, source exports, logs and containers are removed.
+The existing verification image and toolchains remain. Windows, broader
+durability, physical-memory and sanitizer qualification remain unfinished.
+
+### Concurrent readers during reclamation
+
+The new public test in [snapshots.rs](../tests/catalog_lifecycle/snapshots.rs)
+parks two worker-owned results on generations containing 11 and 11/22. The
+parent publishes 33, reclaims and resolves receipts. The older worker drops its
+unfinished result, rereads its pinned plan and releases that plan. Another
+reclamation then runs while the middle reader remains parked. That reader
+completes and rereads exactly 11/22. Reexecuting the pinned plans detects unlink
+that an already-open file might mask. The test checks resource release,
+idempotent final reclamation, append 44, fresh results and all receipts after
+close/reopen. Explicit expected rows and bounded channel/step waits keep the
+schedule and oracle local. No production code or resource allowance changed.
+
+The stock scenario passes on both platforms. In disposable source copies,
+changing `Reachable::open` from current-or-data-pinned roots to current roots only
+makes that same test fail while reopening the older query: `inspect namespace
+entry` returns NotFound. Each control exits 101 with one failed test; its parked
+sibling exits at the 30-second receive deadline during failure teardown. The
+controls are reconstructed from `b8f1b8f` with that single mutation and need no
+retained binary or database. This qualifies the exercised deterministic schedule
+of overlapping lifetimes; it does not establish arbitrary-race detection,
+parallel execution schedules, sanitizer coverage or hardware durability.
+
+## Earlier union verification checkpoint
+
 The September 12, 2026 complete gates for `1153e8d` passed all 24 stages on
 macOS and GNU arm64 Linux. Both used Rust 1.98.1, release artifacts, offline
 locked dependencies, and warnings-denied compilation and documentation. macOS

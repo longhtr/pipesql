@@ -11,8 +11,8 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 24-stage gates for `1153e8d` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 506 ordinary Rust tests and 304
+The complete 24-stage gates for `b8f1b8f` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 507 ordinary Rust tests and 304
 composition cases, plus its applicable native and allocation campaigns. Bounded
 thread scenarios and their ordinary-thread counterparts execute on both platforms,
 including full-width union preparation and execution.
@@ -350,42 +350,23 @@ records measured costs and verification scope. No engine limit, runner, timeout,
 or independent semantic oracle changed. Owned outputs are removed; changes are
 committed locally. Publication remains unresolved.
 
-## Current: concurrent readers during reclamation
+## Completed: concurrent readers during reclamation
 
-The public snapshot suite checks multiple pinned generations sequentially. The
-join suite parks one threaded reader across publication; the composed ownership
-caller parks two readers while an append changes. The next bounded qualification
-combines two live readers on different generations with explicit reclamation.
-This protects the transaction contract that maintenance preserves every pinned
-root while readers release their own state independently.
+`b8f1b8f` adds a public deterministic schedule with two live readers on distinct
+prepared generations across append publication and reclamation. The older
+reader drops its unfinished result and releases its pin; reclamation then runs
+again before the survivor completes. Independent expected rows, pinned-plan
+reexecution, memory/temp release, writer reuse and reopened receipts are checked.
+The owner trace, scenario, test map, full verification and cleanup worklist is
+complete. No engine repair or new coordination framework was needed.
 
-Finite worklist:
-
-1. Trace snapshot registration, reclamation and result release; account for the
-   existing public and ownership scenarios before adding coverage.
-2. Add one deterministic public scenario with visible independent old/new rows,
-   two live readers, append publication and reclamation. Use bounded channel
-   waits and step loops. Drop or cancel one reader, finish the other, and check
-   fresh visibility, writer reuse, receipts and reopen. Repair concrete defects
-   if exposed; add no concurrency framework.
-3. Verify discovery, focused behavior and required retained gates on macOS and
-   native-storage GNU arm64 Linux. Record the precise exercised schedules and
-   limits, update the test map, remove owned outputs and commit locally.
-
-The new public scenario parks two worker-owned results on generations containing
-11 and 11/22. The parent publishes 33, reclaims, and checks all receipts. The old
-worker drops its unfinished result, rereads its pinned query, and releases its
-plan. A second reclamation removes newly unpinned objects while the middle
-reader remains parked; that reader then completes and rereads 11/22. Final
-release, idempotent reclamation, append 44, fresh results and reopened receipts
-are explicit checks. Reexecuting pinned plans prevents already-open file handles
-from masking erroneous unlink. All coordination uses bounded channel waits.
-
-The focused macOS release test passes (one executed, 79 filtered). No engine
-change was needed. Full retained verification and Linux execution remain. This
-is a deterministic schedule of overlapping lifetimes, not arbitrary-race or
-sanitizer qualification.
-Publication, Windows, broader durability and physical-memory obligations remain.
+Both complete 24-stage gates pass on matching frozen inputs, including the new
+test. A disposable mutation that ignores data pins during reclamation fails at
+the intended missing-file boundary on both platforms. The [checkpoint and
+scenario evidence](evidence.md#full-verification-checkpoint) retain reconstruction
+and precise scope. This qualifies overlapping lifetimes in the exercised schedule,
+not arbitrary races, sanitizer coverage or hardware durability. Owned outputs
+are removed and changes are committed locally; publication remains unresolved.
 
 ## Applying DuckDB lessons
 
