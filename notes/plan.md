@@ -443,7 +443,13 @@ macOS ownership campaign pass. Fresh GNU/Linux reader callers now check fixed
 pathname lengths. All three GNU/Linux regimes pass at both pathname lengths, including observed
 mapped/arena controls. The final Linux healthy and wrong-value/duplicate controls
 pass their expected outcomes. All three resource tests and maintenance checks
-pass. New full gates remain pending.
+pass. The subsequent full gates at `a03f953` both stop in Rust tests on two additional
+stale physical-capacity assertions: the padding test expects 81,920 bytes and
+2,048 spans rather than 81,888 and 2,046, and the native refill test uses the
+encoded-column ceiling for physical allocation. Those physical expectations are updated. The original 65,537-byte/1,025-row refusal and checksummed-corruption
+controls remain unchanged, and the refill test now exercises padded capacity.
+All nine blocking tests and the native-unit suite pass on macOS. No complete
+gate is yet passing for this milestone.
 
 ## Applying DuckDB lessons
 

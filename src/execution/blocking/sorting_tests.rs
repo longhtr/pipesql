@@ -35,14 +35,14 @@ fn allocation_padding_does_not_extend_record_or_run_limits() {
     let key = encoded(&keys, &[Value::String(StringValue::new(&text))]);
     // Header + STRING tag/length + text: 32 + 5 + 65,500 bytes.
     let charge = database
-        .reserve_memory(2 * 81_920 + IO_BYTES as u64, "padded frame test")
+        .reserve_memory(2 * 81_888 + IO_BYTES as u64, "padded frame test")
         .unwrap();
     let mut record = SortRecord::new(65_537, charge.bytes()).unwrap();
     record.encode(&keys, ROW_ARGUMENTS, &key, 0, &[]).unwrap();
     assert_eq!(record.bytes.len(), 65_537);
-    assert_eq!(record.bytes.capacity(), 81_920);
+    assert_eq!(record.bytes.capacity(), 81_888);
     let mut run = RunBuffer::new(&database, 65_537, 2).unwrap();
-    assert_eq!(run.bytes.capacity(), 81_920);
+    assert_eq!(run.bytes.capacity(), 81_888);
     assert!(run.push(&record).unwrap());
     let empty = encoded(&keys, &[Value::String(StringValue::new(""))]);
     record.encode(&keys, ROW_ARGUMENTS, &empty, 1, &[]).unwrap();
@@ -54,7 +54,7 @@ fn allocation_padding_does_not_extend_record_or_run_limits() {
     drop(run);
 
     let mut run = RunBuffer::new(&database, 65_537, 1_025).unwrap();
-    assert_eq!(run.spans.capacity(), 2_048);
+    assert_eq!(run.spans.capacity(), 2_046);
     for ordinal in 0..1_025 {
         record
             .encode(&keys, ROW_ARGUMENTS, &empty, ordinal, &[])

@@ -939,7 +939,7 @@ fn retained_payload_invalidates_before_failed_refill() {
         &mut Effects::default(),
     )
     .unwrap();
-    let mut payload = ColumnBuffer::new(vec![0; MAX_COLUMN_BYTES]).unwrap();
+    let mut payload = ColumnBuffer::new(vec![0; MAX_COLUMN_ALLOCATION_BYTES]).unwrap();
     let address = payload.bytes.as_ptr();
     let capacity = payload.bytes.capacity();
     assert!(payload.column().is_none());
@@ -987,7 +987,7 @@ fn retained_payload_invalidates_before_failed_refill() {
     assert_eq!(effects.count(), 0);
     assert!(small.column().is_none());
     assert!(matches!(
-        ColumnBuffer::new(vec![0; MAX_COLUMN_BYTES + 1]),
+        ColumnBuffer::new(vec![0; MAX_COLUMN_ALLOCATION_BYTES + 1]),
         Err(Error::Resource { .. })
     ));
 }
