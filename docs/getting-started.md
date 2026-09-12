@@ -168,7 +168,8 @@ cargo run --release --offline --locked --example grouping -- "$pipesql_grouping_
 cargo run --release --offline --locked --example grouping -- "$pipesql_grouping_dir/spill" 1200000
 ```
 
-Both runs must print `verified 4096 groups: region=0..4095, n=2, total=4, smallest=1, largest=3`.
+Both runs must print `verified groups=4096 rows=8192 skewed=false`, followed by
+the configured memory limit.
 The program checks every ordered row and requires `Finished`; matching a prefix
 does not pass. It also checks that query reservations return to their baseline
 after dropping the result.
@@ -179,7 +180,25 @@ temporary bytes and the second reaches 803,016 temporary bytes. These observatio
 are specific to this workload and build. A small budget alone does not establish spilling: the
 2,000,000-byte run still fits its groups in memory. Temporary bytes measure
 reserved scratch-file extents, not filesystem blocks, total I/O, or process RSS.
-The example does not measure allocator-usable memory or performance.
+The third output line reports execution and validation seconds, including result
+construction, all public query steps, row checking, and result destruction. It
+excludes database creation, opening, preparation, and closing. The example does
+not measure allocator-usable memory. One timing sample is not a performance
+comparison; use repeated runs with identical inputs and record the toolchain,
+platform, memory budget, and timing scope.
+
+The optional group count and distribution keep the same 8,192 input rows while
+changing cardinality and skew:
+
+```sh
+cargo run --release --offline --locked --example grouping -- "$pipesql_grouping_dir/few-skewed" 1200000 32 skewed
+```
+
+The first pass contributes 128 rows of amount 1 to each of 32 regions. The second
+contributes all 4,096 rows of amount 3 to region zero. The example independently
+checks every count, sum, minimum, and maximum, including maximum 1 in regions
+that receive no second-pass rows. Omitting the optional arguments retains the
+4,096-group even distribution.
 
 Follow [the grouping execution path](execution.md#follow-the-grouping-example)
 to see what changes between these runs. When finished, remove the owned inputs:
