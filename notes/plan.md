@@ -348,6 +348,16 @@ retained column-transform, grouping, STRING and composed examples also complete
 with their full oracles on macOS. Legacy union refusal now names UNION for both
 modes and preserves its operator span.
 
+The first complete macOS gate at `c908071` passed through stock composition but
+its expanded allocation campaign reached the 900-second outer deadline after
+long-path refusal position 848. It did not complete recovery allocation cells or
+later native stages and is not a passing gate. Inputs stayed unchanged and gate
+finalization released its target. Preserve every campaign cell and the 20-second
+per-cell deadline; allow 1,200 seconds for the expanded complete allocation stage.
+The focused short/long campaign already completed in 573.550 seconds, before the
+other required ownership, legacy and recovery cells. Verify the revised complete
+stage without reducing coverage.
+
 Remaining finite work: complete frozen macOS/Linux gates, Linux tutorial results,
 discovery/manifests, concise evidence, owned-output cleanup, and final local
 commits. Current verification is focused and does not establish full or

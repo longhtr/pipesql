@@ -133,7 +133,7 @@ def stages(scope, output):
             ],
         ),
         Stage(
-            "public-allocation", 900, [*python, "tools/check-diagnostic-allocation.py"]
+            "public-allocation", 1200, [*python, "tools/check-diagnostic-allocation.py"]
         ),
         Stage("cli-allocation", 600, [*python, "tools/check-cli-allocation.py"]),
         Stage(
