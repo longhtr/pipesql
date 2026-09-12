@@ -30,32 +30,40 @@ fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
     } else {
         "FROM facts |> AGGREGATE SUM(n) AS total GROUP BY k |> AGGREGATE SUM(total) AS subtotal GROUP BY total |> AGGREGATE AVG(subtotal) AS mean"
     };
-    let plan = db.prepare(sql)?;
-    let cancel = CancellationToken::new();
-    let mut result = db.execute(&plan, &cancel)?;
-    let mut seen = false;
-    for _ in 0..10_000 {
-        match result.step() {
-            QueryStep::Rows(batch) => {
-                assert!(!seen && batch.len() == 1 && batch.column_count() == 1);
-                assert_eq!(
-                    batch.value(0, 0),
-                    Some(Value::Double(if derived { 120.0 } else { 60.0 }))
-                );
-                seen = true;
-            }
-            QueryStep::Progress => (),
-            QueryStep::Finished => {
-                assert!(seen);
-                return Ok(());
-            }
-            QueryStep::Failed(_) => {
-                assert!(!seen, "failed aggregate must not publish a partial result");
-                return Err(result.into_error().expect("terminal repeated query error"));
+    let queries = std::iter::once((sql, Value::Double(if derived { 120.0 } else { 60.0 }))).chain(
+        derived.then_some((
+            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total",
+            Value::Int64(9),
+        )),
+    );
+    for (sql, expected) in queries {
+        let plan = db.prepare(sql)?;
+        let cancel = CancellationToken::new();
+        let mut result = db.execute(&plan, &cancel)?;
+        let mut seen = false;
+        let mut finished = false;
+        for _ in 0..10_000 {
+            match result.step() {
+                QueryStep::Rows(batch) => {
+                    assert!(!seen && batch.len() == 1 && batch.column_count() == 1);
+                    assert_eq!(batch.value(0, 0), Some(expected));
+                    seen = true;
+                }
+                QueryStep::Progress => (),
+                QueryStep::Finished => {
+                    assert!(seen);
+                    finished = true;
+                    break;
+                }
+                QueryStep::Failed(_) => {
+                    assert!(!seen, "failed aggregate must not publish a partial result");
+                    return Err(result.into_error().expect("terminal repeated query error"));
+                }
             }
         }
+        assert!(finished, "query exceeded finite fixture step allowance");
     }
-    panic!("repeated query exceeded finite fixture step allowance");
+    Ok(())
 }
 
 fn composition_io(

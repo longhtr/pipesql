@@ -248,7 +248,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
 }
 
 #[test]
-fn runtime_replays_retained_aggregate_output_after_prefix_or_completion() {
+fn runtime_replays_retained_output_after_prefix_or_completion() {
     let directory = Directory::new();
     let database = database(
         &directory,
@@ -260,9 +260,11 @@ fn runtime_replays_retained_aggregate_output_after_prefix_or_completion() {
         ],
     );
     let cancel = CancellationToken::new();
-    for mode in 0..3 {
+    for mode in 0..4 {
         let sql = if mode == 0 {
             "FROM facts |> AGGREGATE SUM(n) AS total"
+        } else if mode == 3 {
+            "FROM facts |> SELECT COUNT(*) OVER () AS n"
         } else {
             "FROM facts |> AGGREGATE SUM(n) AS total GROUP AND ORDER BY k"
         };
@@ -358,6 +360,8 @@ fn runtime_replays_retained_aggregate_output_after_prefix_or_completion() {
             assert!(finished);
             let expected = if mode == 0 {
                 vec![vec![Some(12)]]
+            } else if mode == 3 {
+                vec![vec![Some(4)]; 4]
             } else {
                 vec![
                     vec![None, None],

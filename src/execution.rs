@@ -4,6 +4,7 @@ mod admission;
 mod aggregation;
 mod blocking;
 mod computed;
+mod count;
 mod limit;
 mod planning;
 mod predicate;

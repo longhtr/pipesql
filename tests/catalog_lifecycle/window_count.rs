@@ -2,6 +2,112 @@ use super::order::{integers, query};
 use super::*;
 
 #[test]
+fn count_without_input_values_runs_with_no_temporary_space() {
+    let (directory, db) = join_fixture();
+    db.close().unwrap();
+    let db = Database::open(&directory.database(), Config::new(8_000_000, 1).unwrap()).unwrap();
+    for (sql, expected) in [
+        ("FROM facts |> SELECT COUNT(*) OVER () AS n", 4),
+        (
+            "FROM facts |> SELECT 9223372036854775807+1 AS unused,COUNT(*) OVER () AS n |> SELECT n",
+            4,
+        ),
+        (
+            "FROM facts |> SELECT v |> UNION ALL (FROM facts |> SELECT v) |> SELECT COUNT(*) OVER () AS n |> WHERE n=8 |> LIMIT 4",
+            8,
+        ),
+    ] {
+        query(&db, sql, integers(&[expected; 4]));
+    }
+    query(
+        &db,
+        "FROM facts |> SELECT COUNT(*) OVER () AS n |> WHERE n<0",
+        vec![],
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT 9223372036854775807+1 AS bad,COUNT(*) OVER () AS n |> LIMIT 0",
+        vec![],
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT COUNT(*) OVER () AS n,'x' AS s,DATE '1970-01-01' AS d |> LIMIT 1",
+        vec![vec![Cell::Integer(4), Cell::Text("x".into()), Cell::Day(0)]],
+    );
+    for (sql, arithmetic) in [
+        (
+            "FROM facts |> SELECT 9223372036854775807+1 AS bad,COUNT(*) OVER () AS n |> LIMIT 1",
+            true,
+        ),
+        ("FROM facts |> SELECT v,COUNT(*) OVER () AS n", false),
+    ] {
+        let baseline = db.reserved_memory_bytes();
+        let prepared = db.prepare(sql).unwrap();
+        let cancel = CancellationToken::new();
+        let mut result = db.execute(&prepared, &cancel).unwrap();
+        let mut failed = false;
+        for _ in 0..1000 {
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Failed(error) => {
+                    if arithmetic {
+                        assert!(matches!(error, Error::ArithmeticOverflow { .. }));
+                    } else {
+                        assert!(matches!(error, Error::Resource { limit: 1, .. }));
+                    }
+                    failed = true;
+                    break;
+                }
+                _ => panic!("demanded expression or retained values must fail before rows"),
+            }
+        }
+        assert!(failed);
+        drop(result);
+        drop(prepared);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+
+    for (after_row, cancelled) in [(false, false), (false, true), (true, false), (true, true)] {
+        let baseline = db.reserved_memory_bytes();
+        let prepared = db
+            .prepare("FROM facts |> SELECT COUNT(*) OVER () AS n")
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let mut result = db.execute(&prepared, &cancel).unwrap();
+        if after_row {
+            let mut seen = false;
+            for _ in 0..1000 {
+                match result.step() {
+                    QueryStep::Progress => (),
+                    QueryStep::Rows(batch) => {
+                        assert_eq!(batch.value(0, 0), Some(Value::Int64(4)));
+                        seen = true;
+                        break;
+                    }
+                    _ => panic!("counter must publish its first row"),
+                }
+            }
+            assert!(seen);
+        }
+        if cancelled {
+            cancel.cancel();
+            assert!(matches!(result.step(), QueryStep::Failed(Error::Cancelled)));
+        }
+        drop(result);
+        drop(prepared);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+
+    query(
+        &db,
+        "FROM facts |> SELECT COUNT(*) OVER () AS n",
+        integers(&[4; 4]),
+    );
+}
+
+#[test]
 fn full_partition_count_preserves_rows_and_composes_with_producers() {
     let (_directory, db) = join_fixture();
     query(
@@ -149,6 +255,7 @@ fn analytic_snapshot_retains_typed_rows_across_append_and_reclamation() {
     }
     expected.sort_unstable();
     let mut old = None;
+    let mut old_count = None;
     for append_index in 0..2 {
         let mut append = db.begin_append("facts", limits(), &cancel).unwrap();
         append
@@ -177,11 +284,27 @@ fn analytic_snapshot_retains_typed_rows_across_append_and_reclamation() {
         append.commit(&cancel).unwrap();
         if append_index == 0 {
             old = Some(db.prepare(sql).unwrap());
+            old_count = Some(
+                db.prepare("FROM facts |> SELECT COUNT(*) OVER () AS n")
+                    .unwrap(),
+            );
         }
     }
     db.reclaim(&cancel).unwrap();
     assert!(collect(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
     let old = old.unwrap();
+    let old_count = old_count.unwrap();
+    assert_eq!(
+        collect(&mut db.execute(&old_count, &cancel).unwrap()),
+        integers(&[3; 3])
+    );
+    let current_count = db
+        .prepare("FROM facts |> SELECT COUNT(*) OVER () AS n")
+        .unwrap();
+    assert_eq!(
+        collect(&mut db.execute(&current_count, &cancel).unwrap()),
+        integers(&[6; 6])
+    );
     assert_eq!(collect(&mut db.execute(&old, &cancel).unwrap()), expected);
     let current = db.prepare(sql).unwrap();
     for row in &mut expected {
@@ -194,6 +317,7 @@ fn analytic_snapshot_retains_typed_rows_across_append_and_reclamation() {
         expected
     );
     drop(old);
+    drop(old_count);
     drop(empty);
     db.reclaim(&cancel).unwrap();
     assert_eq!(

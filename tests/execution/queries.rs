@@ -263,7 +263,7 @@ fn legacy_text_constants_survive_batches_grouping_and_extrema() {
 }
 
 #[test]
-fn legacy_window_count_spills_and_preserves_empty_cardinality() {
+fn legacy_window_count_selects_storage_and_preserves_empty_cardinality() {
     let temp = TempDir::new();
     let input = temp.0.join("lineitem.tbl");
     fs::write(&input, ROW.repeat(600)).unwrap();
@@ -274,15 +274,34 @@ fn legacy_window_count_spills_and_preserves_empty_cardinality() {
             db.load_lineitem(&input, &cancel).unwrap();
         }
         let resident = db.reserved_memory_bytes();
-        for sql in [
-            "FROM lineitem |> SELECT COUNT(*) OVER () AS n",
-            "FROM lineitem |> EXTEND COUNT(*) OVER () AS n |> SELECT n,l_returnflag,DATE '1970-01-01' AS day,'label' AS label",
-            "FROM lineitem |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total",
-            "FROM lineitem |> LIMIT 600 |> SELECT 600 AS n,l_returnflag,DATE '1970-01-01' AS day,'label' AS label",
+        for (sql, aggregate, width, spills) in [
+            (
+                "FROM lineitem |> SELECT COUNT(*) OVER () AS n",
+                false,
+                1,
+                false,
+            ),
+            (
+                "FROM lineitem |> EXTEND COUNT(*) OVER () AS n |> SELECT n,l_returnflag,DATE '1970-01-01' AS day,'label' AS label",
+                false,
+                4,
+                true,
+            ),
+            (
+                "FROM lineitem |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total",
+                true,
+                1,
+                false,
+            ),
+            (
+                "FROM lineitem |> LIMIT 600 |> SELECT 600 AS n,l_returnflag,DATE '1970-01-01' AS day,'label' AS label",
+                false,
+                4,
+                false,
+            ),
         ] {
             let query = db.prepare(sql).unwrap();
             let mut result = db.execute(&query, &cancel).unwrap();
-            let aggregate = sql.ends_with("AS total");
             let mut rows = 0;
             let mut done = false;
             let mut disk = false;
@@ -291,6 +310,7 @@ fn legacy_window_count_spills_and_preserves_empty_cardinality() {
                 match result.step() {
                     QueryStep::Progress => (),
                     QueryStep::Rows(batch) => {
+                        assert_eq!(batch.column_count(), width);
                         for row in 0..batch.len() {
                             assert_eq!(
                                 batch.value(row, 0),
@@ -300,7 +320,7 @@ fn legacy_window_count_spills_and_preserves_empty_cardinality() {
                                     Value::Int64(if aggregate { 360_000 } else { 600 })
                                 })
                             );
-                            if batch.column_count() == 4 {
+                            if width == 4 {
                                 assert!(
                                     matches!(batch.value(row,1), Some(Value::String(v)) if v.as_str()=="R")
                                 );
@@ -335,7 +355,7 @@ fn legacy_window_count_spills_and_preserves_empty_cardinality() {
                     0
                 }
             );
-            assert_eq!(disk, loaded && sql.contains("OVER"), "{sql}");
+            assert_eq!(disk, loaded && spills, "{sql}");
         }
         assert_eq!(db.reserved_memory_bytes(), resident);
         assert_eq!(db.reserved_temp_bytes(), 0);

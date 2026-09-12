@@ -480,6 +480,15 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
             phase = "window-step";
             consume_count(result, 16)?;
             drop(window);
+            phase = "count-only-prepare";
+            let count = db.prepare(
+                "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total",
+            )?;
+            phase = "count-only-execute";
+            let result = db.execute(&count, &cancel)?;
+            phase = "count-only-step";
+            consume_count(result, 16)?;
+            drop(count);
             phase = "distinct-prepare";
             let distinct = db.prepare(DISTINCT)?;
             phase = "distinct-execute";

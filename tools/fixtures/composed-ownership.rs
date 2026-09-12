@@ -126,7 +126,7 @@ pub(super) fn analytic_shapes(
             .report(
                 "analytic-admitted",
                 (running_nonheap
-                    + if case == 5 { 16384 } else { 8192 }
+                    + if case <= 2 { 0 } else { 8192 }
                     + usize::from(wrong_attribution)) as u64,
             );
         }
@@ -220,7 +220,11 @@ pub(super) fn analytic_shapes(
                 _ => 512,
             }
         );
-        assert!(case == 0 || peak_temp > 0, "analytic input must spill");
+        if case <= 2 {
+            assert_eq!(peak_temp, 0, "zero-field count must not spool");
+        } else {
+            assert!(peak_temp > 0, "demanded input must spill");
+        }
         Owner {
             charge: result.accounted_memory_bytes(),
             heap: Heap::now().increase_from(prepared_heap),

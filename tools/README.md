@@ -123,7 +123,9 @@ columns, consecutive analytic stages and grouped composition. Twenty repeated
 calls must reject at the token bound without retaining preparation ownership.
 The caller samples requested/usable admission after every step and independently
 reconciles nonheap allowances at admission, first spill, emission and completion.
-Both pathname lengths run all seven cases; a one-byte attribution error must fail.
+Count-only cases require zero temporary consumption; typed input and the second
+stage of the consecutive-count case retain spill coverage. Both pathname lengths
+run all seven cases; a one-byte attribution error must fail.
 Composed-reader bound failures are reported after the
 barrier participants join. This selection also checks the complete append
 allocation-size ranges and full-width maximum-column growth, reuse, publication,
@@ -141,9 +143,11 @@ release. A fresh size census alone does not establish these history-dependent
 observations.
 
 The catalog allocation campaign includes analytic count followed by ordering and
-aggregation, with an independent total of 16 for its four-row input. The native
+aggregation, with an independent total of 16 for its four-row input. A separate
+count-only query retains the same total and exercises the counter's allocations. The native
 I/O composition campaign also consumes analytic count after a join; its existing
-result oracle checks the complete aggregate. Both retain refusal, recovery and
+result oracle checks the complete aggregate. It also checks a count-only total of
+nine over three rows. Both retain refusal, recovery and
 healthy-reuse checks around the full sequence.
 
 The same selection runs the nullable self-join, aggregation, and ordering workload

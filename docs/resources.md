@@ -292,28 +292,34 @@ new resource account, spool implementation, or replay authority.
 
 ## Analytic count admission
 
-Each SELECT or EXTEND containing `COUNT(*) OVER ()` owns one physical producer,
-one sorted input and one output batch. Repeated counts share that input owner
-while retaining separate computation identities. Preparation uses the existing
-bounded computation vector; there is no new descriptor allocation. Ordinary
-expressions use the stage's input scope but evaluate at this producer's output.
+Each SELECT or EXTEND containing `COUNT(*) OVER ()` owns one physical producer
+and one output batch. Repeated counts share that input owner while retaining
+separate computation identities. Preparation uses the existing bounded
+computation vector; there is no new descriptor allocation. Ordinary expressions
+use the stage's input scope but evaluate at this producer's output.
 
-The sorted input retains only demanded input values. It has no semantic sort
-keys: unique input ordinals determine replay order. Its frame, run, I/O and
-scratch owners use the [sorted-input equation](#join-ordering-and-distinct-admission)
-with `K = 0`. Even a count-only projection writes ordinal records; an empty input
-writes no row records and emits no rows. The current path admits at most
-134,217,728 input rows per analytic stage, and refuses additional rows with a
-resource error. The INT64 count is the number of successfully captured rows.
+When physical input demand contains no values, the [counter](../src/execution/count.rs)
+retains only row counts inline in the admitted runtime node. It consumes at most
+one input batch per step, then evaluates at most one candidate output row per
+step. It allocates no row records or scratch files. Empty input emits no rows;
+replay resets the emission counter without rereading its source. A nonzero
+configuration limit remains required, but this owner consumes zero temporary
+bytes. Other operators in the query retain their own storage requirements.
+
+When input values are demanded, sorted input retains those fields with unique
+ordinals. It has no semantic sort keys; ordinals determine checked replay order.
+Its frame, run, I/O and scratch owners use the
+[sorted-input equation](#join-ordering-and-distinct-admission) with `K = 0`.
+Both paths admit at most 134,217,728 input rows per analytic stage and refuse the
+next row with a resource error. The INT64 count describes the complete input.
 
 All retained minima are admitted before source I/O and optional aggregate growth.
-Capture, spill, merge, load and emission use the existing bounded sort steps and
-cancellation checks. Emission evaluates at most one row per step; downstream
-LIMIT can stop further evaluation. Grouping replay reads the retained checked
-run and reuses the complete count. Scratch extents remain charged until query
-cleanup. Completion, refusal, cancellation, failure and early drop follow the
-same release path as ordering. This does not establish arbitrary-allocator or
-whole-process/RSS bounds.
+Both paths check cancellation, preserve downstream LIMIT's demand boundary and
+retain the complete count for replay. The spool uses the existing bounded
+capture, spill, merge, load and emission steps. Scratch extents remain charged
+until query cleanup. Completion, refusal, cancellation, failure and early drop
+release the selected owner. These bounds do not establish arbitrary-allocator
+or whole-process/RSS limits.
 
 ## Join, ordering and DISTINCT admission
 

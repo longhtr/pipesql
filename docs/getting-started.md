@@ -211,7 +211,9 @@ see why ordinary expressions in this stage evaluate at its output. The
 [physical planner](../src/execution/planning/lower.rs) retains their demanded
 input values. The [sorted-input consumer](../src/execution/blocking/order.rs)
 counts captured rows, then emits each row with that count using checked scratch
-storage. It preserves cardinality instead of reducing the relation to one row.
+storage. When no input values are demanded, the [counter](../src/execution/count.rs)
+retains only the row count and emits that many rows without scratch storage.
+Both preserve cardinality instead of reducing the relation to one row.
 
 ## Finish and clean up
 

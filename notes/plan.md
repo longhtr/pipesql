@@ -46,11 +46,21 @@ fields. This targets measured resource cost, not a new language profile.
    frozen gates and the example; reconcile discovery and manifests, record
    concise evidence, remove owned outputs and commit locally.
 
-Initial tracing confirms that physical inputs already expose their demanded
-column count. Runtime admission currently constructs the sorted owner for every
-analytic stage. Its replay resets checked-run cursors while retaining the count.
-The existing LIMIT consumer demonstrates bounded counter ownership and output
-through RowValues. No execution change has been made for this milestone yet.
+The runtime now selects an inline counter for zero-field analytic input and the
+existing checked sorted owner for demanded fields. Four counter tests pass,
+including exact/one-byte-short admission, invalid input, the row bound,
+cancellation and replay. All five public analytic tests pass, including minimal
+one-byte temp limits, demanded-value spill refusal, early drop, cancellation,
+constant expressions and old/new snapshots. Runtime replay passes after both
+partial and complete counter emission without additional I/O. All-target Clippy
+passes with warnings denied.
+
+The complete macOS ownership selection observes 529 public steps and zero
+temporary bytes for the 512-row count-only query, compared with 7,710 steps and
+32,888 bytes at the baseline. Typed input still spills and ownership equations
+remain intact. Allocation and native I/O callers now separately exercise the
+counter path. Complete frozen gates on both platforms, the documented example,
+final discovery/evidence reconciliation, cleanup and local commits remain.
 
 ## Next engineering priorities
 

@@ -166,14 +166,16 @@ source and derived values, without parser, catalog or I/O access inside a
 kernel.
 
 SELECT or EXTEND containing full-partition count introduces a producer boundary.
-The [sorted-input consumer](../src/execution/blocking/order.rs) captures demanded
-input fields with unique ordinals and counts successful captures. After its
-checked sort completes, it emits rows with the full count. An empty key prefix
-orders the scratch records by ordinal without establishing semantic result order.
-Ordinary expressions in the same projection evaluate during emission, so a later
-LIMIT can leave their later rows undemanded. Replay retains the count and rereads
-the checked run. See the [language contract](language.md#full-partition-analytic-count)
-and [resource equation](resources.md#analytic-count-admission).
+If physical input demand is empty, the [counter](../src/execution/count.rs)
+consumes row counts and emits the same number of rows without a spool. Its
+completed count suffices for replay. Otherwise, the
+[sorted-input consumer](../src/execution/blocking/order.rs) captures demanded
+fields with unique ordinals and counts successful captures. After its checked
+sort completes, it emits rows with the full count; replay rereads that run.
+Neither path establishes semantic result order. Ordinary expressions evaluate
+during emission, so LIMIT can leave later rows undemanded. See the
+[language contract](language.md#full-partition-analytic-count) and
+[resource equation](resources.md#analytic-count-admission).
 
 Any computation cache has one charged owner and a validated row/batch lifetime.
 Its dimensions, scratch and NULL masks are admitted before use. Dependency walks

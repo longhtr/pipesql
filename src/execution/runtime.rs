@@ -4,7 +4,7 @@ use crate::effects::Effects;
 use crate::execution::aggregation::Aggregation;
 use crate::execution::planning::{MAX_PIPELINES, PhysicalPlan, Pipeline, Producer};
 use crate::execution::scan::{AdmittedScan, ScanCursor, declared};
-use crate::execution::{Advance, ConsumerInput, ConsumerStep, blocking, limit, union};
+use crate::execution::{Advance, ConsumerInput, ConsumerStep, blocking, count, limit, union};
 use crate::frontend::{self, DataType, MAX_AGGREGATE_COLUMNS, MAX_ROW_VALUES, PreparedQuery};
 use crate::resources::{Reservation, allocate};
 use crate::{CancellationToken, Database, Error};
@@ -24,6 +24,10 @@ enum Owner<'db> {
     Pending(declared::Admission<'db>),
     Scan {
         cursor: ScanCursor<'db>,
+        output: OwnedBatch<'db>,
+    },
+    Count {
+        count: count::Count,
         output: OwnedBatch<'db>,
     },
     Limit {
@@ -48,11 +52,30 @@ enum Owner<'db> {
 }
 
 impl<'db> Owner<'db> {
+    fn analytic(
+        database: &'db Database,
+        query: &PreparedQuery<'_>,
+        input: &Pipeline<'_>,
+        output: OwnedBatch<'db>,
+    ) -> Result<Self, Error> {
+        if input.column_count == 0 {
+            Ok(Self::Count {
+                count: count::Count::new(input.column_count)?,
+                output,
+            })
+        } else {
+            let order =
+                blocking::order::Order::window_count(database, input.output_columns(&query.plan))?;
+            Ok(Self::Order { order, output })
+        }
+    }
+
     fn output(&self) -> &OwnedBatch<'db> {
         match self {
             Self::Scan { output, .. }
             | Self::Join { output, .. }
             | Self::Order { output, .. }
+            | Self::Count { output, .. }
             | Self::Limit { output, .. }
             | Self::Union { output, .. }
             | Self::Aggregate(output) => output,
@@ -67,6 +90,7 @@ impl<'db> Owner<'db> {
             Self::Scan { output, .. }
             | Self::Join { output, .. }
             | Self::Order { output, .. }
+            | Self::Count { output, .. }
             | Self::Limit { output, .. }
             | Self::Union { output, .. }
             | Self::Aggregate(output) => output,
@@ -82,7 +106,10 @@ impl<'db> Owner<'db> {
                 Self::Scan { cursor, .. } => cursor.memory_bytes(),
                 Self::Join { join, .. } => join[0].memory_bytes(),
                 Self::Order { order, .. } => order[0].memory_bytes(),
-                Self::Aggregate(_) | Self::Limit { .. } | Self::Union { .. } => 0,
+                Self::Aggregate(_)
+                | Self::Count { .. }
+                | Self::Limit { .. }
+                | Self::Union { .. } => 0,
                 Self::Pending(_) | Self::Vacant => unreachable!("runtime admission is private"),
             }
     }
@@ -90,6 +117,7 @@ impl<'db> Owner<'db> {
     fn replay(&mut self, cancel: &CancellationToken) -> Result<(), Error> {
         match self {
             Self::Scan { cursor, .. } => cursor.restart(cancel),
+            Self::Count { count, .. } => count.replay(cancel),
             Self::Limit { limit, .. } => limit.replay(),
             Self::Union { union, .. } => union.replay(),
             Self::Join { join, .. } => join[0].replay(cancel),
@@ -220,13 +248,12 @@ impl<'db> Runtime<'db> {
                     limit: limit::Limit::new(bounds),
                     output: producer_output(database, query, pipeline)?,
                 },
-                Producer::WindowCount { input } => Owner::Order {
-                    order: blocking::order::Order::window_count(
-                        database,
-                        plan.pipelines()[input.index()].output_columns(&query.plan),
-                    )?,
-                    output: producer_output(database, query, pipeline)?,
-                },
+                Producer::WindowCount { input } => Owner::analytic(
+                    database,
+                    query,
+                    &plan.pipelines()[input.index()],
+                    producer_output(database, query, pipeline)?,
+                )?,
                 Producer::Scan(0) | Producer::Aggregate { aggregate: 0, .. } => Owner::Vacant,
                 Producer::Aggregate { .. } => {
                     Owner::Aggregate(producer_output(database, query, pipeline)?)
@@ -275,7 +302,8 @@ impl<'db> Runtime<'db> {
                 }
                 Producer::Aggregate { .. } if matches!(node.owner, Owner::Aggregate(_)) => (),
                 Producer::Limit { .. } if matches!(node.owner, Owner::Limit { .. }) => (),
-                Producer::WindowCount { .. } if matches!(node.owner, Owner::Order { .. }) => (),
+                Producer::WindowCount { .. }
+                    if matches!(node.owner, Owner::Order { .. } | Owner::Count { .. }) => {}
                 _ => return Err(Error::Corrupt("legacy owners disagree with producers")),
             }
         }
@@ -336,11 +364,7 @@ impl<'db> Runtime<'db> {
                         )?;
                         Owner::Order { order, output }
                     } else if let Producer::WindowCount { input } = pipeline.producer {
-                        let order = blocking::order::Order::window_count(
-                            database,
-                            plan.pipelines()[input.index()].output_columns(&query.plan),
-                        )?;
-                        Owner::Order { order, output }
+                        Owner::analytic(database, query, &plan.pipelines()[input.index()], output)?
                     } else if let Producer::Distinct { input, .. } = pipeline.producer {
                         let order = blocking::order::Order::distinct(
                             database,
@@ -665,6 +689,9 @@ impl<'db> Runtime<'db> {
                 let step = match (pipeline.producer, owner) {
                     (Producer::Limit { .. }, Owner::Limit { limit, output }) => {
                         limit.step(supplied, output, pipeline, cancel)?
+                    }
+                    (Producer::WindowCount { .. }, Owner::Count { count, output }) => {
+                        count.step(supplied, output, pipeline, cancel)?
                     }
                     (
                         Producer::Order { .. }
