@@ -93,6 +93,12 @@ These runners compile and execute code. C/Rust callers live in
 `fixtures/`; they are development scaffolding with their own unsafe and process
 ownership, not shipped adapters.
 
+Use `python3 -B tools/check-diagnostic-allocation.py --ownership-only` to
+reconcile prepared queries, parked readers, and an append. The
+[resource equations](../docs/resources.md#interpret-composed-memory-observations)
+explain logical charges, requested/usable bytes, caller storage, and observer
+limits. This selection retains result and attribution negative controls.
+
 On GNU/Linux, `check-diagnostic-allocation.py --pathname-only` selects expanded-path
 create/open allocation refusals, released-storage checks, successful retries,
 and the common mutex control. It does not qualify the other allocation cells.

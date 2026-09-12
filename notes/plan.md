@@ -42,32 +42,41 @@ internal payloads admit up to 128 visible and retained values. Larger inline
 owners retain their existing resource charges. Compact hash storage and EXTEND
 remain complete. Reopen these only for a concrete defect or limitation.
 
-## Next: reconcile composed memory ownership
+## Completed: composed memory attribution
 
-Explain the difference between logical reservations, requested allocations, and
-allocator-usable extents for one representative composed query. The current
-[ownership checkpoints](evidence.md#composed-query-owners) prove release and
-coexistence, but do not attribute every difference or establish a physical-memory
-bound. This is the next resource qualification task, not a new query feature.
+The maintained ownership caller reconciles prepared plans, two parked readers,
+and an append against requested and allocator-usable bytes on macOS and GNU/Linux.
+The [resource equations](../docs/resources.md#interpret-composed-memory-observations)
+explain inline handles, allocation allowances, and unused pathname capacity.
+Independent wrong-row and wrong-attribution controls fail at their intended
+checks. Physical allocation refusal, logical admission refusal, temporary refusal,
+cancellation, completion, and final release preserve the other owners.
 
-1. Trace existing counters and owners before adding instrumentation. Choose a
-   reproducible workload with overlapping blocking owners and an independent
-   complete-result oracle. Use the existing caller and build/subprocess tools.
-2. Reconcile stable checkpoints through preparation, execution, cancellation,
-   completion, and release. Separate engine allocations, caller/runtime owners,
-   allocator rounding, reserved capacity, and unsampled transitions. Include a
-   constrained-resource case and a negative control that detects incorrect
-   attribution. Repair a concrete accounting defect across its consumers.
-3. Verify the maintained diagnostic on macOS and available native GNU/Linux
-   storage. Keep unsupported platform and observer limits explicit. Update the
-   resource explanation and concise evidence so a learner can reproduce and
-   interpret the result. Run verification required by retained changes, commit
-   locally, and remove owned outputs.
+Caller synchronization storage is separately destroyed and observed. macOS
+allocator rounding can exceed an engine owner's logical charge, so physical
+memory remains a release obligation. The [evidence](evidence.md#attribution-of-composed-memory)
+records the measured scope; it does not establish a whole-process cap.
 
-Limit initial investigation to four hours before reassessing scope and evidence.
-Do not infer a whole-process cap from engine counters, add a new monitoring
-framework, or redesign scheduling without a concrete failure. Finish a useful,
-reproducible reconciliation; identify any remaining qualification precisely.
+## Next: qualify native sanitizer observations
+
+Establish a reproducible diagnostic baseline before attributing native sanitizer
+reports to the DBMS. The current limitation is disagreement among retired
+toolchain/standard-library controls, with no qualified runtime baseline.
+
+1. Inventory available compiler, Rust standard-library, and sanitizer runtimes.
+   Choose a small native boundary and document which code is instrumented.
+2. Use a known-clean control and a deliberate isolated fault control to verify
+   detection and exit status. Exercise the corresponding production boundary
+   with stock comparison and preserve its exact semantic/failure expectations.
+3. Retain a maintained replay command, compact observations, and explicit limits
+   for macOS and available GNU/Linux. Repair an established engine defect if one
+   is found; otherwise distinguish diagnostic limitations from engine failures.
+
+Reassess after four hours of initial investigation. Do not install an unbounded
+matrix of toolchains, suppress unexplained reports, or claim race freedom from
+one passing control. Keep unsafe diagnostic scaffolding outside the engine.
+Finish with appropriate verification, local commits, current documentation,
+owned-output cleanup, and a clean tree.
 
 Do not push or modify remote refs. Windows remains unfinished; unavailable
 platform resources do not block the available verification.
@@ -86,7 +95,7 @@ implementation, examples, checks, and accepted costs.
 | Applied in compact hash storage | The same external-aggregation study varies group cardinality and measures operation beyond available memory. | Existing workloads check cardinality, budget pressure, and full-width text replay; exact admission checks cover the fallback minimum. The completed STRING study establishes unused capacity and short-string spill costs. Compact spans and admitted arena growth remove short-string spill in the maintained 4 MB workload. Retain the recorded transient growth cost for wide values; no speedup is claimed. |
 | Applied in MIN/MAX | [Memory management](https://duckdb.org/2024/07/09/memory-management) treats blocking intermediates and their competing owners explicitly. | Extend existing composed-query checks to extrema. Exercise memory refusal, exhausted temporary capacity, cancellation, and release. Attribute spill to the relevant operator or a controlled query; total temporary bytes alone do not prove aggregation spilled. |
 | Current tests | DuckDB's [SQL test guidance](https://duckdb.org/docs/lts/dev/sqllogictest/writing_tests) favors exercising behavior through SQL. | Keep queries and independent expected results visible in existing public tests. Retain internal corruption and allocation controls where SQL cannot establish the invariant. No additional test framework is needed. |
-| Later physical-memory qualification | DuckDB's memory-management article distinguishes component memory and temporary storage measurements. | Reconcile existing logical charges with allocator observations and other process owners on one representative composed workload. Explain unexplained differences before claiming a process-memory cap; add a diagnostic only when an existing observation cannot answer the question. |
+| Applied in ownership attribution; physical cap remains open | DuckDB's memory-management article distinguishes component memory and temporary storage measurements. | The maintained caller attributes prepared/query/append charges and caller synchronization on macOS and GNU/Linux. Allocator rounding can exceed an owner's charge; this does not establish a usable-heap or process-memory cap. |
 
 DuckDB is not a universal differential oracle. Its documented
 [floating-point ordering](https://duckdb.org/docs/current/sql/data_types/numeric#floating-point-types)

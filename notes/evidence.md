@@ -446,6 +446,51 @@ RSS to return to baseline. Serialized transitions with overlapping owners do not
 qualify every interleaving or allocation-failure position. [Resources](../docs/resources.md)
 owns current equations and the outstanding physical-memory obligation.
 
+### Attribution of composed memory
+
+The focused ownership caller now checks the [resource equations](../docs/resources.md#interpret-composed-memory-observations)
+for preparation and the two parked readers alongside the append. Each owner
+reports requested and allocator-usable bytes; their sum must match the separately
+sampled global change. Cancellation and completion must release that owner's
+allocations while preserving the other owners. The existing complete-row,
+allocation-refusal, temporary-refusal, and descriptor checks remain intact.
+
+Both short and 384-byte paths pass on macOS and GNU arm64 Linux with the same
+Rust 1.98.1 toolchain and native environments as the full checkpoint. The focused
+command builds the ordinary release library offline with locked dependencies;
+the caller compiles with warnings denied. Linux runs unprivileged with native
+container storage and network access disabled. A new negative control changes a
+preparation allowance by one byte and is rejected at the attribution equation.
+The original wrong-row control is rejected independently.
+A logical-admission case holds five additional readers, rejects the sixth with
+`required > limit`, then restores the original live allocations, charges, and
+temporary ownership. Allocation injection is disabled during this case.
+
+Selected short-path observations are:
+
+| Platform and owner | Logical charge | Requested bytes | Usable bytes |
+| --- | ---: | ---: | ---: |
+| macOS, prepared ORDER BY | 13,400 | 9,160 | 10,240 |
+| GNU/Linux, prepared ORDER BY | 13,400 | 9,160 | 9,160 |
+| macOS, append after write | 139,905 | 131,241 | 147,520 |
+| GNU/Linux, append after write | 139,905 | 131,241 | 131,272 |
+| macOS, parked ORDER BY | 534,404 | 521,684 | 538,784 |
+| GNU/Linux, parked ORDER BY | 534,404 | 521,632 | 525,888 |
+| Both, terminal reader | 552 | 0 | 0 |
+
+The reader request differs because the canonical paths have different lengths.
+The equations account for that length rather than hard-coding either result.
+On macOS the append's usable extents exceed its charge by 7,615 bytes. This is
+an observed limit of logical admission, not evidence of a usable-heap cap.
+
+The first owner-attribution run failed final release because the new caller
+observation mutexes were still live. Explicit destruction releases their measured
+storage together with the barriers before database-close reconciliation. No
+constant subtraction or relaxed baseline assertion masks caller allocations.
+These controls observe parked live allocations, not peaks, foreign allocations,
+allocator metadata/retention, or physical stack pages. Native durability,
+Windows, whole-process memory, and arbitrary schedules remain unqualified.
+
 ### Grouping learning workload
 
 DuckDB's discussions of [shared memory and spilling](https://duckdb.org/2024/07/09/memory-management)

@@ -252,8 +252,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::path::PathBuf::from(args.next().expect("owned probe directory"));
     let mode = args.next().expect("probe mode");
     assert!(args.next().is_none());
-    if mode == "ownership" || mode == "ownership-negative" {
-        return ownership::run(&root, mode == "ownership-negative");
+    if mode == "ownership"
+        || mode == "ownership-negative"
+        || mode == "ownership-attribution-negative"
+    {
+        return ownership::run(
+            &root,
+            mode == "ownership-negative",
+            mode == "ownership-attribution-negative",
+        );
     }
     if mode == "mutex" {
         catalog::mutex_contention();

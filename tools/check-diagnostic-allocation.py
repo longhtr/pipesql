@@ -223,30 +223,24 @@ def check_ownership(work, run, failures):
             failures.append(
                 f"ownership-{label}: missing composed ownership completion"
             )
-    negative = run_process(
-        [
-            str(work / "driver"),
-            str(work / "ownership-negative"),
-            "ownership-negative",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=20,
-        cwd=ROOT,
-    )
-    if negative.returncode == 0 or "complete-row oracle" not in negative.stderr:
-        failures.append(
-            f"ownership checker negative control did not reject the wrong expected row: {negative.stdout}{negative.stderr}"
+    for mode, expected in [
+        ("ownership-negative", "complete-row oracle"),
+        ("ownership-attribution-negative", "prepared ownership attribution"),
+    ]:
+        negative = run_process(
+            [str(work / "driver"), str(work / mode), mode],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            cwd=ROOT,
         )
-    print(
-        (
-            "ownership negative control: rejected wrong complete-row expectation"
-            if negative.returncode != 0
-            and "complete-row oracle" in negative.stderr
-            else "ownership negative control failed"
-        ),
-        flush=True,
-    )
+        if negative.returncode == 0 or expected not in negative.stderr:
+            failures.append(
+                f"{mode}: expected rejection at {expected}: "
+                f"{negative.stdout}{negative.stderr}"
+            )
+        else:
+            print(f"{mode}: rejected by {expected}", flush=True)
 
 
 def allocation_cells(options):

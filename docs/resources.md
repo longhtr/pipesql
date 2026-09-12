@@ -43,6 +43,64 @@ so configuration is not a hard usable-heap or RSS limit. Reducing optional hash
 allocation does not change that distinction. Closing this physical-memory gap
 remains a release obligation.
 
+## Interpret composed memory observations
+
+Run `python3 -B tools/check-diagnostic-allocation.py --ownership-only` from the
+repository root. The caller holds an ORDER BY reader, a DISTINCT reader, and an
+append together. Its constructed input determines the complete old/new results.
+Readers park at barriers while one owner changes; the caller compares their
+separately observed allocation changes with the global live totals. It checks
+allocation refusal, temporary-space refusal, cancellation, commit, completion,
+and final release. These serialized transitions exercise overlapping ownership,
+not arbitrary concurrent schedules.
+
+The observer distinguishes three quantities:
+
+- **Logical charge** admits an owner's allocations, inline state, and bounded
+  scratch capacity before use. A reservation need not be a live heap allocation.
+- **Requested bytes** are the sizes of live allocations through the caller's Rust
+  global allocator. Database and caller allocations share this observer.
+- **Usable bytes** are the allocator-reported extents of those same allocations.
+  Their difference from requested bytes is allocator rounding, not engine data.
+
+For this numeric workload, the caller checks the following equations. `R` is
+an owner's live requested heap bytes, and `P` is the byte length of its canonical
+`database/units` path. The pathname bounds are 4,096 bytes each.
+
+| Owner at the checkpoint | Logical charge |
+| --- | --- |
+| Prepared ORDER BY | `R + size_of::<PreparedQuery>() + 4096` |
+| Prepared DISTINCT | `R + size_of::<PreparedQuery>() + 2 * 4096` |
+| Append after writing | `R + size_of::<Append>() + 8192` |
+| Reader parked after its first spill | `R + size_of::<QueryResult>() + 4096 + 8192 - P` |
+| Reader after completion or cancellation | `size_of::<QueryResult>()`, with no retained heap allocation |
+| Dropped owner | Zero |
+
+Preparation retains one plan allocation; DISTINCT also retains a descriptor
+allocation. Each receives its documented allowance. Append paths are transient
+at the sampled point. A running reader retains one exact-capacity source path;
+its source account covers two maximum paths, and its physical plan has a separate
+allocation allowance. These equations are specific to the named fixture and
+checkpoints. Aggregates, computed expressions, and other producer graphs add
+their own owners. The caller does not infer their charges from this table.
+
+The parked baseline includes the database, prepared plans, and caller thread and
+synchronization state. Completion releases engine allocations before the caller
+drops its barriers and observation mutexes. The caller measures synchronization
+release separately and requires the original baseline after closing the database.
+A negative control changes a preparation allowance by one byte and must fail
+attribution; a separate control rejects an incorrect complete query result.
+
+Logical allowances do not guarantee that usable allocations fit under the same
+limit. The native allocator can round a request beyond its logical allowance.
+The observer also excludes direct foreign allocations, allocator metadata and
+retained free pages, mapped or resident stack, and other process mappings. Parked
+samples do not measure transient peaks. `/usr/bin/time` reports process-level
+observations separately; its high-water mark cannot be assigned to one query
+owner or equated with the sum of these checkpoints. See the
+[current measurements](../notes/evidence.md#composed-query-owners) for executed
+platforms and concrete limits.
+
 ## Query preparation
 
 Prepared queries reserve their handle, immutable heap-owned plan, and any
