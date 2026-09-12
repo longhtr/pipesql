@@ -103,7 +103,9 @@ Use `python3 -B tools/check-diagnostic-allocation.py --ownership-only` to
 reconcile prepared queries, parked readers, and an append. The
 [resource equations](../docs/resources.md#interpret-composed-memory-observations)
 explain logical charges, requested/usable bytes, caller storage, and observer
-limits. This selection retains result and attribution negative controls.
+limits. This selection also checks the complete append allocation-size ranges and
+full-width maximum-column growth, reuse, publication, and release. Its controls
+reject a missing rounding ceiling, a wrong result, and wrong attribution.
 
 On GNU/Linux, `check-diagnostic-allocation.py --pathname-only` selects expanded-path
 create/open allocation refusals, released-storage checks, successful retries,

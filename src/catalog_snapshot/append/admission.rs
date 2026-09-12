@@ -1,5 +1,5 @@
 //! Reserve append owners and bounds, retain the selected table, then issue once.
-use super::{Append, AppendLimits};
+use super::{ALLOCATION_ROUNDING_BYTES, Append, AppendLimits};
 use crate::catalog;
 use crate::catalog_schema::{self, TableId};
 use crate::catalog_snapshot::Writer;
@@ -157,8 +157,15 @@ impl<'db> Writer<'db> {
             return Err(Error::NotFound);
         };
         let database = self.database;
+        // Three heap owners remain live: catalog/schema, references, and the
+        // reusable encoding/commit workspace. Each receives the rounding ceiling
+        // checked over its complete request-size range by the native ownership
+        // caller. Growth drops the old workspace first, so no fourth buffer
+        // overlaps. Reserve this before allocating or issuing the transaction.
         let owner = database.memory.reserve(
-            (std::mem::size_of::<Append<'_>>() + 2 * crate::path::MAX_PATH_BYTES) as u64,
+            (std::mem::size_of::<Append<'_>>()
+                + 2 * crate::path::MAX_PATH_BYTES
+                + 3 * ALLOCATION_ROUNDING_BYTES) as u64,
             "streaming append owner",
         )?;
         let objects = joined_path(database.path(), UNITS_NAME)?;
@@ -190,9 +197,9 @@ impl<'db> Writer<'db> {
             #[cfg(test)]
             Admission::Single(columns) => {
                 let requirement = native_unit::requirements(&schema, columns, cancel)?;
-                let bytes = requirement.metadata_bytes
-                    + requirement.column_bytes
-                    + success_index::SCRATCH_BYTES;
+                // Encoding and commit reuse the same bytes in separate phases.
+                let bytes = (requirement.metadata_bytes + requirement.column_bytes)
+                    .max(success_index::SCRATCH_BYTES);
                 (
                     AppendLimits {
                         batches: 1,

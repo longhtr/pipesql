@@ -13,6 +13,12 @@ use crate::{
     CancellationToken, Commit, Error, ErrorCause, TransactionId, success_index, table_data,
 };
 
+// Native ownership checks cover every workspace size (65,536..=526,400)
+// and reference count (1..=4,096). Darwin's largest observed rounding is
+// 16,383 bytes; this per-allocation ceiling also covers the tested GNU allocator.
+// It is a qualified allocator premise, not a bound for arbitrary GlobalAllocs.
+const ALLOCATION_ROUNDING_BYTES: usize = 16_384;
+
 /// Positive bounds reserved before an append issues its transaction.
 #[derive(Clone, Copy)]
 pub struct AppendLimits {
@@ -168,8 +174,10 @@ impl Append<'_> {
             .rows
             .checked_add(requirement.rows as u64)
             .expect("bounded native table rows");
-        let needed =
-            requirement.metadata_bytes + requirement.column_bytes + success_index::SCRATCH_BYTES;
+        // Commit reuses the encoding bytes after the last batch has been written.
+        // These requirements overlap in storage, never in lifetime.
+        let needed = (requirement.metadata_bytes + requirement.column_bytes)
+            .max(success_index::SCRATCH_BYTES);
         if self
             .workspace
             .as_mut()

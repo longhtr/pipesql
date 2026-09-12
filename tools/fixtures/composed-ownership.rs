@@ -12,6 +12,167 @@ const ROWS: usize = 4096;
 const MEMORY: u64 = 4_000_000;
 const TEMP: u64 = 8_000_000;
 
+// The append contract admits three retained allocations separately from its
+// inline handle and paths. Challenge every permitted request size through the
+// same global allocator as the public library; do not copy its admission code.
+pub(super) fn allocation_shapes(wrong_bound: bool) {
+    fn observe<T>(count: usize) -> (usize, usize) {
+        let before = Heap::now();
+        let mut allocation = Vec::<T>::new();
+        allocation.try_reserve_exact(count).unwrap();
+        assert_eq!(allocation.capacity(), count);
+        let live = Heap::now().increase_from(before);
+        assert_eq!(live.requested, count * std::mem::size_of::<T>());
+        drop(allocation);
+        assert_eq!(Heap::now(), before);
+        (live.requested, live.usable - live.requested)
+    }
+    let ceiling = if wrong_bound { 0 } else { 16_384 };
+    let mut largest = (0, 0);
+    // 64-byte header + 64 32-byte descriptors + the 524,288-byte
+    // maximum encoded column. Commit also needs a 65,536-byte workspace.
+    for bytes in 65_536..=526_400 {
+        let observed = observe::<u8>(bytes);
+        assert!(
+            observed.1 <= ceiling,
+            "append allocation rounding: {observed:?}"
+        );
+        if observed.1 > largest.1 {
+            largest = observed;
+        }
+    }
+    let mut references = (0, 0);
+    // A UnitRef occupies 32 bytes with eight-byte alignment; 4,096 units
+    // includes both committed references and the admitted new batch count.
+    for units in 1..=4_096 {
+        let observed = observe::<[u64; 4]>(units);
+        assert!(
+            observed.1 <= ceiling,
+            "append allocation rounding: {observed:?}"
+        );
+        if observed.1 > references.1 {
+            references = observed;
+        }
+    }
+    println!(
+        "append allocation shapes passed: workspace=460865 references=4096 largest={largest:?} reference-largest={references:?}"
+    );
+}
+
+pub(super) fn append_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let cancel = CancellationToken::new();
+    let db = Database::create_empty(root, Config::new(MEMORY, TEMP)?)?;
+    let names: Vec<_> = (0..64).map(|i| format!("c{i}")).collect();
+    let declarations: Vec<_> = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| ColumnDeclaration {
+            name,
+            data_type: if i == 0 {
+                DataType::String
+            } else {
+                DataType::Int64
+            },
+            nullable: false,
+        })
+        .collect();
+    db.declare_table("wide", &declarations, &cancel)?;
+    let text = "x".repeat(65_536);
+    let tail = "x".repeat(65_499);
+    // Eight STRING rows: one validity byte, nine four-byte offsets, and
+    // 524,251 text bytes fill the 524,288-byte column boundary exactly.
+    let wide = [
+        text.as_str(),
+        text.as_str(),
+        text.as_str(),
+        text.as_str(),
+        text.as_str(),
+        text.as_str(),
+        text.as_str(),
+        tail.as_str(),
+    ];
+    let small = [""; 8];
+    let mut columns = [ColumnInput {
+        values: ColumnValues::Int64(&[7; 8]),
+        validity: &[255],
+    }; 64];
+    for (index, batches) in [1_025, 4_093].into_iter().enumerate() {
+        // The second append retains the first three committed unit references,
+        // reaching the 4,096-reference limit without creating thousands of files.
+        let before = Heap::now();
+        let charge = db.reserved_memory_bytes();
+        let mut append = db.begin_append(
+            "wide",
+            AppendLimits {
+                batches,
+                encoded_bytes: 1_000_000,
+            },
+            &cancel,
+        )?;
+        let mut prior_workspace_charge = 0;
+        for (phase, strings) in [&small, &wide, &small].into_iter().enumerate() {
+            columns[0].values = ColumnValues::String(strings);
+            append.write(&columns, &cancel)?;
+            let owner = Owner {
+                heap: Heap::now().increase_from(before),
+                charge: db.reserved_memory_bytes() - charge,
+            };
+            owner.report(
+                "wide-append",
+                (std::mem::size_of::<Append<'_>>() + 8192 + 3 * 16_384) as u64,
+            );
+            assert!(
+                owner.heap.usable as u64 <= owner.charge,
+                "append usable allocations exceed admission"
+            );
+            if phase == 1 {
+                assert_eq!(owner.charge - prior_workspace_charge, 526_400 - 65_536);
+            } else if phase == 2 {
+                assert_eq!(
+                    owner.charge, prior_workspace_charge,
+                    "reuse grown workspace"
+                );
+            }
+            prior_workspace_charge = owner.charge;
+        }
+        append.commit(&cancel)?;
+        assert_eq!(Heap::now(), before);
+        assert_eq!(db.reserved_memory_bytes(), charge);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        let prepared = db.prepare("FROM wide |> AGGREGATE COUNT(*) AS n, SUM(c1) AS total")?;
+        let mut query = db.execute(&prepared, &cancel)?;
+        let mut seen = false;
+        let mut finished = false;
+        for _ in 0..200_000 {
+            match query.step() {
+                QueryStep::Rows(batch) => {
+                    assert!(!seen);
+                    assert_eq!(batch.len(), 1);
+                    assert_eq!(
+                        batch.value(0, 0),
+                        Some(Value::Int64((index as i64 + 1) * 24))
+                    );
+                    assert_eq!(
+                        batch.value(0, 1),
+                        Some(Value::Int64((index as i64 + 1) * 168))
+                    );
+                    seen = true;
+                }
+                QueryStep::Progress => (),
+                QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("wide append query: {error:?}"),
+            }
+        }
+        assert!(seen && finished, "wide append aggregate row and completion");
+    }
+    db.close()?;
+    println!("append shapes passed: full-width maximum-column growth reuse publication release");
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Live {
     requested: usize,
@@ -415,15 +576,19 @@ pub(super) fn run(
                 expected_usable,
                 "usable owner reconciliation"
             );
-            // Append paths are transient here; only the inline handle and both
-            // path allowances remain outside retained allocation requests.
+            // Paths are transient here. The three retained allocations each
+            // keep their separately qualified 16-KiB rounding ceiling.
             writer_owner.report(
                 "writer",
                 if writer.is_some() {
-                    (std::mem::size_of::<Append<'_>>() + 2 * 4096) as u64
+                    (std::mem::size_of::<Append<'_>>() + 2 * 4096 + 3 * 16_384) as u64
                 } else {
                     0
                 },
+            );
+            assert!(
+                writer_owner.heap.usable as u64 <= writer_owner.charge,
+                "append usable allocations exceed admission"
             );
             for (reader, name) in readers.iter().zip(["order", "distinct"]) {
                 let nonheap = if reader.charge == 0 {

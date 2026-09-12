@@ -187,6 +187,13 @@ def run_cell(work, failures, mode, label, database_bytes=None):
 
 
 def check_ownership(work, run, failures):
+    shapes = run("append-allocation-shapes", "append-allocation-shapes")
+    print(shapes.stdout + shapes.stderr, end="", flush=True)
+    if (
+        "append allocation shapes passed: workspace=460865 references=4096" not in shapes.stdout
+        or "append shapes passed: full-width maximum-column growth reuse publication release" not in shapes.stdout
+    ):
+        failures.append("incomplete append allocation shape census")
     # Killing only /usr/bin/time would leave this child holding the output
     # pipes open. Cleanup must close them and return within its own timeout.
     try:
@@ -224,6 +231,7 @@ def check_ownership(work, run, failures):
                 f"ownership-{label}: missing composed ownership completion"
             )
     for mode, expected in [
+        ("append-allocation-shapes-negative", "append allocation rounding"),
         ("ownership-negative", "complete-row oracle"),
         ("ownership-attribution-negative", "prepared ownership attribution"),
     ]:

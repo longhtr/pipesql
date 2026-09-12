@@ -71,14 +71,15 @@ an owner's live requested heap bytes, and `P` is the byte length of its canonica
 | --- | --- |
 | Prepared ORDER BY | `R + size_of::<PreparedQuery>() + 4096` |
 | Prepared DISTINCT | `R + size_of::<PreparedQuery>() + 2 * 4096` |
-| Append after writing | `R + size_of::<Append>() + 8192` |
+| Append after writing | `R + size_of::<Append>() + 8192 + 3 * 16384` |
 | Reader parked after its first spill | `R + size_of::<QueryResult>() + 4096 + 8192 - P` |
 | Reader after completion or cancellation | `size_of::<QueryResult>()`, with no retained heap allocation |
 | Dropped owner | Zero |
 
 Preparation retains one plan allocation; DISTINCT also retains a descriptor
 allocation. Each receives its documented allowance. Append paths are transient
-at the sampled point. A running reader retains one exact-capacity source path;
+at the sampled point; its catalog/schema, reference array, and reusable workspace
+each retain the [qualified rounding ceiling](#streaming-append). A running reader retains one exact-capacity source path;
 its source account covers two maximum paths, and its physical plan has a separate
 allocation allowance. These equations are specific to the named fixture and
 checkpoints. Aggregates, computed expressions, and other producer graphs add
@@ -572,11 +573,36 @@ catalog/schema admission buffer, and `(existing units + batch limit) *
 size_of::<UnitRef>()` bytes for references. The sum of existing and permitted
 new units cannot exceed 4,096. No caller input is retained between writes.
 
-Encoding scratch contains the batch's metadata, its largest encoded column, and
-65,536 auxiliary bytes. It is reused when large enough. Growth drops the old
+Encoding and commit reuse the same workspace in separate phases. Its requested
+size is `max(metadata bytes + largest encoded column bytes, 65536)`, at most
+526,400 bytes. Commit needs the 65,536-byte minimum for catalog/history construction;
+those bytes are not added to the earlier encoding requirement. It is reused when
+large enough. Growth drops the old
 buffer and its charge before reserving a larger one; a failed allocation leaves
 the stream abort-only and its earlier private files owned. Construction buffers
 are released before publication validation allocates its scratch.
+
+Before allocating or issuing the transaction, append admission also reserves
+16,384 bytes for allocator rounding on each of its three retained allocations:
+catalog/schema, references, and the workspace. This is a scoped native-allocator
+premise. The ownership campaign checks all 460,865 workspace sizes from 65,536
+through 526,400 bytes and all 4,096 reference counts (32-byte entries), including
+return to the allocation baseline after each case. The tested Darwin allocator
+can add 16,383 bytes to a workspace and 16,352 to a reference array; the tested
+GNU allocator also fits the ceiling. A control without the ceiling must fail.
+No allowance is silently borrowed from another owner or subtracted from observed
+usable memory. Adding a retained allocation or overlapping workspace growth
+requires revisiting both admission and the independent caller.
+
+The full-width public case combines maximum encoded-column size with reference
+counts at a Darwin size-class crossing and at the 4,096-unit limit. It checks
+small/large/small writes, exact charges, usable bytes within the append charge,
+publication results, and release. Internal tests reject one-byte-short admission
+before allocation/issuance effects and check exact growth after releasing the old
+workspace. The ceiling is qualified for the exercised stock allocators and size
+ranges; custom global allocators, untested platforms, allocator metadata/retention,
+and transient whole-process peaks are not covered by those observations. Other
+engine owners retain their separately documented physical-memory limitations.
 
 The upfront temporary reservation is the encoded-data limit plus the maximum
 resulting table index (`64 + 48 * unit count`), unchanged catalog extent, next

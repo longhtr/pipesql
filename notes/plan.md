@@ -151,16 +151,24 @@ macOS), 65,536 admission bytes, and 64 reference bytes. The last two requests ha
 no macOS rounding. Encoding uses 105 bytes in this case; commit later reuses the
 workspace for 65,536 bytes. Current sizing sums these disjoint lifetimes.
 
-Next, replace that sum with the maximum required by either phase, checking both
-streaming and single-batch admission. Exercise small batches, workspace growth,
-and maximum-width/column geometries before deciding whether additional allocation
-capacity bounds are needed. A repaired small observation alone cannot qualify
-all append shapes or allocator implementations. Keep independent allocation
-attribution and wrong-attribution controls. Extend the relevant append
-boundary/refusal cases, document the supported allocator/platform premises, and
-complete checks required by retained production changes. If the measurements
-invalidate the proposed cause, update this plan before expanding the repair.
-Do not add query features, a new allocator framework, or unrelated optimizations.
+The implementation now sizes shared encoding/commit storage by the maximum of
+the two phases. A complete native allocation-size census also found reference
+rounding up to 16,352 bytes and workspace rounding up to 16,383 bytes on macOS;
+fixing the small workspace alone would not repair those shapes. Admission now
+reserves an explicit 16,384-byte rounding ceiling for each of the three retained
+allocations before allocation/issuance, leaving requested bytes and unused
+allowance separate in the independent equation. This premise is checked over all
+460,865 workspace sizes and 4,096 reference counts, with a missing-ceiling control.
+The stock GNU allocator fits the same ceiling. No generic allocator layer was added.
+
+Focused macOS checks pass exact/short admission, exact growth and release of the
+old buffer, and full-width small/maximum/small writes with 1,025 and 4,096 retained
+reference capacities. Publication returns independent COUNT/SUM results and
+releases the owners. The existing wrong-row and wrong-attribution controls remain.
+Remaining work: final readability/contract review, complete frozen macOS and
+unprivileged native-storage GNU/Linux gates, discovery reconciliation, concise
+evidence, owned-output cleanup, and verified local commits. Custom allocators,
+other engine owners, and process/RSS bounds remain separate qualifications.
 
 ## Applying DuckDB lessons
 

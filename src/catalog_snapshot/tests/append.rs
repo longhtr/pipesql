@@ -591,6 +591,117 @@ fn catalog_streaming_append_second_batch_faults_clean_entire_prefix() {
 }
 
 #[test]
+fn append_rounding_is_admitted_before_allocation_or_issuance() {
+    let (_fixture, db, table) = streaming_database();
+    let cancel = CancellationToken::new();
+    let wal = fs::read(db.path().join(WAL_NAME)).unwrap();
+    let resident = db.reserved_memory_bytes();
+    // Independent contract: handle, two paths, and three 16-KiB ceilings.
+    let owner =
+        std::mem::size_of::<crate::catalog_snapshot::append::Append<'_>>() as u64 + 8_192 + 49_152;
+    for (available, refused_owner) in [
+        (owner - 1, "streaming append owner"),
+        (owner, "append catalog admission"),
+    ] {
+        let pressure = db
+            .reserve_memory(
+                db.config().memory_limit_bytes() - resident - available,
+                "append admission boundary",
+            )
+            .unwrap();
+        let mut effects = Effects::default();
+        let result = db.catalog_writer().unwrap().begin_append(
+            table,
+            crate::catalog_snapshot::AppendLimits {
+                batches: 1,
+                encoded_bytes: 100_000,
+            },
+            &cancel,
+            &mut effects,
+        );
+        assert!(matches!(result, Err(Error::Resource { owner, .. }) if owner == refused_owner));
+        drop(result);
+        assert_eq!(effects.count(), 0, "refusal precedes native effects");
+        assert_eq!(fs::read(db.path().join(WAL_NAME)).unwrap(), wal);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        drop(pressure);
+        assert_eq!(db.reserved_memory_bytes(), resident);
+        db.catalog_writer().unwrap().abort_unbuilt().unwrap();
+    }
+}
+
+#[test]
+fn append_workspace_reuses_disjoint_phases_at_exact_growth_admission() {
+    for one_byte_short in [false, true] {
+        let (_fixture, db, table) = streaming_database();
+        let cancel = CancellationToken::new();
+        let mut append = db
+            .catalog_writer()
+            .unwrap()
+            .begin_append(
+                table,
+                crate::catalog_snapshot::AppendLimits {
+                    batches: 2,
+                    encoded_bytes: 100_000,
+                },
+                &cancel,
+                &mut Effects::default(),
+            )
+            .unwrap();
+        let admitted = db.reserved_memory_bytes();
+        append
+            .write(&append_columns(), &cancel, &mut Effects::default())
+            .unwrap();
+        assert_eq!(db.reserved_memory_bytes() - admitted, 65_536);
+        let text = "x".repeat(65_536);
+        let strings = [text.as_str()];
+        let columns = [
+            InputColumn {
+                id: catalog_schema::ColumnId::new(29).unwrap(),
+                values: InputValues::String(&strings),
+                validity: &[1],
+            },
+            InputColumn {
+                id: catalog_schema::ColumnId::new(3).unwrap(),
+                values: InputValues::Double(&[1.0]),
+                validity: &[1],
+            },
+        ];
+        // 128 metadata bytes + 65,545 STRING bytes = 65,673. The prior
+        // 65,536-byte workspace must be freed before reserving the replacement.
+        let pressure = db
+            .reserve_memory(
+                db.config().memory_limit_bytes()
+                    - db.reserved_memory_bytes()
+                    - (137 - u64::from(one_byte_short)),
+                "exact append workspace growth",
+            )
+            .unwrap();
+        let mut effects = Effects::default();
+        let result = append.write(&columns, &cancel, &mut effects);
+        if one_byte_short {
+            assert!(matches!(result, Err(Error::Resource { .. })));
+            assert_eq!(effects.count(), 0);
+            assert_eq!(db.reserved_memory_bytes() - pressure.bytes(), admitted);
+        } else {
+            result.unwrap();
+            assert_eq!(
+                db.reserved_memory_bytes() - pressure.bytes(),
+                admitted + 65_673
+            );
+        }
+        drop(pressure);
+        append.abort(&mut Effects::default()).unwrap();
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        assert_eq!(
+            db.reserved_memory_bytes(),
+            crate::catalog_snapshot::REGISTRY_BYTES + db.path_memory_bytes()
+        );
+        assert_eq!(fs::read_dir(db.path().join(UNITS_NAME)).unwrap().count(), 3);
+    }
+}
+
+#[test]
 fn catalog_streaming_append_growth_refusal_preserves_cleanup_ownership() {
     use crate::catalog_snapshot::AppendLimits;
     let (_fixture, db, table) = streaming_database();

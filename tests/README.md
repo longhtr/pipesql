@@ -96,7 +96,7 @@ and retain their own expectations:
 | [namespace.rs](../src/catalog_snapshot/tests/namespace.rs) | Bootstrap, selected-graph admission, and corruption before repair. |
 | [snapshots.rs](../src/catalog_snapshot/tests/snapshots.rs) | Pins, concurrent publication, writer abandonment, and receipt lookup. |
 | [declarations.rs](../src/catalog_snapshot/tests/declarations.rs) | Table identities, admission, construction, and rollback/reopen. |
-| [append.rs](../src/catalog_snapshot/tests/append.rs) | Batch ownership, refusal, abort, commit, and cleanup. |
+| [append.rs](../src/catalog_snapshot/tests/append.rs) | Batch ownership, exact/short allocation admission and workspace growth, abort, commit, and cleanup. |
 | [queries.rs](../src/catalog_snapshot/tests/queries.rs) | Pinned scans, demanded values, cancellation, and result ownership. |
 
 Reclamation's [fixture owner](../src/catalog_snapshot/reclaim/tests.rs) supports

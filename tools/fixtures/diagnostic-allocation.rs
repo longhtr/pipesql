@@ -252,6 +252,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::path::PathBuf::from(args.next().expect("owned probe directory"));
     let mode = args.next().expect("probe mode");
     assert!(args.next().is_none());
+    if mode == "append-allocation-shapes" || mode == "append-allocation-shapes-negative" {
+        ownership::allocation_shapes(mode == "append-allocation-shapes-negative");
+        ownership::append_shapes(&root)?;
+        return Ok(());
+    }
     if mode == "ownership"
         || mode == "ownership-negative"
         || mode == "ownership-attribution-negative"
