@@ -254,7 +254,11 @@ Force one expression lane and a one-byte-short admission refusal before query
 I/O. Include output batches and transient catalog scratch in the peak. Sweep
 allocation and read failures through this same aggregate path; observe owner
 release, terminal errors and successful replay. The public allocator caller
-checks nullable DOUBLE SUM/AVG and INT64 AVG after both normal and healed runs.
+checks nullable DOUBLE SUM/AVG and INT64 AVG throughout the armed sequence and
+its healthy control. After reopen, one ordered query checks every stored field,
+NULL and duplicate, observes scratch use, and verifies release; a separate writer
+probe checks retry and its aborted receipt. Reopen retains storage and admission
+state, not a previous query's aggregate controller.
 Keep the Q1 memory cap and compare the stock Q1/Q6 artifacts on identical SF1
 data. General grouping and external-memory query operators require their own
 evidence.

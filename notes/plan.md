@@ -366,6 +366,34 @@ Finite worklist:
    concise evidence, remove owned outputs, and commit verified changes locally.
    Preserve the image/toolchains and publication restrictions.
 
+The post-reopen replacement is implemented as one ordered scan of all three
+stored columns, including exact INT64 values, DOUBLE 3.5/NULL, Unicode/control
+text and duplicate multiplicity. It requires observed temporary use for nonempty
+input and complete memory/temp release. Receipt resolution and the writer retry
+remain outside this query. `Database` retains the catalog registry, lease,
+resource authorities and shared scratch admission; query controllers are owned
+and destroyed by each result. The former healthy aggregate computations do not
+protect additional persisted operator state. Their input-value assertions have
+moved to the explicit typed scan; their semantic oracles and all armed calls
+remain unchanged.
+
+A textual comparison against `1153e8d` confirms the entire armed run, diagnostics,
+same-handle checks and outcome classification are unchanged. Healthy short/long
+censuses remain 863. Complete default campaigns now pass on both platforms, including every refusal
+position 0–862 and the full-prefix control 863 at both pathname lengths. All 38
+observed catalog phases match across platforms; the existing required-outcome
+checks pass. Both maintenance runs pass 96 tooling tests and 44 codec fixtures.
+Disposable controls reject a wrong DOUBLE expectation, refused scratch, and a
+masked RecoveryRequired at observed prefix 399; matching healthy controls pass
+on both platforms. ORDER BY creates scratch before requesting even empty input;
+nonempty rows additionally require a charged run and complete release.
+
+Observed campaign costs are approximately 712.875 seconds on macOS and 351.443
+seconds on Linux, compared with the prior complete-gate observations of 1,033.072
+and 601.897 seconds. These are single-run verification costs, not a controlled
+benchmark. Engine/native/vendor/build inputs are unchanged. Final evidence,
+owned-output removal and local commits remain.
+
 ## Applying DuckDB lessons
 
 DuckDB's published designs inform the following work. These are PipeSQL design

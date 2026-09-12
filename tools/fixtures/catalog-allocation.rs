@@ -274,6 +274,71 @@ fn consume_count(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(),
     panic!("joined order fixture exceeded bounded step allowance");
 }
 
+// Reopen heals shared storage and scratch admission, not operator-specific
+// state. Check every stored field and duplicate through one scratch-backed
+// query; operator semantics and allocation failures remain in the armed sequence.
+fn check_healed_rows(db: &Database, expected: usize) -> Result<(), Error> {
+    let baseline = db.reserved_memory_bytes();
+    let cancel = CancellationToken::new();
+    let query = db.prepare("FROM facts |> ORDER BY note DESC NULLS FIRST")?;
+    let mut result = db.execute(&query, &cancel)?;
+    let mut count = 0;
+    let mut peak_temp = 0;
+    let mut finished = false;
+    for _ in 0..1024 {
+        let step = result.step();
+        peak_temp = peak_temp.max(db.reserved_temp_bytes());
+        match step {
+            QueryStep::Rows(batch) => {
+                assert_eq!(batch.column_count(), 3);
+                for row in 0..batch.len() {
+                    assert!(count < expected, "healed catalog row count");
+                    match count {
+                        0 | 1 => {
+                            assert_eq!(batch.value(row, 0), Some(Value::Null));
+                            assert_eq!(batch.value(row, 1), Some(Value::Int64(i64::MAX)));
+                            assert_eq!(batch.value(row, 2), Some(Value::Null));
+                        }
+                        2 | 3 => {
+                            let Some(Value::String(text)) = batch.value(row, 0) else {
+                                panic!("healed catalog text type");
+                            };
+                            assert_eq!(text.as_str(), if count == 2 { SECOND } else { FIRST });
+                            assert_eq!(
+                                batch.value(row, 1),
+                                Some(Value::Int64(9_007_199_254_740_993))
+                            );
+                            assert_eq!(
+                                batch.value(row, 2),
+                                Some(Value::Double(3.5)),
+                                "healed catalog measure"
+                            );
+                        }
+                        _ => unreachable!(),
+                    }
+                    count += 1;
+                }
+            }
+            QueryStep::Progress => (),
+            QueryStep::Finished => {
+                finished = true;
+                break;
+            }
+            QueryStep::Failed(_) => return Err(result.into_error().expect("healed query error")),
+        }
+    }
+    assert!(finished, "healed catalog query exceeded bounded steps");
+    assert_eq!(count, expected, "healed catalog complete multiset");
+    if expected != 0 {
+        assert!(peak_temp > 0, "healed catalog must reuse scratch");
+    }
+    drop(result);
+    drop(query);
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    Ok(())
+}
+
 pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir(root)?;
     let path = root.join("database");
@@ -547,48 +612,15 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
             CommitResolution::Aborted => assert!(appended.is_none()),
         }
     }
-    match db.prepare(QUERY) {
-        Ok(query) => consume(db.execute(&query, &cancel)?, rows)?,
+    match check_healed_rows(&db, rows) {
+        Ok(()) => (),
         Err(Error::Bind { .. }) if declaration.is_none() && db.generation() == 0 => {
             assert_eq!(rows, 0);
             db.declare_table("facts", &COLUMNS, &cancel)?;
+            check_healed_rows(&db, 0)?;
         }
-        Err(error) => panic!("healed catalog preparation failed: {error:?}"),
+        Err(error) => panic!("healed catalog verification failed: {error:?}"),
     }
-    let aggregate = db.prepare(AGGREGATE)?;
-    consume_aggregate(db.execute(&aggregate, &cancel)?, rows)?;
-    drop(aggregate);
-    let grouped = db.prepare(GROUPED)?;
-    consume_grouped(db.execute(&grouped, &cancel)?, rows)?;
-    drop(grouped);
-    let ordered = db.prepare(ORDERED)?;
-    consume_rows(db.execute(&ordered, &cancel)?, rows, true)?;
-    drop(ordered);
-    let joined = db.prepare(JOINED_ORDER)?;
-    consume_count(db.execute(&joined, &cancel)?, rows * 2)?;
-    drop(joined);
-    let repeated = db.prepare(REPEATED)?;
-    consume_repeated(db.execute(&repeated, &cancel)?, rows)?;
-    drop(repeated);
-    let union = db.prepare(UNION)?;
-    consume_count(db.execute(&union, &cancel)?, rows * 2)?;
-    drop(union);
-    let union_distinct = db.prepare(UNION_DISTINCT)?;
-    consume_count(
-        db.execute(&union_distinct, &cancel)?,
-        if rows == 0 { 0 } else { 3 },
-    )?;
-    drop(union_distinct);
-    let distinct = db.prepare(DISTINCT)?;
-    consume_rows(
-        db.execute(&distinct, &cancel)?,
-        if rows == 0 { 0 } else { 3 },
-        false,
-    )?;
-    drop(distinct);
-    let derived = db.prepare(DERIVED_JOIN)?;
-    consume_count(db.execute(&derived, &cancel)?, rows / 2)?;
-    drop(derived);
     // A healed writer must actually be usable after the failed attempt.
     let retry = db.begin_append("facts", limits(), &cancel)?;
     let token = retry.transaction();
