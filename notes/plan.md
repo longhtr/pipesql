@@ -350,6 +350,34 @@ records measured costs and verification scope. No engine limit, runner, timeout,
 or independent semantic oracle changed. Owned outputs are removed; changes are
 committed locally. Publication remains unresolved.
 
+## Current: concurrent readers during reclamation
+
+The public snapshot suite checks multiple pinned generations sequentially. The
+join suite parks one threaded reader across publication; the composed ownership
+caller parks two readers while an append changes. The next bounded qualification
+combines two live readers on different generations with explicit reclamation.
+This protects the transaction contract that maintenance preserves every pinned
+root while readers release their own state independently.
+
+Finite worklist:
+
+1. Trace snapshot registration, reclamation and result release; account for the
+   existing public and ownership scenarios before adding coverage.
+2. Add one deterministic public scenario with visible independent old/new rows,
+   two live readers, append publication and reclamation. Use bounded channel
+   waits and step loops. Drop or cancel one reader, finish the other, and check
+   fresh visibility, writer reuse, receipts and reopen. Repair concrete defects
+   if exposed; add no concurrency framework.
+3. Verify discovery, focused behavior and required retained gates on macOS and
+   native-storage GNU arm64 Linux. Record the precise exercised schedules and
+   limits, update the test map, remove owned outputs and commit locally.
+
+Initial contract inspection confirms that each reader pins one generation and
+maintenance may remove only objects unreachable from current and pinned roots.
+The shared ownership caller already distinguishes overlapping lifetimes from
+arbitrary concurrent schedules. Preserve that distinction in the new evidence.
+Publication, Windows, broader durability and physical-memory obligations remain.
+
 ## Applying DuckDB lessons
 
 DuckDB's published designs inform the following work. These are PipeSQL design
