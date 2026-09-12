@@ -38,6 +38,32 @@ fn database(limit: u64) -> (Temp, Database) {
 
 #[test]
 fn derived_scope_preparation_admits_exact_peak_and_releases_it() {
+    check_scope_preparation(
+        "FROM facts AS a |> JOIN (FROM facts AS b |> JOIN (FROM facts |> SELECT k) AS c ON b.k = c.k |> SELECT b.k AS k) AS d ON a.k = d.k |> AGGREGATE COUNT(*) AS n",
+    );
+}
+
+#[test]
+fn union_scope_preparation_admits_exact_peak_and_releases_it() {
+    check_scope_preparation(
+        "FROM facts |> UNION ALL (FROM facts |> UNION ALL (FROM facts)), (FROM facts)",
+    );
+}
+
+#[test]
+fn legacy_union_refuses_before_execution_with_its_operator_span() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    let sql = "FROM lineitem |> UNION ALL (FROM lineitem)";
+    let Err(Error::Bind { message, span }) = db.prepare(sql) else {
+        panic!("legacy union must refuse during preparation");
+    };
+    assert_eq!(message, "UNION ALL requires declared-table storage");
+    assert_eq!(text(sql, span), "|>");
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+}
+
+fn check_scope_preparation(sql: &str) {
     let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
     let temp =
         Temp(std::env::temp_dir().join(format!("pipesql-scope-{}-{id}", std::process::id())));
@@ -64,7 +90,6 @@ fn derived_scope_preparation_admits_exact_peak_and_releases_it() {
         &crate::CancellationToken::new(),
     )
     .unwrap();
-    let sql = "FROM facts AS a |> JOIN (FROM facts AS b |> JOIN (FROM facts |> SELECT k) AS c ON b.k = c.k |> SELECT b.k AS k) AS d ON a.k = d.k |> AGGREGATE COUNT(*) AS n";
     let baseline = db.reserved_memory_bytes();
     let query = db.prepare(sql).unwrap();
     let retained = query.accounted_memory_bytes();

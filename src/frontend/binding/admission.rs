@@ -1,7 +1,7 @@
 //! Prepared-plan capacity calculation and fallible descriptor allocation.
 use super::{
     AggregateEntry, AggregatePlan, Computed, DistinctPlan, Error, PREPARED_ALLOCATION_ALLOWANCE,
-    Parsed, ParsedOp, ParsedStage, Plan, PreparedQuery,
+    Parsed, ParsedOp, ParsedStage, Plan, PreparedQuery, UnionPlan,
 };
 use std::mem::size_of;
 
@@ -10,14 +10,17 @@ pub(super) struct BindingBudget {
     aggregate_count: usize,
     computed_count: usize,
     distinct_count: usize,
+    union_count: usize,
     computed_bytes: usize,
     distinct_bytes: usize,
+    union_bytes: usize,
 }
 
 // The caller retains the prepared-plan reservation until all descriptors drop.
 pub(super) struct Descriptors {
     pub(super) computed: Vec<Computed>,
     pub(super) distinct: Vec<DistinctPlan>,
+    pub(super) unions: Vec<UnionPlan>,
     pub(super) aggregates: Vec<AggregatePlan>,
 }
 
@@ -82,12 +85,22 @@ impl BindingBudget {
         } else {
             distinct_count * size_of::<DistinctPlan>() + PREPARED_ALLOCATION_ALLOWANCE
         };
+        let union_count = parsed.stages[..usize::from(parsed.len)]
+            .iter()
+            .filter(|stage| matches!(stage, ParsedStage::UnionAll(_)))
+            .count();
+        let union_bytes = if union_count == 0 {
+            0
+        } else {
+            union_count * size_of::<UnionPlan>() + PREPARED_ALLOCATION_ALLOWANCE
+        };
         let bytes = size_of::<PreparedQuery<'_>>()
             .checked_add(size_of::<Plan>())
             .and_then(|bytes| bytes.checked_add(PREPARED_ALLOCATION_ALLOWANCE))
             .and_then(|bytes| bytes.checked_add(aggregate_bytes))
             .and_then(|bytes| bytes.checked_add(computed_bytes))
             .and_then(|bytes| bytes.checked_add(distinct_bytes))
+            .and_then(|bytes| bytes.checked_add(union_bytes))
             .and_then(|bytes| u64::try_from(bytes).ok())
             .ok_or(Error::Corrupt("prepared plan size overflow"))?;
         Ok(Self {
@@ -95,8 +108,10 @@ impl BindingBudget {
             aggregate_count,
             computed_count,
             distinct_count,
+            union_count,
             computed_bytes,
             distinct_bytes,
+            union_bytes,
         })
     }
 
@@ -106,8 +121,10 @@ impl BindingBudget {
             aggregate_count,
             computed_count,
             distinct_count,
+            union_count,
             computed_bytes,
             distinct_bytes,
+            union_bytes,
         } = *self;
         let mut aggregates = Vec::new();
         aggregates
@@ -139,6 +156,21 @@ impl BindingBudget {
                 limit: distinct_bytes as u64,
             });
         }
+        let mut unions = Vec::new();
+        unions
+            .try_reserve_exact(union_count)
+            .map_err(|_| Error::Resource {
+                owner: "prepared union descriptors",
+                required: union_bytes as u64,
+                limit: bytes,
+            })?;
+        if unions.capacity() != union_count {
+            return Err(Error::Resource {
+                owner: "prepared union capacity",
+                required: (unions.capacity() * size_of::<UnionPlan>()) as u64,
+                limit: union_bytes as u64,
+            });
+        }
         let mut computed = Vec::new();
         computed
             .try_reserve_exact(computed_count)
@@ -157,6 +189,7 @@ impl BindingBudget {
         Ok(Descriptors {
             computed,
             distinct,
+            unions,
             aggregates,
         })
     }

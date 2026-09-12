@@ -206,6 +206,11 @@ fn select_producer(
             | Stage::Where(_) => {
                 return Ok(None);
             }
+            Stage::UnionAll { right, descriptor } => Producer::UnionAll {
+                left: lookup(node.input)?,
+                right: lookup(right)?,
+                descriptor,
+            },
             Stage::Empty => return Err(Error::Corrupt("empty producer")),
         }
     };
@@ -224,6 +229,10 @@ fn base_position(
     // physical value until the producer materializes its output.
     for _ in 0..=semantic.computed.len() {
         let position = match producer {
+            Producer::UnionAll { .. } => semantic
+                .relation_columns(relation)?
+                .iter()
+                .position(|column| column == id),
             Producer::Scan(source) => semantic
                 .occurrence_columns(source)?
                 .iter()

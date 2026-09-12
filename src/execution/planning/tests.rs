@@ -13,6 +13,74 @@ impl Drop for Directory {
 }
 
 #[test]
+fn union_branch_positions_and_demands_are_validated_independently() {
+    let directory = Directory(
+        std::env::temp_dir().join(format!("pipesql-physical-union-{}", std::process::id())),
+    );
+    let db = Database::create_empty(
+        &directory.0,
+        crate::Config::new(4_000_000, 2_000_000).unwrap(),
+    )
+    .unwrap();
+    db.declare_table(
+        "facts",
+        &["a", "b"].map(|name| crate::ColumnDeclaration {
+            name,
+            data_type: DataType::Int64,
+            nullable: false,
+        }),
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    let query = db.prepare("FROM facts |> SELECT a AS x,a AS y |> UNION ALL (FROM facts |> SELECT b,a) |> SELECT y |> WHERE y>0").unwrap();
+    for mutation in 0..9 {
+        let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
+        assert_eq!(plan.pipelines.len(), 3);
+        assert_eq!(plan.pipelines[0].column_count, 1);
+        assert_eq!(plan.pipelines[1].column_count, 1);
+        assert_eq!(plan.pipelines[2].columns[0], 1);
+        match mutation {
+            0 => (),
+            1 => {
+                plan.pipelines[2].producer = Producer::UnionAll {
+                    left: PipelineId(1),
+                    right: PipelineId(0),
+                    descriptor: 0,
+                }
+            }
+            2 => {
+                plan.pipelines[2].producer = Producer::UnionAll {
+                    left: PipelineId(0),
+                    right: PipelineId(0),
+                    descriptor: 0,
+                }
+            }
+            3 => {
+                plan.pipelines[2].producer = Producer::UnionAll {
+                    left: PipelineId(0),
+                    right: PipelineId(1),
+                    descriptor: 255,
+                }
+            }
+            4 => plan.pipelines[1].column_count = 0,
+            5 => plan.pipelines[2].columns[0] = 0,
+            6 => plan.pipelines[2].filters[0].column = 0,
+            7 => plan.pipelines[2].identities[0] = plan.pipelines[0].identities[0],
+            8 => {
+                let id = plan.pipelines[2].identities[0];
+                plan.pipelines[2].slots[id.value() as usize] = 0;
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            validate_physical(&plan, &query, &db, RootState::Empty, 0).is_ok(),
+            mutation == 0,
+            "mutation {mutation}"
+        );
+    }
+}
+
+#[test]
 fn distinct_input_coverage_and_fresh_output_mapping_are_validated() {
     let directory = Directory(
         std::env::temp_dir().join(format!("pipesql-physical-distinct-{}", std::process::id())),

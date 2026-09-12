@@ -9,6 +9,7 @@ mod planning;
 mod predicate;
 mod runtime;
 mod scan;
+mod union;
 
 #[cfg(test)]
 use crate::Database;

@@ -71,8 +71,8 @@ terminal pipe operator; it does not embed a traditional query block.
 ## Current public query manifest
 
 Queries start with a named table or a parenthesized pipe query. Legacy databases
-expose `lineitem`; declared-table queries may add sources through the equality
-JOIN form below. Every declared source comes from the prepared query’s pinned
+expose `lineitem`; declared-table queries may add sources through equality
+JOIN and UNION ALL. Every declared source comes from the prepared query’s pinned
 catalog.
 
 Legacy `lineitem` has seven required stored columns: DOUBLE quantity, extended
@@ -85,7 +85,7 @@ separate from this query manifest.
 
 | Construct | Accepted public behavior |
 |---|---|
-| `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN. Comma-separated FROM inputs remain unsupported. |
+| `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN or UNION ALL. Comma-separated FROM inputs remain unsupported. |
 | `FROM (pipe_query) [AS alias]` | Uses the child query’s ordinary outputs as an independent input. A JOIN may also use this form. See [table subqueries](#table-subqueries) for scope and ordering. |
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
 | `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`. Star expansion and other scalar expressions remain unsupported. |
@@ -98,6 +98,7 @@ separate from this query manifest.
 | `WHERE` Boolean expression | Comparisons and NULL tests compose with NOT, AND, OR and parentheses. NOT binds above AND, which binds above OR. Each leaf consumes one normalized stage; inclusive BETWEEN consumes two. See the demand rules below. |
 | `AGGREGATE SUM(expression) AS name`, `AVG(expression) AS name`, `COUNT(*) AS name`, `COUNT(expression) AS name`, `MIN(expression) AS name`, `MAX(expression) AS name` | Aggregate stages may repeat; each consumes the preceding relation. All aggregate stages together may introduce at most ten output identities, including grouping keys. Every entry requires an explicit alias. SUM/AVG accept INT64 or DOUBLE expressions. COUNT/MIN/MAX also accept direct STRING/DATE columns. SUM/MIN/MAX preserve the argument type; AVG returns DOUBLE; COUNT returns nonnullable INT64. Other aggregates return nullable results. |
 | `DISTINCT` | Removes duplicate complete rows on declared tables. Preserves output names and shared identities through fresh replacements; clears order. See [equality](#values-null-and-equality). |
+| `UNION ALL (pipe_query) [, (pipe_query), ...]` | Combines declared-table pipelines by position, preserving duplicates. Requires matching widths and scalar types. See [UNION ALL](#union-all) for names, demand, and bounds. |
 | `LIMIT count [OFFSET skip_rows]` | Selects a prefix on legacy or declared tables. Count and offset are non-negative INT64 constant expressions; see [LIMIT](#limit) for demand and error rules. |
 | `GROUP BY key [, key]` | Legacy tables group by up to two distinct visible source STRING identities. Declared-table keys are specified below. Group aliases inherited from earlier projections are valid. |
 | `GROUP AND ORDER BY key [, key]` | Additionally establishes ascending key order, preserved by following projections and filters. Ordinary GROUP BY establishes no semantic order. |
@@ -340,6 +341,47 @@ aggregate limits. Each derived boundary consumes one normalized stage. Parsing
 uses at most sixteen explicit child frames. See
 [Verification](verification.md#required-composition-regressions) for required
 scope, demand, stack, and admission checks.
+
+## UNION ALL
+
+Each argument is a parenthesized, independent FROM-based pipe query. At least one
+argument is required; a trailing comma is allowed. Arguments can contain joins,
+derived inputs, and nested unions. TABLE arguments, hints, name-based
+correspondence, UNION DISTINCT, INTERSECT, and EXCEPT remain unsupported.
+
+Inputs must have equal ordinary column counts and identical scalar types at
+each position. No numeric widening or untyped NULL coercion occurs. Output names
+come from the first input, including duplicate names; ambiguous references remain
+errors. Each output position receives a fresh identity, even when two positions
+refer to the same left-input column. A position is nullable if either input is
+nullable. INT64, DOUBLE bits, DATE, UTF-8 text, and NULL values are preserved.
+
+Input range aliases do not survive the union. Arguments cannot refer to earlier
+inputs or sibling arguments. A following AS names the union result. All source
+occurrences use the prepared query's pinned catalog snapshot.
+
+UNION ALL preserves duplicate rows and establishes no output order. Branch ORDER
+BY and LIMIT retain their own effects; a following ORDER BY sorts the combined
+result. The current executor consumes branches sequentially. Do not treat that
+choice as a portable ordering guarantee.
+
+An unused output position does not demand its values in either branch. Branch
+filters, grouping keys, DISTINCT fields, and ordering keys retain their own
+demands. Every demanded error in a visited branch propagates with its original
+span. A downstream LIMIT can stop before later branches execute; earlier rows do
+not establish successful completion. Every branch is still bound and admitted
+before execution, even if LIMIT could finish before reaching it.
+
+Additional arguments normalize to binary union nodes. Each extra source consumes
+a source stage and each combination consumes a union stage within the shared
+16-stage budget. Derived boundaries and other operators consume that budget too.
+The existing 160-token, 4,096-byte query, 64-column source-pool, and 64-column
+public-row bounds still apply. These bounds can reject a query before its argument
+count reaches the source-occurrence capacity.
+
+The [tutorial](getting-started.md#combine-pipeline-results) demonstrates positional
+names and duplicates. [Resources](resources.md#union-all-admission) owns admission
+and replay ownership.
 
 ## Relation state
 

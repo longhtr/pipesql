@@ -4,7 +4,7 @@ use crate::effects::Effects;
 use crate::execution::aggregation::Aggregation;
 use crate::execution::planning::{MAX_PIPELINES, PhysicalPlan, Pipeline, Producer};
 use crate::execution::scan::{AdmittedScan, ScanCursor, declared};
-use crate::execution::{Advance, ConsumerInput, ConsumerStep, blocking, limit};
+use crate::execution::{Advance, ConsumerInput, ConsumerStep, blocking, limit, union};
 use crate::frontend::{self, DataType, MAX_AGGREGATE_COLUMNS, MAX_ROW_VALUES, PreparedQuery};
 use crate::resources::{Reservation, allocate};
 use crate::{CancellationToken, Database, Error};
@@ -30,6 +30,10 @@ enum Owner<'db> {
         limit: limit::Limit,
         output: OwnedBatch<'db>,
     },
+    Union {
+        union: union::Union,
+        output: OwnedBatch<'db>,
+    },
     Aggregate(OwnedBatch<'db>),
     Order {
         order: Vec<blocking::order::Order<'db>>,
@@ -50,6 +54,7 @@ impl<'db> Owner<'db> {
             | Self::Join { output, .. }
             | Self::Order { output, .. }
             | Self::Limit { output, .. }
+            | Self::Union { output, .. }
             | Self::Aggregate(output) => output,
             Self::Pending(_) | Self::Vacant => {
                 unreachable!("runtime construction must finish before execution")
@@ -63,6 +68,7 @@ impl<'db> Owner<'db> {
             | Self::Join { output, .. }
             | Self::Order { output, .. }
             | Self::Limit { output, .. }
+            | Self::Union { output, .. }
             | Self::Aggregate(output) => output,
             Self::Pending(_) | Self::Vacant => {
                 unreachable!("runtime construction must finish before execution")
@@ -76,7 +82,7 @@ impl<'db> Owner<'db> {
                 Self::Scan { cursor, .. } => cursor.memory_bytes(),
                 Self::Join { join, .. } => join[0].memory_bytes(),
                 Self::Order { order, .. } => order[0].memory_bytes(),
-                Self::Aggregate(_) | Self::Limit { .. } => 0,
+                Self::Aggregate(_) | Self::Limit { .. } | Self::Union { .. } => 0,
                 Self::Pending(_) | Self::Vacant => unreachable!("runtime admission is private"),
             }
     }
@@ -85,6 +91,7 @@ impl<'db> Owner<'db> {
         match self {
             Self::Scan { cursor, .. } => cursor.restart(cancel),
             Self::Limit { limit, .. } => limit.replay(),
+            Self::Union { union, .. } => union.replay(),
             Self::Join { join, .. } => join[0].replay(cancel),
             Self::Order { order, .. } => order[0].replay(cancel),
             _ => Err(Error::Corrupt("invalid replay producer")),
@@ -171,7 +178,9 @@ impl<'db> Runtime<'db> {
                 | Producer::Order { input, .. }
                 | Producer::Distinct { input, .. }
                 | Producer::Limit { input, .. } => [Some(input), None],
-                Producer::Join { left, right, .. } => [Some(left), Some(right)],
+                Producer::Join { left, right, .. } | Producer::UnionAll { left, right, .. } => {
+                    [Some(left), Some(right)]
+                }
             };
             for input in inputs.into_iter().flatten() {
                 let child = input.index();
@@ -290,6 +299,7 @@ impl<'db> Runtime<'db> {
                 }
                 Producer::Aggregate { .. }
                 | Producer::Join { .. }
+                | Producer::UnionAll { .. }
                 | Producer::Order { .. }
                 | Producer::Distinct { .. }
                 | Producer::Limit { .. } => {
@@ -321,6 +331,22 @@ impl<'db> Runtime<'db> {
                             plan.pipelines()[input.index()].output_columns(&query.plan),
                         )?;
                         Owner::Order { order, output }
+                    } else if let Producer::UnionAll {
+                        left,
+                        right,
+                        descriptor,
+                    } = pipeline.producer
+                    {
+                        Owner::Union {
+                            union: union::Union::new(
+                                &query.plan.unions[usize::from(descriptor)],
+                                [
+                                    &plan.pipelines()[left.index()],
+                                    &plan.pipelines()[right.index()],
+                                ],
+                            ),
+                            output,
+                        }
                     } else if let Producer::Limit { bounds, .. } = pipeline.producer {
                         Owner::Limit {
                             limit: limit::Limit::new(bounds),
@@ -655,6 +681,41 @@ impl<'db> Runtime<'db> {
                     ConsumerStep::Progress => Advance::Progress,
                     ConsumerStep::Rows => Advance::Rows,
                     ConsumerStep::Finished => Advance::Finished,
+                }
+            }
+            Producer::UnionAll { left, right, .. } => {
+                let children = [left.index(), right.index()];
+                if children[0] >= index || children[1] >= index || left == right {
+                    return Err(Error::Corrupt(
+                        "union inputs must be distinct earlier producers",
+                    ));
+                }
+                let (earlier, consumers) = self.nodes.split_at_mut(index);
+                let supplied = children.map(|child| ConsumerInput {
+                    batch: earlier[child].owner.output(),
+                    finished: earlier[child].state == OutputState::Finished,
+                });
+                let Owner::Union { union, output } = &mut consumers[0].owner else {
+                    return Err(Error::Corrupt("union owner absent"));
+                };
+                match union.step(supplied, output, pipeline, cancel)? {
+                    union::Step::Input(side) => {
+                        let child = children[side];
+                        let input = &mut earlier[child];
+                        if input.state == OutputState::Finished {
+                            return Err(Error::Corrupt("union requested finished input"));
+                        }
+                        input.owner.output_mut().clear();
+                        input.state = OutputState::Ready;
+                        self.active = child;
+                        return Ok((Advance::Progress, Phase::Run));
+                    }
+                    union::Step::Replay(side) => {
+                        return Ok((Advance::Progress, Phase::Replay(children[side])));
+                    }
+                    union::Step::Progress => Advance::Progress,
+                    union::Step::Rows => Advance::Rows,
+                    union::Step::Finished => Advance::Finished,
                 }
             }
             Producer::Join { left, right, .. } => {

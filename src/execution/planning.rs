@@ -60,6 +60,11 @@ impl OrderColumn {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Producer {
     Scan(u8),
+    UnionAll {
+        left: PipelineId,
+        right: PipelineId,
+        descriptor: u8,
+    },
     Distinct {
         input: PipelineId,
         descriptor: u8,
@@ -116,7 +121,7 @@ impl Pipeline<'_> {
         })
     }
 
-    fn position(&self, identity: ColumnId) -> Option<usize> {
+    pub(super) fn position(&self, identity: ColumnId) -> Option<usize> {
         self.identities[..self.column_count]
             .iter()
             .position(|id| *id == identity)
@@ -162,6 +167,7 @@ impl<'db> PhysicalPlan<'db> {
                         | Stage::Aggregate(_)
                         | Stage::Distinct(_)
                         | Stage::Join { .. }
+                        | Stage::UnionAll { .. }
                         | Stage::Order { .. }
                         | Stage::Limit(_)
                 )

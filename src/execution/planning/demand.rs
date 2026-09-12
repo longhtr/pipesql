@@ -23,6 +23,24 @@ pub(super) fn demand_masks(plan: &frontend::Plan) -> Result<[ColumnSet; MAX_PIPE
         let output = masks[index + 1];
         let input = usize::from(node.input.0);
         match node.stage {
+            Stage::UnionAll { right, descriptor } => {
+                let union = plan
+                    .unions
+                    .get(usize::from(descriptor))
+                    .ok_or(Error::Corrupt("union demand descriptor"))?;
+                for position in 0..usize::from(node.columns) {
+                    let column = union
+                        .output(position)
+                        .ok_or(Error::Corrupt("union demand output"))?;
+                    if output.contains(column.identity()) {
+                        let [left, right_column] = union
+                            .inputs(position)
+                            .ok_or(Error::Corrupt("union demand input"))?;
+                        masks[input] |= bit(left.identity());
+                        masks[usize::from(right.0)] |= bit(right_column.identity());
+                    }
+                }
+            }
             Stage::Distinct(descriptor) => {
                 for column in plan.distinct[usize::from(descriptor)].inputs() {
                     masks[input] |= bit(column.identity());

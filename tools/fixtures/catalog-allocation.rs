@@ -35,6 +35,7 @@ const COLUMNS: [ColumnDeclaration<'static>; 3] = [
 const AGGREGATE: &str = "FROM facts |> AGGREGATE SUM(amount) AS ignored, AVG(amount) AS ai, SUM(measure) AS total, AVG(measure) AS mean, COUNT(*) AS n |> SELECT total,mean,ai,n";
 const GROUPED: &str = "FROM facts |> EXTEND amount+0 AS adjusted |> SET note=note |> DROP amount |> RENAME adjusted AS amount |> AGGREGATE AVG(amount) AS ai,SUM(measure) AS total,AVG(measure) AS mean,COUNT(*) AS n,MIN(amount) AS amin,MAX(amount) AS amax,MIN(note) AS tmin,MAX(note) AS tmax GROUP AND ORDER BY note |> SELECT note,ai+0.0 AS ai,total+0.0 AS total,mean+0.0 AS mean,n+0 AS n,amin,amax,tmin,tmax";
 const DISTINCT: &str = "FROM facts |> SELECT note,amount |> DISTINCT";
+const UNION: &str = "FROM facts |> SELECT note,amount |> UNION ALL (FROM facts |> SELECT note,amount) |> ORDER BY note,amount |> AGGREGATE COUNT(*) AS n";
 const REPEATED: &str = "FROM facts |> AGGREGATE COUNT(*) AS n GROUP BY note |> AGGREGATE SUM(n) AS subtotal GROUP BY n |> AGGREGATE SUM(subtotal) AS total,COUNT(*) AS distinct_sizes";
 fn consume_repeated(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(), Error> {
     let mut seen = false;
@@ -248,14 +249,13 @@ const ORDERED: &str =
     "FROM facts |> ORDER BY note DESC NULLS FIRST |> SELECT note,amount |> LIMIT 4";
 const DERIVED_JOIN: &str = "FROM (FROM facts |> WHERE note = 'first 雪' OR note = 'absent' |> SELECT amount) AS a |> JOIN (FROM facts |> SELECT amount) AS b ON a.amount = b.amount |> AGGREGATE COUNT(*) AS n";
 const JOINED_ORDER: &str = "FROM facts AS a |> JOIN facts AS b ON a.amount = b.amount |> ORDER BY a.amount DESC |> LIMIT 8 |> AGGREGATE COUNT(*) AS n";
-fn consume_joined(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(), Error> {
+fn consume_count(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(), Error> {
     let mut rows = 0;
     for _ in 0..4096 {
         match result.step() {
             QueryStep::Rows(batch) => {
                 assert_eq!(batch.column_count(), 1);
                 assert_eq!(batch.len(), 1);
-                // Two occurrences of each of two keys produce 2*2 + 2*2 pairs.
                 assert_eq!(
                     batch.value(0, 0),
                     Some(Value::Int64(i64::try_from(expected).unwrap()))
@@ -372,7 +372,7 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
             phase = "joined-order-execute";
             let result = db.execute(&joined, &cancel)?;
             phase = "joined-order-step";
-            consume_joined(result, 8)?;
+            consume_count(result, 8)?;
             drop(joined);
             phase = "repeated-prepare";
             let repeated = db.prepare(REPEATED)?;
@@ -386,8 +386,15 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
             phase = "derived-execute";
             let result = db.execute(&derived, &cancel)?;
             phase = "derived-step";
-            consume_joined(result, 2)?;
+            consume_count(result, 2)?;
             drop(derived);
+            phase = "union-prepare";
+            let union = db.prepare(UNION)?;
+            phase = "union-execute";
+            let result = db.execute(&union, &cancel)?;
+            phase = "union-step";
+            consume_count(result, 8)?;
+            drop(union);
             phase = "distinct-prepare";
             let distinct = db.prepare(DISTINCT)?;
             phase = "distinct-execute";
@@ -546,11 +553,14 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
     consume_rows(db.execute(&ordered, &cancel)?, rows, true)?;
     drop(ordered);
     let joined = db.prepare(JOINED_ORDER)?;
-    consume_joined(db.execute(&joined, &cancel)?, rows * 2)?;
+    consume_count(db.execute(&joined, &cancel)?, rows * 2)?;
     drop(joined);
     let repeated = db.prepare(REPEATED)?;
     consume_repeated(db.execute(&repeated, &cancel)?, rows)?;
     drop(repeated);
+    let union = db.prepare(UNION)?;
+    consume_count(db.execute(&union, &cancel)?, rows * 2)?;
+    drop(union);
     let distinct = db.prepare(DISTINCT)?;
     consume_rows(
         db.execute(&distinct, &cancel)?,
@@ -559,7 +569,7 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
     )?;
     drop(distinct);
     let derived = db.prepare(DERIVED_JOIN)?;
-    consume_joined(db.execute(&derived, &cancel)?, rows / 2)?;
+    consume_count(db.execute(&derived, &cancel)?, rows / 2)?;
     drop(derived);
     // A healed writer must actually be usable after the failed attempt.
     let retry = db.begin_append("facts", limits(), &cancel)?;

@@ -90,6 +90,38 @@ result. To follow the implementation, read `bind_extend`, `bind_set`,
 rules](language.md#computed-projection-demand). These transformations share their
 producer's execution controller; only demanded numeric definitions are evaluated.
 
+## Combine pipeline results
+
+Run [examples/union.sql](../examples/union.sql) against the same database:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/union.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+The first branch selects north's sales. The second selects every sale of at least
+10. UNION ALL keeps both copies of the north sale worth 10. It matches columns by
+position: the second branch's `area` and `value` feed the first branch's `region`
+and `amount`. Grouping therefore produces:
+
+| region | total | n |
+| --- | ---: | ---: |
+| north | 25 | 4 |
+| south | 20 | 1 |
+
+The NULL amount contributes a row to COUNT(*) but no value to SUM. GROUP AND ORDER
+BY establishes the displayed order; union itself establishes none. Require
+`status=queried` and successful process exit before accepting the output.
+
+Follow `bind_union` in the [binder](../src/frontend/binding.rs) to see how each
+output position gets a fresh identity and two input mappings. The
+[demand pass](../src/execution/planning/demand.rs) translates required outputs
+into branch inputs. The [union consumer](../src/execution/union.rs) copies one
+batch at a time while the [scheduler](../src/execution/runtime.rs) retains child
+ownership. See the [union contract](language.md#union-all) for scope and errors.
+
 ## Finish and clean up
 
 If the program reports an error, do not treat any printed rows as a complete

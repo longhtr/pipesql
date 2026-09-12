@@ -221,6 +221,26 @@ temporary-file owners retained by a completed interior limiter remain charged
 until replay or query cleanup releases them. LIMIT introduces no separate memory
 account or spool.
 
+## UNION ALL admission
+
+Each binary union retains one positional descriptor in the prepared plan. Its
+vector capacity is admitted from the parsed union count, with one allocation
+allowance for the vector. Output identities belong to positions; mapping the same
+left identity twice does not merge distinct right-input values.
+
+Each runtime union owns inline branch state and slot mappings plus one output
+batch. Declared STRING outputs reserve the same 65,536-byte per-column ceiling
+as source batches. The controller copies at most one admitted input batch per
+step and introduces no spool or separate resource authority. Both input producers
+and their minima are admitted before source I/O or optional aggregate growth.
+
+The scheduler retains both children until query cleanup. Replay resets visited
+branches when they are next requested; an unvisited aggregate must remain fresh.
+A downstream LIMIT can leave later branches unvisited, but does not avoid their
+admission. Branch sorting, grouping, and joins retain their own temporary-space
+and replay obligations. Completion, cancellation, failure, and abandonment release
+the query's retained owners through the existing result lifecycle.
+
 ## Join, ordering and DISTINCT admission
 
 DISTINCT uses one complete-row sorted-input owner with every unique field as a

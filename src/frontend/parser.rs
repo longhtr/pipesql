@@ -21,6 +21,7 @@ pub(super) enum ParsedStage {
     Source(u8),
     Alias(SourceSpan),
     Derived(SourceSpan),
+    UnionAll(SourceSpan),
     Join {
         left: SourceSpan,
         right: SourceSpan,
@@ -305,6 +306,14 @@ impl Parsed {
         self.len += 1;
         Ok(())
     }
+}
+
+// Closing a child either introduces a derived relation or combines a union
+// argument. The frame owns the continuation, not the child's table name scope.
+#[derive(Clone, Copy)]
+enum ChildCompletion {
+    Derived { join: Option<SourceSpan> },
+    UnionAll(SourceSpan),
 }
 
 struct Parser<'a> {
@@ -628,6 +637,25 @@ impl Parser<'_> {
         parsed.push_stage(ParsedStage::Join { left, right }, span)
     }
 
+    fn union_argument(
+        &mut self,
+        frames: &mut [ChildCompletion; MAX_STAGES],
+        depth: &mut usize,
+        pipe: SourceSpan,
+    ) -> Result<(), Error> {
+        let open = self.take(Kind::LeftParen)?;
+        if *depth == frames.len() {
+            return Err(Error::Parse {
+                message: "derived input nesting limit exceeded",
+                span: open,
+            });
+        }
+        frames[*depth] = ChildCompletion::UnionAll(pipe);
+        *depth += 1;
+        self.take(Kind::From)?;
+        Ok(())
+    }
+
     fn query(&mut self) -> Result<Parsed, Error> {
         self.take(Kind::From)?;
         let mut parsed = Parsed {
@@ -648,9 +676,8 @@ impl Parser<'_> {
             aggregate_groups: [ZERO_SPAN; MAX_AGGREGATE_COLUMNS - 1],
             aggregate_group_count: 0,
         };
-        // Each child frame remembers whether its result completes a JOIN input.
         // All syntax shares one token stream and the original source spans.
-        let mut frames = [None; MAX_STAGES];
+        let mut frames = [ChildCompletion::Derived { join: None }; MAX_STAGES];
         let mut depth = 0;
         let mut need_source = true;
         let mut pending_join = None;
@@ -664,7 +691,9 @@ impl Parser<'_> {
                             span: open,
                         });
                     }
-                    frames[depth] = pending_join.take();
+                    frames[depth] = ChildCompletion::Derived {
+                        join: pending_join.take(),
+                    };
                     depth += 1;
                     self.take(Kind::From)?;
                     continue;
@@ -691,10 +720,24 @@ impl Parser<'_> {
             if self.peek() == Kind::RightParen && depth != 0 {
                 let close = self.take(Kind::RightParen)?;
                 depth -= 1;
-                let alias = self.source_alias(ZERO_SPAN)?;
-                parsed.push_stage(ParsedStage::Derived(alias), close)?;
-                if let Some(pipe) = frames[depth].take() {
-                    self.join_condition(&mut parsed, pipe)?;
+                match frames[depth] {
+                    ChildCompletion::Derived { join } => {
+                        let alias = self.source_alias(ZERO_SPAN)?;
+                        parsed.push_stage(ParsedStage::Derived(alias), close)?;
+                        if let Some(pipe) = join {
+                            self.join_condition(&mut parsed, pipe)?;
+                        }
+                    }
+                    ChildCompletion::UnionAll(pipe) => {
+                        parsed.push_stage(ParsedStage::UnionAll(pipe), close)?;
+                        if self.peek() == Kind::Comma {
+                            self.take(Kind::Comma)?;
+                            if self.peek() == Kind::LeftParen {
+                                self.union_argument(&mut frames, &mut depth, pipe)?;
+                                need_source = true;
+                            }
+                        }
+                    }
                 }
                 continue;
             }
@@ -709,6 +752,13 @@ impl Parser<'_> {
                 });
             }
             let stage = match self.peek() {
+                Kind::Reserved if self.is_word("UNION") => {
+                    self.word("UNION")?;
+                    self.word("ALL")?;
+                    self.union_argument(&mut frames, &mut depth, pipe)?;
+                    need_source = true;
+                    continue;
+                }
                 Kind::Distinct => ParsedStage::Distinct(self.take(Kind::Distinct)?),
                 Kind::As => {
                     self.take(Kind::As)?;
@@ -988,4 +1038,87 @@ pub(super) fn parse_query(source: &str) -> Result<Parsed, Error> {
         end: source.len(),
     }
     .query()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn union_arguments_restore_nested_continuations_and_spans() {
+        let sql = "FROM a |> UNION ALL (FROM b |> UNION ALL (FROM c)), (FROM d), |> SELECT x";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.source_count, 4);
+        assert_eq!(parsed.len, 7);
+        let stages = &parsed.stages[..usize::from(parsed.len)];
+        assert!(matches!(stages[0], ParsedStage::Source(1)));
+        assert!(matches!(stages[1], ParsedStage::Source(2)));
+        assert!(matches!(stages[4], ParsedStage::Source(3)));
+        assert!(matches!(stages[6], ParsedStage::Select { len: 1, .. }));
+        let outer = sql.find("|>").unwrap();
+        let inner = sql.find("|> UNION ALL (FROM c)").unwrap();
+        for (index, start) in [(2, inner), (3, outer), (5, outer)] {
+            let ParsedStage::UnionAll(span) = stages[index] else {
+                panic!("union argument completion absent at {index}");
+            };
+            assert_eq!(usize::from(span.start), start);
+            assert_eq!(text(sql, span), "|>");
+        }
+    }
+
+    #[test]
+    fn union_and_join_children_keep_distinct_completion_kinds() {
+        let sql = "FROM a |> JOIN (FROM b |> UNION ALL (FROM (FROM c) AS c)) AS r ON a.x=r.x";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.source_count, 3);
+        assert_eq!(parsed.len, 6);
+        assert!(matches!(parsed.stages[2], ParsedStage::Derived(_)));
+        assert!(matches!(parsed.stages[3], ParsedStage::UnionAll(_)));
+        assert!(matches!(parsed.stages[4], ParsedStage::Derived(_)));
+        let ParsedStage::Join { left, right } = parsed.stages[5] else {
+            panic!("outer join continuation absent");
+        };
+        assert_eq!(text(sql, left), "a.x");
+        assert_eq!(text(sql, right), "r.x");
+    }
+
+    #[test]
+    fn union_rejects_incomplete_or_unsupported_argument_forms() {
+        for sql in [
+            "FROM a |> UNION",
+            "FROM a |> UNION ALL",
+            "FROM a |> UNION ALL,",
+            "FROM a |> UNION ALL ()",
+            "FROM a |> UNION ALL (FROM b",
+            "FROM a |> UNION ALL (FROM b),,",
+            "FROM a |> UNION ALL (FROM b), (FROM)",
+            "FROM a |> UNION ALL b",
+            "FROM a |> UNION ALL TABLE b",
+            "FROM a |> UNION ALL (SELECT x)",
+            "FROM a |> UNION DISTINCT (FROM b)",
+            "FROM a |> UNION ALL BY NAME (FROM b)",
+            "FROM a |> UNION ALL CORRESPONDING (FROM b)",
+            "FROM a |> UNION ALL (FROM b) AS r",
+        ] {
+            assert!(parse_query(sql).is_err(), "accepted {sql}");
+        }
+        let nested = format!(
+            "FROM a {}{}",
+            "|> UNION ALL (FROM a ".repeat(MAX_STAGES + 1),
+            ")".repeat(MAX_STAGES + 1)
+        );
+        assert!(parse_query(&nested).is_err());
+    }
+
+    #[test]
+    fn union_arguments_share_the_normalized_stage_budget() {
+        // Each additional source and its union consume one stage each.
+        let arguments = ["(FROM b)"; MAX_STAGES / 2].join(", ");
+        let sql = format!("FROM a |> UNION ALL {arguments}");
+        let parsed = parse_query(&sql).unwrap();
+        assert_eq!(usize::from(parsed.len), MAX_STAGES);
+        assert_eq!(usize::from(parsed.source_count), MAX_STAGES / 2 + 1);
+        let error = parse_query(&format!("{sql}, (FROM b)")).err().unwrap();
+        assert!(matches!(error, Error::Parse { .. }));
+    }
 }

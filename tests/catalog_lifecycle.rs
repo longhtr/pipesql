@@ -42,6 +42,9 @@ mod spooling;
 #[path = "catalog_lifecycle/text_filter.rs"]
 mod text_filter;
 
+#[path = "catalog_lifecycle/union.rs"]
+mod union;
+
 #[path = "catalog_lifecycle/wide.rs"]
 mod wide;
 

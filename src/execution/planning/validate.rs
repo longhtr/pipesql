@@ -116,6 +116,41 @@ pub(in crate::execution) fn validate_physical(
                 }
                 reached[input.index()] = true;
             }
+            (
+                Producer::UnionAll {
+                    left,
+                    right,
+                    descriptor,
+                },
+                Some(Stage::UnionAll {
+                    right: right_relation,
+                    descriptor: expected,
+                }),
+            ) => {
+                check_input(left, node.expect("union node").input)?;
+                check_input(right, right_relation)?;
+                if left == right || descriptor != expected {
+                    return Err(Error::Corrupt("physical union inputs or descriptor"));
+                }
+                let bound = &semantic.unions[usize::from(expected)];
+                for position in 0..usize::from(node.expect("union node").columns) {
+                    let output = bound
+                        .output(position)
+                        .ok_or(Error::Corrupt("physical union output"))?;
+                    if masks[usize::from(pipeline.relation.0)].contains(output.identity()) {
+                        let columns = bound
+                            .inputs(position)
+                            .ok_or(Error::Corrupt("physical union inputs"))?;
+                        for (child, column) in [left, right].into_iter().zip(columns) {
+                            if inputs[child.index()].position(column.identity()).is_none() {
+                                return Err(Error::Corrupt("physical union demanded input absent"));
+                            }
+                        }
+                    }
+                }
+                reached[left.index()] = true;
+                reached[right.index()] = true;
+            }
             (Producer::Limit { input, bounds }, Some(Stage::Limit(expected))) => {
                 check_input(input, node.expect("limit node").input)?;
                 if bounds != expected {
@@ -396,7 +431,9 @@ fn identity_at(
             .iter()
             .find(|column| usize::from(column.storage_slot()) == position)
             .map(|column| column.semantic().identity()),
-        Producer::Aggregate { .. } => semantic.relation_columns(relation)?.get(position),
+        Producer::Aggregate { .. } | Producer::UnionAll { .. } => {
+            semantic.relation_columns(relation)?.get(position)
+        }
         Producer::Distinct { input, descriptor } => pipelines
             .get(input.index())
             .and_then(|input| input.identities[..input.column_count].get(position))

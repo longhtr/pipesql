@@ -11,8 +11,8 @@ use super::{
     Expression, Filter, FilterLiteral, Group, LimitBounds, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS,
     MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_QUERY_COLUMNS, MAX_STAGES, Name, Node, Op, OrderKey,
     Output, OwnedPlan, PREPARED_ALLOCATION_ALLOWANCE, Plan, Predicate, PreparedQuery, RelationId,
-    SemanticColumn, SetAssignment, SourceColumn, SourceOccurrence, SourceSpan, Stage, bind_error,
-    initial_outputs, text,
+    SemanticColumn, SetAssignment, SourceColumn, SourceOccurrence, SourceSpan, Stage, UnionPlan,
+    bind_error, initial_outputs, text,
 };
 use crate::date::DatePart;
 use std::mem::size_of;
@@ -471,6 +471,7 @@ fn bind_literal(
                     aggregates: &[],
                     computed: &[],
                     distinct: &[],
+                    unions: &[],
                 },
                 &Ranges::empty(),
             )?;
@@ -533,6 +534,15 @@ pub(crate) fn prepare<'db>(
     source: &str,
 ) -> Result<PreparedQuery<'db>, Error> {
     let parsed = parse_query(source)?;
+    if let Some(ParsedStage::UnionAll(span)) = parsed.stages[..usize::from(parsed.len)]
+        .iter()
+        .find(|stage| matches!(stage, ParsedStage::UnionAll(_)))
+    {
+        return Err(bind_error(
+            "UNION ALL requires declared-table storage",
+            *span,
+        ));
+    }
     if parsed.source_count != 1 {
         return Err(bind_error(
             "joins require declared-table storage",
@@ -640,6 +650,7 @@ fn bind_plan<'db>(
     plan.aggregates = descriptors.aggregates;
     plan.computed = descriptors.computed;
     plan.distinct = descriptors.distinct;
+    plan.unions = descriptors.unions;
     validate(plan)?;
     Ok(PreparedQuery {
         plan: owned,
@@ -684,6 +695,7 @@ fn allocate_plan(
         aggregates: Vec::new(),
         computed: Vec::new(),
         distinct: Vec::new(),
+        unions: Vec::new(),
     };
     OwnedPlan::new(plan, database.config().memory_limit_bytes())
 }
@@ -707,6 +719,7 @@ impl Binder<'_, '_> {
     fn bind_stage(&mut self, index: usize, syntax: ParsedStage) -> Result<Node, Error> {
         let mut input = RelationId(u8::try_from(index).expect("stage capacity"));
         let stage = match syntax {
+            ParsedStage::UnionAll(span) => self.bind_union(index, span, &mut input)?,
             ParsedStage::Distinct(span) => self.bind_distinct(span)?,
             ParsedStage::Derived(alias) => {
                 self.ranges.clear();
@@ -789,6 +802,7 @@ impl Binder<'_, '_> {
             aggregates: &self.descriptors.aggregates,
             computed: &self.descriptors.computed,
             distinct: &self.descriptors.distinct,
+            unions: &self.descriptors.unions,
         }
     }
 
@@ -829,6 +843,56 @@ impl Binder<'_, '_> {
         })
     }
 
+    fn bind_union(
+        &mut self,
+        index: usize,
+        span: SourceSpan,
+        input: &mut RelationId,
+    ) -> Result<Stage, Error> {
+        let scopes = self
+            .scopes
+            .as_ref()
+            .ok_or(Error::Corrupt("union scope owner absent"))?;
+        let depth = scopes
+            .depth
+            .checked_sub(1)
+            .ok_or(Error::Corrupt("union left scope absent"))?;
+        let frame = scopes.frames[depth];
+        let left = &scopes.values[frame.values_start..frame.values_start + frame.output_count];
+        let bound = UnionPlan::bind(
+            left,
+            &self.plan.outputs[..usize::from(self.plan.output_count)],
+            &self.facts(),
+            self.next_identity,
+            span,
+        )?;
+        self.plan.outputs.fill(Output::EMPTY);
+        self.plan.outputs[..left.len()].copy_from_slice(left);
+        self.plan.output_count = left.len() as u8;
+        for (position, output) in self.plan.outputs[..left.len()].iter_mut().enumerate() {
+            output.id = bound
+                .output(position)
+                .ok_or(Error::Corrupt("union output identity"))?
+                .identity();
+        }
+        self.next_identity += u32::from(self.plan.output_count);
+        self.ranges.clear();
+        let scopes = self
+            .scopes
+            .as_mut()
+            .ok_or(Error::Corrupt("union scope owner absent"))?;
+        scopes.values.truncate(frame.values_start);
+        scopes.ranges.truncate(frame.ranges_start);
+        scopes.depth = depth;
+        *input = frame.input;
+        let descriptor = self.descriptors.unions.len() as u8;
+        self.descriptors.unions.push(bound);
+        Ok(Stage::UnionAll {
+            right: RelationId(index as u8),
+            descriptor,
+        })
+    }
+
     fn bind_distinct(&mut self, span: SourceSpan) -> Result<Stage, Error> {
         if self.sources.occurrences[0].table.is_none() {
             return Err(bind_error("DISTINCT requires declared-table storage", span));
@@ -840,6 +904,7 @@ impl Binder<'_, '_> {
                 aggregates: &self.descriptors.aggregates,
                 computed: &self.descriptors.computed,
                 distinct: &self.descriptors.distinct,
+                unions: &self.descriptors.unions,
             },
             &mut self.next_identity,
         )?;

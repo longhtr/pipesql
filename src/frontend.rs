@@ -3,6 +3,7 @@ mod binding;
 mod distinct;
 mod lexer;
 mod parser;
+mod union;
 mod validation;
 
 mod column_set;
@@ -16,6 +17,7 @@ pub(crate) use binding::{prepare, prepare_catalog};
 use distinct::DistinctPlan;
 use lexer::reserved_identifier;
 use std::mem::size_of;
+pub(crate) use union::UnionPlan;
 pub(crate) use validation::validate;
 
 const MAX_SOURCE_BYTES: usize = 4096;
@@ -539,6 +541,10 @@ pub(crate) enum Stage {
     Source(u8),
     Alias,
     Derived,
+    UnionAll {
+        right: RelationId,
+        descriptor: u8,
+    },
     Join {
         right: RelationId,
         left_key: ColumnId,
@@ -669,6 +675,14 @@ impl RelationColumns<'_> {
                         .projections
                         .get(usize::from(start) + index)
                         .copied();
+                }
+                Stage::UnionAll { descriptor, .. } => {
+                    return self
+                        .plan
+                        .unions
+                        .get(usize::from(descriptor))?
+                        .output(index)
+                        .map(|c| c.identity());
                 }
                 Stage::Distinct(descriptor) => {
                     return self
@@ -845,6 +859,7 @@ pub(crate) struct Plan {
     output_count: u8,
     pub(crate) aggregates: Vec<AggregatePlan>,
     pub(crate) distinct: Vec<DistinctPlan>,
+    pub(crate) unions: Vec<UnionPlan>,
     pub(crate) computed: Vec<Computed>,
 }
 // One allocation keeps the caller's prepared handle bounded as typed plans grow.
@@ -936,8 +951,9 @@ impl PreparedQuery<'_> {
             + MAX_AGGREGATE_COLUMNS * (size_of::<AggregateEntry>() + size_of::<AggregatePlan>())
             + MAX_COMPUTED * size_of::<Computed>()
             + MAX_STAGES * size_of::<DistinctPlan>()
+            + MAX_STAGES * size_of::<UnionPlan>()
             + PREPARED_ALLOCATION_ALLOWANCE
-            + (MAX_AGGREGATE_COLUMNS + 3) * PREPARED_ALLOCATION_ALLOWANCE) as u64
+            + (MAX_AGGREGATE_COLUMNS + 4) * PREPARED_ALLOCATION_ALLOWANCE) as u64
     }
 }
 
@@ -1025,6 +1041,7 @@ impl Plan {
             &self.aggregates,
             &self.computed,
             &self.distinct,
+            &self.unions,
         )
     }
 
@@ -1044,7 +1061,7 @@ impl Plan {
         if node.input.0 >= relation.0 {
             return Err(Error::Corrupt("relation input is not an earlier producer"));
         }
-        if let Stage::Join { right, .. } = node.stage
+        if let Stage::Join { right, .. } | Stage::UnionAll { right, .. } = node.stage
             && (right.0 >= relation.0 || right == node.input)
         {
             return Err(Error::Corrupt(
@@ -1097,6 +1114,7 @@ impl Plan {
                 | Stage::Distinct(_)
                 | Stage::Source(_)
                 | Stage::Join { .. }
+                | Stage::UnionAll { .. }
                 | Stage::Order { .. }
                 | Stage::Limit(_) => {
                     return Ok(relation);
@@ -1156,7 +1174,11 @@ impl Plan {
                         ),
                     );
                 }
-                Stage::Join { .. } | Stage::Source(_) | Stage::Derived | Stage::Distinct(_) => {
+                Stage::Join { .. }
+                | Stage::UnionAll { .. }
+                | Stage::Source(_)
+                | Stage::Derived
+                | Stage::Distinct(_) => {
                     return Ok(None);
                 }
                 Stage::Empty => return Err(Error::Corrupt("empty order producer")),
@@ -1174,6 +1196,17 @@ impl Plan {
         }
         for node in self.nodes().iter().rev() {
             match node.stage {
+                Stage::UnionAll { descriptor, .. } => {
+                    let union = &self.unions[usize::from(descriptor)];
+                    for position in 0..usize::from(node.columns) {
+                        let output = union.output(position).expect("validated union output");
+                        if needed[output.identity().value() as usize] {
+                            for input in union.inputs(position).expect("validated union inputs") {
+                                needed[input.identity().value() as usize] = true;
+                            }
+                        }
+                    }
+                }
                 Stage::Where(filter) => needed[filter.column.value() as usize] = true,
                 Stage::Distinct(index) => {
                     for column in self.distinct[usize::from(index)].inputs() {
@@ -1297,6 +1330,7 @@ struct ColumnFacts<'a> {
     aggregates: &'a [AggregatePlan],
     computed: &'a [Computed],
     distinct: &'a [DistinctPlan],
+    unions: &'a [UnionPlan],
 }
 
 impl ColumnFacts<'_> {
@@ -1307,6 +1341,7 @@ impl ColumnFacts<'_> {
             self.aggregates,
             self.computed,
             self.distinct,
+            self.unions,
         )?;
         Some(SemanticColumn::new(id.value(), kind, nullable))
     }
@@ -1322,8 +1357,11 @@ fn column_type(
     aggregates: &[AggregatePlan],
     computed: &[Computed],
     distinct: &[DistinctPlan],
+    unions: &[UnionPlan],
 ) -> Option<(DataType, bool)> {
-    if let Some(column) = distinct.iter().find_map(|stage| stage.input_for(id)) {
+    if let Some(column) = unions.iter().find_map(|union| union.column(id)) {
+        Some((column.data_type(), column.nullable()))
+    } else if let Some(column) = distinct.iter().find_map(|stage| stage.input_for(id)) {
         Some((column.data_type(), column.nullable()))
     } else if let Some(column) = source_column(id, sources) {
         Some((column.data_type(), column.nullable()))

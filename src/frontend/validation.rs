@@ -81,6 +81,10 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
     {
         return Err(Error::Corrupt("invalid range scope envelope"));
     }
+    let mut union_cursor = 0;
+    if plan.unions.len() > MAX_STAGES || plan.unions.capacity() != plan.unions.len() {
+        return Err(Error::Corrupt("union descriptor capacity"));
+    }
     let mut distinct_cursor = 0;
     if plan.distinct.len() > MAX_STAGES || plan.distinct.capacity() != plan.distinct.len() {
         return Err(Error::Corrupt("DISTINCT descriptor capacity"));
@@ -157,7 +161,8 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
             | Stage::Where(_)
             | Stage::Order { .. }
             | Stage::Limit(_)
-            | Stage::Distinct(_) => input.len(),
+            | Stage::Distinct(_)
+            | Stage::UnionAll { .. } => input.len(),
             Stage::Drop { keep } => keep.count_ones() as usize,
             Stage::Select { len, .. } => usize::from(*len),
             Stage::Extend { len, .. } => input.len() + usize::from(*len),
@@ -172,6 +177,18 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
             return Err(Error::Corrupt("invalid producer width"));
         }
         match &node.stage {
+            Stage::UnionAll { right, descriptor } => {
+                if !catalog || usize::from(*descriptor) != union_cursor {
+                    return Err(Error::Corrupt("union descriptor ownership"));
+                }
+                let union = plan
+                    .unions
+                    .get(union_cursor)
+                    .ok_or(Error::Corrupt("union descriptor absent"))?;
+                next_identity =
+                    union.validate(plan, input, plan.relation_columns(*right)?, next_identity)?;
+                union_cursor += 1;
+            }
             Stage::Distinct(descriptor) => {
                 if !catalog || usize::from(*descriptor) != distinct_cursor {
                     return Err(Error::Corrupt("DISTINCT descriptor ownership"));
@@ -403,7 +420,8 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
             Stage::Empty => return Err(Error::Corrupt("empty stage inside plan")),
         }
     }
-    if distinct_cursor != plan.distinct.len()
+    if union_cursor != plan.unions.len()
+        || distinct_cursor != plan.distinct.len()
         || computed_cursor != plan.computed.len()
         || next_identity > MAX_QUERY_COLUMNS as u32 + 1
     {
@@ -464,7 +482,7 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
             }
             reached |= 1 << node.input.0;
         }
-        if let Stage::Join { right, .. } = node.stage {
+        if let Stage::Join { right, .. } | Stage::UnionAll { right, .. } = node.stage {
             if reached & (1 << right.0) != 0 {
                 return Err(Error::Corrupt("relation producer has multiple consumers"));
             }
@@ -508,7 +526,7 @@ fn validate_range_scope(plan: &Plan, index: usize, node: &Node) -> Result<(), Er
             }
             return Err(Error::Corrupt("range exposes an input outside its row"));
         }
-        Stage::Select { .. } | Stage::Aggregate(_) => ColumnSet::EMPTY,
+        Stage::Select { .. } | Stage::Aggregate(_) | Stage::UnionAll { .. } => ColumnSet::EMPTY,
         Stage::Join { right, .. } => input | plan.range_columns[usize::from(right.0)],
         Stage::Distinct(descriptor) => {
             let descriptor = plan

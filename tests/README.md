@@ -50,6 +50,7 @@ those operations are outside the original stack contract.
 | `joins.rs`, `join_corpus.rs` | Join composition, snapshots, duplicate pairs, and the independent nullable-row oracle. |
 | `computed.rs`, `boolean.rs`, `text_filter.rs`, `null_predicate.rs` | SELECT/EXTEND expression demand and scalar/predicate semantics. |
 | `order.rs`, `distinct.rs`, `limit.rs` | Materialization, complete-row equality, ordering, and prefix boundaries. |
+| `union.rs` | Positional branch composition, typed values, snapshot retention, demanded errors, and cancellation. |
 | `wide.rs` | Full-width schemas, late columns, repeated outputs, and scan admission. |
 
 Shared helpers construct public fixtures and collect typed results. The test bodies
