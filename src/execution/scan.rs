@@ -262,7 +262,11 @@ impl ScanCursor<'_> {
         end: usize,
         input: &mut Batch,
     ) -> Result<usize, Error> {
-        if plan.has_computed_outputs() {
+        // A later text constant gives every producer a UTF-8 output layout.
+        // Legacy fixed-key bulk decoding cannot write those variable cells.
+        if plan.has_computed_outputs()
+            || (matches!(self.source, Source::Legacy(_)) && input.has_text())
+        {
             let source = &self.source;
             self.computation.evaluate(
                 plan,

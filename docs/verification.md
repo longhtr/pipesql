@@ -696,8 +696,11 @@ removal, and process death at creation, unlink, the directory barrier and
 admission. Reopen must heal recognized empty debris while refusing corrupt
 authoritative state, unknown names, nonempty named files and aliases. Check
 checksum-valid old catalog namespace records are rejected and independently
-reproduce new records; child object codecs and legacy format-4 behavior retain
-their existing checks. This evidence does not qualify a grouped or
+reproduce new records; child object codecs retain their existing checks. Legacy format-4 queries use
+the same disposable scratch constructor. Exercise both empty and published
+legacy namespaces through constructor failures, process termination, live
+reader admission and exclusive recovery. Keep strict writer inspection and
+refuse nonempty, aliased, unknown or wrong-kind scratch before cleanup. This evidence does not qualify a grouped or
 external-memory query operator.
 
 ## Concurrency and public-interface evidence

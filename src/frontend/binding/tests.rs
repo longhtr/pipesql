@@ -1589,3 +1589,48 @@ fn constant_definitions_reject_inconsistent_facts_and_provenance() {
         }
     }
 }
+
+#[test]
+fn analytic_projection_owns_fresh_counts_and_clears_relation_order() {
+    let (_directory, db) = database(4_000_000);
+    let sql = "FROM lineitem |> SELECT l_quantity |> EXTEND COUNT(*) OVER () AS n,COUNT(*) OVER () AS m,l_quantity+1 AS next |> SELECT n,m,next";
+    for mutation in 0..5 {
+        let mut query = db.prepare(sql).unwrap();
+        assert_eq!(query.plan.computed.len(), 3);
+        assert_ne!(
+            query.plan.computed[0].column.identity(),
+            query.plan.computed[1].column.identity()
+        );
+        for definition in &query.plan.computed[..2] {
+            assert_eq!(definition.column.data_type(), DataType::Int64);
+            assert!(!definition.column.nullable());
+            assert_eq!(definition.expression.columns().count(), 0);
+        }
+        for definition in &query.plan.computed {
+            assert_eq!(definition.input, RelationId(1));
+            assert_eq!(
+                query.plan.computation_producer(definition).unwrap(),
+                RelationId(2)
+            );
+        }
+        match mutation {
+            0 => (),
+            1 => query.plan.computed[0].column.nullable = true,
+            2 => query.plan.computed[0].column.kind = DataType::Double,
+            3 => query.plan.computed[0].input = RelationId::SOURCE,
+            4 => query.plan.computed[1].column = query.plan.computed[0].column,
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            validate(&query.plan).is_ok(),
+            mutation == 0,
+            "analytic mutation {mutation}"
+        );
+    }
+    // Legacy reducing grouping advertises key order; the analytic stage clears
+    // that promise, and the following ordinary projection keeps it cleared.
+    let query = db.prepare("FROM lineitem |> AGGREGATE COUNT(*) AS n GROUP AND ORDER BY l_returnflag |> EXTEND COUNT(*) OVER () AS total |> SELECT total").unwrap();
+    assert!(query.plan.order_key(RelationId(1), 0).unwrap().is_some());
+    assert_eq!(query.plan.order_key(RelationId(2), 0).unwrap(), None);
+    assert_eq!(query.plan.order_key(RelationId(3), 0).unwrap(), None);
+}

@@ -51,6 +51,9 @@ mod text_filter;
 #[path = "catalog_lifecycle/union.rs"]
 mod union;
 
+#[path = "catalog_lifecycle/window_count.rs"]
+mod window_count;
+
 #[path = "catalog_lifecycle/wide.rs"]
 mod wide;
 

@@ -7,7 +7,7 @@ use crate::execution::planning::{PhysicalPlan, lower, validate_physical};
 use crate::execution::runtime::Runtime;
 use crate::execution::scan::{declared, legacy};
 use crate::frontend::{self, PreparedQuery};
-use crate::namespace::inspect_namespace;
+use crate::namespace::inspect_query_namespace;
 use crate::storage_format::{self, RootState};
 use crate::{CancellationToken, Database, Error};
 
@@ -96,7 +96,7 @@ impl Database {
             self.reserve_memory(RESULT_BYTES + plan.row_scratch_bytes(), "streaming result")?;
         let mut runtime = runtime.admit_legacy_outputs(self, query, &plan)?;
         runtime.open_aggregates(self, query, &plan)?;
-        let namespace = inspect_namespace(self.path(), &self.memory, effects)?;
+        let namespace = inspect_query_namespace(self.path(), &self.memory, effects)?;
         if namespace.database_id != self.database_identity()
             || namespace.generation != self.generation()
         {

@@ -49,6 +49,24 @@ impl RowLayout {
         inputs: impl Iterator<Item = SemanticColumn>,
         order: &[planning::OrderColumn],
     ) -> Result<Self, Error> {
+        if order.is_empty() {
+            return Err(Error::Corrupt("sorted key count"));
+        }
+        Self::with_keys(inputs, order)
+    }
+
+    // An empty key compares records by their unique input ordinal. The payload
+    // still uses the same checked framing and bounded spill representation.
+    pub(super) fn for_partition(
+        inputs: impl Iterator<Item = SemanticColumn>,
+    ) -> Result<Self, Error> {
+        Self::with_keys(inputs, &[])
+    }
+
+    fn with_keys(
+        inputs: impl Iterator<Item = SemanticColumn>,
+        order: &[planning::OrderColumn],
+    ) -> Result<Self, Error> {
         let mut columns = [KeyColumn {
             input: 0,
             kind: DataType::Int64,
@@ -74,7 +92,7 @@ impl RowLayout {
                 .ok_or(Error::Corrupt("sorted row byte bound"))?;
             count += 1;
         }
-        if order.is_empty() || order.len() > frontend::MAX_ORDER_ITEMS {
+        if order.len() > frontend::MAX_ORDER_ITEMS {
             return Err(Error::Corrupt("sorted key count"));
         }
         let mut key_count = 0;

@@ -88,9 +88,9 @@ separate from this query manifest.
 | `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN or UNION ALL. Comma-separated FROM inputs remain unsupported. |
 | `FROM (pipe_query) [AS alias]` | Uses the child query’s ordinary outputs as an independent input. A JOIN may also use this form. See [table subqueries](#table-subqueries) for scope and ordering. |
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
-| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`. Also accepts bounded STRING and DATE constants described below. Star expansion and other scalar expressions remain unsupported. |
-| `EXTEND expression [[AS] alias], ...` | Appends columns using the same expression profile as SELECT. Preserves all input columns, their identities, ranges, and order. Star expansion, aggregate calls, window expressions, and other scalar forms remain unsupported. |
-| `SET name=expression, ...` | Replaces each named ordinary column in place with a fresh identity. Accepts direct references of any supported type and the SELECT expression profile. Every expression sees the original input; replacements can change type and NULLability. |
+| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`. Also accepts bounded STRING and DATE constants and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
+| `EXTEND expression [[AS] alias], ...` | Appends columns using the same expression profile as SELECT. Preserves all input columns, their identities and ranges. Ordinary expressions preserve order; analytic count clears it. Star expansion, reducing aggregate calls and other scalar forms remain unsupported. |
+| `SET name=expression, ...` | Replaces each named ordinary column in place with a fresh identity. Accepts direct references of any supported type and the nonanalytic SELECT expression profile. Every expression sees the original input; replacements can change type and NULLability. |
 | `DROP name, ...` | Removes all ordinary columns matching each name, including duplicate names. Rejects removal of the entire row. |
 | `RENAME old AS new, ...` | Renames one unambiguous ordinary column per target without changing its value, position, type, or identity. Simultaneous swaps and new duplicate names are valid. |
 | `WHERE name comparison constant` | Accepts `<`, `<=`, `=`, `!=`, `>=`, `>` over numeric, DATE or STRING columns and compatible constants. |
@@ -759,54 +759,58 @@ AS key1` behavior preserves the original output and range membership while
 adding a name for the same identity. These forms remain unsupported until their
 complete contracts and checks are implemented.
 
+## Full-partition analytic count
+
+SELECT and EXTEND accept `COUNT(*) OVER ()` on declared and legacy tables. Each
+input row receives the same nonnullable INT64 count of the entire input relation.
+Empty input produces no rows. Each count expression receives a fresh identity;
+repeated counts do not share semantic identities. For example:
+
+```sql
+FROM sales
+|> EXTEND COUNT(*) OVER () AS total_rows
+|> SELECT region,amount,total_rows
+```
+
+The empty window is a full-partition ROWS frame from unbounded preceding through
+unbounded following. Input cardinality and ordinary EXTEND ranges are preserved.
+Any analytic expression clears incoming semantic relation order. A later ordinary
+projection keeps it cleared; use a later ORDER BY when result order matters.
+
+All entries in the projection resolve against its original input. Sibling aliases
+are unavailable. Ordinary expressions may appear beside the count, but a count
+cannot be nested or mixed with arithmetic in the same expression. Compute with
+its alias in a later stage instead. SET, WHERE, AGGREGATE, ORDER BY and LIMIT do
+not accept analytic calls. COUNT without OVER remains a reducing aggregate and
+is invalid in SELECT or EXTEND.
+
+The analytic producer consumes its input before publishing rows. Ordinary
+expressions in the same projection evaluate during emission. A downstream LIMIT
+can therefore leave later ordinary computations undemanded, while a demanded
+count still requires the complete input. Upstream predicates and blocking
+operators keep their own demanded-error and validation obligations. LIMIT 0
+without an offset can leave the producer unvisited, after admission. See
+[analytic admission](resources.md#analytic-count-admission) for storage and work
+bounds and [the example](../examples/window-count.sql) for a runnable query.
+
 ## Unimplemented expression forms
 
-The following forms are design requirements for future work. They are rejected
-by the current public parser or binder.
+The following forms remain design requirements and are rejected by the current
+public parser or binder.
 
 ### Target analytic expressions
 
-The studied analytic boundary uses `COUNT`, `SUM`, `AVG` and `MIN` aggregate
-signatures followed by `OVER` inside pipe `SELECT` and `EXTEND` expressions.
-These analytic forms are not implemented:
-
-```sql
-FROM KeyValue
-|> EXTEND
-     COUNT(*) OVER () AS total_rows,
-     COUNT(*) OVER (
-       PARTITION BY value
-       ORDER BY key DESC) AS running_rows
-```
-
-An empty `OVER ()` owns an explicit full-partition `ROWS` frame from unbounded
-preceding through unbounded following. With window `ORDER BY`, the admitted
-default is `RANGE` from unbounded preceding through the current row. Partition
-and order expressions resolve against the relation immediately to the left of
-the pipe stage; aliases introduced by the same stage are not visible. Window
-order items independently record direction and effective NULL placement. They
-are execution requirements, not semantic order promised by the resulting
-relation.
-
-Analytic evaluation preserves input cardinality. Each derived output receives a
-new binder-owned identity, while ordinary `EXTEND` input outputs and ranges
-remain visible. Any analytic expression in `SELECT` or `EXTEND` clears incoming
-semantic relation order, even when its window specification has its own order; a
-later nonanalytic projection preserves that cleared state. `COUNT(*) OVER` is
-nonnullable `INT64`. Other admitted signatures retain their currently
-conservative result NULLability.
-
-The binder distinguishes scalar, reducing aggregate, and row-preserving analytic
-expressions. An ordinary aggregate call remains invalid in `SELECT`/`EXTEND`;
-`OVER` converts exactly one aggregate call to an analytic value. Aggregate and
-analytic phases cannot be nested or mixed in one expression. Analytic calls in
-`WHERE`, `AGGREGATE`, `ORDER BY`, and `LIMIT` are rejected.
+Other COUNT arguments, SUM/AVG/MIN analytics, partition expressions and window
+ORDER BY remain unsupported. The target ordered default is RANGE from unbounded
+preceding through the current row. Window order items must independently record
+direction and effective NULL placement; they do not promise semantic relation
+order. Partition and order expressions resolve against the relation immediately
+to the left of the stage. Other aggregate signatures retain their conservative
+result NULLability when admitted.
 
 Named windows, explicit frame clauses or bounds, ranking/navigation functions,
-analytic `DISTINCT`, the deprecated pipe `WINDOW` operator, structured window
-keys, and analytics execution remain unsupported. The historical syntax
-experiment does not establish an executable analytic operator or its resource
-contract.
+analytic DISTINCT, the deprecated pipe WINDOW operator and structured window keys
+also remain unsupported. Nested aggregate and analytic phases are rejected.
 
 ### Target EXISTS pipe subqueries
 

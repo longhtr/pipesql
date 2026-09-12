@@ -321,6 +321,12 @@ impl Batch {
         })
     }
 
+    pub(crate) fn has_text(&self) -> bool {
+        self.columns
+            .iter()
+            .any(|column| matches!(column.data, Data::Text(_)))
+    }
+
     /// Borrow presence bits without converting or copying the column's values.
     pub(crate) fn validity(
         &self,

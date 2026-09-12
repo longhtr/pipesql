@@ -25,7 +25,7 @@ pub(crate) const ROOT_B_NAME: &str = "ROOT.B";
 pub(crate) const WAL_NAME: &str = "WAL";
 pub(crate) const UNITS_NAME: &str = "units";
 pub(crate) const PRIVATE_NAME: &str = "private";
-pub(crate) const CATALOG_SCRATCH_NAMES: [&str; 2] = ["SCRATCH.A", "SCRATCH.B"];
+pub(crate) const SCRATCH_NAMES: [&str; 2] = ["SCRATCH.A", "SCRATCH.B"];
 pub(crate) const UNIT_NAME: &str = "0000000000000001.unit";
 pub(crate) const PRIVATE_RECOVERY_NAMES: [&str; 8] = [
     "quantity.stage",
@@ -36,6 +36,21 @@ pub(crate) const PRIVATE_RECOVERY_NAMES: [&str; 8] = [
     "linestatus.stage",
     "shipdate.stage",
     "UNIT.next",
+];
+
+// Legacy loading and query scratch have different debris rules. Keep their
+// names disjoint; only the final two entries must still be empty at recovery.
+const LEGACY_PRIVATE_NAMES: [&str; 10] = [
+    PRIVATE_RECOVERY_NAMES[0],
+    PRIVATE_RECOVERY_NAMES[1],
+    PRIVATE_RECOVERY_NAMES[2],
+    PRIVATE_RECOVERY_NAMES[3],
+    PRIVATE_RECOVERY_NAMES[4],
+    PRIVATE_RECOVERY_NAMES[5],
+    PRIVATE_RECOVERY_NAMES[6],
+    PRIVATE_RECOVERY_NAMES[7],
+    SCRATCH_NAMES[0],
+    SCRATCH_NAMES[1],
 ];
 
 pub(crate) fn create_synced_file(
@@ -114,6 +129,7 @@ enum NamespaceAccess {
         database: Option<DatabaseId>,
     },
     ReadOnly,
+    Query,
 }
 
 // Only exclusive lifecycle/writer entry points may repair persistent state.
@@ -142,6 +158,17 @@ pub(crate) fn inspect_namespace(
     effects: &mut Effects,
 ) -> Result<Namespace, Error> {
     check_namespace(root, effects, NamespaceAccess::ReadOnly, memory)
+}
+
+// Live query admission validates the immutable source and private-directory
+// identity. Another reader may be constructing disposable names; exclusive
+// reopen owns their inspection and cleanup. Writer admission remains strict.
+pub(crate) fn inspect_query_namespace(
+    root: &Path,
+    memory: &MemoryAuthority,
+    effects: &mut Effects,
+) -> Result<Namespace, Error> {
+    check_namespace(root, effects, NamespaceAccess::Query, memory)
 }
 
 struct NamespaceEntries {
@@ -299,7 +326,7 @@ enum NamespaceCleanup {
         units: ObservedDirectory,
         private: ObservedDirectory,
     },
-    Catalog {
+    Scratch {
         private: KnownEntries,
     },
 }
@@ -312,7 +339,7 @@ fn check_namespace(
 ) -> Result<Namespace, Error> {
     let authority = read_namespace_authority(root, access, effects)?;
     let contents = validate_namespace_contents(root, &authority, access, memory, effects)?;
-    if access == NamespaceAccess::ReadOnly {
+    if !matches!(access, NamespaceAccess::Recover { .. }) {
         require_settled_namespace(&authority, &contents)?;
     } else {
         recover_namespace(root, &authority, &contents, effects).map_err(|source| {
@@ -461,31 +488,8 @@ fn validate_namespace_contents(
                 MAX_CATALOG_OBJECTS,
                 effects,
             )?;
-            let cleanup = if access != NamespaceAccess::ReadOnly {
-                let private_path = joined_path(root, PRIVATE_NAME)?;
-                let pending =
-                    inspect_known_entries(&private_path, private, &CATALOG_SCRATCH_NAMES, effects)?;
-                for (index, name) in CATALOG_SCRATCH_NAMES.iter().enumerate() {
-                    if pending.found[index] {
-                        effects.before(Effect::InspectNamespaceEntry)?;
-                        let metadata =
-                            filesystem::symlink_metadata(joined_path(&private_path, name)?)
-                                .map_err(|error| {
-                                    io_error("inspect catalog scratch recovery", error)
-                                })?;
-                        // Scratch is unlinked and the directory is synced before
-                        // its first write. A retained name can only own an empty file.
-                        if !metadata.file_type().is_file()
-                            || !metadata.is_empty()
-                            || metadata.nlink() != 1
-                        {
-                            return Err(Error::Corrupt(
-                                "catalog scratch recovery ownership differs",
-                            ));
-                        }
-                    }
-                }
-                NamespaceCleanup::Catalog { private: pending }
+            let cleanup = if matches!(access, NamespaceAccess::Recover { .. }) {
+                scratch_cleanup(root, private, effects)?
             } else {
                 NamespaceCleanup::None
             };
@@ -506,12 +510,18 @@ fn validate_namespace_contents(
                 &[UNIT_NAME],
                 effects,
             )?;
-            let private_entries = inspect_known_entries(
-                &joined_path(root, PRIVATE_NAME)?,
-                private,
-                &PRIVATE_RECOVERY_NAMES,
-                effects,
-            )?;
+            let private_entries = if access == NamespaceAccess::Query {
+                KnownEntries {
+                    found: [false; 10],
+                    count: 0,
+                }
+            } else {
+                let path = joined_path(root, PRIVATE_NAME)?;
+                let entries =
+                    inspect_known_entries(&path, private, &LEGACY_PRIVATE_NAMES, effects)?;
+                validate_scratch_names(&path, [entries.found[8], entries.found[9]], effects)?;
+                entries
+            };
             (
                 0,
                 0,
@@ -540,7 +550,11 @@ fn validate_namespace_contents(
                 Some(UNIT_NAME),
                 effects,
             )?;
-            require_directory_entries(&joined_path(root, PRIVATE_NAME)?, private, None, effects)?;
+            let cleanup = if access == NamespaceAccess::Query {
+                NamespaceCleanup::None
+            } else {
+                scratch_cleanup(root, private, effects)?
+            };
             let projected_crc32c = validate_unit_metadata(
                 &joined_path(&joined_path(root, UNITS_NAME)?, UNIT_NAME)?,
                 database_id,
@@ -549,7 +563,7 @@ fn validate_namespace_contents(
                 unit_metadata_crc32c,
                 effects,
             )?;
-            (1, projected_crc32c, NamespaceCleanup::None)
+            (1, projected_crc32c, cleanup)
         }
     };
     Ok(ValidatedContents {
@@ -559,20 +573,52 @@ fn validate_namespace_contents(
     })
 }
 
+fn scratch_cleanup(
+    root: &Path,
+    private: EntryIdentity,
+    effects: &mut Effects,
+) -> Result<NamespaceCleanup, Error> {
+    let path = joined_path(root, PRIVATE_NAME)?;
+    let entries = inspect_known_entries(&path, private, &SCRATCH_NAMES, effects)?;
+    validate_scratch_names(&path, [entries.found[0], entries.found[1]], effects)?;
+    Ok(NamespaceCleanup::Scratch { private: entries })
+}
+
+fn validate_scratch_names(
+    private: &Path,
+    present: [bool; 2],
+    effects: &mut Effects,
+) -> Result<(), Error> {
+    for (name, present) in SCRATCH_NAMES.into_iter().zip(present) {
+        if present {
+            effects.before(Effect::InspectNamespaceEntry)?;
+            let metadata = filesystem::symlink_metadata(joined_path(private, name)?)
+                .map_err(|error| io_error("inspect scratch recovery", error))?;
+            // A name is removed durably before the first payload write. No
+            // nonempty named file can belong to this disposable owner.
+            if !metadata.file_type().is_file() || !metadata.is_empty() || metadata.nlink() != 1 {
+                return Err(Error::Corrupt("scratch recovery ownership differs"));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn require_settled_namespace(
     authority: &NamespaceAuthority,
     contents: &ValidatedContents,
 ) -> Result<(), Error> {
-    let abandoned_empty = match &contents.cleanup {
+    let pending_cleanup = match &contents.cleanup {
         NamespaceCleanup::LegacyEmpty { units, private } => {
             units.entries.count != 0 || private.entries.count != 0
         }
+        NamespaceCleanup::Scratch { private } => private.count != 0,
         _ => false,
     };
     if authority.repair.is_some()
         || authority.pending_roots.iter().any(|present| *present)
         || authority.fence != Some(authority.selected)
-        || abandoned_empty
+        || pending_cleanup
     {
         return Err(recovery_needed(contents.generation));
     }
@@ -603,10 +649,10 @@ fn recover_namespace(
         NamespaceCleanup::LegacyEmpty { units, private } => {
             recover_empty_mutations(root, units, private, effects)?;
         }
-        NamespaceCleanup::Catalog { private } => {
+        NamespaceCleanup::Scratch { private } => {
             remove_known_entries(
                 &joined_path(root, PRIVATE_NAME)?,
-                &CATALOG_SCRATCH_NAMES,
+                &SCRATCH_NAMES,
                 *private,
                 effects,
             )?;
@@ -937,7 +983,7 @@ fn metadata_length(
 
 #[derive(Clone, Copy)]
 pub(crate) struct KnownEntries {
-    pub(crate) found: [bool; 8],
+    pub(crate) found: [bool; 10],
     pub(crate) count: usize,
 }
 
@@ -957,7 +1003,7 @@ fn recover_empty_mutations(
     )?;
     remove_known_entries(
         &joined_path(root, PRIVATE_NAME)?,
-        &PRIVATE_RECOVERY_NAMES,
+        &LEGACY_PRIVATE_NAMES,
         private_entries,
         effects,
     )?;
@@ -995,7 +1041,10 @@ pub(crate) fn inspect_known_entries(
     allowed: &[&str],
     effects: &mut Effects,
 ) -> Result<KnownEntries, Error> {
-    assert!(allowed.len() <= 8, "recovery allowlist exceeds fixed state");
+    assert!(
+        allowed.len() <= 10,
+        "recovery allowlist exceeds fixed state"
+    );
     effects.before(Effect::InspectSubdirectory)?;
     let metadata = filesystem::symlink_metadata(path)
         .map_err(|source| io_error("inspect database subdirectory", source))?;
@@ -1008,7 +1057,7 @@ pub(crate) fn inspect_known_entries(
     let mut directory_buffer = DirectoryBuffer::default();
     let mut entries = Directory::open(path, &mut directory_buffer)
         .map_err(|source| io_error("list database subdirectory", source))?;
-    let mut found = [false; 8];
+    let mut found = [false; 10];
     let mut count = 0_usize;
     loop {
         let next = entries.next_name();

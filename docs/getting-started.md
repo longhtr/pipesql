@@ -182,6 +182,37 @@ comparison demands every input field and uses the existing bounded
 when necessary. See the [union contract](language.md#union-distinct) for scope
 and errors.
 
+## Count the complete input beside each row
+
+Run [window-count.sql](../examples/window-count.sql) against the same sales table:
+
+```sh
+target/release/pipesql query --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/window-count.sql" \
+  --memory-limit-bytes 4000000 --temp-limit-bytes 2000000
+```
+
+The query excludes the NULL amount, counts the three remaining rows and then
+orders them by amount. The decoded result rows are:
+
+| region | amount | total_rows |
+| --- | --- | --- |
+| north | 5 | 3 |
+| north | 10 | 3 |
+| south | 20 | 3 |
+
+Require `status=queried` and successful process exit. Moving LIMIT before the
+analytic stage counts only that prefix; moving it after the stage limits output
+while keeping the complete count. Analytic evaluation clears semantic order, so
+the example places ORDER BY afterward.
+
+Trace `Plan::computation_producer` in [the semantic plan](../src/frontend.rs) to
+see why ordinary expressions in this stage evaluate at its output. The
+[physical planner](../src/execution/planning/lower.rs) retains their demanded
+input values. The [sorted-input consumer](../src/execution/blocking/order.rs)
+counts captured rows, then emits each row with that count using checked scratch
+storage. It preserves cardinality instead of reducing the relation to one row.
+
 ## Finish and clean up
 
 If the program reports an error, do not treat any printed rows as a complete

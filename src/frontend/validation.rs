@@ -1,6 +1,6 @@
 //! Independent semantic-plan validation. Does not call the parser or binder.
 use super::{
-    AggregateArgument, AggregateKind, ColumnId, ColumnSet, DataType, Error, Group,
+    AggregateArgument, AggregateKind, ColumnId, ColumnSet, Computation, DataType, Error, Group,
     MAX_AGGREGATE_COLUMNS, MAX_COLUMNS, MAX_COMPUTED, MAX_ORDER_ITEMS, MAX_PROJECTIONS,
     MAX_QUERY_COLUMNS, MAX_ROW_VALUES, MAX_SOURCE_BYTES, MAX_STAGES, Name, Node, OrderKey, Output,
     Plan, RelationId, SetAssignment, SourceColumn, SourceOccurrence, Stage, initial_outputs,
@@ -339,7 +339,8 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                         .computed
                         .get(computed_cursor)
                         .ok_or(Error::Corrupt("SET definition absent"))?;
-                    if definition.column.identity() != assignment.column
+                    if matches!(definition.expression, Computation::WindowCount)
+                        || definition.column.identity() != assignment.column
                         || assignment.column.value() != next_identity
                         || definition.input != node.input
                         || definition.span.start >= definition.span.end

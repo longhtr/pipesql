@@ -258,16 +258,21 @@ requires reopen; visible missing filenames alone do not establish durability.
 Format 7 replaces catalog namespace format 6; format-6 CONTROL/ROOT/WAL records
 are rejected. Catalog object codecs retain their existing versions and layouts.
 The namespace still has one `units/` object directory and one `private/` scratch
-directory. No new persistent directory or file body format is added. Format 4
-retains its legacy private staging and recovery rules.
+directory. No new persistent directory or file body format is added. Format 4 retains its authoritative codecs and legacy loading debris rules. It
+also admits the two disposable scratch names described below; they carry no
+persistent data or commit authority.
 
-In format 7, live authoritative inspection validates the scratch directory owner
+Live query inspection in both formats validates the scratch directory owner
 without enumerating its changing disposable contents. Exclusive open validates
 the two recognized names `private/SCRATCH.A` and `private/SCRATCH.B`. Any
 surviving name must identify an empty, single-link regular file. Open removes
 these names and synchronizes the directory before returning a handle. Unknown
 names, nonempty named scratch, aliases and wrong object kinds fail closed at
-that boundary. Scratch payloads never carry recovery or commit authority.
+that boundary. Empty legacy namespaces may additionally contain the eight
+recognized loading files, whose existing recovery rules remain separate. Legacy
+writer inspection still requires settled construction state; only query
+inspection tolerates live scratch names. Scratch payloads never carry recovery
+or commit authority.
 
 A database-owned bootstrap capability serializes scratch creation without taking
 writer authority or holding a mutex across I/O. Both names are unlinked and the
@@ -281,7 +286,7 @@ reinterprets data or receipts.
 
 [`scratch::Admission`](../src/scratch.rs) owns idle, creating, and
 reopen-required states. Acquisition makes one nonblocking attempt; a competing
-constructor gets contention. `Scratch::create` checks eligibility and acquires
+constructor gets contention. `Scratch::create` checks database availability and acquires
 that capability. `create_files` performs the ordered file effects. The bootstrap
 guard records recovery debt on failure or unwind and performs no I/O in drop. A
 failure after the first namespace attempt leaves the capability unavailable

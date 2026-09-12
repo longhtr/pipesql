@@ -615,3 +615,74 @@ fn check_derived_nesting(small_stack: bool) {
             .unwrap();
     });
 }
+
+#[test]
+fn zero_field_group_results_preserve_cardinality_through_hash_fallback() {
+    let directory = Directory::new();
+    let database = database(
+        &directory,
+        &[
+            (Some(1), Some(3), 3.0),
+            (Some(1), Some(4), 4.0),
+            (Some(2), Some(7), 7.0),
+        ],
+    );
+    let query = database
+        .prepare(
+            "FROM facts |> AGGREGATE SUM(n) AS unused GROUP BY k |> SELECT COUNT(*) OVER () AS n",
+        )
+        .unwrap();
+    let cancel = CancellationToken::new();
+    let baseline = database.reserved_memory_bytes();
+    let result = database.execute(&query, &cancel).unwrap();
+    let Some(Aggregation::General(owner)) = result.first_aggregate() else {
+        panic!("general grouping");
+    };
+    let general = &owner[0];
+    assert_eq!(general.output.count, 0);
+    let retry_peak = result.accounted_memory_bytes() + crate::catalog::MAX_BYTES as u64
+        - general.memory.first().map_or(0, MemoryGroups::memory_bytes)
+        + MemoryGroups::requirement(&general.aggregate, &general.keys, 1, 9)
+            .unwrap()
+            .1;
+    drop(result);
+    let pressure = database
+        .reserve_memory(
+            database.config().memory_limit_bytes() - baseline - retry_peak,
+            "zero-field grouping fallback",
+        )
+        .unwrap();
+    let mut result = database.execute(&query, &cancel).unwrap();
+    let Some(Aggregation::General(owner)) = result.first_aggregate() else {
+        unreachable!();
+    };
+    assert_eq!(owner[0].memory.len(), 1);
+    let mut rows = 0;
+    let mut disk = false;
+    let mut done = false;
+    for _ in 0..10_000 {
+        if let Some(Aggregation::General(owner)) = result.first_aggregate() {
+            disk |= matches!(owner[0].files, Files::Open(_));
+        }
+        match result.step() {
+            QueryStep::Progress => (),
+            QueryStep::Rows(batch) => {
+                for row in 0..batch.len() {
+                    assert_eq!(batch.value(row, 0), Some(Value::Int64(2)));
+                    rows += 1;
+                }
+            }
+            QueryStep::Finished => {
+                done = true;
+                break;
+            }
+            QueryStep::Failed(error) => panic!("zero-field grouped result: {error}"),
+        }
+    }
+    assert!(done && disk);
+    assert_eq!(rows, 2);
+    drop(result);
+    drop(pressure);
+    assert_eq!(database.reserved_memory_bytes(), baseline);
+    assert_eq!(database.reserved_temp_bytes(), 0);
+}

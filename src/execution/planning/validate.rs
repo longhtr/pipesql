@@ -98,6 +98,13 @@ pub(in crate::execution) fn validate_physical(
                 order_end += usize::from(len);
                 reached[input.index()] = true;
             }
+            (
+                Producer::WindowCount { input },
+                Some(Stage::Select { .. } | Stage::Extend { .. }),
+            ) if semantic.analytic_projection(pipeline.relation) => {
+                check_input(input, node.expect("analytic node").input)?;
+                reached[input.index()] = true;
+            }
             (Producer::Distinct { input, descriptor }, Some(Stage::Distinct(expected))) => {
                 check_input(input, node.expect("DISTINCT node").input)?;
                 let bound = semantic
@@ -249,7 +256,7 @@ fn validate_computations(
         }
     }
     for definition in pipeline.computed {
-        if semantic.producer(definition.input)? == pipeline.relation {
+        if semantic.computation_producer(definition)? == pipeline.relation {
             for column in definition.expression.columns() {
                 // Unused definitions may reference undemanded materialized
                 // inputs. Every demanded dependency is checked by demand_masks.
@@ -386,12 +393,16 @@ fn value_identity(
             .find(|definition| definition.column.identity().value() == identity)
         else {
             return semantic
-                .available_columns(relation)?
+                .available_columns(if semantic.analytic_projection(relation) {
+                    semantic.node(relation)?.input
+                } else {
+                    relation
+                })?
                 .iter()
                 .find(|id| id.value() == identity)
                 .ok_or(Error::Corrupt("physical identity outside producer"));
         };
-        if semantic.producer(definition.input)? == relation
+        if semantic.computation_producer(definition)? == relation
             && let frontend::Computation::Copy(column) = &definition.expression
         {
             identity = column.identity().value();
@@ -417,12 +428,14 @@ fn identity_at(
             .computed
             .get(position - MAX_ROW_VALUES)
             .ok_or(Error::Corrupt("computed slot outside definitions"))?;
-        if semantic.producer(definition.input)? != relation {
+        if semantic.computation_producer(definition)? != relation {
             return Err(Error::Corrupt("computed slot belongs to another producer"));
         }
         if !matches!(
             definition.expression,
-            frontend::Computation::Numeric(_) | frontend::Computation::Constant(_)
+            frontend::Computation::Numeric(_)
+                | frontend::Computation::Constant(_)
+                | frontend::Computation::WindowCount
         ) {
             return Err(Error::Corrupt("typed copy mapped to numeric slot"));
         }
@@ -446,7 +459,9 @@ fn identity_at(
                     .get(usize::from(descriptor))?
                     .output_for(*id)
             }),
-        Producer::Order { input, .. } | Producer::Limit { input, .. } => pipelines
+        Producer::WindowCount { input }
+        | Producer::Order { input, .. }
+        | Producer::Limit { input, .. } => pipelines
             .get(input.index())
             .and_then(|input| input.identities[..input.column_count].get(position))
             .copied(),

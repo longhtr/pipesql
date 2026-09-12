@@ -817,6 +817,7 @@ pub(crate) enum Computation {
     Copy(SemanticColumn),
     Numeric(Expression),
     Constant(Constant),
+    WindowCount,
 }
 
 impl Computation {
@@ -824,7 +825,7 @@ impl Computation {
         let (copy, expression) = match self {
             Self::Copy(column) => (Some(*column), None),
             Self::Numeric(expression) => (None, Some(expression)),
-            Self::Constant(_) => (None, None),
+            Self::Constant(_) | Self::WindowCount => (None, None),
         };
         copy.into_iter()
             .chain(expression.into_iter().flat_map(|expression| {
@@ -843,7 +844,7 @@ impl Computation {
     pub(crate) fn numeric(&self) -> Result<&Expression, Error> {
         match self {
             Self::Numeric(expression) => Ok(expression),
-            Self::Copy(_) | Self::Constant(_) => Err(Error::Corrupt(
+            Self::Copy(_) | Self::Constant(_) | Self::WindowCount => Err(Error::Corrupt(
                 "nonnumeric computation reached a numeric kernel",
             )),
         }
@@ -854,6 +855,7 @@ impl Computation {
             Self::Copy(column) => column.data_type(),
             Self::Numeric(expression) => expression.data_type,
             Self::Constant(value) => value.data_type(),
+            Self::WindowCount => DataType::Int64,
         }
     }
 
@@ -861,7 +863,7 @@ impl Computation {
         match self {
             Self::Copy(column) => column.nullable(),
             Self::Numeric(expression) => expression.nullable(),
-            Self::Constant(_) => false,
+            Self::Constant(_) | Self::WindowCount => false,
         }
     }
 
@@ -870,6 +872,7 @@ impl Computation {
             Self::Copy(column) if available.contains(column) => Ok(()),
             Self::Copy(_) => Err(Error::Corrupt("copy input outside scope")),
             Self::Numeric(expression) => expression.validate(available),
+            Self::WindowCount => Ok(()),
             Self::Constant(value) if value.valid() => Ok(()),
             Self::Constant(_) => Err(Error::Corrupt("invalid computed constant")),
         }
@@ -1158,9 +1161,47 @@ impl Plan {
         })
     }
 
+    // A projection containing an analytic computation consumes its full input
+    // before emitting rows. Its other expressions still use the input scope,
+    // but evaluate during emission, so later LIMIT can leave them undemanded.
+    pub(crate) fn analytic_projection(&self, relation: RelationId) -> bool {
+        let Ok(node) = self.node(relation) else {
+            return false;
+        };
+        let (Stage::Select { start, len } | Stage::Extend { start, len }) = node.stage else {
+            return false;
+        };
+        let Some(outputs) = self
+            .projections
+            .get(usize::from(start)..usize::from(start) + usize::from(len))
+        else {
+            return false;
+        };
+        self.computed.iter().any(|definition| {
+            definition.input == node.input
+                && outputs.contains(&definition.column.identity())
+                && matches!(definition.expression, Computation::WindowCount)
+        })
+    }
+
+    pub(crate) fn computation_producer(&self, definition: &Computed) -> Result<RelationId, Error> {
+        for (index, node) in self.nodes().iter().enumerate() {
+            if node.input == definition.input {
+                let relation = RelationId(index as u8 + 1);
+                if self.analytic_projection(relation) {
+                    return Ok(relation);
+                }
+            }
+        }
+        self.producer(definition.input)
+    }
+
     pub(crate) fn producer(&self, mut relation: RelationId) -> Result<RelationId, Error> {
         while relation != RelationId::SOURCE {
             let node = self.node(relation)?;
+            if self.analytic_projection(relation) {
+                return Ok(relation);
+            }
             match node.stage {
                 Stage::Alias
                 | Stage::Rename
@@ -1207,6 +1248,9 @@ impl Plan {
     ) -> Result<Option<OrderKey>, Error> {
         while relation != RelationId::SOURCE {
             let node = self.node(relation)?;
+            if self.analytic_projection(relation) {
+                return Ok(None);
+            }
             match node.stage {
                 Stage::Alias
                 | Stage::Rename

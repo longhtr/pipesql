@@ -134,6 +134,12 @@ complete prepared/result owner with requested and usable extents, and checks
 release. A fresh size census alone does not establish these history-dependent
 observations.
 
+The catalog allocation campaign includes analytic count followed by ordering and
+aggregation, with an independent total of 16 for its four-row input. The native
+I/O composition campaign also consumes analytic count after a join; its existing
+result oracle checks the complete aggregate. Both retain refusal, recovery and
+healthy-reuse checks around the full sequence.
+
 The same selection runs the nullable self-join, aggregation, and ordering workload
 at 2.2 MB and 12 MB. `joined_shapes` in
 [`composed-ownership.rs`](fixtures/composed-ownership.rs) checks all 4,096 descending

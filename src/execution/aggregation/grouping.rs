@@ -127,7 +127,7 @@ impl OutputLayout {
         aggregate: &AggregateState<'_>,
     ) -> Result<Self, Error> {
         let count = plan.column_count;
-        if !(1..=MAX_ROW_VALUES).contains(&count) {
+        if count > MAX_ROW_VALUES {
             return Err(Error::Corrupt("group result width"));
         }
         let mut columns = [(DataType::Int64, false); MAX_ROW_VALUES];
@@ -165,9 +165,11 @@ impl OutputLayout {
         columns: [(DataType, bool); MAX_ROW_VALUES],
         count: usize,
     ) -> Result<Self, Error> {
-        if !(1..=MAX_ROW_VALUES).contains(&count) {
+        if count > MAX_ROW_VALUES {
             return Err(Error::Corrupt("group result width"));
         }
+        // An internal consumer can demand only group cardinality. Retain one
+        // checked frame per row even when there are no projected value fields.
         let mut bytes = RECORD_HEADER;
         let mut descriptor = [0_u8; 1 + MAX_ROW_VALUES * 2];
         descriptor[0] = count as u8;

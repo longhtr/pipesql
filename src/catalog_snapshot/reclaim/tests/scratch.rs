@@ -26,7 +26,7 @@ fn scratch_bootstrap_coexists_with_public_writer_and_pinned_reader() {
                     shared
                         .path()
                         .join(crate::namespace::PRIVATE_NAME)
-                        .join(crate::namespace::CATALOG_SCRATCH_NAMES[0])
+                        .join(crate::namespace::SCRATCH_NAMES[0])
                         .exists()
                 );
                 assert!(matches!(
@@ -409,7 +409,7 @@ fn scratch_recovery_rejects_unknown_nonempty_and_aliased_names() {
         let name = if invalid == "unknown-name" {
             "unknown"
         } else {
-            crate::namespace::CATALOG_SCRATCH_NAMES[0]
+            crate::namespace::SCRATCH_NAMES[0]
         };
         let path = private.join(name);
         if invalid == "directory" {
@@ -426,11 +426,7 @@ fn scratch_recovery_rejects_unknown_nonempty_and_aliased_names() {
             .unwrap();
         }
         if invalid == "hard-link" {
-            std::fs::hard_link(
-                &path,
-                private.join(crate::namespace::CATALOG_SCRATCH_NAMES[1]),
-            )
-            .unwrap();
+            std::fs::hard_link(&path, private.join(crate::namespace::SCRATCH_NAMES[1])).unwrap();
         }
         assert!(
             Database::open(
@@ -453,7 +449,7 @@ fn scratch_debris_does_not_authorize_cleanup_of_a_corrupt_graph() {
     let pending = directory
         .0
         .join(crate::namespace::PRIVATE_NAME)
-        .join(crate::namespace::CATALOG_SCRATCH_NAMES[0]);
+        .join(crate::namespace::SCRATCH_NAMES[0]);
     std::fs::write(&pending, []).unwrap();
     let unit = directory
         .0

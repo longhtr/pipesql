@@ -55,6 +55,7 @@ those operations are outside the original stack contract.
 | `aggregates.rs`, `grouping.rs`, `spooling.rs` | Global arithmetic and typed extrema, grouped keys, demanded errors, mixed typed results, and memory/disk output. |
 | `joins.rs`, `join_corpus.rs` | Join composition, snapshots, duplicate pairs, and the independent nullable-row oracle. |
 | `computed.rs`, `constant_projection.rs`, `boolean.rs`, `membership.rs`, `text_filter.rs`, `null_predicate.rs` | SELECT/EXTEND expression demand and scalar/predicate semantics; typed constants cover source lifetime, malformed unused values, full widths and composition; membership has an independent nullable-set model. |
+| `window_count.rs` | Full-partition cardinality, original scope, demanded errors, producer composition and typed snapshot retention. |
 | `order.rs`, `distinct.rs`, `limit.rs` | Materialization, complete-row equality, ordering, and prefix boundaries. |
 | `union.rs` | Positional ALL/DISTINCT composition, complete-row equality and original typed representatives, snapshot retention, demanded errors, full-width small-stack execution, spill/refusal, and cancellation prefixes. |
 | `wide.rs` | Full-width schemas, late columns, repeated outputs, and scan admission. |
@@ -170,3 +171,9 @@ that a test will run.
 Shared lifecycle and query scenarios run on macOS and Linux. Native-specific
 tests and stack ceilings remain platform-dependent. A successful
 build, ignored test, or empty selection must not be reported as runtime coverage.
+
+Shared scratch recovery also has [legacy namespace controls](../src/scratch/tests.rs):
+constructor refusal, process termination at creation/unlink/barrier/admission,
+reads during bootstrap, strict writer inspection and rejected corrupt debris.
+The subprocess test invokes itself at explicit cuts and requires its child exit
+status; it introduces no ignored or separately selected test.

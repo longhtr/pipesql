@@ -157,13 +157,23 @@ entry-to-state mapping to a demanded call; final SUM overflow uses the SUM
 entry's own source span. The mapping is resolved on failure, without per-row
 state, query-text reparsing or diagnostic fields in spill records.
 
-Computed numeric SELECT and EXTEND run within the existing producer: each predicate
+Nonanalytic numeric SELECT and EXTEND run within the existing producer: each predicate
 requests its dependencies for surviving rows, followed by remaining output
 requirements. In particular, aggregate final values must remain available on
 demand until those predicates finish; a projection wrapper cannot first
 materialize every aggregate output. The same checked numeric kernels must serve
 source and derived values, without parser, catalog or I/O access inside a
 kernel.
+
+SELECT or EXTEND containing full-partition count introduces a producer boundary.
+The [sorted-input consumer](../src/execution/blocking/order.rs) captures demanded
+input fields with unique ordinals and counts successful captures. After its
+checked sort completes, it emits rows with the full count. An empty key prefix
+orders the scratch records by ordinal without establishing semantic result order.
+Ordinary expressions in the same projection evaluate during emission, so a later
+LIMIT can leave their later rows undemanded. Replay retains the count and rereads
+the checked run. See the [language contract](language.md#full-partition-analytic-count)
+and [resource equation](resources.md#analytic-count-admission).
 
 Any computation cache has one charged owner and a validated row/batch lifetime.
 Its dimensions, scratch and NULL masks are admitted before use. Dependency walks

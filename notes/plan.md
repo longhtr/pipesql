@@ -51,6 +51,42 @@ their own complete implementation.
    example with fresh outputs. Reconcile discovery, remove owned artifacts and
    commit locally before closing the milestone.
 
+Parser, binding, semantic/physical mappings and runtime now implement the bounded
+count profile. The analytic projection owns evaluation of its ordinary
+expressions while their definitions retain the original binding scope. Shared
+sorted input captures demanded fields with ordinals and supplies the complete
+count during emission. Four focused public catalog tests and the legacy count
+regression pass on macOS. The initial broad development run passed 380 library
+tests; it found a grouped-cardinality defect before the later repairs, so it is
+not verification of the current tree.
+
+Concrete integration repairs remain part of this milestone:
+
+- Grouped results must carry cardinality when no output value is demanded. Their
+  zero-field internal frames retain row/header checks and do not demand unused
+  aggregate arithmetic. The public aggregate/count composition now passes.
+- Legacy sources require shared scratch eligibility plus explicit recovery of
+  empty, single-link SCRATCH.A/B debris. Query inspection must tolerate live
+  bootstrap names; writer inspection and exclusive recovery stay separate.
+  Four macOS controls now pass, including every constructor effect, fourteen
+  process-death cuts, reads during construction and rejected corrupt debris. Authoritative file codecs are unchanged.
+- A later STRING constant can give an earlier legacy producer a UTF-8 batch.
+  That producer now uses bounded cell writes; the legacy count/constant case
+  passes. A direct LIMIT/constant regression retains this separate boundary.
+- The public catalog allocation census grew from 859 to 926 calls. Its harness
+  ceiling is now 1,000 so the complete prefix sweep remains required. This
+  changes no engine memory limit. The native derived-join census with analytic
+  count observes 26 reads and three writes; controls are not failure coverage.
+
+The zero-field grouped-result regression now passes with forced hash fallback.
+Warnings-denied Clippy passes for all targets, maintenance passes with 44 codec
+fixtures and 520 local links, and the documented count example returns the three
+expected rows on macOS. Run both complete frozen gates to cover final inputs,
+including the extended grouping replay variant and the complete failure campaigns.
+Verify the example on GNU/Linux, reconcile discovery, review the final diff,
+record concise evidence, remove owned outputs and commit locally. No full gate
+has run for this milestone, and none of its new platform behavior is qualified.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete

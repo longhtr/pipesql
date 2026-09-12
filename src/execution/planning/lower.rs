@@ -54,14 +54,21 @@ pub(in crate::execution) fn lower<'db>(
             computed: &semantic.computed,
             slots: [u8::MAX; MAX_QUERY_COLUMNS + 1],
         };
-        for id in semantic.available_columns(relation)?.iter() {
-            if masks[index].contains(id) {
+        // Analytic SELECT can hide an input used by one of its expressions.
+        // Keep that raw mapping in the new producer without exposing its name.
+        let input_scope = if let Producer::WindowCount { .. } = producer {
+            semantic.node(relation)?.input
+        } else {
+            relation
+        };
+        for id in semantic.available_columns(input_scope)?.iter() {
+            if masks[usize::from(input_scope.0)].contains(id) {
                 pipeline.slots[id.value() as usize] =
                     base_position(&pipelines, semantic, producer, relation, id)?;
             }
         }
         for definition in &semantic.computed {
-            if semantic.producer(definition.input)? == relation {
+            if semantic.computation_producer(definition)? == relation {
                 let id = definition.column.identity();
                 pipeline.slots[id.value() as usize] =
                     base_position(&pipelines, semantic, producer, relation, id)?;
@@ -130,6 +137,11 @@ fn select_producer(
         Producer::Scan(0)
     } else {
         let node = semantic.node(relation)?;
+        if semantic.analytic_projection(relation) {
+            return Ok(Some(Producer::WindowCount {
+                input: lookup(node.input)?,
+            }));
+        }
         match node.stage {
             Stage::Source(source) => Producer::Scan(source),
             Stage::Distinct(descriptor) => Producer::Distinct {
@@ -247,7 +259,9 @@ fn base_position(
                 .aggregates
                 .get(usize::from(aggregate))
                 .and_then(|aggregate| aggregate.output_position(id)),
-            Producer::Order { input, .. } | Producer::Limit { input, .. } => pipelines
+            Producer::WindowCount { input }
+            | Producer::Order { input, .. }
+            | Producer::Limit { input, .. } => pipelines
                 .get(input.index())
                 .and_then(|input| input.position(id)),
             Producer::Join { left, right, .. } => {
@@ -265,7 +279,12 @@ fn base_position(
             }
         };
         if let Some(position) = position {
-            if position >= MAX_ROW_VALUES || !semantic.available_columns(relation)?.contains(id) {
+            let scope = if matches!(producer, Producer::WindowCount { .. }) {
+                semantic.node(relation)?.input
+            } else {
+                relation
+            };
+            if position >= MAX_ROW_VALUES || !semantic.available_columns(scope)?.contains(id) {
                 return Err(Error::Corrupt("physical producer position outside its row"));
             }
             return Ok(position as u8);
@@ -276,13 +295,15 @@ fn base_position(
             .enumerate()
             .find(|(_, definition)| {
                 definition.column.identity() == id
-                    && semantic.producer(definition.input).ok() == Some(relation)
+                    && semantic.computation_producer(definition).ok() == Some(relation)
             })
             .ok_or(Error::Corrupt(
                 "physical producer does not provide demanded identity",
             ))?;
         match &definition.expression {
-            frontend::Computation::Numeric(_) | frontend::Computation::Constant(_) => {
+            frontend::Computation::Numeric(_)
+            | frontend::Computation::Constant(_)
+            | frontend::Computation::WindowCount => {
                 return Ok((MAX_ROW_VALUES + index) as u8);
             }
             frontend::Computation::Copy(column) => id = column.identity(),

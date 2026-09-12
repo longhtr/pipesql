@@ -17,7 +17,7 @@ The library creates declared tables, appends typed batches, and queries
 immutable snapshots. One serialized writer can coexist with snapshot readers.
 Queries support SELECT and EXTEND projections, SET replacements, DROP and RENAME,
 STRING/NULL/Boolean filters, COUNT/SUM/AVG/MIN/MAX,
-grouped and repeated aggregation, full-row DISTINCT, equality joins, ORDER BY,
+grouped and repeated aggregation, full-partition analytic count, full-row DISTINCT, equality joins, ORDER BY,
 LIMIT/OFFSET, positional UNION ALL and UNION DISTINCT, and independent FROM/JOIN
 subqueries. Grouping has memory and spill paths; joins, ordering, and DISTINCT use shared sorting. Reclamation
 preserves pinned queries and commit receipts.

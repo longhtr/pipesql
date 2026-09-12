@@ -433,6 +433,7 @@ fn bind_expression(
             ParsedOp::Multiply => Op::Multiply,
             ParsedOp::Negate => Op::Negate,
             ParsedOp::Empty
+            | ParsedOp::WindowCount
             | ParsedOp::String(_)
             | ParsedOp::Date(_)
             | ParsedOp::DateInterval { .. }
@@ -1282,6 +1283,12 @@ impl Binder<'_, '_> {
             } else {
                 self.bind_computation(&syntax)?
             };
+            if matches!(expression, Computation::WindowCount) {
+                return Err(bind_error(
+                    "analytic expressions require SELECT or EXTEND",
+                    syntax.span,
+                ));
+            }
             let column = SemanticColumn::new(
                 self.next_identity,
                 expression.data_type(),
@@ -1410,6 +1417,7 @@ impl Binder<'_, '_> {
     fn bind_computation(&self, syntax: &ParsedExpression) -> Result<Computation, Error> {
         let ops = &syntax.ops[..usize::from(syntax.len)];
         let constant = match ops {
+            [ParsedOp::WindowCount] => return Ok(Computation::WindowCount),
             [ParsedOp::String(span)] => {
                 let (value, _) = crate::text_literal::TextLiteral::parse(text(self.source, *span))
                     .map_err(|message| bind_error(message, *span))?;

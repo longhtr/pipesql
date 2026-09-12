@@ -175,6 +175,7 @@ impl<'db> Runtime<'db> {
             let inputs = match pipeline.producer {
                 Producer::Scan(_) => [None, None],
                 Producer::Aggregate { input, .. }
+                | Producer::WindowCount { input }
                 | Producer::Order { input, .. }
                 | Producer::Distinct { input, .. }
                 | Producer::Limit { input, .. } => [Some(input), None],
@@ -217,6 +218,13 @@ impl<'db> Runtime<'db> {
             let owner = match pipeline.producer {
                 Producer::Limit { bounds, .. } => Owner::Limit {
                     limit: limit::Limit::new(bounds),
+                    output: producer_output(database, query, pipeline)?,
+                },
+                Producer::WindowCount { input } => Owner::Order {
+                    order: blocking::order::Order::window_count(
+                        database,
+                        plan.pipelines()[input.index()].output_columns(&query.plan),
+                    )?,
                     output: producer_output(database, query, pipeline)?,
                 },
                 Producer::Scan(0) | Producer::Aggregate { aggregate: 0, .. } => Owner::Vacant,
@@ -267,6 +275,7 @@ impl<'db> Runtime<'db> {
                 }
                 Producer::Aggregate { .. } if matches!(node.owner, Owner::Aggregate(_)) => (),
                 Producer::Limit { .. } if matches!(node.owner, Owner::Limit { .. }) => (),
+                Producer::WindowCount { .. } if matches!(node.owner, Owner::Order { .. }) => (),
                 _ => return Err(Error::Corrupt("legacy owners disagree with producers")),
             }
         }
@@ -300,6 +309,7 @@ impl<'db> Runtime<'db> {
                 Producer::Aggregate { .. }
                 | Producer::Join { .. }
                 | Producer::UnionAll { .. }
+                | Producer::WindowCount { .. }
                 | Producer::Order { .. }
                 | Producer::Distinct { .. }
                 | Producer::Limit { .. } => {
@@ -323,6 +333,12 @@ impl<'db> Runtime<'db> {
                             database,
                             plan.pipelines()[input.index()].output_columns(&query.plan),
                             plan.order_columns(start, len),
+                        )?;
+                        Owner::Order { order, output }
+                    } else if let Producer::WindowCount { input } = pipeline.producer {
+                        let order = blocking::order::Order::window_count(
+                            database,
+                            plan.pipelines()[input.index()].output_columns(&query.plan),
                         )?;
                         Owner::Order { order, output }
                     } else if let Producer::Distinct { input, .. } = pipeline.producer {
@@ -626,6 +642,7 @@ impl<'db> Runtime<'db> {
                 cursor.advance(output, pipeline, cancel, effects)?
             }
             Producer::Aggregate { input, .. }
+            | Producer::WindowCount { input }
             | Producer::Order { input, .. }
             | Producer::Distinct { input, .. }
             | Producer::Limit { input, .. } => {
@@ -650,7 +667,9 @@ impl<'db> Runtime<'db> {
                         limit.step(supplied, output, pipeline, cancel)?
                     }
                     (
-                        Producer::Order { .. } | Producer::Distinct { .. },
+                        Producer::Order { .. }
+                        | Producer::Distinct { .. }
+                        | Producer::WindowCount { .. },
                         Owner::Order { order, output },
                     ) => order[0].step(supplied, output, pipeline, cancel, effects)?,
                     (Producer::Aggregate { aggregate, .. }, Owner::Aggregate(output)) => match self

@@ -91,6 +91,7 @@ pub(super) enum ParsedOp {
     Column(SourceSpan),
     String(SourceSpan),
     Date(SourceSpan),
+    WindowCount,
     // Separate interval and unit tokens keep every operation within eight
     // bytes; DATE support must not enlarge the shared parser arena.
     DateInterval {
@@ -459,6 +460,41 @@ impl Parser<'_> {
         let date = (self.is_word("DATE") && next == Some(Kind::Quoted))
             || ((self.is_word("DATE_ADD") || self.is_word("DATE_SUB"))
                 && next == Some(Kind::LeftParen));
+        if self.is_word("COUNT") && next == Some(Kind::LeftParen) {
+            let count = self.take(Kind::Identifier)?;
+            self.take(Kind::LeftParen)?;
+            self.take(Kind::Star)?;
+            self.take(Kind::RightParen)?;
+            if !self.is_word("OVER") {
+                return Err(Error::Parse {
+                    message: "projection COUNT requires OVER ()",
+                    span: count,
+                });
+            }
+            self.position += 1;
+            self.take(Kind::LeftParen)?;
+            if self.peek() != Kind::RightParen {
+                return Err(Error::Parse {
+                    message: "only an empty analytic window is admitted",
+                    span: if self.position == self.tokens.len {
+                        span(self.end, self.end)
+                    } else {
+                        self.tokens.values[self.position].span
+                    },
+                });
+            }
+            self.take(Kind::RightParen)?;
+            for _ in 0..parentheses {
+                self.take(Kind::RightParen)?;
+            }
+            let mut expression = ParsedExpression::EMPTY;
+            expression.push(ParsedOp::WindowCount, count)?;
+            expression.span = span(
+                usize::from(self.tokens.values[first].span.start),
+                usize::from(self.tokens.values[self.position - 1].span.end),
+            );
+            return Ok(expression);
+        }
         if self.peek() != Kind::Quoted && !date {
             self.position = first;
             return self.numeric_expression();
@@ -1122,6 +1158,42 @@ pub(super) fn parse_query(source: &str) -> Result<Parsed, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_partition_count_has_one_bounded_projection_operation() {
+        for stage in ["SELECT", "EXTEND"] {
+            let sql = format!("FROM facts |> {stage} amount, (COUNT(*) OVER ()) AS n, 1+2 AS next");
+            let parsed = parse_query(&sql).unwrap();
+            assert_eq!(parsed.projection_count, 3);
+            let expression = parsed.expression(parsed.projections[1].expression).unwrap();
+            assert_eq!(expression.len, 1);
+            assert!(matches!(expression.ops[0], ParsedOp::WindowCount));
+            assert_eq!(text(&sql, expression.span), "(COUNT(*) OVER ())");
+        }
+    }
+
+    #[test]
+    fn analytic_syntax_rejects_other_windows_arguments_and_expression_mixing() {
+        for expression in [
+            "COUNT(amount) OVER ()",
+            "SUM(amount) OVER ()",
+            "COUNT(*)",
+            "COUNT(*) OVER (PARTITION BY amount)",
+            "COUNT(*) OVER (ORDER BY amount)",
+            "COUNT(*) OVER (ROWS UNBOUNDED PRECEDING)",
+            "COUNT(*) OVER ()+1",
+            "1+COUNT(*) OVER ()",
+            "COUNT(COUNT(*) OVER ()) OVER ()",
+        ] {
+            let sql = format!("FROM facts |> SELECT {expression}");
+            assert!(parse_query(&sql).is_err(), "{sql}");
+        }
+        let sql = "FROM facts |> SELECT COUNT(*) OVER (";
+        let Err(Error::Parse { span, .. }) = parse_query(sql) else {
+            panic!("unfinished window must reject");
+        };
+        assert_eq!((span.start(), span.end()), (sql.len(), sql.len()));
+    }
 
     #[test]
     fn union_arguments_restore_nested_continuations_and_spans() {

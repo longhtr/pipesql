@@ -290,6 +290,31 @@ below. It can require temporary storage even when UNION ALL would stream. All
 comparison fields remain demanded regardless of later projection. It adds no
 new resource account, spool implementation, or replay authority.
 
+## Analytic count admission
+
+Each SELECT or EXTEND containing `COUNT(*) OVER ()` owns one physical producer,
+one sorted input and one output batch. Repeated counts share that input owner
+while retaining separate computation identities. Preparation uses the existing
+bounded computation vector; there is no new descriptor allocation. Ordinary
+expressions use the stage's input scope but evaluate at this producer's output.
+
+The sorted input retains only demanded input values. It has no semantic sort
+keys: unique input ordinals determine replay order. Its frame, run, I/O and
+scratch owners use the [sorted-input equation](#join-ordering-and-distinct-admission)
+with `K = 0`. Even a count-only projection writes ordinal records; an empty input
+writes no row records and emits no rows. The current path admits at most
+134,217,728 input rows per analytic stage, and refuses additional rows with a
+resource error. The INT64 count is the number of successfully captured rows.
+
+All retained minima are admitted before source I/O and optional aggregate growth.
+Capture, spill, merge, load and emission use the existing bounded sort steps and
+cancellation checks. Emission evaluates at most one row per step; downstream
+LIMIT can stop further evaluation. Grouping replay reads the retained checked
+run and reuses the complete count. Scratch extents remain charged until query
+cleanup. Completion, refusal, cancellation, failure and early drop follow the
+same release path as ordering. This does not establish arbitrary-allocator or
+whole-process/RSS bounds.
+
 ## Join, ordering and DISTINCT admission
 
 DISTINCT uses one complete-row sorted-input owner with every unique field as a

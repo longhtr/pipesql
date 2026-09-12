@@ -60,6 +60,9 @@ impl OrderColumn {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Producer {
     Scan(u8),
+    WindowCount {
+        input: PipelineId,
+    },
     UnionAll {
         left: PipelineId,
         right: PipelineId,
@@ -160,17 +163,19 @@ impl<'db> PhysicalPlan<'db> {
             .plan
             .nodes()
             .iter()
-            .filter(|node| {
-                matches!(
-                    node.stage,
-                    Stage::Source(_)
-                        | Stage::Aggregate(_)
-                        | Stage::Distinct(_)
-                        | Stage::Join { .. }
-                        | Stage::UnionAll { .. }
-                        | Stage::Order { .. }
-                        | Stage::Limit(_)
-                )
+            .enumerate()
+            .filter(|(index, node)| {
+                query.plan.analytic_projection(RelationId(*index as u8 + 1))
+                    || matches!(
+                        node.stage,
+                        Stage::Source(_)
+                            | Stage::Aggregate(_)
+                            | Stage::Distinct(_)
+                            | Stage::Join { .. }
+                            | Stage::UnionAll { .. }
+                            | Stage::Order { .. }
+                            | Stage::Limit(_)
+                    )
             })
             .count()
     }
@@ -239,6 +244,7 @@ fn pipeline_end(plan: &frontend::Plan, mut relation: RelationId) -> RelationId {
     // unary stages fuse; crossing an aggregate or join changes the row producer.
     for (index, node) in plan.nodes().iter().enumerate() {
         if node.input == relation
+            && !plan.analytic_projection(RelationId(index as u8 + 1))
             && matches!(
                 node.stage,
                 Stage::Alias

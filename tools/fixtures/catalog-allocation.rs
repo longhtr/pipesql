@@ -12,7 +12,7 @@ use std::path::Path;
 
 const FIRST: &str = "first 雪";
 // Bounds campaign work, not engine memory. Every measured prefix is exercised.
-pub(super) const ALLOCATION_LIMIT: usize = 900;
+pub(super) const ALLOCATION_LIMIT: usize = 1000;
 const SECOND: &str = "next \t\n";
 const QUERY: &str = "FROM facts |> SELECT note,amount";
 const COLUMNS: [ColumnDeclaration<'static>; 3] = [
@@ -37,6 +37,7 @@ const GROUPED: &str = "FROM facts |> EXTEND amount+0 AS adjusted |> SET note=not
 const DISTINCT: &str = "FROM facts |> SELECT note,amount |> DISTINCT";
 const UNION: &str = "FROM facts |> SELECT note,amount |> UNION ALL (FROM facts |> SELECT note,amount) |> ORDER BY note,amount |> AGGREGATE COUNT(*) AS n";
 const UNION_DISTINCT: &str = "FROM facts |> SELECT note,amount |> UNION DISTINCT (FROM facts |> SELECT note,amount) |> AGGREGATE COUNT(*) AS n";
+const WINDOW: &str = "FROM facts |> EXTEND COUNT(*) OVER () AS n |> WHERE n=4 |> ORDER BY note,amount |> AGGREGATE SUM(n) AS total";
 const REPEATED: &str = "FROM facts |> AGGREGATE COUNT(*) AS n GROUP BY note |> AGGREGATE SUM(n) AS subtotal GROUP BY n |> AGGREGATE SUM(subtotal) AS total,COUNT(*) AS distinct_sizes";
 fn consume_repeated(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(), Error> {
     let mut seen = false;
@@ -472,6 +473,13 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
             phase = "union-distinct-step";
             consume_count(result, 3)?;
             drop(union_distinct);
+            phase = "window-prepare";
+            let window = db.prepare(WINDOW)?;
+            phase = "window-execute";
+            let result = db.execute(&window, &cancel)?;
+            phase = "window-step";
+            consume_count(result, 16)?;
+            drop(window);
             phase = "distinct-prepare";
             let distinct = db.prepare(DISTINCT)?;
             phase = "distinct-execute";

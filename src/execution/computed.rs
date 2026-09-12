@@ -18,6 +18,7 @@ pub(super) const ROW_SCRATCH_BYTES: u64 =
 pub(super) struct RowValues<'a, 'query, F> {
     plan: &'a Pipeline<'query>,
     raw: F,
+    partition_count: Option<u64>,
     // No heap owner or retained replay state. None keeps direct projections on
     // their existing path; the bounded cache is initialized on first computation.
     cache: Option<[Option<Option<u64>>; MAX_COMPUTED]>,
@@ -28,8 +29,14 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
         Self {
             plan,
             raw,
+            partition_count: None,
             cache: None,
         }
+    }
+
+    pub(super) fn with_partition_count(mut self, count: u64) -> Self {
+        self.partition_count = Some(count);
+        self
     }
 
     pub(super) fn value<'row>(&mut self, slot: u8) -> Result<Value<'row>, Error>
@@ -59,6 +66,15 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
                 continue;
             }
             let current = &self.plan.computed[index];
+            if matches!(current.expression, Computation::WindowCount) {
+                let count = self
+                    .partition_count
+                    .ok_or(Error::Corrupt("analytic count outside its producer"))?;
+                let count = i64::try_from(count)
+                    .map_err(|_| Error::Corrupt("analytic count exceeds INT64"))?;
+                cache[index] = Some(Some(count as u64));
+                continue;
+            }
             let expression = current.expression.numeric()?;
             let mut columns = [None; MAX_OPS];
             let mut bits = [[0_u64; 1]; MAX_OPS];

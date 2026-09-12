@@ -166,8 +166,15 @@ own source spans; source catalog ordinals are not a representation for derived
 values. Names and types remain checked even when later demand removes the value.
 `language.md` owns row demand and the distinct preparation-time constant rules.
 
+A projection containing analytic count is a producer boundary. Each definition
+still records its input relation for binding scope. `Plan::computation_producer`
+locates the analytic projection that owns evaluation; other computations retain
+their ordinary input producer. This distinction lets the count consume all input
+rows while ordinary expressions run only on demanded output rows. The semantic
+validator independently checks each definition against its projection and input.
+
 The binder's order-transfer policy is owned by `language.md`. In particular,
-WHERE preserves established order in PipeSQL. SELECT can hide an order key
+WHERE preserves established order in PipeSQL. Nonanalytic SELECT can hide an order key
 without making it visible for later name resolution. Ordering metadata must keep
 the original identity and must not be rebuilt from output positions or aliases.
 

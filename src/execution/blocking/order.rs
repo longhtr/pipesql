@@ -1,4 +1,4 @@
-//! Bounded standalone ordering over the shared checked sorted-input owner.
+//! Ordering, duplicate removal and full-partition count over checked sorted input.
 use super::{RowLayout, SortPhase, SortedInput, append_bytes};
 use crate::batch::Batch;
 use crate::effects::Effects;
@@ -27,11 +27,18 @@ enum Phase {
     Failed,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Order,
+    Distinct,
+    WindowCount,
+}
+
 pub(in crate::execution) struct Order<'db> {
     input: SortedInput<'db>,
     phase: Phase,
     replayed: bool,
-    distinct: bool,
+    mode: Mode,
     reservation: Reservation<'db>,
 }
 
@@ -50,7 +57,7 @@ impl<'db> Order<'db> {
             nulls: NullPlacement::First,
         });
         let mut owner = Self::new(database, inputs, &keys[..count])?;
-        owner[0].distinct = true;
+        owner[0].mode = Mode::Distinct;
         Ok(owner)
     }
 
@@ -59,7 +66,19 @@ impl<'db> Order<'db> {
         inputs: impl Iterator<Item = SemanticColumn>,
         keys: &[planning::OrderColumn],
     ) -> Result<Vec<Self>, Error> {
-        let layout = RowLayout::for_order(inputs, keys)?;
+        Self::with_layout(database, RowLayout::for_order(inputs, keys)?)
+    }
+
+    pub(in crate::execution) fn window_count(
+        database: &'db Database,
+        inputs: impl Iterator<Item = SemanticColumn>,
+    ) -> Result<Vec<Self>, Error> {
+        let mut owner = Self::with_layout(database, RowLayout::for_partition(inputs)?)?;
+        owner[0].mode = Mode::WindowCount;
+        Ok(owner)
+    }
+
+    fn with_layout(database: &'db Database, layout: RowLayout) -> Result<Vec<Self>, Error> {
         let reservation = database.reserve_memory(
             (size_of::<Self>() - size_of::<SortedInput<'_>>()) as u64,
             "order controller",
@@ -75,7 +94,7 @@ impl<'db> Order<'db> {
             input,
             phase: Phase::Create,
             replayed: false,
-            distinct: false,
+            mode: Mode::Order,
             reservation,
         });
         Ok(owner)
@@ -215,8 +234,8 @@ impl<'db> Order<'db> {
                 if comparison.is_some_and(|(keys, ordinal)| keys.then(ordinal) != Ordering::Less) {
                     return Err(Error::Corrupt("order output is not monotonic"));
                 }
-                let duplicate =
-                    self.distinct && comparison.is_some_and(|(keys, _)| keys == Ordering::Equal);
+                let duplicate = self.mode == Mode::Distinct
+                    && comparison.is_some_and(|(keys, _)| keys == Ordering::Equal);
                 rows.previous_key.clear();
                 append_bytes(
                     rows.previous_key,
@@ -231,6 +250,9 @@ impl<'db> Order<'db> {
                         .ok_or(Error::Corrupt("order output position"))
                 };
                 let mut evaluated = RowValues::new(plan, value);
+                if self.mode == Mode::WindowCount {
+                    evaluated = evaluated.with_partition_count(self.input.ordinal);
+                }
                 // Duplicate rows cannot demand expressions or filters after DISTINCT.
                 let retained = !duplicate && evaluated.retains()?;
                 if retained {

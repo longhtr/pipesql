@@ -3,7 +3,7 @@
 use crate::effects::{DirectoryKind, Effect, Effects, LoadEffect, QueryEffect};
 use crate::error::{io_error, recovery_needed};
 use crate::namespace::{
-    CATALOG_SCRATCH_NAMES, PRIVATE_NAME, inspect_known_entries, sync_directory, validate_directory,
+    PRIVATE_NAME, SCRATCH_NAMES, inspect_known_entries, sync_directory, validate_directory,
 };
 use crate::path::{MAX_PATH_BYTES, joined_path};
 use crate::resources::Reservation;
@@ -118,11 +118,6 @@ impl<'a> Scratch<'a> {
         paths: Option<Reservation<'a>>,
     ) -> Result<Self, Error> {
         cancel.check()?;
-        if database.catalog_registry().is_none() {
-            return Err(Error::Unsupported(
-                "catalog scratch requires declared-table storage",
-            ));
-        }
         if database.needs_reopen() {
             return Err(recovery_needed(database.generation()));
         }
@@ -163,13 +158,13 @@ impl<'a> Scratch<'a> {
         };
         let private = joined_path(database.path(), PRIVATE_NAME)?;
         let identity = validate_directory(&private, effects)?;
-        let pending = inspect_known_entries(&private, identity, &CATALOG_SCRATCH_NAMES, effects)?;
+        let pending = inspect_known_entries(&private, identity, &SCRATCH_NAMES, effects)?;
         if pending.count != 0 {
             bootstrap.requires_recovery = true;
             return Err(Error::Corrupt("scratch bootstrap found unresolved names"));
         }
         let mut files: [Option<File>; 2] = [None, None];
-        for (slot, name) in CATALOG_SCRATCH_NAMES.iter().enumerate() {
+        for (slot, name) in SCRATCH_NAMES.iter().enumerate() {
             cancel.check()?;
             let path = joined_path(&private, name)?;
             bootstrap.requires_recovery = true;
@@ -326,3 +321,6 @@ impl Drop for Scratch<'_> {
             .release(self.extents[0] + self.extents[1]);
     }
 }
+
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+mod tests;

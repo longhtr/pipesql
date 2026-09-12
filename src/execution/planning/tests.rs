@@ -695,3 +695,57 @@ fn constant_slots_preserve_identity_across_materialization() {
         );
     }
 }
+
+#[test]
+fn analytic_input_slots_and_evaluation_boundary_are_validated() {
+    let directory = Directory(
+        std::env::temp_dir().join(format!("pipesql-physical-analytic-{}", std::process::id())),
+    );
+    let db = Database::create_empty(
+        &directory.0,
+        crate::Config::new(4_000_000, 2_000_000).unwrap(),
+    )
+    .unwrap();
+    db.declare_table(
+        "facts",
+        &["a", "b"].map(|name| crate::ColumnDeclaration {
+            name,
+            data_type: DataType::Int64,
+            nullable: false,
+        }),
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    let query = db
+        .prepare("FROM facts |> SELECT a+1 AS next,COUNT(*) OVER () AS n |> WHERE n>0 |> LIMIT 1")
+        .unwrap();
+    for mutation in 0..7 {
+        let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
+        assert_eq!(plan.pipelines.len(), 3);
+        assert_eq!(plan.pipelines[0].column_count, 1);
+        assert_eq!(plan.pipelines[0].columns[0], 0);
+        assert_eq!(
+            plan.pipelines[1].columns[..2],
+            [MAX_ROW_VALUES as u8, (MAX_ROW_VALUES + 1) as u8]
+        );
+        match mutation {
+            0 => (),
+            1 => {
+                plan.pipelines[1].producer = Producer::WindowCount {
+                    input: PipelineId(1),
+                }
+            }
+            2 => plan.pipelines[1].slots[1] = 1,
+            3 => plan.pipelines[1].slots[1] = u8::MAX,
+            4 => plan.pipelines[1].columns[1] = 0,
+            5 => plan.pipelines[1].filters[0].column = 0,
+            6 => plan.pipelines[0].columns[0] = MAX_ROW_VALUES as u8,
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            validate_physical(&plan, &query, &db, RootState::Empty, 0).is_ok(),
+            mutation == 0,
+            "analytic mutation {mutation}"
+        );
+    }
+}
