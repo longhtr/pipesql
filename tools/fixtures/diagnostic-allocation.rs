@@ -264,6 +264,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ownership::grouped_allocation_shapes();
         return Ok(());
     }
+    if mode == "legacy-constant-shapes" || mode == "legacy-constant-attribution-negative" {
+        return ownership::legacy_constant_shapes(
+            &root,
+            mode == "legacy-constant-attribution-negative",
+        );
+    }
     if mode == "reader-allocation-shapes" {
         return ownership::reader_shapes(&root);
     }

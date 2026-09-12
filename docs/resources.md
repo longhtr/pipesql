@@ -104,6 +104,11 @@ platforms and concrete limits.
 
 ## Query preparation
 
+Computation descriptors retain their logical count separately from allocated
+capacity. Large vectors use the existing native buffer-capacity geometry, rounded
+down to whole descriptor slots. Admission includes every requested slot; the
+independent allocation allowance remains 4,096 bytes per retained vector.
+
 Prepared queries reserve their handle, immutable heap-owned plan, and any
 aggregate descriptor, aggregate entry and computation vectors. Each allocation
 includes a 4,096-byte allocator allowance. Running queries borrow that plan.
@@ -200,6 +205,10 @@ charge and the per-step row-computation scratch allowance. It excludes
 separately owned physical-plan, workspace, and aggregate allocations. The
 scratch charge is released at completion or failure; the terminal handle retains
 only its own size.
+
+The query's accounted-memory report includes every live hash text reservation.
+During growth this includes both the retained arena and its replacement; copying
+must finish before the old allocation and reservation are released.
 
 A text batch keeps its String and span-vector handles inline in the column.
 Its separately allocated 256 start/end span pairs occupy 2,048 bytes; the text

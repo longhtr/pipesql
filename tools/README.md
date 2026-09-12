@@ -109,6 +109,11 @@ limits. It checks reader usable extents against admission, including one- and
 values. Each case checks complete nullable results, duplicate counts and final
 release. GNU/Linux additionally runs fresh callers with fixed 128-KiB and 64-MiB
 mmap thresholds, with observed allocator controls before the reader cases.
+Legacy lineitem cases check one/64-column fixed keys, empty and 32-byte UTF-8
+constants over two full batches, and global/grouped text extrema. They reconcile
+requested allocations with independently derived scan and aggregate charges at
+admission and output, then check complete release. A wrong attribution term must
+fail. Both pathname lengths run through the same selection.
 Composed-reader bound failures are reported after the
 barrier participants join. This selection also checks the complete append
 allocation-size ranges and full-width maximum-column growth, reuse, publication,

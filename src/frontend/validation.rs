@@ -98,7 +98,20 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
     }
     let mut next_identity = u32::from(plan.source_count) + 1;
     let mut computed_cursor = 0;
-    if plan.computed.len() > MAX_COMPUTED || plan.computed.capacity() != plan.computed.len() {
+    if plan.computed.len() > MAX_COMPUTED {
+        return Err(Error::Corrupt("computed definition capacity"));
+    }
+    // Validate physical capacity independently of binder allocation. Large
+    // vectors end in whole slots below a 16-KiB boundary with 32 bytes of
+    // allocator headroom; this padding never contributes semantic definitions.
+    let width = std::mem::size_of::<super::Computed>();
+    let payload = plan.computed.len() * width;
+    let capacity = if payload <= 16_384 {
+        plan.computed.len()
+    } else {
+        ((payload + 32).div_ceil(16_384) * 16_384 - 32) / width
+    };
+    if plan.computed.capacity() != capacity {
         return Err(Error::Corrupt("computed definition capacity"));
     }
     let mut projection_cursor = 0;

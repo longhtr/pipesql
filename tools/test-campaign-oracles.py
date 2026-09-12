@@ -116,6 +116,10 @@ class AllocationInterpretation(unittest.TestCase):
                 ALLOCATION["check_ownership"](Path("unused"), run, failures)
             self.assertEqual("incomplete joined allocation ownership checks" in failures, missing)
             self.assertIn((("joined-shapes", "joined-shapes"), {}), run.call_args_list)
+            self.assertIn((("legacy-constant-shapes", "legacy-constants-path384", 384), {}),
+                          run.call_args_list)
+            self.assertEqual(sum(message.startswith("incomplete legacy constant allocation checks:")
+                                 for message in failures), 2)
             # A zero exit and other completion markers cannot stand in for
             # observing each explicitly selected native allocation regime.
             self.assertEqual(sum(message.startswith("missing reader allocator control:")

@@ -733,11 +733,13 @@ fn compact_text_growth_preserves_values_and_releases_both_buffers_on_cancellatio
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum Scenario {
         Complete,
+        ExactGrowth,
         CancelGrowth,
         RefuseGrowth,
     }
     for scenario in [
         Scenario::Complete,
+        Scenario::ExactGrowth,
         Scenario::CancelGrowth,
         Scenario::RefuseGrowth,
     ] {
@@ -765,12 +767,16 @@ fn compact_text_growth_preserves_values_and_releases_both_buffers_on_cancellatio
                 .evaluate(&mut aggregate, &input, 0..1, &cancel)
                 .unwrap();
             groups.begin(&arguments).unwrap();
-            if scenario == Scenario::RefuseGrowth && index == 1 {
+            if matches!(scenario, Scenario::ExactGrowth | Scenario::RefuseGrowth) && index == 1 {
+                // Two 32-KiB extrema already occupy the arena. Two new
+                // 64-KiB slots require a 256-KiB replacement while it lives.
+                let available = 262_144 - u64::from(scenario == Scenario::RefuseGrowth);
                 pressure = Some(
                     database
                         .reserve_memory(
                             database.config().memory_limit_bytes()
-                                - database.reserved_memory_bytes(),
+                                - database.reserved_memory_bytes()
+                                - available,
                             "competing text growth",
                         )
                         .unwrap(),
@@ -801,6 +807,10 @@ fn compact_text_growth_preserves_values_and_releases_both_buffers_on_cancellatio
                             + groups.text_reservation.as_ref().unwrap().bytes()
                             + growth.reservation.bytes()
                     );
+                    assert_eq!(
+                        database.reserved_memory_bytes() - before,
+                        groups.memory_bytes()
+                    );
                     let stopped = CancellationToken::new();
                     stopped.cancel();
                     assert!(matches!(
@@ -810,7 +820,13 @@ fn compact_text_growth_preserves_values_and_releases_both_buffers_on_cancellatio
                     assert_eq!(groups.phase, Phase::Failed);
                     break;
                 }
-                match groups.step(&input, &arguments, &keys, &cancel).unwrap() {
+                let step = groups.step(&input, &arguments, &keys, &cancel).unwrap();
+                assert_eq!(
+                    database.reserved_memory_bytes() - before,
+                    groups.memory_bytes() + pressure.as_ref().map_or(0, Reservation::bytes),
+                    "reported ownership includes both text buffers during growth"
+                );
+                match step {
                     HashStep::Progress => {}
                     HashStep::Complete => {
                         complete = true;
@@ -824,7 +840,7 @@ fn compact_text_growth_preserves_values_and_releases_both_buffers_on_cancellatio
                     }
                 }
             }
-            if index == 1 && scenario != Scenario::Complete {
+            if index == 1 && matches!(scenario, Scenario::CancelGrowth | Scenario::RefuseGrowth) {
                 break;
             }
             assert!(
@@ -832,7 +848,7 @@ fn compact_text_growth_preserves_values_and_releases_both_buffers_on_cancellatio
                 "the captured row must finish within the growth bound"
             );
         }
-        if scenario == Scenario::Complete {
+        if matches!(scenario, Scenario::Complete | Scenario::ExactGrowth) {
             groups.load_group(0, &mut aggregate).unwrap();
             assert_eq!(
                 aggregate.value(0, 0).unwrap(),

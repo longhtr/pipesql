@@ -521,7 +521,14 @@ impl<'db> MemoryGroups<'db> {
     }
 
     pub(super) fn memory_bytes(&self) -> u64 {
+        // Growth owns a separate reservation and keeps the old arena alive
+        // until copying finishes. Report both throughout that overlap.
         self.reservation.bytes()
+            + self.text_reservation.as_ref().map_or(0, Reservation::bytes)
+            + self
+                .text_growth
+                .as_ref()
+                .map_or(0, |growth| growth.reservation.bytes())
     }
 
     pub(super) fn begin_order(&mut self) -> Result<(), Error> {

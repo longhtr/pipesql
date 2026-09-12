@@ -12,6 +12,194 @@ const ROWS: usize = 4096;
 const MEMORY: u64 = 4_000_000;
 const TEMP: u64 = 8_000_000;
 
+// Legacy scan attribution derives from its explicit fixed reservation. The
+// arena and typed batch allocations are charged at their requested extents;
+// 1,344 sixteen-byte descriptors and 4,096 u32 selection entries consume the
+// heap portion of the 106,496-byte fixed scan reservation. Runtime nodes have
+// exact charges; the physical plan adds its independent 4,096-byte allowance.
+const LEGACY_SCAN_NONHEAP: usize = 106_496 - 1_344 * 16 - 4_096 * 4 + 4_096;
+
+pub(super) fn legacy_constant_shapes(
+    root: &Path,
+    wrong_attribution: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir(root)?;
+    let path = root.join("database");
+    let input = root.join("lineitem.tbl");
+    const ROW: &[u8] = b"1|2|3|4|1|100|0.08|8|R|F|1994-01-01|12|13|14|15|16|\n";
+    std::fs::write(&input, ROW.repeat(512))?;
+    let cancel = CancellationToken::new();
+    let mut db = Database::create(&path, Config::new(16_000_000, 8_000_000)?)?;
+    db.load_lineitem(&input, &cancel)?;
+    println!("entered legacy constant ownership shapes");
+    let resident = db.reserved_memory_bytes();
+    for (expression, expected, computed) in [
+        ("l_returnflag", "R", false),
+        ("''", "", true),
+        (
+            "'雪12345678901234567890123456789'",
+            "雪12345678901234567890123456789",
+            true,
+        ),
+    ] {
+        for width in [1, 64] {
+            let sql = format!(
+                "FROM lineitem |> SELECT {}",
+                vec![expression; width].join(",")
+            );
+            let prepared =
+                prepare_observed(&db, &sql, "legacy-text", 1 + usize::from(computed), false)?;
+            let before = Heap::now();
+            let mut result = db.execute(&prepared, &cancel)?;
+            let nonheap = (std::mem::size_of::<QueryResult<'_, '_>>()
+                + LEGACY_SCAN_NONHEAP
+                + usize::from(wrong_attribution)) as u64;
+            let observe = |result: &QueryResult<'_, '_>| {
+                let owner = Owner {
+                    charge: result.accounted_memory_bytes(),
+                    heap: Heap::now().increase_from(before),
+                };
+                owner.report("legacy-text", nonheap);
+                assert!(
+                    owner.heap.usable as u64 <= owner.charge,
+                    "legacy usable allocations exceed admission"
+                );
+            };
+            observe(&result);
+            let mut rows = 0;
+            let mut batches = 0;
+            let mut finished = false;
+            for _ in 0..100_000 {
+                match result.step() {
+                    QueryStep::Progress => (),
+                    QueryStep::Rows(batch) => {
+                        assert_eq!(batch.column_count(), width);
+                        assert_eq!(batch.len(), 256);
+                        for row in 0..batch.len() {
+                            for column in 0..width {
+                                let Some(Value::String(text)) = batch.value(row, column) else {
+                                    panic!("legacy text value");
+                                };
+                                assert_eq!(text.as_str(), expected);
+                            }
+                        }
+                        rows += batch.len();
+                        batches += 1;
+                        observe(&result);
+                    }
+                    QueryStep::Finished => {
+                        finished = true;
+                        break;
+                    }
+                    QueryStep::Failed(error) => panic!("legacy constant shape: {error}"),
+                }
+            }
+            assert!(finished);
+            assert_eq!((rows, batches), (512, 2));
+            Owner {
+                charge: result.accounted_memory_bytes(),
+                heap: Heap::now().increase_from(before),
+            }
+            .report(
+                "legacy-text-finished",
+                std::mem::size_of::<QueryResult<'_, '_>>() as u64,
+            );
+            drop(result);
+            assert_eq!(Heap::now(), before);
+            drop(prepared);
+            assert_eq!(db.reserved_memory_bytes(), resident);
+            assert_eq!(db.reserved_temp_bytes(), 0);
+        }
+    }
+    for (expression, expected) in [
+        ("''", ""),
+        (
+            "'雪12345678901234567890123456789'",
+            "雪12345678901234567890123456789",
+        ),
+    ] {
+        for grouped in [false, true] {
+            let suffix = if grouped {
+                " GROUP AND ORDER BY label"
+            } else {
+                ""
+            };
+            let sql = format!(
+                "FROM lineitem |> SELECT {expression} AS label |> AGGREGATE MIN(label) AS lo,MAX(label) AS hi,COUNT(*) AS n{suffix}"
+            );
+            let prepared = prepare_observed(&db, &sql, "legacy-extrema", 4, false)?;
+            let before = Heap::now();
+            let mut result = db.execute(&prepared, &cancel)?;
+            // The aggregate vector adds 4,096 bytes of allowance. General
+            // grouping charges its indirect controller and buffers exactly,
+            // but retains two 4,096-byte scratch paths before creating files.
+            let nonheap = (std::mem::size_of::<QueryResult<'_, '_>>()
+                + LEGACY_SCAN_NONHEAP
+                + 4096
+                + if grouped { 8192 } else { 0 }) as u64;
+            let observe = |result: &QueryResult<'_, '_>| {
+                let owner = Owner {
+                    charge: result.accounted_memory_bytes(),
+                    heap: Heap::now().increase_from(before),
+                };
+                owner.report("legacy-extrema", nonheap);
+                assert!(owner.heap.usable as u64 <= owner.charge);
+            };
+            observe(&result);
+            let mut rows = 0;
+            let mut finished = false;
+            for _ in 0..100_000 {
+                match result.step() {
+                    QueryStep::Progress => (),
+                    QueryStep::Rows(batch) => {
+                        let text_columns = if grouped { 3 } else { 2 };
+                        assert_eq!(batch.column_count(), text_columns + 1);
+                        assert_eq!(batch.len(), 1);
+                        for column in 0..text_columns {
+                            let Some(Value::String(text)) = batch.value(0, column) else {
+                                panic!("legacy extrema value");
+                            };
+                            assert_eq!(text.as_str(), expected);
+                        }
+                        assert_eq!(batch.value(0, text_columns), Some(Value::Int64(512)));
+                        rows += batch.len();
+                        observe(&result);
+                    }
+                    QueryStep::Finished => {
+                        finished = true;
+                        break;
+                    }
+                    QueryStep::Failed(error) => panic!("legacy extrema: {error}"),
+                }
+                assert_eq!(
+                    db.reserved_temp_bytes(),
+                    0,
+                    "small groups retain the hash path"
+                );
+            }
+            assert!(finished);
+            assert_eq!(rows, 1);
+            Owner {
+                charge: result.accounted_memory_bytes(),
+                heap: Heap::now().increase_from(before),
+            }
+            .report(
+                "legacy-extrema-finished",
+                std::mem::size_of::<QueryResult<'_, '_>>() as u64,
+            );
+            drop(result);
+            assert_eq!(Heap::now(), before);
+            drop(prepared);
+            assert_eq!(db.reserved_memory_bytes(), resident);
+            assert_eq!(db.reserved_temp_bytes(), 0);
+        }
+    }
+    println!(
+        "legacy constant shapes passed: 6 direct and 4 extrema cases; rows, attribution and release"
+    );
+    Ok(())
+}
+
 pub(super) fn reader_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     use pipesql::DateValue;
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -653,6 +841,10 @@ fn prepare_observed<'db>(
         "ownership prepared-{label} charge={} requested={requested} usable={usable} inline={inline} allowance={allowance} rounding={}",
         query.accounted_memory_bytes(),
         usable.checked_sub(requested).unwrap(),
+    );
+    assert!(
+        usable as u64 <= query.accounted_memory_bytes(),
+        "prepared usable allocations exceed admission"
     );
     Ok(query)
 }

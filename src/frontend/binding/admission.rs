@@ -8,7 +8,7 @@ use std::mem::size_of;
 pub(super) struct BindingBudget {
     pub(super) bytes: u64,
     aggregate_count: usize,
-    computed_count: usize,
+    computed_capacity: usize,
     distinct_count: usize,
     union_count: usize,
     computed_bytes: usize,
@@ -68,10 +68,12 @@ impl BindingBudget {
                 })
                 .count();
         }
-        let computed_bytes = if computed_count == 0 {
+        let computed_capacity = Computed::allocation_capacity(computed_count)
+            .ok_or(Error::Corrupt("prepared computation capacity overflow"))?;
+        let computed_bytes = if computed_capacity == 0 {
             0
         } else {
-            computed_count
+            computed_capacity
                 .checked_mul(size_of::<Computed>())
                 .and_then(|bytes| bytes.checked_add(PREPARED_ALLOCATION_ALLOWANCE))
                 .ok_or(Error::Corrupt("prepared computation size overflow"))?
@@ -106,7 +108,7 @@ impl BindingBudget {
         Ok(Self {
             bytes,
             aggregate_count,
-            computed_count,
+            computed_capacity,
             distinct_count,
             union_count,
             computed_bytes,
@@ -119,7 +121,7 @@ impl BindingBudget {
         let Self {
             bytes,
             aggregate_count,
-            computed_count,
+            computed_capacity,
             distinct_count,
             union_count,
             computed_bytes,
@@ -173,13 +175,13 @@ impl BindingBudget {
         }
         let mut computed = Vec::new();
         computed
-            .try_reserve_exact(computed_count)
+            .try_reserve_exact(computed_capacity)
             .map_err(|_| Error::Resource {
                 owner: "prepared expressions",
                 required: bytes,
                 limit: bytes,
             })?;
-        if computed.capacity() != computed_count {
+        if computed.capacity() != computed_capacity {
             return Err(Error::Resource {
                 owner: "prepared expression capacity",
                 required: (computed.capacity() * size_of::<Computed>()) as u64,

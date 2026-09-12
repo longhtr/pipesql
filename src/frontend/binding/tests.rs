@@ -44,6 +44,46 @@ fn derived_scope_preparation_admits_exact_peak_and_releases_it() {
 }
 
 #[test]
+fn wide_constant_preparation_admits_exact_peak_and_releases_it() {
+    let (_directory, db) = database(4_000_000);
+    let resident = db.reserved_memory_bytes();
+    // Cross the 16-KiB descriptor boundary and retain the widest public output.
+    for width in [30, 31, 64] {
+        let sql = format!(
+            "FROM lineitem |> SELECT {}",
+            vec!["'constant'"; width].join(",")
+        );
+        let prepared = db.prepare(&sql).unwrap();
+        let retained = prepared.accounted_memory_bytes();
+        assert_eq!(prepared.result_column_count(), width);
+        drop(prepared);
+        for shortfall in [1, 0] {
+            let pressure = db
+                .reserve_memory(
+                    db.config().memory_limit_bytes() - resident - retained + shortfall,
+                    "prepared capacity pressure",
+                )
+                .unwrap();
+            let before = db.reserved_memory_bytes();
+            match db.prepare(&sql) {
+                Ok(query) => {
+                    assert_eq!(shortfall, 0);
+                    assert_eq!(query.result_column_count(), width);
+                    assert_eq!(db.reserved_memory_bytes(), before + retained);
+                }
+                Err(error) => assert!(
+                    shortfall == 1 && matches!(error, Error::Resource { .. }),
+                    "{error}"
+                ),
+            }
+            assert_eq!(db.reserved_memory_bytes(), before);
+            drop(pressure);
+            assert_eq!(db.reserved_memory_bytes(), resident);
+        }
+    }
+}
+
+#[test]
 fn union_scope_preparation_admits_exact_peak_and_releases_it() {
     check_scope_preparation(
         "FROM facts |> UNION ALL (FROM facts |> UNION ALL (FROM facts)), (FROM facts)",

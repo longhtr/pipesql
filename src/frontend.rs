@@ -884,6 +884,18 @@ pub(crate) struct Computed {
     pub(crate) input: RelationId,
 }
 
+impl Computed {
+    fn allocation_capacity(count: usize) -> Option<usize> {
+        // Preserve the logical descriptor count while admitting physical slots
+        // near the existing native allocation boundary. Rounding is charged as
+        // requested storage; it does not enlarge the expression-count limit.
+        count
+            .checked_mul(size_of::<Self>())
+            .and_then(crate::resources::buffer_capacity)
+            .map(|bytes| bytes / size_of::<Self>())
+    }
+}
+
 pub(crate) struct Plan {
     pub(crate) database: DatabaseId,
     pub(crate) generation: u64,
@@ -996,7 +1008,8 @@ impl PreparedQuery<'_> {
         (size_of::<Self>()
             + size_of::<Plan>()
             + MAX_AGGREGATE_COLUMNS * (size_of::<AggregateEntry>() + size_of::<AggregatePlan>())
-            + MAX_COMPUTED * size_of::<Computed>()
+            + Computed::allocation_capacity(MAX_COMPUTED).expect("bounded computed capacity")
+                * size_of::<Computed>()
             + MAX_STAGES * size_of::<DistinctPlan>()
             + MAX_STAGES * size_of::<UnionPlan>()
             + PREPARED_ALLOCATION_ALLOWANCE

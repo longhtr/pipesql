@@ -196,6 +196,11 @@ def run_cell(work, failures, mode, label, database_bytes=None, mmap_threshold=No
 
 
 def check_ownership(work, run, failures):
+    for label, length in [("short", None), ("path384", 384)]:
+        legacy = run("legacy-constant-shapes", f"legacy-constants-{label}", length)
+        print(legacy.stdout + legacy.stderr, end="", flush=True)
+        if "legacy constant shapes passed: 6 direct and 4 extrema cases; rows, attribution and release" not in legacy.stdout:
+            failures.append(f"incomplete legacy constant allocation checks: {label}")
     joined = run("joined-shapes", "joined-shapes")
     print(joined.stdout + joined.stderr, end="", flush=True)
     if "joined shapes passed: 2 budgets; complete rows, step ownership and release" not in joined.stdout:
@@ -269,6 +274,7 @@ def check_ownership(work, run, failures):
                 f"ownership-{label}: missing composed ownership completion"
             )
     for mode, expected in [
+        ("legacy-constant-attribution-negative", "execution ownership attribution: legacy-text"),
         ("joined-attribution-negative", "joined usable ownership attribution"),
         ("append-allocation-shapes-negative", "append allocation rounding"),
         ("ownership-negative", "complete-row oracle"),
