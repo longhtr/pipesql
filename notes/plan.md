@@ -24,35 +24,16 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Current: analytic allocation ownership
+## Completed: analytic allocation ownership
 
-The bounded analytic count implementation and both complete gates are retained
-in `5697961`; its [checkpoint](evidence.md#full-partition-analytic-count) records
-results and integration repairs. Independently measure this new public workload's
-allocation ownership before changing its execution strategy.
-
-1. Trace preparation, sorted-input construction, capture, spill, emission, replay
-   and release. Reuse the existing composed-ownership caller and runner. Keep
-   measurement scaffolding outside observed intervals and derive explicit
-   nonheap allowances from their contracts.
-2. Add a finite workload set covering count-only and repeated counts, typed
-   spilled rows and composition. Check literal expected rows, requested/usable
-   extents, public owner sums and complete release. Exercise both pathname
-   lengths and an attribution negative control.
-3. Reproduce any discrepancy on current inputs and repair its responsible owner
-   without allowance inflation or weaker equations. Preserve demanded errors,
-   independent validators, bounded work, cancellation, failure and cleanup.
-4. Run the complete ownership selection on macOS and native-storage GNU/Linux,
-   plus affected tooling checks. Engine changes require both complete frozen
-   gates. Update navigation and concise evidence, remove owned artifacts and
-   commit verified changes locally.
-
-The existing caller now contains seven analytic cases. Preparation attribution
-and admission/first-spill/emission/terminal equations pass the focused macOS
-probe, with requested/usable samples after every step and complete release.
-The parser's 160-token bound admits nineteen repeated calls; twenty reject.
-No engine discrepancy has been observed. Complete ownership selections on both
-platforms, tooling interpretation checks, documentation and final cleanup remain.
+The complete ownership selections for `0e94fa7` pass on macOS and GNU arm64
+Linux with matching inputs. Seven analytic cases at each pathname length retain
+independent row, attribution and release checks; the negative control rejects.
+The [analytic ownership record](evidence.md#analytic-allocation-ownership)
+identifies exact inputs, equations and observation limits. No engine repair was
+needed. Both maintenance runs pass, owned outputs are removed and verified
+changes are committed locally. Reassess the priorities below before activating
+another bounded milestone.
 
 ## Next engineering priorities
 

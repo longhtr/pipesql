@@ -77,6 +77,50 @@ Count-only projections currently retain ordinal records and may require temporar
 storage. This is a bounded implementation, not a claim of optimal execution,
 arbitrary-allocator bounds or whole-process/RSS limits.
 
+### Analytic allocation ownership
+
+`e6538ee` and `0e94fa7` extend the existing public ownership caller without changing
+engine inputs from `5697961`. Both complete `--ownership-only` selections pass on
+stock macOS and unprivileged native-storage GNU arm64 Linux. Each pathname length
+runs seven analytic cases: empty input, one count, nineteen repeated counts,
+INT64/DATE/nullable UTF-8 rows, 64 output columns, consecutive analytic stages and
+grouped composition. Twenty repeated calls reject at the 160-token bound and
+release heap and logical preparation ownership. Literal expected results require
+512 rows with count 512, or one composed total of 262,144; empty input emits none.
+
+Preparation equations account for the plan/computation allocations and, for the
+grouped composition, its controller and two entry vectors. Nonaggregating cases
+reconcile execution admission, first spill and emission against independently
+derived nonheap charges: the result handle, a 4,096-byte physical-plan allowance,
+8,192 source-path bytes less the retained pathname request, and 5,104 bytes of
+row-evaluation arrays. Each pending analytic scratch constructor adds 8,192 bytes.
+Terminal results retain only their handle charge. Every public step checks the
+complete prepared/result charge against requested and allocator-usable extents.
+All cases check final heap, descriptor, memory-reservation and scratch release.
+
+The minimum observed usable headroom is 7,624 bytes on macOS and 8,872 on Linux,
+with the same values at both pathname lengths. No discrepancy required an engine
+repair. The count-only 512-row case uses 32,888 temporary bytes and 7,710 public
+steps. These are complete-query resource observations, not elapsed-time benchmarks.
+The grouped case checks admission headroom through its public steps; it does not
+claim to force hash fallback. Replay retains the checked run and full count while
+resetting its cursor; the existing forced-replay controls remain in the complete
+engine checkpoint. No new within-step peak, arbitrary-allocator, Windows or RSS
+qualification follows from these parked public boundaries.
+
+A one-byte nonheap attribution error rejects through the same equation. The
+runner's interpretation test rejects a missing analytic completion marker even
+after successful process exit. Both platforms pass maintenance with 96 tooling
+tests, 44 independently reproduced codec fixtures and 521 local links. The final
+679 inputs match across platforms and are retained at `0e94fa7`, with manifest
+SHA-256 `ab925e1bcaeb55a3c401cb5403fa804f62b06b8e5d65e36c3e93c65aecd7f70e`.
+The final ownership log hashes are
+`1fb67cac3585826cce83f895bcb43e64b277b06809edd1c9999466774d8763e0` (macOS) and
+`f71af940d06d14ab97be8d292f8013f367d07ee32c0fcdbd94dbe74de80d1d19` (Linux).
+Only notes change afterward. Complete engine gates were not repeated for this
+tooling-only change. Owned probes, builds, databases, exports, logs and the
+container are removed; the verification image and toolchains remain.
+
 ### Snapshot lifetime learning example
 
 `db66f28` adds `examples/snapshots.rs` and its linked walkthrough. Literal amounts
