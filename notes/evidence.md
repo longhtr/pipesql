@@ -7,7 +7,7 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 12, 2026 (local time) complete gates for `e0f611a` passed all 23
+The September 12, 2026 (local time) complete gates for `5a3cb0a` passed all 23
 stages on macOS and GNU arm64 Linux. The macOS environment was arm64 Darwin 25.6.0, Rust 1.98.1,
 Python 3.14.7, and the native Apple toolchain. The Linux environment is identified
 below. Checks used release artifacts, offline locked dependencies, and
@@ -22,22 +22,25 @@ The seed-only graph command previously passed on both platforms; reuse of its
 output directory was rejected. Seed failure propagation and artifact identities
 have tooling regressions independent of engine execution.
 
-Rust suites executed 463 tests on each platform, with no failed or ignored
+Rust suites executed 480 tests on each platform, with no failed or ignored
 tests. Each suite also executed one selected lease subprocess, excluded from
-these totals. The twelve bounded-thread scenarios and their ordinary-thread
-counterparts passed on both targets. The independent native stack control and
+these totals. macOS executed 355 library and 21 filesystem tests; Linux executed
+357 library and 19 filesystem tests. The remaining suites are shared. All 17 new
+column-transformation regressions executed on both platforms. The twelve
+bounded-thread scenarios and their ordinary-thread counterparts passed on both
+targets. The independent native stack control and
 the Rust oversized-thread negative control passed. The public directory cleanup
 regression executed, including its isolated unwind control.
 
-Both gates used matching frozen inputs from 665 tracked files, containing 664
+Both gates used matching frozen inputs from 666 tracked files, containing 665
 manifested inputs. Linux used a read-only export of the tracked tree.
 All stage statuses were zero, before/after manifests matched across both runs,
 and finalization reported no errors and removed owned build targets. The frozen
 manifest SHA-256 is
-`1666f2c90addc3533c9746a03d013f0ba935706edd3d5450e71eb9ba593ad9b8`.
+`8643bbf6cca4891896f0dd99a8e5ce1a47b9fc56f7e03eaef433fabcd7712cee`.
 At that checkpoint, only the two notes files were finalized afterward. The
-other 662 manifested inputs have fingerprint
-`eb74799a3f5e997c5e95fed229ed12f9cd607c859e0847f4ac25b71e305c7bac`.
+other 663 manifested inputs have fingerprint
+`a19d6354ea9d020755880b7c475e3621a370ef883106cd7c175e184314971665`.
 To fingerprint the currently checked-out inputs:
 
 ```sh
@@ -48,8 +51,8 @@ This fingerprint identifies maintained source, not reproducible binaries. Final
 documentation checks cover the finalized notes. At the earlier `827cad5` checkpoint, the declared-table example ran
 on both platforms and printed `north total=15 rows=3 present=2` and
 `south total=20 rows=1 present=1`. The frontend walkthrough also produced its
-complete INT64 result, 38, on macOS. The current gate stages took 1,586 seconds on macOS and
-807 seconds on Linux; these are verification costs, not query benchmarks.
+complete INT64 result, 38, on macOS. The current gate stages took 1,553 seconds on macOS and
+834 seconds on Linux; these are verification costs, not query benchmarks.
 Raw successful logs and retired source exports are not required inputs; current
 callers and fixtures reconstruct the generated cases.
 
@@ -91,16 +94,19 @@ not a performance improvement. The unchanged small-stack regression exposed
 stack growth during preparation. Allocating the admitted plan in a separate
 construction frame before binding repaired that failure.
 
-Focused macOS checks pass: the 353-test library run, then 41 frontend/physical
-checks including added admission and corruption controls; 67 lifecycle tests,
-three SET runtime tests, the 128-value sorter, and the small-stack regression.
-The revised column-transformation tutorial returns its three documented rows
-and successful CLI completion. The independent composition campaign passes all
-298 cases using stock CLI SHA-256
-`b90d2c27915c108c407063ad74db4660f3b4559e34e1aa9f7211715af018604f`.
-Added cancellation checks, maintenance (84 tool tests and 39 codec fixtures),
-and warnings-denied workspace Clippy also pass. The complete gates are still
-pending; the earlier full checkpoint above does not cover these changes.
+The complete gates above cover the final implementation, including all 298
+independent composition cases. The allocation caller composes EXTEND, SET, DROP,
+and RENAME against its unchanged expected rows; both platforms pass all 723
+catalog refusal prefixes and the healthy control on short and 384-byte paths.
+Cancellation, exact admission refusal, invalid scope/identity controls, typed
+copies, and the 65-value sorting regression execute in the Rust suites.
+
+The revised [tutorial](../docs/getting-started.md#transform-columns-while-retaining-the-original-values)
+runs from the frozen source on both platforms with fresh native-filesystem
+databases. The declared example prints the expected north/south totals. The
+transformation query returns `(north, 5, 10, 11)`, `(north, 10, 20, 21)`, and
+`(south, 20, 40, 41)`, followed by `row_count=3`, `status=queried`, and exit zero.
+The owned example databases and build targets were removed after verification.
 
 ## EXTEND projection semantics
 
@@ -403,8 +409,8 @@ competing reader releases its owners without disturbing the held group.
 The repair bounds the arena by group-slot capacity times maximum encoded key
 width. Each inserted group stores one key; this removes unusable capacity without
 reducing what those slots can hold. The completed macOS gate observed charges of
-2,693,132 bytes on the short path and 2,693,291 bytes on the long path; GNU/Linux
-observed 2,693,101 and 2,693,275 bytes. Both readers completed on both platforms,
+2,700,983 bytes on the short path and 2,701,142 bytes on the long path; GNU/Linux
+observed 2,700,952 and 2,701,126 bytes. Both readers completed on both platforms,
 and the departing reader restored the held owner's allocation totals.
 
 The current gate's held-group checkpoints also distinguish logical database
@@ -415,10 +421,10 @@ they are not an isolated grouping allocation or a whole-process memory bound.
 
 | Platform and path | Logical charge | Requested bytes | Usable bytes |
 | --- | ---: | ---: | ---: |
-| macOS, short | 2,693,132 | 2,645,212 | 2,694,720 |
-| macOS, long | 2,693,291 | 2,646,451 | 2,696,112 |
-| GNU/Linux, short | 2,693,101 | 2,644,845 | 2,653,480 |
-| GNU/Linux, long | 2,693,275 | 2,646,307 | 2,655,064 |
+| macOS, short | 2,700,983 | 2,653,063 | 2,711,936 |
+| macOS, long | 2,701,142 | 2,654,302 | 2,713,328 |
+| GNU/Linux, short | 2,700,952 | 2,652,696 | 2,662,280 |
+| GNU/Linux, long | 2,701,126 | 2,654,158 | 2,663,864 |
 
 The repeated-aggregation cancellation test explicitly selects downstream disk
 execution before any input runs. The public native-I/O fixture uses a 1.1-MB

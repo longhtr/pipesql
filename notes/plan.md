@@ -11,8 +11,8 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 23-stage gates for `e0f611a` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 463 Rust tests and 293
+The complete 23-stage gates for `5a3cb0a` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 480 Rust tests and 298
 composition cases, plus its applicable native and allocation campaigns. All twelve bounded-thread scenarios and their ordinary-thread
 counterparts execute on both platforms, with explicit target-specific ceilings.
 Two Darwin ACL-specific allocation cells remain excluded on Linux. Windows remains
@@ -30,53 +30,47 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
-## Active: complete the column transformation profile
+## Completed: column transformations
 
-EXTEND is implemented and verified. The [semantic evidence](evidence.md#extend-projection-semantics)
-records its accepted profile, independent cases, resource/failure coverage, and
-cross-platform example. Compact hash storage also remains complete; its
-[comparison](evidence.md#compact-hash-text-storage) retains the short-string
-reservation benefit and accepted transient cost for wide values. Reopen either
-only for a concrete defect or limitation.
+SELECT, EXTEND, SET, DROP, RENAME, and AS form the current bounded
+column-transformation profile. The [language manifest](../docs/language.md#current-public-query-manifest)
+owns its syntax and semantics; [evidence](evidence.md#column-transformation-semantics)
+records independent cases, retained qualified inputs, typed-copy identity,
+resource/failure coverage, and the verified cross-platform tutorial. Both complete
+gates pass on frozen source `5a3cb0a`. The 64-column public bound remains intact;
+internal payloads admit up to 128 visible and retained values. Larger inline
+owners retain their existing resource charges. Compact hash storage and EXTEND
+remain complete. Reopen these only for a concrete defect or limitation.
 
-Complete `SET`, `DROP`, and `RENAME` from the
-[language direction](../docs/language.md#deliberate-profile) as one bounded
-column-transformation milestone. Together with SELECT, EXTEND, and AS, these
-let learners change a pipeline's row shape without repeatedly spelling every
-unchanged column. Keep SET expressions within the existing projection profile;
-do not add functions, windows, or unrelated operators.
+## Next: reconcile composed memory ownership
 
-The implementation and [semantic evidence](evidence.md#column-transformation-semantics)
-cover simultaneous SET, fresh typed copies, identity-preserving RENAME, DROP of
-ordinary outputs, and retained qualified inputs. Source schemas and final rows
-remain bounded to 64 columns; internal payloads admit 128 visible/retained values.
-Plan construction uses its admitted heap owner before binding to preserve the
-existing stack allowance. The tutorial and authoritative contracts are updated.
+Explain the difference between logical reservations, requested allocations, and
+allocator-usable extents for one representative composed query. The current
+[ownership checkpoints](evidence.md#composed-query-owners) prove release and
+coexistence, but do not attribute every difference or establish a physical-memory
+bound. This is the next resource qualification task, not a new query feature.
 
-Focused checks pass: 353 library tests before the final test additions, then
-41 frontend/physical checks; 67 lifecycle tests and three SET-specific runtime
-checks; the wide sorter and small-stack regressions; warnings-denied Clippy and
-local documentation links. The revised example completes with the documented
-three rows. The added cancellation checks pass, and the independent composition campaign
-passes all 298 cases. Maintenance and warnings-denied workspace Clippy pass.
-The allocator campaign now composes EXTEND, SET, DROP, and RENAME without
-changing its expected result oracle; its full run remains part of the gates.
+1. Trace existing counters and owners before adding instrumentation. Choose a
+   reproducible workload with overlapping blocking owners and an independent
+   complete-result oracle. Use the existing caller and build/subprocess tools.
+2. Reconcile stable checkpoints through preparation, execution, cancellation,
+   completion, and release. Separate engine allocations, caller/runtime owners,
+   allocator rounding, reserved capacity, and unsampled transitions. Include a
+   constrained-resource case and a negative control that detects incorrect
+   attribution. Repair a concrete accounting defect across its consumers.
+3. Verify the maintained diagnostic on macOS and available native GNU/Linux
+   storage. Keep unsupported platform and observer limits explicit. Update the
+   resource explanation and concise evidence so a learner can reproduce and
+   interpret the result. Run verification required by retained changes, commit
+   locally, and remove owned outputs.
 
-Finish in this order:
+Limit initial investigation to four hours before reassessing scope and evidence.
+Do not infer a whole-process cap from engine counters, add a new monitoring
+framework, or redesign scheduling without a concrete failure. Finish a useful,
+reproducible reconciliation; identify any remaining qualification precisely.
 
-1. Execute the remaining focused cases and review the final code/contract diff.
-   Preserve exact admission, failure, cancellation, and cleanup contracts.
-2. Commit the coherent implementation locally, freeze the tracked inputs, and
-   run complete macOS and available GNU/Linux gates in isolated targets. Compare
-   input manifests and reconcile test discovery and explicit platform exclusions.
-3. Consolidate final evidence within 641,696 bytes, update this plan, commit the
-   verified result, and remove owned temporary inputs, outputs, and build artifacts.
-   Finish with a clean tree and close the goal promptly. Then choose the next
-   bounded milestone from the actual tree and remaining qualification.
-
-Do not push or modify remote refs. Windows remains unqualified; unavailable
-platform resources do not block the available verification. Do not add unrelated
-operators, optimization, or a parallel workflow.
+Do not push or modify remote refs. Windows remains unfinished; unavailable
+platform resources do not block the available verification.
 
 ## Applying DuckDB lessons
 
