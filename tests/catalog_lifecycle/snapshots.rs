@@ -210,3 +210,129 @@ fn reclamation_preserves_all_pinned_generations_and_receipts() {
     drop(query);
     reopened.close().unwrap();
 }
+
+#[test]
+fn concurrent_readers_keep_generations_through_reclamation_and_early_drop() {
+    fn append(db: &Database, value: i64) -> pipesql::Commit {
+        let cancel = CancellationToken::new();
+        let mut writer = db.begin_append("facts", limits(), &cancel).unwrap();
+        writer
+            .write(
+                &[ColumnInput {
+                    values: ColumnValues::Int64(&[value]),
+                    validity: &[1],
+                }],
+                &cancel,
+            )
+            .unwrap();
+        writer.commit(&cancel).unwrap()
+    }
+
+    let directory = Directory::new();
+    let path = directory.database();
+    let db = Database::create_empty(&path, config()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "facts",
+        &[ColumnDeclaration {
+            name: "v",
+            data_type: DataType::Int64,
+            nullable: false,
+        }],
+        &cancel,
+    )
+    .unwrap();
+    let resident = db.reserved_memory_bytes();
+    let first = append(&db, 11);
+    let old = db.prepare("FROM facts |> SELECT v").unwrap();
+    let second = append(&db, 22);
+    let middle = db.prepare("FROM facts |> SELECT v").unwrap();
+    let timeout = std::time::Duration::from_secs(30);
+    let (old_ready_tx, old_ready_rx) = std::sync::mpsc::sync_channel(1);
+    let (old_resume_tx, old_resume_rx) = std::sync::mpsc::sync_channel(1);
+    let (middle_ready_tx, middle_ready_rx) = std::sync::mpsc::sync_channel(1);
+    let (middle_resume_tx, middle_resume_rx) = std::sync::mpsc::sync_channel(1);
+
+    let third = std::thread::scope(|scope| {
+        let reader_db = &db;
+        let old_worker = scope.spawn(move || {
+            let cancel = CancellationToken::new();
+            let mut result = reader_db.execute(&old, &cancel).unwrap();
+            assert!(matches!(result.step(), QueryStep::Progress));
+            old_ready_tx.send(()).unwrap();
+            old_resume_rx.recv_timeout(timeout).unwrap();
+            // Drop an unfinished cursor, then reopen its still-pinned input.
+            // An already open file alone could survive an erroneous unlink.
+            drop(result);
+            assert_eq!(
+                collect(&mut reader_db.execute(&old, &cancel).unwrap()),
+                vec![vec![Cell::Integer(11)]]
+            );
+        });
+        old_ready_rx.recv_timeout(timeout).unwrap();
+        let middle_worker = scope.spawn(move || {
+            let cancel = CancellationToken::new();
+            let mut result = reader_db.execute(&middle, &cancel).unwrap();
+            assert!(matches!(result.step(), QueryStep::Progress));
+            middle_ready_tx.send(()).unwrap();
+            middle_resume_rx.recv_timeout(timeout).unwrap();
+            assert_eq!(
+                collect(&mut result),
+                vec![vec![Cell::Integer(11)], vec![Cell::Integer(22)]]
+            );
+            drop(result);
+            assert_eq!(
+                collect(&mut reader_db.execute(&middle, &cancel).unwrap()),
+                vec![vec![Cell::Integer(11)], vec![Cell::Integer(22)]]
+            );
+        });
+        middle_ready_rx.recv_timeout(timeout).unwrap();
+        let parked = db.reserved_memory_bytes();
+        let third = append(&db, 33);
+        assert!(db.reclaim(&cancel).unwrap() > 0);
+        assert_eq!(db.reserved_memory_bytes(), parked);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        for commit in [first, second, third] {
+            assert_eq!(
+                db.resolve_commit(commit.transaction()).unwrap(),
+                CommitResolution::Durable(commit)
+            );
+        }
+        old_resume_tx.send(()).unwrap();
+        old_worker.join().unwrap();
+        assert!(db.reserved_memory_bytes() < parked);
+        // The middle reader remains parked while the older pin is released.
+        assert!(db.reclaim(&cancel).unwrap() > 0);
+        middle_resume_tx.send(()).unwrap();
+        middle_worker.join().unwrap();
+        third
+    });
+    assert_eq!(db.reserved_memory_bytes(), resident);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    assert!(db.reclaim(&cancel).unwrap() > 0);
+    assert_eq!(db.reclaim(&cancel).unwrap(), 0);
+    let fourth = append(&db, 44);
+    let expected = vec![
+        vec![Cell::Integer(11)],
+        vec![Cell::Integer(22)],
+        vec![Cell::Integer(33)],
+        vec![Cell::Integer(44)],
+    ];
+    let fresh = db.prepare("FROM facts |> SELECT v").unwrap();
+    assert_eq!(collect(&mut db.execute(&fresh, &cancel).unwrap()), expected);
+    drop(fresh);
+    assert_eq!(db.reserved_memory_bytes(), resident);
+    db.close().unwrap();
+    let db = Database::open(&path, config()).unwrap();
+    for commit in [first, second, third, fourth] {
+        assert_eq!(
+            db.resolve_commit(commit.transaction()).unwrap(),
+            CommitResolution::Durable(commit)
+        );
+    }
+    let fresh = db.prepare("FROM facts |> SELECT v").unwrap();
+    assert_eq!(collect(&mut db.execute(&fresh, &cancel).unwrap()), expected);
+    drop(fresh);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    db.close().unwrap();
+}

@@ -372,10 +372,19 @@ Finite worklist:
    native-storage GNU arm64 Linux. Record the precise exercised schedules and
    limits, update the test map, remove owned outputs and commit locally.
 
-Initial contract inspection confirms that each reader pins one generation and
-maintenance may remove only objects unreachable from current and pinned roots.
-The shared ownership caller already distinguishes overlapping lifetimes from
-arbitrary concurrent schedules. Preserve that distinction in the new evidence.
+The new public scenario parks two worker-owned results on generations containing
+11 and 11/22. The parent publishes 33, reclaims, and checks all receipts. The old
+worker drops its unfinished result, rereads its pinned query, and releases its
+plan. A second reclamation removes newly unpinned objects while the middle
+reader remains parked; that reader then completes and rereads 11/22. Final
+release, idempotent reclamation, append 44, fresh results and reopened receipts
+are explicit checks. Reexecuting pinned plans prevents already-open file handles
+from masking erroneous unlink. All coordination uses bounded channel waits.
+
+The focused macOS release test passes (one executed, 79 filtered). No engine
+change was needed. Full retained verification and Linux execution remain. This
+is a deterministic schedule of overlapping lifetimes, not arbitrary-race or
+sanitizer qualification.
 Publication, Windows, broader durability and physical-memory obligations remain.
 
 ## Applying DuckDB lessons
