@@ -368,6 +368,34 @@ and precise scope. This qualifies overlapping lifetimes in the exercised schedul
 not arbitrary races, sanitizer coverage or hardware durability. Owned outputs
 are removed and changes are committed locally; publication remains unresolved.
 
+## Current: STRING reader allocation attribution
+
+The maintained `composed-ownership.rs::reader_shapes` checks one and 64 INT64,
+DOUBLE and DATE columns through ORDER BY and DISTINCT. STRING has distinct
+variable-length payload and offset ownership and is absent from this shape
+census. Extend this existing resource qualification before adding a new operator.
+The completed snapshot milestone remains closed.
+
+Finite worklist:
+
+1. Trace STRING source, offset and replay allocations against their admitted
+   capacities; choose a finite narrow/full-width profile within codec limits.
+2. Extend the existing reader caller with visible NULL, duplicate, Unicode and
+   varying-length expected values. Preserve the independent ownership equations,
+   retained fixed-width cases, admission, spill and complete release checks.
+3. Reproduce and trace any usable-allocation excess on current inputs before
+   repairing its real owner. Challenge consequential new assertions; add no
+   arbitrary allowance, framework or process-memory claim.
+4. Reconcile maps and discovery, run focused ownership and required complete
+   checks on macOS and native-storage GNU arm64 Linux, record scoped evidence,
+   remove outputs and commit locally. Preserve publication restrictions and the
+   existing verification image/toolchains.
+
+Initial caller inspection confirms all twelve current shape cases use fixed-width
+values. They sample after spill and compare live requested/usable extents with
+logical admission, then require exact row multiplicities and baseline release.
+Keep those checks intact when adding STRING coverage.
+
 ## Applying DuckDB lessons
 
 DuckDB's published designs inform the following work. These are PipeSQL design
