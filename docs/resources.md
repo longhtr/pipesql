@@ -300,6 +300,22 @@ I/O, and account reconciliation through public steps. A fixture's successful
 configured limit is not a universal minimum for other schemas or producer
 graphs.
 
+## Blocking buffer capacity
+
+Sort frames, run bytes, prior keys, hash lookup keys, and hash key arenas request
+whole 16-KiB allocation units when their byte requirement exceeds 16 KiB.
+Smaller buffers retain their exact requested capacity. Run-span arrays apply the
+same rule to their byte extent; a span's width must divide the allocation unit.
+Each owner reserves its allocated capacity before construction. Header bytes
+beyond a power-of-two text region therefore become explicit owned capacity.
+
+Encoded limits remain separate. A sort frame retains its original encoded-byte
+limit, and a run retains its original byte and row limits. Padding cannot admit
+another row or a larger frame, including a valid checksummed frame. This capacity
+policy reduces native allocation-class tails; allocator-usable extents still
+require the stock caller's observations and are not a general process-memory
+bound.
+
 ## Declared grouping admission
 
 Declared grouping calculates immutable aggregate layout before allocation. Its
@@ -347,12 +363,17 @@ an append exceeds a text arena or the row capacity, so one full-width row always
 fits. Folding does not allocate per row. Fixed extrema reuse their admitted
 slots; hash extrema use the bounded region-growth protocol above.
 
-Available memory first increases captured arguments up to 256 rows. Run slots
-and bytes then grow together up to 4,096 slots, reserving the maximum first
-record and the minimum encoded width for each additional slot. Scalar lanes use
-the remaining budget up to 256. Optional hash storage splits the remaining
-capacity between group slots and key bytes, accounting power-of-two bucket
-rounding. When STRING extrema are retained, metadata admits at most 4,096
+Available memory first increases captured arguments up to 256 rows. Run row and
+encoded-byte limits then grow together up to 4,096 slots, reserving the maximum
+first record and the minimum encoded width for each additional slot. Admission
+selects the largest row limit whose rounded buffer allocations fit; padding does
+not consume the independently retained fallback minimum. Scalar lanes use
+the remaining budget up to 256. Optional hash storage starts with half the
+remaining capacity for group slots and rounds the slot count down to a power of
+two. Cell and slot arrays follow that count; buckets also retain their power-of-two
+bound. Key bytes use the remaining budget, excluding an unaffordable partial
+allocation unit. Fewer hash slots can cause earlier fallback; this is a capacity
+policy, not a throughput guarantee. When STRING extrema are retained, metadata admits at most 4,096
 groups; larger cardinalities use the external path. Numeric-only hash sizing
 retains its row-bound ceiling. Text arena allocations are admitted as needed
 rather than reserving maximum-width text for every metadata slot. The key arena

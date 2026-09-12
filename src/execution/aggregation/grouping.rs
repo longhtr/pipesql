@@ -7,13 +7,15 @@ use crate::execution::aggregation::accumulator::{AggregateLayout, AggregateState
 use crate::execution::aggregation::arguments::ArgumentBatch;
 use crate::execution::blocking::{
     ArgumentShape, Files, IO_BYTES, KeyColumn, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_KEYS,
-    RECORD_HEADER, ReadAt, RecordSpan, RowLayout, RowSort, SortPhase, SortRecord, append_bytes,
-    append_value, read_value,
+    RECORD_HEADER, ReadAt, RowLayout, RowSort, SortPhase, SortRecord, append_bytes, append_value,
+    buffer_capacity, read_value, run_allocation_bytes,
 };
 use crate::execution::computed::RowValues;
 use crate::execution::planning::Pipeline;
 use crate::execution::{BATCH_ROWS, COMPUTE_ROWS, ConsumerInput, ConsumerStep, MAX_AGGREGATE_ROWS};
 
+#[cfg(test)]
+use crate::execution::blocking::RecordSpan;
 #[cfg(test)]
 use crate::frontend::AggregateKind;
 use crate::frontend::{AggregatePlan, DataType, MAX_ROW_VALUES, SemanticColumn, SourceColumn};
@@ -229,7 +231,7 @@ impl<'db> Minimum<'db> {
         let inline =
             size_of::<General<'_>>() - size_of::<ArgumentBatch<'_>>() - size_of::<RowSort<'_>>();
         let bytes = inline
-            .checked_add(frame_bytes)
+            .checked_add(buffer_capacity(frame_bytes)?)
             .ok_or(Error::Corrupt("group controller bytes"))? as u64;
         let reservation = database.reserve_memory(bytes, "group query controller")?;
         let record = SortRecord::new(frame_bytes, bytes)?;
@@ -257,13 +259,12 @@ impl<'db> Minimum<'db> {
         // records, three I/O buffers, a prior key, and the reusable final frame.
         [
             size_of::<General<'_>>(),
-            record.max(output.max_bytes),
+            buffer_capacity(record.max(output.max_bytes))?,
             shape.max_payload_bytes(),
-            record,
-            2 * size_of::<RecordSpan>(),
-            2 * record,
+            run_allocation_bytes(record, 1)?,
+            2 * buffer_capacity(record)?,
             3 * IO_BYTES,
-            keys.max_bytes,
+            buffer_capacity(keys.max_bytes)?,
             crate::scratch::Creation::memory_requirement_bytes() as usize,
         ]
         .into_iter()
@@ -392,8 +393,22 @@ impl<'db> General<'db> {
         // Reserve a maximum-width first record. Additional row slots and bytes
         // grow together, with at most 4,096 rows in one initial run.
         let shortest_record = RECORD_HEADER + keys.count + shape.count * 8;
-        let extra_rows = (extra / (shortest_record + 2 * size_of::<RecordSpan>()) as u64)
-            .min((COMPUTE_ROWS - 1) as u64) as usize;
+        let record_bytes = RECORD_HEADER + keys.max_bytes + shape.max_payload_bytes();
+        let base_run = run_allocation_bytes(record_bytes, 1)?;
+        // Rounded byte/span capacities grow in steps. Find the largest admitted
+        // row count without letting optional growth consume the fallback minimum.
+        let mut extra_rows = 0;
+        let mut upper = COMPUTE_ROWS - 1;
+        while extra_rows < upper {
+            let candidate = extra_rows + (upper - extra_rows).div_ceil(2);
+            let bytes =
+                run_allocation_bytes(record_bytes + candidate * shortest_record, 1 + candidate)?;
+            if (bytes - base_run) as u64 <= extra {
+                extra_rows = candidate;
+            } else {
+                upper = candidate - 1;
+            }
+        }
         let limits = Limits {
             arguments,
             run_rows: 1 + extra_rows,

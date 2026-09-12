@@ -110,6 +110,15 @@ barrier participants join. This selection also checks the complete append
 allocation-size ranges and full-width maximum-column growth, reuse, publication,
 and release. Its controls
 reject a missing rounding ceiling, a wrong result, and wrong attribution.
+The selection also observes 514 large blocking-buffer capacities and 91
+power-of-two hash layouts for the GROUPED caller; usable extents and final
+release are measured independently of the engine's sizing functions.
+
+Catalog controls also check the combined GROUPED prepared-query/result owner
+against requested and allocator-usable bytes while preserving complete nullable
+and extrema results. `--catalog-only --controls-only` reproduces those healthy
+observations; it does not execute the allocation-refusal prefixes. The default
+gate retains both pathname lengths and the complete refusal campaign.
 
 On GNU/Linux, `check-diagnostic-allocation.py --pathname-only` selects expanded-path
 create/open allocation refusals, released-storage checks, successful retries,

@@ -262,7 +262,10 @@ fn memory_groups_match_sorted_reduction_without_owning_its_reservation() {
             let mut arguments = ArgumentBatch::new(&database, shape, capacity).unwrap();
             let record_bytes = RECORD_HEADER + keys.max_bytes + 8 * shape.count;
             let charge = database
-                .reserve_memory(record_bytes as u64, "test record")
+                .reserve_memory(
+                    crate::execution::blocking::buffer_capacity(record_bytes).unwrap() as u64,
+                    "test record",
+                )
                 .unwrap();
             let mut record = SortRecord::new(record_bytes, charge.bytes()).unwrap();
             // Reserve fallback buffers and creation memory before optional state.

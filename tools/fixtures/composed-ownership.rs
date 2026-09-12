@@ -144,27 +144,75 @@ pub(super) fn reader_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+fn allocation_extent<T>(count: usize) -> (usize, usize) {
+    let before = Heap::now();
+    let mut allocation = Vec::<T>::new();
+    allocation.try_reserve_exact(count).unwrap();
+    assert_eq!(allocation.capacity(), count);
+    let live = Heap::now().increase_from(before);
+    assert_eq!(live.requested, count * std::mem::size_of::<T>());
+    drop(allocation);
+    assert_eq!(Heap::now(), before);
+    (live.requested, live.usable - live.requested)
+}
+
+// Independent domains for the padded blocking buffers and the GROUPED caller's
+// power-of-two hash layouts. Observe usable extents separately from capacities.
+pub(super) fn grouped_allocation_shapes() {
+    let mut buffers = (0, 0);
+    // A 128-value frame plus 255 minimum-width rows is at most 8,430,080
+    // encoded bytes. Its final allocation unit ends at 8,437,760 bytes.
+    for units in 2..=515 {
+        let observed = allocation_extent::<u8>(units * 16_384);
+        assert!(
+            observed.1 <= 16_384,
+            "blocking allocation rounding: {observed:?}"
+        );
+        if cfg!(target_os = "macos") {
+            assert_eq!(observed.1, 0, "aligned Darwin blocking allocation");
+        }
+        if observed.1 > buffers.1 {
+            buffers = observed;
+        }
+    }
+    let mut arrays = (0, 0);
+    // One f64, one i128, two nullable counters, one count/flag, four extrema,
+    // four 16-byte text spans, and one 24-byte key slot per group.
+    for exponent in 0..=12 {
+        let groups = 1 << exponent;
+        for observed in [
+            allocation_extent::<f64>(groups),
+            allocation_extent::<i128>(groups),
+            allocation_extent::<[u32; 2]>(groups),
+            allocation_extent::<u32>(groups),
+            allocation_extent::<[u64; 4]>(groups),
+            allocation_extent::<[u64; 8]>(groups),
+            allocation_extent::<[u64; 3]>(groups),
+        ] {
+            assert!(
+                observed.1 <= 16_384,
+                "hash allocation rounding: {observed:?}"
+            );
+            if observed.1 > arrays.1 {
+                arrays = observed;
+            }
+        }
+    }
+    println!(
+        "grouped allocation shapes passed: buffers=514 hash-layouts=91 largest-buffer={buffers:?} largest-hash={arrays:?}"
+    );
+}
+
 // The append contract admits three retained allocations separately from its
 // inline handle and paths. Challenge every permitted request size through the
 // same global allocator as the public library; do not copy its admission code.
 pub(super) fn allocation_shapes(wrong_bound: bool) {
-    fn observe<T>(count: usize) -> (usize, usize) {
-        let before = Heap::now();
-        let mut allocation = Vec::<T>::new();
-        allocation.try_reserve_exact(count).unwrap();
-        assert_eq!(allocation.capacity(), count);
-        let live = Heap::now().increase_from(before);
-        assert_eq!(live.requested, count * std::mem::size_of::<T>());
-        drop(allocation);
-        assert_eq!(Heap::now(), before);
-        (live.requested, live.usable - live.requested)
-    }
     let ceiling = if wrong_bound { 0 } else { 16_384 };
     let mut largest = (0, 0);
     // 64-byte header + 64 32-byte descriptors + the 524,288-byte
     // maximum encoded column. Commit also needs a 65,536-byte workspace.
     for bytes in 65_536..=526_400 {
-        let observed = observe::<u8>(bytes);
+        let observed = allocation_extent::<u8>(bytes);
         assert!(
             observed.1 <= ceiling,
             "append allocation rounding: {observed:?}"
@@ -177,7 +225,7 @@ pub(super) fn allocation_shapes(wrong_bound: bool) {
     // A UnitRef occupies 32 bytes with eight-byte alignment; 4,096 units
     // includes both committed references and the admitted new batch count.
     for units in 1..=4_096 {
-        let observed = observe::<[u64; 4]>(units);
+        let observed = allocation_extent::<[u64; 4]>(units);
         assert!(
             observed.1 <= ceiling,
             "append allocation rounding: {observed:?}"

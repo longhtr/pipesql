@@ -158,8 +158,11 @@ fn public_grouping_admits_the_exact_complete_minimum_before_io() {
     let argument_extra =
         (general.arguments.capacity - 1) * general.arguments.shape.count * size_of::<u64>();
     let maximum_record = RECORD_HEADER + general.keys.max_bytes + general.arguments.shape.count * 8;
-    let run_extra = general.sort.run_limits().0 - maximum_record
-        + (general.sort.run_limits().1 - 1) * 2 * size_of::<RecordSpan>();
+    // These numeric fixtures have an unpadded one-row minimum. Remove actual
+    // optional allocations, not logical limits that may exclude padding.
+    assert!(maximum_record <= 16_384);
+    let run_extra =
+        general.sort.run_allocated_bytes() - maximum_record - 2 * size_of::<RecordSpan>();
     let minimum_peak = result.accounted_memory_bytes() + crate::catalog::MAX_BYTES as u64
         - scalar_extra as u64
         - argument_extra as u64
@@ -414,8 +417,12 @@ fn check_combined_grouping_minimum(sql: &str, expected: &[Vec<Option<i64>>], ord
             (general.arguments.capacity - 1) * general.arguments.shape.count * size_of::<u64>();
         let maximum_record =
             RECORD_HEADER + general.keys.max_bytes + general.arguments.shape.count * 8;
-        let run_extra = general.sort.run_limits().0 - maximum_record
-            + (general.sort.run_limits().1 - 1) * 2 * size_of::<RecordSpan>();
+        assert!(
+            maximum_record <= 16_384,
+            "numeric one-row minimum is unpadded"
+        );
+        let run_extra =
+            general.sort.run_allocated_bytes() - maximum_record - 2 * size_of::<RecordSpan>();
         minimum_peak -= (scalar_extra + argument_extra + run_extra) as u64
             + general.memory.first().map_or(0, MemoryGroups::memory_bytes);
     }

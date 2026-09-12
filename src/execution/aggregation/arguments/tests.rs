@@ -591,7 +591,10 @@ fn text_capture_and_replay_stop_at_byte_capacity_before_row_capacity() {
     let keys = crate::execution::blocking::test_support::schema(&[]);
     let record_bytes = RECORD_HEADER + shape.max_payload_bytes();
     let record_charge = database
-        .reserve_memory(record_bytes as u64, "text capture test frame")
+        .reserve_memory(
+            crate::execution::blocking::buffer_capacity(record_bytes).unwrap() as u64,
+            "text capture test frame",
+        )
         .unwrap();
     let mut record = SortRecord::new(record_bytes, record_charge.bytes()).unwrap();
     let text = "m".repeat(crate::batch::MAX_TEXT_BYTES);

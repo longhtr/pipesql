@@ -22,6 +22,99 @@ fn encoded(keys: &RowLayout, values: &[Value<'_>]) -> Vec<u8> {
 }
 
 #[test]
+fn allocation_padding_does_not_extend_record_or_run_limits() {
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("db"),
+        crate::Config::new(4_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    let baseline = database.reserved_memory_bytes();
+    let keys = schema(&[(DataType::String, false)]);
+    let text = "x".repeat(65_500);
+    let key = encoded(&keys, &[Value::String(StringValue::new(&text))]);
+    // Header + STRING tag/length + text: 32 + 5 + 65,500 bytes.
+    let charge = database
+        .reserve_memory(2 * 81_920 + IO_BYTES as u64, "padded frame test")
+        .unwrap();
+    let mut record = SortRecord::new(65_537, charge.bytes()).unwrap();
+    record.encode(&keys, ROW_ARGUMENTS, &key, 0, &[]).unwrap();
+    assert_eq!(record.bytes.len(), 65_537);
+    assert_eq!(record.bytes.capacity(), 81_920);
+    let mut run = RunBuffer::new(&database, 65_537, 2).unwrap();
+    assert_eq!(run.bytes.capacity(), 81_920);
+    assert!(run.push(&record).unwrap());
+    let empty = encoded(&keys, &[Value::String(StringValue::new(""))]);
+    record.encode(&keys, ROW_ARGUMENTS, &empty, 1, &[]).unwrap();
+    assert!(
+        !run.push(&record).unwrap(),
+        "padding is not extra run space"
+    );
+    assert_eq!(run.spans.len(), 1);
+    drop(run);
+
+    let mut run = RunBuffer::new(&database, 65_537, 1_025).unwrap();
+    assert_eq!(run.spans.capacity(), 2_048);
+    for ordinal in 0..1_025 {
+        record
+            .encode(&keys, ROW_ARGUMENTS, &empty, ordinal, &[])
+            .unwrap();
+        assert!(run.push(&record).unwrap());
+    }
+    record
+        .encode(&keys, ROW_ARGUMENTS, &empty, 1_025, &[])
+        .unwrap();
+    assert!(
+        !run.push(&record).unwrap(),
+        "padding is not extra row slots"
+    );
+    assert_eq!(run.spans.len(), 1_025);
+    drop(run);
+
+    let longer = format!("{text}y");
+    let key = encoded(&keys, &[Value::String(StringValue::new(&longer))]);
+    assert!(matches!(
+        record.encode(&keys, ROW_ARGUMENTS, &key, 0, &[]),
+        Err(Error::Resource {
+            required: 65_538,
+            limit: 65_537,
+            ..
+        })
+    ));
+    // A valid, checksummed larger frame still exceeds this reader's admitted
+    // encoded limit even though its physical buffer could hold the bytes.
+    let mut larger = SortRecord::new(65_538, charge.bytes()).unwrap();
+    larger.encode(&keys, ROW_ARGUMENTS, &key, 0, &[]).unwrap();
+    let cancel = CancellationToken::new();
+    let mut effects = Effects::default();
+    let mut scratch = crate::scratch::Scratch::new(&database, &cancel, &mut effects).unwrap();
+    scratch
+        .write(0, 0, &larger.bytes, &cancel, &mut effects)
+        .unwrap();
+    let mut reader = ReadBuffer::new(charge.bytes()).unwrap();
+    let result = record.read(
+        &mut reader,
+        ReadAt {
+            slot: 0,
+            offset: 0,
+            limit: larger.bytes.len() as u64,
+        },
+        &keys,
+        ROW_ARGUMENTS,
+        &mut Io::new(&mut scratch, &cancel, &mut effects),
+    );
+    assert!(matches!(
+        result,
+        Err(Error::Corrupt("group argument exceeds admitted buffer"))
+    ));
+    drop((scratch, reader, larger, record));
+    drop(charge);
+    assert_eq!(database.reserved_memory_bytes(), baseline);
+    assert_eq!(database.reserved_temp_bytes(), 0);
+    database.close().unwrap();
+}
+
+#[test]
 fn text_argument_frames_validate_lengths_utf8_and_null_payloads() {
     let directory = Directory::new();
     let database = Database::create_empty(
@@ -42,7 +135,10 @@ fn text_argument_frames_validate_lengths_utf8_and_null_payloads() {
     };
     let capacity = RECORD_HEADER + keys.max_bytes + shape.max_payload_bytes();
     let charge = database
-        .reserve_memory((IO_BYTES + capacity) as u64, "text codec test")
+        .reserve_memory(
+            (IO_BYTES + buffer_capacity(capacity).unwrap()) as u64,
+            "text codec test",
+        )
         .unwrap();
     let mut record = SortRecord::new(capacity, charge.bytes()).unwrap();
     let mut reader = ReadBuffer::new(charge.bytes()).unwrap();
@@ -359,7 +455,10 @@ fn wide_rows_sort_by_key_without_losing_nonkey_payloads() {
     let record_bytes = RECORD_HEADER + layout.max_bytes;
     assert!(record_bytes > MAX_ARGUMENT_RECORD_BYTES);
     let record_charge = database
-        .reserve_memory(record_bytes as u64, "wide sorted row")
+        .reserve_memory(
+            buffer_capacity(record_bytes).unwrap() as u64,
+            "wide sorted row",
+        )
         .unwrap();
     let mut record = SortRecord::new(record_bytes, record_charge.bytes()).unwrap();
     let shape = ArgumentShape {
@@ -712,7 +811,10 @@ fn argument_sort_preserves_unsorted_records_across_row_and_byte_caps() {
                 + sort.merge.pair.reservation.bytes();
             assert_eq!(database.reserved_memory_bytes(), before + sort_charge);
             let record_charge = database
-                .reserve_memory(record_bytes as u64, "test argument record")
+                .reserve_memory(
+                    buffer_capacity(record_bytes).unwrap() as u64,
+                    "test argument record",
+                )
                 .unwrap();
             let mut record = SortRecord::new(record_bytes, record_charge.bytes()).unwrap();
             for (_, _, ordinal, key) in &expected {
@@ -851,7 +953,10 @@ fn check_merge_passes(database: &Database, runs: u32, fail_at: Option<u64>) -> u
     let mut merge = MergePasses::new(database, &keys, arguments).unwrap();
     assert!(merge.reservation.bytes() >= IO_BYTES as u64);
     let record_charge = database
-        .reserve_memory((RECORD_HEADER + keys.max_bytes + 8) as u64, "test record")
+        .reserve_memory(
+            buffer_capacity(RECORD_HEADER + keys.max_bytes + 8).unwrap() as u64,
+            "test record",
+        )
         .unwrap();
     let mut record =
         SortRecord::new(RECORD_HEADER + keys.max_bytes + 8, record_charge.bytes()).unwrap();
@@ -1036,7 +1141,7 @@ fn check_pair_merge(equal_keys: bool) {
     assert_eq!(database.reserved_memory_bytes(), before + merge_bytes);
     let charge = database
         .reserve_memory(
-            (IO_BYTES + RECORD_HEADER + keys.max_bytes + 16) as u64,
+            (IO_BYTES + buffer_capacity(RECORD_HEADER + keys.max_bytes + 16).unwrap()) as u64,
             "group codec test workspace",
         )
         .unwrap();

@@ -355,6 +355,10 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
                 .unwrap();
             let usable = grouped_live.usable.checked_sub(query_live.usable).unwrap();
             assert!(requested as u64 <= grouped_charge);
+            assert!(
+                usable as u64 <= grouped_charge,
+                "grouped usable allocations exceed admission"
+            );
             println!(
                 "catalog grouped held charge={grouped_charge} requested={requested} usable={usable}"
             );

@@ -187,6 +187,10 @@ def run_cell(work, failures, mode, label, database_bytes=None):
 
 
 def check_ownership(work, run, failures):
+    grouped = run("grouped-allocation-shapes", "grouped-allocation-shapes")
+    print(grouped.stdout + grouped.stderr, end="", flush=True)
+    if "grouped allocation shapes passed: buffers=514 hash-layouts=91" not in grouped.stdout:
+        failures.append("incomplete grouped allocation shape checks")
     readers = run("reader-allocation-shapes", "reader-allocation-shapes")
     print(readers.stdout + readers.stderr, end="", flush=True)
     if "reader shapes passed: 12 fixed-width ordering/distinct cases; rows, admission and release" not in readers.stdout:

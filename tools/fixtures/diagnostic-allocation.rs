@@ -252,6 +252,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::path::PathBuf::from(args.next().expect("owned probe directory"));
     let mode = args.next().expect("probe mode");
     assert!(args.next().is_none());
+    if mode == "grouped-allocation-shapes" {
+        ownership::grouped_allocation_shapes();
+        return Ok(());
+    }
     if mode == "reader-allocation-shapes" {
         return ownership::reader_shapes(&root);
     }

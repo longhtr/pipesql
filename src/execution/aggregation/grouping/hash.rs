@@ -2,7 +2,9 @@
 use crate::batch::Batch;
 use crate::execution::aggregation::accumulator::{AggregateCells, AggregateState, TextSpan};
 use crate::execution::aggregation::arguments::ArgumentBatch;
-use crate::execution::blocking::{ArgumentShape, MAX_KEY_BYTES, RowLayout, append_bytes};
+use crate::execution::blocking::{
+    ArgumentShape, BUFFER_ALLOCATION_UNIT, MAX_KEY_BYTES, RowLayout, append_bytes, buffer_capacity,
+};
 use crate::execution::{BATCH_ROWS, MAX_AGGREGATE_ROWS};
 use crate::resources::{MemoryAuthority, Reservation, allocate};
 use crate::{CancellationToken, Database, Error, Value};
@@ -111,6 +113,8 @@ impl<'db> MemoryGroups<'db> {
     ) -> Result<Self, Error> {
         let (bucket_count, bytes) = Self::requirement(aggregate, keys, capacity, key_limit)?;
         let base = &aggregate.cells;
+        let key_capacity = buffer_capacity(keys.max_bytes)?;
+        let arena_capacity = buffer_capacity(key_limit)?;
         let reservation = database.reserve_memory(bytes, "optional hash groups")?;
         Ok(Self {
             cells: AggregateCells {
@@ -132,8 +136,8 @@ impl<'db> MemoryGroups<'db> {
                 },
                 text_offsets: base.text_offsets,
             },
-            key: allocate(keys.max_bytes, keys.max_bytes, "hash lookup key", bytes)?,
-            arena: allocate(key_limit, key_limit, "group key arena", bytes)?,
+            key: allocate(key_capacity, key_capacity, "hash lookup key", bytes)?,
+            arena: allocate(arena_capacity, arena_capacity, "group key arena", bytes)?,
             entries: allocate(capacity, capacity, "group key slots", bytes)?,
             buckets: filled(bucket_count, EMPTY, bytes)?,
             positions: filled(BATCH_ROWS, (0, 0), bytes)?,
@@ -176,6 +180,8 @@ impl<'db> MemoryGroups<'db> {
                 .checked_mul(capacity)
                 .ok_or(Error::Corrupt("hash cell count"))
         };
+        let arena_capacity = buffer_capacity(key_limit)?;
+        let key_capacity = buffer_capacity(keys.max_bytes)?;
         let bytes = [
             (count(base.values.len())?, size_of::<f64>()),
             (count(base.integers.len())?, size_of::<i128>()),
@@ -201,8 +207,8 @@ impl<'db> MemoryGroups<'db> {
                 .checked_mul(width)
                 .and_then(|bytes| total.checked_add(bytes))
         })
-        .and_then(|bytes| bytes.checked_add(key_limit))
-        .and_then(|bytes| bytes.checked_add(keys.max_bytes))
+        .and_then(|bytes| bytes.checked_add(arena_capacity))
+        .and_then(|bytes| bytes.checked_add(key_capacity))
         .ok_or(Error::Corrupt("hash grouping memory"))? as u64;
         Ok((bucket_count, bytes))
     }
@@ -248,6 +254,10 @@ impl<'db> MemoryGroups<'db> {
         };
         let capacity = usize::try_from((extra / 2 / per_group as u64).clamp(1, maximum_groups))
             .map_err(|_| Error::Corrupt("hash capacity does not fit"))?;
+        // Keep cell and slot arrays on power-of-two group capacities. Their
+        // element widths then avoid the large partial allocation classes of
+        // arbitrary row counts. Key bytes use the remaining budget below.
+        let capacity = 1 << capacity.ilog2();
         let (_, arrays) = Self::requirement(aggregate, keys, capacity, 0)?;
         let key_bytes = available
             .checked_sub(arrays)
@@ -259,6 +269,13 @@ impl<'db> MemoryGroups<'db> {
             .ok_or(Error::Corrupt("hash key capacity overflow"))?;
         let key_bytes = usize::try_from(key_bytes)
             .map_err(|_| Error::Corrupt("hash key arena does not fit"))?;
+        // A partial large allocation unit cannot be admitted. Clamp to the
+        // encoded-key bound afterward; its rounded capacity still fits here.
+        let key_bytes = if key_bytes > BUFFER_ALLOCATION_UNIT {
+            key_bytes & !(BUFFER_ALLOCATION_UNIT - 1)
+        } else {
+            key_bytes
+        };
         Ok((capacity, key_bytes.min(maximum_key_bytes)))
     }
 

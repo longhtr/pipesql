@@ -73,8 +73,10 @@ impl<'db> SortedInput<'db> {
     fn new(database: &'db Database, layout: RowLayout) -> Result<Self, Error> {
         let record_bytes = RECORD_HEADER + layout.max_bytes;
         let inline = size_of::<Self>() - size_of::<RowSort<'_>>();
-        let reservation =
-            database.reserve_memory((inline + record_bytes) as u64, "sorted input")?;
+        let reservation = database.reserve_memory(
+            (inline + buffer_capacity(record_bytes)?) as u64,
+            "sorted input",
+        )?;
         let record = SortRecord::new(record_bytes, reservation.bytes())?;
         // One maximum row always fits. More short rows share the remaining run
         // space; row count and bytes independently bound sorting work.
@@ -160,6 +162,7 @@ impl<'db> SortedInput<'db> {
 
 pub(super) const MAX_KEYS: usize = MAX_AGGREGATE_COLUMNS - 1;
 pub(super) const RECORD_HEADER: usize = 32;
+
 const RECORD_MAGIC: &[u8; 8] = b"PGRP0001";
 pub(super) const MAX_KEY_BYTES: usize = MAX_KEYS * (5 + crate::batch::MAX_TEXT_BYTES);
 pub(super) const MAX_ARGUMENT_RECORD_BYTES: usize =
@@ -169,6 +172,38 @@ const MAX_RECORD_BYTES: usize = MAX_FRAME_BYTES;
 pub(super) const MAX_FRAME_BYTES: usize =
     RECORD_HEADER + MAX_ROW_VALUES * (5 + crate::batch::MAX_TEXT_BYTES);
 const _: () = assert!(MAX_ARGUMENT_RECORD_BYTES <= MAX_RECORD_BYTES);
+
+pub(super) const BUFFER_ALLOCATION_UNIT: usize = 16_384;
+
+// Large encoded buffers often add a header to a power-of-two text region.
+// Own whole 16-KiB units so that tail is charged before allocation. Logical
+// record/run limits remain separate from this physical capacity.
+pub(super) fn buffer_capacity(bytes: usize) -> Result<usize, Error> {
+    if bytes <= BUFFER_ALLOCATION_UNIT {
+        return Ok(bytes);
+    }
+    bytes
+        .checked_add(BUFFER_ALLOCATION_UNIT - 1)
+        .map(|rounded| rounded & !(BUFFER_ALLOCATION_UNIT - 1))
+        .ok_or(Error::Corrupt("blocking buffer allocation capacity"))
+}
+
+const _: () = assert!(BUFFER_ALLOCATION_UNIT.is_multiple_of(size_of::<RecordSpan>()));
+
+fn span_capacity(rows: usize) -> Result<usize, Error> {
+    let bytes = rows
+        .checked_mul(size_of::<RecordSpan>())
+        .ok_or(Error::Corrupt("run span allocation capacity"))?;
+    Ok(buffer_capacity(bytes)? / size_of::<RecordSpan>())
+}
+
+pub(super) fn run_allocation_bytes(bytes: usize, rows: usize) -> Result<usize, Error> {
+    let bytes = buffer_capacity(bytes)?;
+    span_capacity(rows)?
+        .checked_mul(2 * size_of::<RecordSpan>())
+        .and_then(|spans| spans.checked_add(bytes))
+        .ok_or(Error::Corrupt("run allocation bytes"))
+}
 
 #[derive(Clone, Copy)]
 struct RunId {
@@ -420,22 +455,19 @@ impl<'db> PairMerge<'db> {
             .checked_add(keys.max_bytes)
             .and_then(|n| n.checked_add(arguments.max_payload_bytes()))
             .ok_or(Error::Corrupt("merge record capacity"))?;
-        let bytes = record_bytes
+        let record_capacity = buffer_capacity(record_bytes)?;
+        let key_capacity = buffer_capacity(keys.key_max_bytes)?;
+        let bytes = record_capacity
             .checked_mul(2)
             .and_then(|n| n.checked_add(2 * IO_BYTES))
-            .and_then(|n| n.checked_add(keys.key_max_bytes))
+            .and_then(|n| n.checked_add(key_capacity))
             .and_then(|n| n.checked_add(size_of::<Self>()))
             .ok_or(Error::Corrupt("merge memory requirement"))? as u64;
         let reservation = database.reserve_memory(bytes, "group merge minimum")?;
         Ok(Self {
             left: RunCursor::new(record_bytes, bytes)?,
             right: RunCursor::new(record_bytes, bytes)?,
-            previous_key: allocate(
-                keys.key_max_bytes,
-                keys.key_max_bytes,
-                "merge previous key",
-                bytes,
-            )?,
+            previous_key: allocate(key_capacity, key_capacity, "merge previous key", bytes)?,
             previous_ordinal: None,
             expected_end: 0,
             input_slot: 0,
@@ -595,16 +627,16 @@ impl<'db> RunBuffer<'db> {
         if byte_limit < RECORD_HEADER || row_limit == 0 || row_limit as u64 > MAX_AGGREGATE_ROWS {
             return Err(Error::Corrupt("group run buffer bounds"));
         }
-        let charge = row_limit
-            .checked_mul(2 * size_of::<RecordSpan>())
-            .and_then(|n| n.checked_add(byte_limit))
-            .and_then(|n| n.checked_add(size_of::<Self>()))
+        let charge = run_allocation_bytes(byte_limit, row_limit)?
+            .checked_add(size_of::<Self>())
             .ok_or(Error::Corrupt("group run buffer memory"))? as u64;
+        let byte_capacity = buffer_capacity(byte_limit)?;
+        let spans = span_capacity(row_limit)?;
         let reservation = database.reserve_memory(charge, "group run buffer")?;
         Ok(Self {
-            bytes: allocate(byte_limit, byte_limit, "group run bytes", charge)?,
-            spans: allocate(row_limit, row_limit, "group run spans", charge)?,
-            work: allocate(row_limit, row_limit, "group run sort workspace", charge)?,
+            bytes: allocate(byte_capacity, byte_capacity, "group run bytes", charge)?,
+            spans: allocate(spans, spans, "group run spans", charge)?,
+            work: allocate(spans, spans, "group run sort workspace", charge)?,
             byte_limit,
             row_limit,
             last_ordinal: None,
@@ -1119,14 +1151,18 @@ impl<'db> RowSort<'db> {
     }
 
     #[cfg(test)]
+    pub(super) fn run_allocated_bytes(&self) -> usize {
+        self.buffer.bytes.capacity()
+            + (self.buffer.spans.capacity() + self.buffer.work.capacity()) * size_of::<RecordSpan>()
+    }
+
+    #[cfg(test)]
     pub(super) fn allocated_heap_bytes(&self) -> usize {
         // Observe actual capacities independently of the admission equations.
         fn bytes<T>(values: &Vec<T>) -> usize {
             values.capacity() * size_of::<T>()
         }
-        bytes(&self.buffer.bytes)
-            + bytes(&self.buffer.spans)
-            + bytes(&self.buffer.work)
+        self.run_allocated_bytes()
             + self.merge.writer.allocated_bytes()
             + bytes(&self.merge.pair.previous_key)
             + bytes(&self.merge.pair.left.record.bytes)

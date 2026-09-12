@@ -121,7 +121,10 @@ fn evaluated_sorted_arguments_use_the_existing_aggregate_kernel() {
             assert!(arguments.reservation.bytes() >= (shape.count * capacity * 8) as u64);
             let record_bytes = RECORD_HEADER + keys.max_bytes + shape.count * 8;
             let record_charge = database
-                .reserve_memory(record_bytes as u64, "test captured record")
+                .reserve_memory(
+                    crate::execution::blocking::buffer_capacity(record_bytes).unwrap() as u64,
+                    "test captured record",
+                )
                 .unwrap();
             let mut record = SortRecord::new(record_bytes, record_charge.bytes()).unwrap();
             let mut sort = RowSort::new(&database, &keys, shape, record_bytes, 2).unwrap();

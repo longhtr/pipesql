@@ -127,7 +127,9 @@ and controller mechanics. [Row-codec tests](../src/execution/blocking/record.rs)
 check key equivalence, ordering, hashing, and raw value preservation.
 [Sorting tests](../src/execution/blocking/sorting_tests.rs) check wide payloads,
 row/byte caps, merge passes, cancellation, corruption, and terminal failure
-without importing aggregate evaluation.
+without importing aggregate evaluation. Padding checks distinguish allocated
+capacity from encoded-frame, run-byte, and run-row limits, including a valid
+checksummed frame beyond the reader's admitted encoded limit.
 Legacy load tests separate [normal loading and admission](../src/load/tests/loading.rs),
 [publication and recovery](../src/load/tests/publication.rs), and
 [failure schedules](../src/load/tests/failures.rs). Their shared namespace reader

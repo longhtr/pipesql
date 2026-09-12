@@ -185,7 +185,7 @@ checkpoint, independent nullable/extrema row expectations, and public entry path
 
 The healthy controls reproduce both deficits on current runtime inputs, with
 the same library hash as the full gate. They do not repeat the refusal sweep.
-Trace retained owners before choosing a repair. Bound actual allocation geometry before effects,
+The retained-owner trace below identifies the repair boundaries. Bound allocation geometry before effects,
 preserving independent attribution, full rows, hash growth and fallback,
 spill/replay, exact/short admission, allocation refusal, cancellation, and release.
 Qualify affected stock allocator/size premises on macOS and native-storage GNU/Linux;
@@ -193,6 +193,41 @@ retain other allocators, schedules, transient peaks, and process/RSS memory as
 separate limits. Finish focused and required complete checks, current contracts,
 concise evidence, owned-output cleanup, and local commits. Do not add query
 features or another allocation framework.
+
+The disposable caller trace reconciles all 66 retained allocations exactly with
+the independent grouped-query heap delta. Large result/run/merge/prior-key
+buffers request 196,709, 364,548, 131,133 (twice), and 65,541 bytes, occupying
+212,992, 376,832, 147,456 (twice), and 81,920 on macOS. The hash owner admits
+2,836 groups: its cell/span/slot arrays and key arena also cross native classes.
+The trace adds no heap allocation and leaves the public library uninstrumented.
+
+The implementation now selects power-of-two hash group capacities and allocates
+large byte buffers and run-span arrays in whole 16-KiB units. Encoded record and
+run byte/row limits remain explicit. Optional run growth searches the rounded
+allocation steps within the available budget; it cannot consume the fallback
+minimum. The sampled hash capacity changes from 2,836 to 2,048 groups. Its key
+arena uses the remaining admitted capacity; this policy can cause earlier fallback
+for workloads with more groups and is not a throughput claim.
+
+Focused macOS checks pass: 35 grouping and 23 blocking tests, including exact and
+one-byte-short admission, replay, corruption, cancellation, and padding boundaries.
+The exact-minimum oracles now subtract actual optional run allocations rather than
+logical limits, keeping the expected minimum independent of the sizing helper.
+The maintained public caller rejects the previous library's usable excess and
+accepts the prototype on both pathname lengths. The prototype short/long usable
+samples are 3,933,424/3,933,744 bytes under a 3,974,168-byte charge.
+
+Focused GNU arm64 Linux checks passed 109 execution tests and all five public
+grouping tests. Healthy catalog controls retained the full-row oracle at both
+pathname lengths, with usable extents 3,927,992/3,928,296 below the 3,974,168-byte
+charge. The ownership campaign passed on both platforms, including 514 large
+buffer sizes and 91 layouts for this caller’s hash states. Darwin large buffers
+had zero rounding; GNU/Linux’s largest tail was 4,080 bytes. These bounded size
+families do not qualify arbitrary schemas, allocators, or transient schedules.
+
+Remaining work: run complete frozen gates, update concise evidence, remove owned
+trace/build outputs, review, and commit. No complete gate has yet run for this
+implementation.
 
 ## Applying DuckDB lessons
 

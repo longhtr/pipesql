@@ -437,6 +437,7 @@ impl ArgumentShape {
 
 pub(in crate::execution) struct SortRecord {
     pub(in crate::execution) bytes: Vec<u8>,
+    limit: usize,
 }
 
 impl SortRecord {
@@ -476,8 +477,10 @@ impl SortRecord {
         if !(RECORD_HEADER..=MAX_FRAME_BYTES).contains(&capacity) {
             return Err(Error::Corrupt("argument record capacity"));
         }
+        let allocated = super::buffer_capacity(capacity)?;
         Ok(Self {
-            bytes: allocate(capacity, capacity, "group argument record", charge)?,
+            bytes: allocate(allocated, allocated, "group argument record", charge)?,
+            limit: capacity,
         })
     }
 
@@ -538,6 +541,13 @@ impl SortRecord {
                 return Err(Error::Corrupt("group text argument length"));
             }
             append_bytes(&mut self.bytes, value.as_bytes())?;
+        }
+        if self.bytes.len() > self.limit {
+            return Err(Error::Resource {
+                owner: "group record buffer",
+                required: self.bytes.len() as u64,
+                limit: self.limit as u64,
+            });
         }
         self.bytes[..8].copy_from_slice(RECORD_MAGIC);
         self.bytes[8..16].copy_from_slice(&ordinal.to_le_bytes());
@@ -604,7 +614,7 @@ impl SortRecord {
             .checked_add(key_len)
             .and_then(|n| n.checked_add(states * 8))
             .ok_or(Error::Corrupt("group argument extent"))?;
-        if key_len > keys.max_bytes || end > self.bytes.capacity() {
+        if key_len > keys.max_bytes || end > self.limit {
             return Err(Error::Corrupt("group argument exceeds admitted buffer"));
         }
         self.bytes.resize(end, 0);
@@ -632,7 +642,7 @@ impl SortRecord {
                 }
                 total = total
                     .checked_add(length)
-                    .filter(|total| *total <= self.bytes.capacity())
+                    .filter(|total| *total <= self.limit)
                     .ok_or(Error::Corrupt("group text argument extent"))?;
             }
         }
