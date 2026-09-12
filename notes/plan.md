@@ -28,6 +28,29 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
+## Current: full-partition analytic row count
+
+Implement the first bounded analytic profile from the language contract:
+`COUNT(*) OVER ()` in SELECT and EXTEND. It preserves input cardinality and adds
+a nonnullable INT64 count of the complete input partition. Keep other analytic
+signatures, partition/order specifications and explicit frames rejected until
+their own complete implementation.
+
+1. Trace parser/binder identities, demand analysis, independent validators,
+   physical planning and existing blocking storage. Choose a bounded execution
+   owner after checking the empty-input, downstream LIMIT and demanded-error
+   cases; do not fake the result with an aggregate that collapses input rows.
+2. Implement the complete accepted profile across current producer composition,
+   including mixed ordinary projections and original range visibility. Analytic
+   expressions clear semantic relation order as the target contract requires.
+3. Preserve admission before effects, bounded memory/work, cancellation, failure,
+   scratch cleanup, snapshots and healthy reuse. Keep independent expected rows,
+   semantic/physical mutations and exact/short resource controls.
+4. Add a small example and current language/resource/learning documentation.
+   Run focused checks, both complete macOS/GNU/Linux gates and the documented
+   example with fresh outputs. Reconcile discovery, remove owned artifacts and
+   commit locally before closing the milestone.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
