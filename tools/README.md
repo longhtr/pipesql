@@ -107,7 +107,9 @@ limits. It checks reader usable extents against admission, including one- and
 64-column INT64, DOUBLE, DATE and STRING ORDER BY/DISTINCT cases at short and
 384-byte database pathnames. STRING covers empty/short Unicode and 65,536-byte
 values. Each case checks complete nullable results, duplicate counts and final
-release. Composed-reader bound failures are reported after the
+release. GNU/Linux additionally runs fresh callers with fixed 128-KiB and 64-MiB
+mmap thresholds, with observed allocator controls before the reader cases.
+Composed-reader bound failures are reported after the
 barrier participants join. This selection also checks the complete append
 allocation-size ranges and full-width maximum-column growth, reuse, publication,
 and release. Its controls

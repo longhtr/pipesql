@@ -99,7 +99,7 @@ class GroupExpectations(unittest.TestCase):
 
 
 class AllocationInterpretation(unittest.TestCase):
-    def test_ownership_requires_joined_completion(self):
+    def test_ownership_requires_joined_and_allocator_observations(self):
         marker = "joined shapes passed: 2 budgets; complete rows, step ownership and release"
         for output, missing in [("", True), (marker, False)]:
             failures = []
@@ -112,10 +112,18 @@ class AllocationInterpretation(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 1, "", "injected rejection")
             with self.subTest(output=output), patch.dict(
                 ALLOCATION["check_ownership"].__globals__, {"run_process": native}
-            ), redirect_stdout(io.StringIO()):
+            ), patch.object(ALLOCATION["sys"], "platform", "linux"), redirect_stdout(io.StringIO()):
                 ALLOCATION["check_ownership"](Path("unused"), run, failures)
             self.assertEqual("incomplete joined allocation ownership checks" in failures, missing)
             self.assertIn((("joined-shapes", "joined-shapes"), {}), run.call_args_list)
+            # A zero exit and other completion markers cannot stand in for
+            # observing each explicitly selected native allocation regime.
+            self.assertEqual(sum(message.startswith("missing reader allocator control:")
+                                 for message in failures), 4)
+            self.assertIn((("reader-allocation-shapes", "reader-mapped-path384", 384),
+                           {"mmap_threshold": 131_072}), run.call_args_list)
+            self.assertIn((("reader-allocation-shapes", "reader-arena-path384", 384),
+                           {"mmap_threshold": 67_108_864}), run.call_args_list)
 
     def test_pathname_scope_runs_only_its_cells_and_common_mutex_control(self):
         run = Mock(return_value=subprocess.CompletedProcess(

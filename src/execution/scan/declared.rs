@@ -32,17 +32,15 @@ const _: () = assert!(MAX_COLUMNS <= u64::BITS as usize);
 const FIXED_BYTES: usize =
     size_of::<Scan>() + 2 * crate::path::MAX_PATH_BYTES + COMPUTE_ROWS * size_of::<u32>();
 
-// Fixed-width payloads include a validity bitmap beyond their power-of-two value
-// region. That tail crosses a Darwin allocation class. Request and charge whole
-// 16-KiB units so the owner accounts for the capacity it actually retains. Native
-// column validation still limits encoded bytes; padding is never a stored value.
+// Encoded limits remain independent of padded physical allocations.
 fn payload_allocation_bytes(kind: DataType) -> usize {
-    native_unit::column_capacity(kind).next_multiple_of(16_384)
+    crate::resources::buffer_capacity(native_unit::column_capacity(kind))
+        .expect("bounded native payload")
 }
 
 // Includes the catalog scratch that overlaps retained scan ownership at admission.
 pub(in crate::execution) const MAX_WORKSPACE_BYTES: u64 = FIXED_BYTES as u64
-    + (MAX_COLUMNS * native_unit::MAX_COLUMN_BYTES) as u64
+    + (MAX_COLUMNS * native_unit::MAX_COLUMN_ALLOCATION_BYTES) as u64
     + 2 * crate::batch::MAX_BYTES_WITH_TEXT
     + catalog::MAX_BYTES as u64
     + BranchScratch::MAX_BYTES;
@@ -467,10 +465,10 @@ mod tests {
         .unwrap();
         let cancel = CancellationToken::new();
         for (name, kind, capacity) in [
-            ("ints", DataType::Int64, 278_528),
-            ("doubles", DataType::Double, 278_528),
-            ("dates", DataType::Date, 147_456),
-            ("strings", DataType::String, 524_288),
+            ("ints", DataType::Int64, 278_496),
+            ("doubles", DataType::Double, 278_496),
+            ("dates", DataType::Date, 147_424),
+            ("strings", DataType::String, 540_640),
         ] {
             db.declare_table(
                 name,

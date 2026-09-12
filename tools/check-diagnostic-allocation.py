@@ -110,7 +110,7 @@ def build_driver(work):
     )
 
 
-def run_cell(work, failures, mode, label, database_bytes=None):
+def run_cell(work, failures, mode, label, database_bytes=None, mmap_threshold=None):
     root = work / label
     if database_bytes is not None:
         parent = root / ("x" * 200)
@@ -129,8 +129,17 @@ def run_cell(work, failures, mode, label, database_bytes=None):
                 "-l" if os.uname().sysname == "Darwin" else "-v",
                 *command,
             ]
+        environment = None
+        if mmap_threshold is not None:
+            assert sys.platform == "linux" and mode == "reader-allocation-shapes"
+            environment = {
+                **os.environ,
+                "MALLOC_MMAP_THRESHOLD_": str(mmap_threshold),
+                "GLIBC_TUNABLES": f"glibc.malloc.mmap_threshold={mmap_threshold}",
+            }
         result = run_process(
-            command, cwd=ROOT, capture_output=True, text=True, timeout=20
+            command, cwd=ROOT, capture_output=True, text=True, timeout=20,
+            env=environment,
         )
     finally:
         # Timeout or assertion failure must not strand an owned directory ACL.
@@ -199,13 +208,23 @@ def check_ownership(work, run, failures):
     print(grouped.stdout + grouped.stderr, end="", flush=True)
     if "grouped allocation shapes passed: buffers=514 hash-layouts=91" not in grouped.stdout:
         failures.append("incomplete grouped allocation shape checks")
-    for label, length in [("short", None), ("path384", 384)]:
-        readers = run(
-            "reader-allocation-shapes", f"reader-shapes-{label}", length
-        )
-        print(readers.stdout + readers.stderr, end="", flush=True)
-        if "reader shapes passed: 12 fixed-width and 8 STRING ordering/distinct cases; rows, admission and release" not in readers.stdout:
-            failures.append(f"incomplete typed reader allocation checks: {label}")
+    reader_regimes = [("default", None)]
+    if sys.platform == "linux":
+        # Disable adaptive thresholds in these fresh callers: large payloads
+        # exercise both mapped and arena-backed allocation paths.
+        reader_regimes += [("mapped", 131_072), ("arena", 67_108_864)]
+    for regime, threshold in reader_regimes:
+        for label, length in [("short", None), ("path384", 384)]:
+            readers = run(
+                "reader-allocation-shapes", f"reader-{regime}-{label}", length,
+                mmap_threshold=threshold,
+            )
+            print(f"reader allocator regime={regime} pathname={label}", flush=True)
+            print(readers.stdout + readers.stderr, end="", flush=True)
+            if threshold is not None and f"reader allocator threshold={threshold} observed" not in readers.stdout:
+                failures.append(f"missing reader allocator control: {regime}/{label}")
+            if "reader shapes passed: 12 fixed-width and 8 STRING ordering/distinct cases; rows, admission and release" not in readers.stdout:
+                failures.append(f"incomplete typed reader allocation checks: {regime}/{label}")
     shapes = run("append-allocation-shapes", "append-allocation-shapes")
     print(shapes.stdout + shapes.stderr, end="", flush=True)
     if (

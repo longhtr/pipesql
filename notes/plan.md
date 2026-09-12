@@ -417,8 +417,33 @@ with exact short/384-byte database pathnames. Strengthened batch
 checks cover short-reservation preservation, sparse span writes, replacement and
 reuse of both allocations. Disposable macOS controls reject a wrong expected empty string and an incorrect
 STRING DISTINCT multiplicity with exit 101 at their equality assertions. The
-three batch tests and maintenance checks pass. Linux and full retained verification
-remain; do not treat focused success as broader qualification.
+three batch tests and maintenance checks pass. The initial full gates at `03e4736` both stop at Rust tests: two legacy scan
+checks still expect 64-byte column metadata instead of the actual 80-byte owner.
+Their independent exact-admission expectations are being updated; no engine
+limit is being raised to hide these failures. Later gate stages did not run.
+
+The Linux healthy STRING control separately fails at 64-column short ORDER BY:
+55,178,688 usable bytes exceed its 55,176,592-byte charge. A traced run exposes
+allocator-state dependence: 46 source payloads request 524,288 bytes and occupy
+528,368 each, and three sorting buffers request 4,210,688 and occupy 4,214,768.
+The trace's total usable extent is 55,365,984. This is separate from the repaired
+text metadata allocation. No attribution equation or assertion is weakened.
+
+A disposable capacity candidate leaves 32 bytes below each 16-KiB boundary for
+native allocation headers/alignment, while retaining at least the logical byte
+requirement. Only physical payload capacity is extended; encoded column limits
+remain 524,288 bytes. The candidate passes all 20 Linux reader shapes. Maximum
+STRING DISTINCT requires 64,586,992 logical bytes, so its fixture uses 64 MiB;
+fixed-width cases retain 64 MB. The same candidate also passes all 20 macOS shapes. It is now integrated through
+one capacity owner in resources.rs, used by declared payloads and blocking
+buffers. Native encoded limits stay unchanged; physical capacity and the maximum
+scan workspace are admitted separately. All 16 macOS scan tests and the complete
+macOS ownership campaign pass. Fresh GNU/Linux reader callers now check fixed
+128-KiB and 64-MiB mmap thresholds with observed allocation controls at both
+pathname lengths. All three GNU/Linux regimes pass at both pathname lengths, including observed
+mapped/arena controls. The final Linux healthy and wrong-value/duplicate controls
+pass their expected outcomes. All three resource tests and maintenance checks
+pass. New full gates remain pending.
 
 ## Applying DuckDB lessons
 

@@ -215,21 +215,21 @@ during result steps. Physical owners are destroyed before their reservation.
 Declared-table source admission reserves the reader owner, bounded paths,
 selection, demanded payload buffers and result columns through the database
 account. Encoded column limits include validity and text offsets. Admission
-requests and charges payload capacity in whole 16-KiB units:
+uses the [large-buffer capacity policy](#blocking-buffer-capacity):
 
 | Demanded column type | Maximum encoded bytes | Allocated payload capacity |
 | --- | --- | --- |
-| INT64 or DOUBLE | 266,240 | 278,528 |
-| DATE | 135,168 | 147,456 |
-| STRING | 524,288 | 524,288 |
+| INT64 or DOUBLE | 266,240 | 278,496 |
+| DATE | 135,168 | 147,424 |
+| STRING | 524,288 | 540,640 |
 
-The fixed-width validity bitmap extends beyond the power-of-two value region,
-crossing a macOS allocation class. Rounding the actual request makes that retained
-capacity explicit before allocation or source I/O. It adds 12,288 requested and
-charged bytes per demanded fixed-width column; it does not reduce the measured
-macOS usable extent and can increase physical allocation on GNU/Linux. Missing
-columns still allocate nothing. The maximum scan workspace ceiling is unchanged:
-it already uses the larger, aligned STRING capacity for every column.
+Validity, offsets and value bytes retain their encoded limits. Admission includes
+the actual physical capacity before source I/O; missing columns allocate nothing.
+The maximum scan workspace includes 540,640 bytes per demanded payload. This is
+16,352 more bytes per STRING column than the previous physical limit, while
+fixed-width payload requests decrease by 32 bytes. The encoded STRING limit
+remains 524,288 bytes. These are capacity/accounting changes, not throughput or
+RSS improvements.
 
 Payload buffers are allocated once and reused across units. Padding is never an
 encoded value: the existing metadata and payload validators still enforce the
@@ -319,12 +319,21 @@ graphs.
 
 ## Blocking buffer capacity
 
-Sort frames, run bytes, prior keys, and hash lookup keys request
-whole 16-KiB allocation units when their byte requirement exceeds 16 KiB.
-Smaller buffers retain their exact requested capacity. Run-span arrays apply the
-same rule to their byte extent; a span's width must divide the allocation unit.
-Each owner reserves its allocated capacity before construction. Header bytes
-beyond a power-of-two text region therefore become explicit owned capacity.
+Declared payloads, sort frames, run bytes, prior keys and hash lookup keys use
+`resources::buffer_capacity`. Above 16 KiB, it chooses the smallest capacity at
+least as large as the requirement that ends 32 bytes before a 16-KiB boundary.
+Smaller buffers retain their exact requested capacity. Run-span widths must
+divide the resulting byte capacity. Every owner reserves the actual capacity
+before construction; no extra rounding allowance is added to the equation.
+
+The space before the boundary accommodates native allocation headers/alignment.
+GNU libc's mapped chunks otherwise can acquire an extra page for a request
+ending exactly on that boundary; its arena and mapped paths have different
+usable extents ([glibc 2.36 allocator source](https://raw.githubusercontent.com/bminor/glibc/glibc-2.36/malloc/malloc.c)).
+Darwin rounds the tested requests back to their 16-KiB class. The native caller
+checks the complete buffer-size range independently. GNU/Linux reader campaigns
+also fix low and high mmap thresholds in fresh processes and require an observed
+allocation-path control before checking all reader shapes.
 
 Encoded limits remain separate. A sort frame retains its original encoded-byte
 limit, and a run retains its original byte and row limits. Padding cannot admit

@@ -17,6 +17,9 @@ const MAGIC: &[u8; 8] = b"PSQLDATA";
 const FORMAT: u32 = 6;
 pub(super) const MAX_ROWS: usize = 32_768;
 pub(super) const MAX_COLUMN_BYTES: usize = 524_288;
+// Physical padding does not enlarge the encoded-column limit above.
+pub(super) const MAX_COLUMN_ALLOCATION_BYTES: usize =
+    crate::resources::buffer_capacity(MAX_COLUMN_BYTES).expect("bounded native payload");
 pub(super) const MAX_TEXT_BYTES: usize = 65_536;
 pub(super) const MAX_METADATA_BYTES: usize = HEADER + DESCRIPTOR * catalog_schema::MAX_COLUMNS;
 pub(super) const MAX_UNIT_BYTES: usize =
@@ -622,7 +625,11 @@ impl ColumnBuffer {
     }
 
     pub(super) fn new(bytes: Vec<u8>) -> Result<Self, Error> {
-        buffer_capacity(bytes.capacity(), MAX_COLUMN_BYTES, "native column capacity")?;
+        buffer_capacity(
+            bytes.capacity(),
+            MAX_COLUMN_ALLOCATION_BYTES,
+            "native column capacity",
+        )?;
         Ok(Self {
             bytes,
             validated: None,

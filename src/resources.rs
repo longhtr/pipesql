@@ -7,6 +7,24 @@ use crate::Error;
 use std::mem::size_of;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+pub(crate) const BUFFER_ALLOCATION_UNIT: usize = 16_384;
+
+/// Physical byte capacity, separate from encoded lengths and logical row limits.
+/// Leave 32 bytes before a native allocation boundary for headers and alignment.
+/// A request ending on the boundary can force another mmap page on GNU libc;
+/// Darwin rounds these requests back to the same 16-KiB allocation class.
+/// Admission charges the actual requested capacity, not an extra allowance.
+/// Native allocator qualification remains separate from this geometry.
+pub(crate) const fn buffer_capacity(bytes: usize) -> Option<usize> {
+    if bytes <= BUFFER_ALLOCATION_UNIT {
+        return Some(bytes);
+    }
+    match bytes.checked_add(BUFFER_ALLOCATION_UNIT - 1 + 32) {
+        Some(rounded) => Some((rounded & !(BUFFER_ALLOCATION_UNIT - 1)) - 32),
+        None => None,
+    }
+}
+
 const RESERVATION_ATTEMPTS: usize = 64;
 
 /// One shared memory budget; a successful admission returns its release owner.
@@ -219,6 +237,30 @@ pub(crate) fn allocate<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn buffer_capacity_preserves_extent_at_allocation_boundaries() {
+        for (required, expected) in [
+            (0, 0),
+            (16_384, 16_384),
+            (16_385, 32_736),
+            (32_736, 32_736),
+            (32_737, 49_120),
+            (524_288, 540_640),
+        ] {
+            assert_eq!(super::buffer_capacity(required), Some(expected));
+        }
+        for unit in 2..=515 {
+            for required in (unit * 16_384 - 33)..=(unit * 16_384 + 1) {
+                let capacity = super::buffer_capacity(required).unwrap();
+                assert!(capacity >= required);
+                assert!(capacity - required < 16_384);
+                assert_eq!((capacity + 32) % 16_384, 0);
+                assert_eq!(capacity % std::mem::size_of::<[usize; 2]>(), 0);
+            }
+        }
+        assert_eq!(super::buffer_capacity(usize::MAX), None);
+    }
 
     #[test]
     fn temporary_authority_preserves_shared_capacity_and_overflow() {

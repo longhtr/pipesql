@@ -173,22 +173,14 @@ pub(super) const MAX_FRAME_BYTES: usize =
     RECORD_HEADER + MAX_ROW_VALUES * (5 + crate::batch::MAX_TEXT_BYTES);
 const _: () = assert!(MAX_ARGUMENT_RECORD_BYTES <= MAX_RECORD_BYTES);
 
-pub(super) const BUFFER_ALLOCATION_UNIT: usize = 16_384;
+pub(super) use crate::resources::BUFFER_ALLOCATION_UNIT;
 
-// Large encoded buffers often add a header to a power-of-two text region.
-// Own whole 16-KiB units so that tail is charged before allocation. Logical
-// record/run limits remain separate from this physical capacity.
 pub(super) fn buffer_capacity(bytes: usize) -> Result<usize, Error> {
-    if bytes <= BUFFER_ALLOCATION_UNIT {
-        return Ok(bytes);
-    }
-    bytes
-        .checked_add(BUFFER_ALLOCATION_UNIT - 1)
-        .map(|rounded| rounded & !(BUFFER_ALLOCATION_UNIT - 1))
+    crate::resources::buffer_capacity(bytes)
         .ok_or(Error::Corrupt("blocking buffer allocation capacity"))
 }
 
-const _: () = assert!(BUFFER_ALLOCATION_UNIT.is_multiple_of(size_of::<RecordSpan>()));
+const _: () = assert!((BUFFER_ALLOCATION_UNIT - 32).is_multiple_of(size_of::<RecordSpan>()));
 
 fn span_capacity(rows: usize) -> Result<usize, Error> {
     let bytes = rows

@@ -14,6 +14,20 @@ const TEMP: u64 = 8_000_000;
 
 pub(super) fn reader_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     use pipesql::DateValue;
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    if let Ok(threshold) = std::env::var("MALLOC_MMAP_THRESHOLD_") {
+        if threshold == "131072" || threshold == "67108864" {
+            // The fresh caller must observe the selected allocation path, not
+            // merely inherit an environment variable that the allocator ignores.
+            let extent = allocation_extent::<u8>(524_288);
+            if threshold == "131072" {
+                assert!(extent.1 > 32, "mapped allocation control: {extent:?}");
+            } else {
+                assert!(extent.1 <= 32, "arena allocation control: {extent:?}");
+            }
+            println!("reader allocator threshold={threshold} observed {extent:?}");
+        }
+    }
     std::fs::create_dir(root)?;
     let dates = [2, 1, 2, 0].map(|day| DateValue::from_days_since_unix_epoch(day).unwrap());
     let maximum = format!("{}x", "雪".repeat(21_845));
@@ -33,14 +47,19 @@ pub(super) fn reader_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error
     ] {
         for width in [1, 64] {
             let path = root.join(format!("{profile}-{width:02}"));
-            // Maximum text rows need larger run files; retain the same memory
-            // budget as the fixed-width cases while admitting their scratch.
+            // Maximum text rows and padded payloads need larger admitted owners.
+            // Fixed-width cases retain their original memory and scratch budgets.
             let temporary = if kind == DataType::String {
                 64_000_000
             } else {
                 TEMP
             };
-            let config = Config::new(64_000_000, temporary)?;
+            let memory = if kind == DataType::String {
+                64 * 1024 * 1024
+            } else {
+                64_000_000
+            };
+            let config = Config::new(memory, temporary)?;
             let db = Database::create_empty(&path, config)?;
             let cancel = CancellationToken::new();
             let names: Vec<_> = (0..width).map(|i| format!("c{i}")).collect();
@@ -202,13 +221,13 @@ pub(super) fn grouped_allocation_shapes() {
     // A 128-value frame plus 255 minimum-width rows is at most 8,430,080
     // encoded bytes. Its final allocation unit ends at 8,437,760 bytes.
     for units in 2..=515 {
-        let observed = allocation_extent::<u8>(units * 16_384);
+        let observed = allocation_extent::<u8>(units * 16_384 - 32);
         assert!(
-            observed.1 <= 16_384,
+            observed.1 <= 32,
             "blocking allocation rounding: {observed:?}"
         );
         if cfg!(target_os = "macos") {
-            assert_eq!(observed.1, 0, "aligned Darwin blocking allocation");
+            assert_eq!(observed.1, 32, "Darwin blocking allocation boundary");
         }
         if observed.1 > buffers.1 {
             buffers = observed;

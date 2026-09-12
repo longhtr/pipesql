@@ -459,7 +459,7 @@ fn every_projection_mask_has_exact_buffers_and_values() {
         let widths = [8, 8, 8, 8, 1, 1, 4];
         let batch_bytes = columns
             .iter()
-            .map(|column| widths[*column] * 256 + 64)
+            .map(|column| widths[*column] * 256 + 80)
             .sum::<usize>();
         let physical = lower(&database, &query, RootState::Empty, 0).unwrap();
         let runtime_bytes = Runtime::required_bytes(&physical);
@@ -585,7 +585,7 @@ fn count_without_values_retains_metadata_scratch_without_payload_reads() {
         // The runtime now also owns COUNT's one u32 row counter.
         106_496
             + 28_672
-            + 64
+            + 80 // Validity and the inline typed-column owner.
             + 256 * 8
             + size_of::<u32>() as u64
             + Runtime::required_bytes(&result.plan)
