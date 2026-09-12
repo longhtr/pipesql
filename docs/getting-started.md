@@ -11,6 +11,9 @@ The complete program lives in [examples/declared.rs](../examples/declared.rs).
 Read it alongside this walkthrough: it declares `sales(region, amount)`, writes
 a single typed batch, commits, closes, and reopens before preparing the query.
 
+The [snapshot example](#keep-an-old-snapshot-readable) extends this lifecycle to
+an old prepared query that remains readable after a newer append and reclamation.
+
 ## Create and query the table
 
 From the repository root, create a temporary parent directory and run the
@@ -386,4 +389,55 @@ with the source open. When finished, remove the inputs:
 
 ```sh
 rm -r -- "$pipesql_composed_dir"
+```
+
+## Keep an old snapshot readable
+
+Run [examples/snapshots.rs](../examples/snapshots.rs) from the repository root:
+
+```sh
+pipesql_snapshot_dir=$(mktemp -d)
+cargo run --release --offline --locked --example snapshots -- "$pipesql_snapshot_dir/sales"
+```
+
+The program requires one fresh absolute database path. It creates that database
+and leaves it available afterward. Successful completion prints exactly:
+
+```text
+old before append: [10, 20]
+old after reclaim: [10, 20]
+new after reclaim: [10, 20, 30]
+new after old plan drops: [10, 20, 30]
+reopened: [10, 20, 30]
+```
+
+Follow the operations in `main`. The first append commits amounts 10 and 20.
+`prepare` captures that catalog generation in `old`; finishing its first execution
+releases the result buffers while the prepared plan keeps its snapshot pin.
+Appending 30 publishes a newer generation. Preparing `current` captures the new
+view, but executing `old` again still reads the original two rows.
+
+The first `reclaim` runs while both plans are pinned. `verify_rows` checks every
+row against the literal expected values and requires successful completion.
+`ORDER BY amount` makes their order explicit. Dropping `old` releases its pin;
+the second reclamation can remove objects that no remaining snapshot or receipt
+requires. Its return value counts removed filenames, so the example does not
+predict bytes freed or a fixed removal count. Finally, the program drops the
+remaining plan, closes the database and verifies the latest rows after reopening.
+
+For the implementation, follow `Database::prepare` into
+[prepare_catalog](../src/frontend/binding.rs), where the prepared query retains its catalog
+snapshot. Then follow append publication in
+[the transaction guide](transactions.md#declared-table-transactions) and reclamation in
+[Reachable::open](../src/catalog_snapshot/reclaim.rs), which captures current and
+pinned views before unlinking obsolete objects. The
+[public contract](interfaces.md#reclaim-obsolete-catalog-objects) defines failure
+and cleanup outcomes. This sequential
+example demonstrates snapshot lifetime; the existing concurrency tests and
+platform qualifications own broader claims.
+
+Remove only the example directory when finished:
+
+```sh
+rm -r -- "$pipesql_snapshot_dir"
 ```

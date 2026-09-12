@@ -35,6 +35,10 @@ reach an allocation or spill boundary. For failures, follow
 [cancellation](concurrency.md#cancellation) back to the operation that owns
 cleanup.
 
+Run the [snapshot lifetime example](getting-started.md#keep-an-old-snapshot-readable)
+to connect preparation pins, append publication and reclamation in one small
+public-library flow. It checks old and new row values before closing and reopening.
+
 ## Work on the repository
 
 - [Engineering](engineering.md): how to choose, implement, review, and finish changes.
