@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `245609e` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 514 ordinary Rust tests per platform and 311 composition
+The complete 24-stage gates for `8c7ec59` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 524 ordinary Rust tests per platform and 311 composition
 cases, plus the applicable allocation and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
 controls and limits. Linux retains two Darwin ACL exclusions. The
@@ -23,27 +23,6 @@ archive. Completed milestones remain closed unless a concrete defect, affected
 boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
-
-## Current: STRING and DATE constant projections
-
-Add constant labels and dates through SELECT, EXTEND and SET. The current
-computation owner supports numeric expressions and typed copies; text constants
-already have a bounded, owned decoder for filters. Preserve those ownership and
-source-lifetime boundaries when connecting constants to projection results.
-
-1. Establish failing public cases and trace parser, binder, demand and batch
-   materialization before choosing the constant representation.
-2. Implement existing STRING/DATE constant rules with fresh computed identities,
-   simultaneous scope and independent validation. Preserve admission, bounds,
-   cancellation, refusal and replay across applicable producers.
-3. Check independent values, diagnostics, source-text release, maximum widths
-   and composed operators; update the tutorial and contract/test maps.
-4. Run focused checks and both complete platform gates, record scoped evidence,
-   remove outputs and commit locally without publication.
-
-Untyped NULL projections, casts, arbitrary STRING functions and unrelated
-expression forms remain outside this milestone. No new expression framework is
-planned; reassess if the current computation owner needs a prerequisite repair.
 
 ## Next engineering priorities
 

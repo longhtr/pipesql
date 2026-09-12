@@ -7,34 +7,77 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates for `245609e` pass on macOS arm64 Darwin 25.6.0
-and GNU arm64 Linux. Both use Rust 1.98.1, release artifacts, locked offline
-builds, and warnings-denied compilation and documentation. Linux uses uid/gid
-1000, glibc 2.36 and native overlay storage with read-only source. The 673 inputs
-match before/after and across gates. Their manifest SHA-256 is
-`816910926bbd493fbbb74ff97674c65c6b0cf2e79b106e09b553ebec08d41a15`.
-Only the two notes files change during finalization; all 673 inputs remain
-tracked. Final documentation verification passes 520 local links.
+Both complete 24-stage gates verify the runtime and documentation inputs in
+`8c7ec59` on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux. Both use Rust 1.98.1,
+release artifacts, locked offline builds, and warnings-denied compilation and
+documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage with
+read-only source. The 675 inputs match before/after and across gates. Their
+manifest SHA-256 is
+`f65936155b70afa835ad757a8b9b26fb6e5fbd5228e82ce485a99aa9cba7bd10`.
+Only the two notes files change during finalization. The other 673 inputs retain
+fingerprint `3dd48a4f000ab386794f68af0c06ddde2dd221094382fe58e0a385bc2e678ccc`;
+all inputs remain tracked. Final documentation verification passes 502 local links.
 
-Each platform executes 514 ordinary Rust tests, including all 85 public catalog
+Each platform executes 524 ordinary Rust tests, including all 92 public catalog
 tests, and the separate lease subprocess. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 517 local links.
+passes 96 tooling tests, 44 independent codec fixtures and 500 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311 cases.
-Both complete allocation campaigns retain positions 0–857 and healthy control
-858 at each pathname length. Native checks pass, including 1,028 I/O cells;
+Both complete allocation campaigns retain positions 0–858 and healthy control
+859 at each pathname length. Native checks pass, including 1,028 I/O cells;
 interruption checks retain 76 append cuts, 46 recovery cuts and 249 independent
 graph checks. All 43 graph cases and their negative controls pass. Linux retains
 the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,555.167 seconds
-on macOS and 721.663 seconds on Linux; these overlapping verification runs are
+Both receipts have zero finalization errors. Stage times total 1,622.045 seconds
+on macOS and 873.098 seconds on Linux; these overlapping verification runs are
 not performance benchmarks. Receipt SHA-256 values are respectively
-`7143bb9d77defdf57a4709c78d6030a4b2db6312662440d80ddcf8d27e0c3caf` and
-`85f433bf12fdf2eec1fae220941e1c4f7706833ba0d9543a54a7f03f9f60ef48`.
+`0fe46465fa755b932c24aedf98e5a0b53ca1798332f23af5313ef408b05f9947` and
+`babf45d71f9539bb63da864329875ea746c7efa25fb754522f41c6f72810f0f5`.
 Owned gate/control outputs, source exports, logs and containers are removed.
 The existing verification image and toolchains remain. Windows, broader
 durability, physical-memory and sanitizer qualification remain unfinished.
+
+### STRING and DATE projection constants
+
+Commit `8c7ec59` connects bounded constants to SELECT, EXTEND and SET through the
+existing computed descriptors. STRING values own decoded bytes; DATE folding
+shares predicate calendar rules. Constants have fresh identities, no input
+dependencies and no numeric scratch buffers. Legacy queries with text constants
+use UTF-8 batches and general grouping; the conservative query-wide domain,
+including dead constants, is specified in [resources](../docs/resources.md#limit-admission).
+Persistent formats remain unchanged.
+
+The first three public cases failed at the numeric parser before implementation.
+All seven retained constant tests now execute on both platforms, covering exact
+values, range-preserving SET, grouping, sorting, union, malformed unused inputs,
+source-text release and early drop. The maximum-width case verifies 64 columns
+of 32-byte text over two full declared batches. Legacy checks retain 600-row
+batch/group/extrema values and add 64 maximum literals to both ordinary and
+bounded-stack runs. Semantic mutations reject inconsistent type, NULLability,
+identity and provenance; physical mutations reject changed slots and producer
+ownership. Cancellation paths and the armed catalog allocation caller include
+constants. The old text-projection rejection becomes an unsupported STRING
+arithmetic check; nonreserved DATE names remain usable as column aliases.
+
+The [constant tutorial](../docs/getting-started.md#add-constant-labels-and-dates)
+runs from fresh databases on both platforms: north/5, north/10 and south/20 each
+receive `reported` and `2000-02-29`, with successful completion. An additional
+stock-CLI check uses `FROM sales AS f |> EXTEND 'joined' AS tag |> JOIN sales AS r
+ON f.amount=r.amount |> ORDER BY f.amount |> SELECT tag,f.amount,r.amount`.
+Both platforms return exactly three rows, with `joined` and equal key pairs
+5/5, 10/10 and 20/20.
+
+An exploratory debug/parallel library run aborted on a bounded stack and is
+excluded. Its exited process's eleven leftover fixtures were removed. Required
+release/serial checks pass. A first DATE representation exceeded the retained
+parser bound; splitting interval and unit operations repaired it without raising
+the bound. A selected diagnostic from the frozen macOS test binary reports
+4,452 parser bytes, 198 expression bytes and a 960-byte shared operation array,
+below the unchanged 4,500-byte parser limit. The wide declared test's initial
+4 MB budget correctly refused its roughly 4.4 MB workspace; its 16 MB fixture
+budget admits the full-width case. This changes no engine allowance. Untyped
+NULL projections, casts and arbitrary STRING functions remain unsupported.
 
 ### Literal-list membership
 
