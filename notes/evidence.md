@@ -8,35 +8,70 @@ No build, test, or investigation below requires a retired project checkout.
 ## Full verification checkpoint
 
 Both complete 24-stage gates verify the runtime and documentation inputs in
-`8c7ec59` on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux. Both use Rust 1.98.1,
+`8a7b1ee` on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux. Both use Rust 1.98.1,
 release artifacts, locked offline builds, and warnings-denied compilation and
 documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage with
 read-only source. The 675 inputs match before/after and across gates. Their
 manifest SHA-256 is
-`f65936155b70afa835ad757a8b9b26fb6e5fbd5228e82ce485a99aa9cba7bd10`.
+`072168e99b00d450cb570438fffe1105d0fbd7121fa72dbc1342988f6896816f`.
 Only the two notes files change during finalization. The other 673 inputs retain
-fingerprint `3dd48a4f000ab386794f68af0c06ddde2dd221094382fe58e0a385bc2e678ccc`;
+fingerprint `aaaa22a5da18e2146dce6170d6983ddebcc694d7a218f336e6fa4d79a2f982b5`;
 all inputs remain tracked. Final documentation verification passes 502 local links.
 
-Each platform executes 524 ordinary Rust tests, including all 92 public catalog
+Each platform executes 525 ordinary Rust tests, including all 92 public catalog
 tests, and the separate lease subprocess. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 500 local links.
+passes 96 tooling tests, 44 independent codec fixtures and 502 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311 cases.
 Both complete allocation campaigns retain positions 0–858 and healthy control
-859 at each pathname length. Native checks pass, including 1,028 I/O cells;
-interruption checks retain 76 append cuts, 46 recovery cuts and 249 independent
-graph checks. All 43 graph cases and their negative controls pass. Linux retains
-the two Darwin ACL exclusions.
+859 at each pathname length; the ordered prefix lists were reconciled explicitly.
+Native checks pass, including 1,028 I/O cells; interruption checks retain 76 append
+cuts, 46 recovery cuts and 249 independent graph checks. All 43 graph cases and
+their negative controls pass. Linux retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,622.045 seconds
-on macOS and 873.098 seconds on Linux; these overlapping verification runs are
+Both receipts have zero finalization errors. Stage times total 1,556.650 seconds
+on macOS and 801.197 seconds on Linux; these overlapping verification runs are
 not performance benchmarks. Receipt SHA-256 values are respectively
-`0fe46465fa755b932c24aedf98e5a0b53ca1798332f23af5313ef408b05f9947` and
-`babf45d71f9539bb63da864329875ea746c7efa25fb754522f41c6f72810f0f5`.
+`a78304563ea743e3968f437d0a3b002ff6a468e0b3f862e7f910f4932594f806` and
+`c8fac8381e94710dc9582ce9787d4a84ff988bd4700028a24f6d4d30c825ed2f`.
 Owned gate/control outputs, source exports, logs and containers are removed.
 The existing verification image and toolchains remain. Windows, broader
 durability, physical-memory and sanitizer qualification remain unfinished.
+
+### Legacy constant allocation ownership
+
+`21ba9c5` extends the existing public allocation caller with six direct legacy
+cases and four text-extrema cases at both pathname lengths. Fixed-key controls,
+empty and 32-byte UTF-8 constants, one/64 columns, two full reused batches and
+MIN/MAX/COUNT results remain explicit. Admission, output and terminal observations
+use requested-plus-nonheap-equals-charged equations derived from scan, physical
+plan, aggregate and pending scratch-path reservations. A one-byte attribution
+error must fail. The prepared and result owners also check usable extents and
+release independently. Both complete gates execute every case and the control.
+
+The maximum-length grouped case exposed a 16,384-byte reporting omission. Hash
+text growth already reserved memory, but its retained and replacement reservations
+were absent from the public query report. The report now includes both. The
+existing growth test reconciles it against the database's independent account at
+each step, admits an exact 262,144-byte replacement, refuses at 262,143 bytes,
+checks cancellation during overlap, and verifies values, release and healthy reuse.
+
+A 64-constant prepared plan separately requested 34,304 computation bytes that
+occupied 49,152 usable bytes on macOS. Its complete charge was 51,824 bytes against
+59,392 usable bytes. Computation vectors now admit real padded slot capacity using
+the existing buffer geometry; their logical definition limit and 4,096-byte
+allocation allowance remain unchanged. Independent semantic validation checks
+capacity separately from logical definitions. Preparation at 30, 31 and 64 columns
+passes exact admission, one-byte-short refusal and release checks.
+
+The wide prepared owner now charges 66,296 bytes and requests 57,960 on both
+platforms. Usable extents are 59,392 on macOS and 57,968 on GNU/Linux. This keeps
+macOS usable storage unchanged while increasing actual requested capacity by
+14,472 bytes; it is a capacity tradeoff, not an RSS reduction. Final allocation
+caller hashes are `0f893d5b364814f55b4e19987f89db593293ee98624f5064af36ba6d196538b4`
+(macOS) and `a5217504d86868cce59ce911387f99281b10ae5563ff7ed0df999dc2f2bbfef5`
+(GNU/Linux). These finite profiles do not qualify every prepared descriptor family,
+arbitrary allocators or whole-process memory.
 
 ### STRING and DATE projection constants
 
@@ -799,7 +834,7 @@ admission before effects and old-workspace release before replacement.
 Both full gates include these checks, short/384-byte composed ownership, physical
 and logical allocation refusal, temporary refusal, cancellation, commit, and final
 release. Negative controls reject a missing rounding ceiling, an incorrect complete
-row, and a one-byte attribution error at distinct checks. Current driver SHA-256:
+row, and a one-byte attribution error at distinct checks. Repair-checkpoint driver SHA-256:
 
 - macOS: `428221297c35af8ffd1c75e99bb55b74f4dc8ca01ba392d40f41e1d944b5298f`
 - GNU/Linux: `2fb958e788f79eb8b25a1d8655402c4a5b5a623558cf65c5f2e295aaa37e3012`

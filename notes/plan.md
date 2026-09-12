@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `8c7ec59` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 524 ordinary Rust tests per platform and 311 composition
+The complete 24-stage gates for `8a7b1ee` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 525 ordinary Rust tests per platform and 311 composition
 cases, plus the applicable allocation and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
 controls and limits. Linux retains two Darwin ACL exclusions. The
@@ -23,40 +23,6 @@ archive. Completed milestones remain closed unless a concrete defect, affected
 boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
-
-## Current: legacy constant allocation ownership
-
-Qualify the new legacy UTF-8 materialization path with the existing independent
-public allocator caller. Its declared-reader shapes do not establish ownership
-for legacy constant batches; functional and bounded-stack coverage is complete.
-
-1. Derive nonheap terms from batch, scan, result and aggregate admission before
-   sampling. Keep the requested-plus-nonheap-equals-charged equation independent.
-2. Add finite cases for one/64 columns, empty/32-byte constants, full reused
-   batches and global/grouped text extrema. Retain fixed-key/declared controls,
-   exact values, usable-allocation comparisons, release checks and an attribution
-   negative control. Reuse the current caller and runner.
-3. Trace and repair any demonstrated discrepancy without allowance inflation;
-   verify affected refusal, cancellation, cleanup and healthy reuse boundaries.
-4. Run the affected caller/tool checks on macOS and unprivileged native-storage
-   GNU arm64 Linux, document scoped evidence, remove outputs and commit locally.
-
-The direct six-case matrix passes on macOS. Independent attribution uses the
-106,496-byte scan reservation minus descriptor/selection allocations, the plan
-allowance and result handle. Global extrema add the aggregate vector allowance;
-grouped extrema also retain the pending scratch paths. The maximum-length grouped
-case exposed a 16,384-byte reporting gap: hash text growth reserves memory, but
-the public query report omitted its retained and pending reservations. Include
-both owners and reconcile the existing growth/cancellation/refusal test against
-the database reservation total. The wide prepared plan separately requests
-34,304 computation bytes, occupying 49,152 usable bytes on macOS; total prepared
-charge 51,824 falls below its 59,392 usable bytes. The repair applies existing
-buffer geometry to actual descriptor capacity, preserving logical limits and the
-independent attribution equation. The complete macOS ownership selection passes;
-wide prepared charge is now 66,296, requested 57,960 and usable 59,392 bytes.
-GNU/Linux ownership passed before the descriptor repair. Complete the final
-both-platform gates and evidence before closing this milestone. Arbitrary allocators
-and whole-process/RSS bounds remain unqualified.
 
 ## Next engineering priorities
 
