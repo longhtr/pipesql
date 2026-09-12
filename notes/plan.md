@@ -11,8 +11,8 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 24-stage gates for `71b8b71` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 508 ordinary Rust tests and 304
+The complete 24-stage gates for `245609e` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 514 ordinary Rust tests and 311
 composition cases, plus its applicable native and allocation campaigns. Bounded
 thread scenarios and their ordinary-thread counterparts execute on both platforms,
 including full-width union preparation and execution.
@@ -386,52 +386,22 @@ platform. Every current catalog allocation prefix remains covered. Owned outputs
 are removed and changes are committed locally. Windows, transient peaks and
 whole-process memory remain separate qualifications.
 
-## Current: literal-list IN filters
+## Completed: literal-list IN filters
 
-The next bounded language milestone admits `column IN (literal, ...)` in WHERE,
-following the [target membership contract](../docs/language.md#target-in-predicates).
-It supports local analytical filtering without introducing subqueries or a new
-expression framework. The current comparison parser, semantic predicates and
-physical filter decisions provide the starting point. The target's general
-expression operands remain outside this first profile.
+The [accepted profile](../docs/language.md#literal-list-membership) searches a
+visible column against a nonempty list of equality-compatible constants,
+including NULL. Existing forward Boolean decisions preserve three-valued
+negation, written-order demand and the sixteen-stage bound. No new allocation
+owner or expression framework is introduced.
 
-1. Establish a failing public membership case and trace parsing, binding,
-   independent validation, demand and row filtering before choosing storage.
-2. Implement a nonempty bounded list with equality-compatible literals, NULL,
-   duplicates and three-valued behavior under NOT/AND/OR. Preserve spans,
-   preparation checks for skipped branches and bounded iteration. Keep subquery
-   IN, NOT IN spelling, IN UNNEST and general expression operands rejected.
-3. Challenge independent truth-table/value and malformed-plan oracles. Cover
-   composition, demanded errors, admission, failure, cancellation and release
-   through retained public and native campaigns.
-4. Update the accepted language profile, maps and runnable learning path. Run
-   focused checks and both complete native-storage platform gates, record scoped
-   evidence, remove owned outputs and commit locally without publication.
-
-The initial public case fails at the existing comparison parser. Membership now
-lowers to a bounded OR of ordinary equality leaves; NULL candidates have an
-explicit literal, and independent validation permits that literal only with
-equality. The legacy linear scan and shared row predicate both preserve UNKNOWN.
-No new allocation owner or expression framework is introduced. Each candidate
-consumes a normalized stage; SELECT plus fifteen candidates reaches the retained
-sixteen-stage limit, and a sixteenth candidate is rejected.
-
-Five public tests pass for duplicates, all scalar types, nullable-set truth
-values, producer composition, malformed/skipped operands, demanded overflow
-spans, cancellation and early drop. Semantic and physical mutation checks pass
-with confirmed selections. An initial short exact selector ran zero tests and
-is not passing evidence. Maintenance and warnings-denied Clippy pass. The retained
-catalog failure caller now uses the equivalent membership filter, preserving its
-independent expected count; its complete campaigns remain to run. The macOS tutorial produces the documented two rows and its negation produces
-none. The complete 311-case composition campaign passes against a fixed stock
-CLI; a first run correctly rejects an artifact changed by an overlapping build
-and is excluded. Disposable NULL-as-FALSE and OR-as-AND mutations both fail the
-public row oracle. Ordinary/small-stack scratch checks pass with the same charge
-as OR filters. Linux focused checks and both full gates remain pending.
-
-Reassess after the first representation and oracle pass if the current Boolean
-control flow requires a broader prerequisite. Keep this profile finite; do not
-silently implement or promise the entire target expression contract.
+The finite worklist is complete: failing case, implementation, independent
+semantic/physical mutations and nullable-set model, composition and resource
+checks, tutorial, both full gates, evidence and cleanup. All five public tests
+execute on both platforms. Both deliberate semantic mutations fail the unchanged
+row oracle. The [evidence](evidence.md#literal-list-membership) records exact scope
+and retained limitations. General expression operands, subquery IN, NOT IN
+spelling and IN UNNEST remain unsupported. Changes are committed locally without
+publication; owned verification outputs are removed.
 
 ## Applying DuckDB lessons
 

@@ -7,34 +7,77 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates for `71b8b71` pass on macOS arm64 Darwin 25.6.0
+Both complete 24-stage gates for `245609e` pass on macOS arm64 Darwin 25.6.0
 and GNU arm64 Linux. Both use Rust 1.98.1, release artifacts, locked offline
 builds, and warnings-denied compilation and documentation. Linux uses uid/gid
-1000, glibc 2.36 and native overlay storage with read-only source. The 671 inputs
+1000, glibc 2.36 and native overlay storage with read-only source. The 673 inputs
 match before/after and across gates. Their manifest SHA-256 is
-`936c2fdac877cc45635cd9464e3254da7073551ad78408e446f909198ad1416d`.
-Only the two notes files change during finalization; all 671 inputs remain
-tracked. Final documentation verification passes 510 local links.
+`816910926bbd493fbbb74ff97674c65c6b0cf2e79b106e09b553ebec08d41a15`.
+Only the two notes files change during finalization; all 673 inputs remain
+tracked. Final documentation verification passes 520 local links.
 
-Each platform executes 508 ordinary Rust tests, including all 80 public catalog
+Each platform executes 514 ordinary Rust tests, including all 85 public catalog
 tests, and the separate lease subprocess. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 507 local links.
-Independent aggregate semantics pass 24 cases and composition passes 304 cases.
+passes 96 tooling tests, 44 independent codec fixtures and 517 local links.
+Independent aggregate semantics pass 24 cases and composition passes 311 cases.
 Both complete allocation campaigns retain positions 0–857 and healthy control
 858 at each pathname length. Native checks pass, including 1,028 I/O cells;
 interruption checks retain 76 append cuts, 46 recovery cuts and 249 independent
 graph checks. All 43 graph cases and their negative controls pass. Linux retains
 the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,625.505 seconds
-on macOS and 896.407 seconds on Linux; these overlapping verification runs are
+Both receipts have zero finalization errors. Stage times total 1,555.167 seconds
+on macOS and 721.663 seconds on Linux; these overlapping verification runs are
 not performance benchmarks. Receipt SHA-256 values are respectively
-`9a768ebbb3bf5efeb67664ab4aff8edc89ee4c1efb8abe64b5439dbf78b41754` and
-`90571f57619baa8b84146713df01d4339cd2c81f5000fa9594902c953446b0d9`.
+`7143bb9d77defdf57a4709c78d6030a4b2db6312662440d80ddcf8d27e0c3caf` and
+`85f433bf12fdf2eec1fae220941e1c4f7706833ba0d9543a54a7f03f9f60ef48`.
 Owned gate/control outputs, source exports, logs and containers are removed.
 The existing verification image and toolchains remain. Windows, broader
 durability, physical-memory and sanitizer qualification remain unfinished.
+
+### Literal-list membership
+
+Commit `245609e` implements the [bounded IN profile](../docs/language.md#literal-list-membership)
+through the existing Boolean decisions. Before implementation, the public case rejected `id IN
+(1,3,1)` at the comparison parser. The repair lowers candidates to equality
+leaves joined by OR and adds an explicit NULL candidate. Independent semantic
+validation permits that candidate only with equality; physical validation checks
+literals and branch decisions against the bound plan. No new allocation owner
+is introduced, and persistent formats remain unchanged.
+
+All five new public tests execute on both platforms. Explicit rows cover
+INT64/DOUBLE, NaN, STRING/Unicode, DATE, NULL, duplicates, negation and composed
+producers. An independent nullable-set model checks all nine pairs of NULL, zero
+and seven across four lists and six Boolean forms. Malformed and mismatched
+operands fail preparation even in skipped branches. Demanded-overflow checks
+retain exact expression spans; skipped branches avoid that error. SELECT plus
+fifteen candidates reaches the existing sixteen-stage limit, and another
+candidate is rejected. Cancellation, early drop and repeated execution return
+to the resource baseline. The retained ordinary/small-stack tests observe the
+same execution charge for membership and the equivalent OR filter.
+
+Disposable mutations on both platforms replace NULL's UNKNOWN with FALSE or
+replace the membership OR with AND. The unchanged public row oracle rejects both
+with exit 101. The first mutation incorrectly returns IDs zero and two from
+negated membership containing NULL; the second loses matching rows. Healthy
+callers pass. Semantic mutations reject invalid NULL comparison/control/identity
+state; physical mutations reject changed literals, negation, branches and filter
+counts. Seven independent stock-CLI cases additionally cover the legacy scan's
+numeric, STRING, DATE and NULL paths. The catalog allocation caller now uses
+membership in its derived join while preserving its independent count. Both
+full campaigns cover every current refusal prefix and healthy control.
+
+The [tutorial](../docs/getting-started.md#filter-by-membership) runs from fresh
+databases on both platforms. `examples/membership.sql` returns north/5 followed
+by south/20 and completes successfully; its negation completes with zero rows.
+An initial empty exact test selection and a composition run whose CLI changed
+during a build are excluded. Corrected full selectors execute their tests, and
+the composition rerun uses a fixed binary. The full gates above use immutable
+stock artifacts and pass. Owned example databases, controls, targets, source exports,
+logs and containers are removed. General expression operands, subquery IN,
+NOT IN spelling and IN UNNEST remain outside this accepted profile; Windows,
+whole-process memory and broader durability qualification remain unfinished.
 
 ### STRING reader allocation attribution
 
