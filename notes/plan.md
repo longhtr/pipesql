@@ -133,7 +133,7 @@ records the frozen inputs and costs. Owned outputs are removed; changes are
 committed locally without publication. The append allocation deficit below
 remains unresolved and is the next milestone.
 
-## Queued: append allocation bounds
+## Current: append allocation bounds
 
 The [ownership measurements](evidence.md#attribution-of-composed-memory) show a
 macOS append whose allocator-usable extents exceed its logical charge by 7,615
@@ -143,8 +143,20 @@ Preserve publication outcomes, refusal, cancellation, and physical-release order
 Do not infer a whole-process cap from fixing one owner or silently increase every
 budget by an unexplained constant.
 
-Start with the existing ownership caller on macOS and GNU/Linux. Keep independent
-allocation attribution and wrong-attribution controls. Extend the relevant append
+The current ownership caller on `b8a7e4a` reproduces the 7,615-byte deficit on
+macOS; GNU/Linux remains within the charge. Both pathname lengths and independent
+wrong-row/wrong-attribution controls pass. A bounded allocation trace attributes
+the retained requests to 65,641 bytes of encoding workspace (81,920 usable on
+macOS), 65,536 admission bytes, and 64 reference bytes. The last two requests have
+no macOS rounding. Encoding uses 105 bytes in this case; commit later reuses the
+workspace for 65,536 bytes. Current sizing sums these disjoint lifetimes.
+
+Next, replace that sum with the maximum required by either phase, checking both
+streaming and single-batch admission. Exercise small batches, workspace growth,
+and maximum-width/column geometries before deciding whether additional allocation
+capacity bounds are needed. A repaired small observation alone cannot qualify
+all append shapes or allocator implementations. Keep independent allocation
+attribution and wrong-attribution controls. Extend the relevant append
 boundary/refusal cases, document the supported allocator/platform premises, and
 complete checks required by retained production changes. If the measurements
 invalidate the proposed cause, update this plan before expanding the repair.

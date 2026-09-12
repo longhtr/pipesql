@@ -546,6 +546,18 @@ The equations account for that length rather than hard-coding either result.
 On macOS the append's usable extents exceed its charge by 7,615 bytes. This is
 an observed limit of logical admission, not evidence of a usable-heap cap.
 
+The current ownership campaign was repeated after the testing/tooling cleanup
+on `b8a7e4a` runtime inputs. Both platforms and pathname lengths retain the same
+append charge/request/usable measurements above, and both independent negative
+controls reject their intended fault. A bounded, allocation-free trace in the
+caller records three retained append allocations on macOS: requests of 65,641,
+65,536, and 64 bytes occupy 81,920, 65,536, and 64 usable bytes, respectively.
+The first is the encoding workspace: 96 metadata bytes, nine column bytes, and
+65,536 commit scratch bytes. Construction and commit use that buffer in separate
+phases. This isolates the observed rounding source; no production repair or
+broader append bound has yet been verified. The disposable trace and build
+outputs were removed after recording these observations.
+
 The first owner-attribution run failed final release because the new caller
 observation mutexes were still live. Explicit destruction releases their measured
 storage together with the barriers before database-close reconciliation. No
