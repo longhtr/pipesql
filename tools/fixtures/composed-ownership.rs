@@ -12,6 +12,98 @@ const ROWS: usize = 4096;
 const MEMORY: u64 = 4_000_000;
 const TEMP: u64 = 8_000_000;
 
+pub(super) fn prepared_aggregate_shapes(
+    root: &Path,
+    wrong_attribution: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir(root)?;
+    let input = root.join("lineitem.tbl");
+    std::fs::write(
+        &input,
+        b"1|2|3|4|1|100|0.08|8|R|F|1994-01-01|12|13|14|15|16|\n".repeat(512),
+    )?;
+    let cancel = CancellationToken::new();
+    let mut db = Database::create(&root.join("database"), Config::new(16_000_000, TEMP)?)?;
+    db.load_lineitem(&input, &cancel)?;
+    println!("entered prepared aggregate ownership shapes");
+    let resident = db.reserved_memory_bytes();
+    let mut accepted = 0;
+    let mut rejected = 0;
+    // Every accepted width allocates one entry vector. Larger widths exercise
+    // rejection under the ten-output aggregate budget and syntax bounds.
+    for partition in
+        (1..=64)
+            .map(|width| vec![width])
+            .chain([vec![1, 9], vec![5, 5], vec![9, 1], vec![1; 10]])
+    {
+        let mut sql = String::from("FROM lineitem");
+        for &width in &partition {
+            let entries: Vec<_> = (0..width).map(|i| format!("COUNT(*) AS n{i}")).collect();
+            sql.push_str(" |> AGGREGATE ");
+            sql.push_str(&entries.join(","));
+        }
+        let before = Heap::now();
+        if partition[0] > 10 {
+            assert!(matches!(
+                db.prepare(&sql),
+                Err(Error::Parse { .. } | Error::Bind { .. })
+            ));
+            rejected += 1;
+        } else {
+            // One plan allocation, one aggregate-controller vector, and one
+            // entry vector per stage. COUNT adds no computation descriptor.
+            let prepared = prepare_observed(
+                &db,
+                &sql,
+                "aggregate-descriptors",
+                2 + partition.len(),
+                wrong_attribution,
+            )?;
+            let prepared_heap = Heap::now();
+            assert_eq!(
+                db.reserved_memory_bytes(),
+                resident + prepared.accounted_memory_bytes()
+            );
+            let mut result = db.execute(&prepared, &cancel)?;
+            let mut rows = 0;
+            let mut finished = false;
+            let expected = if partition.len() == 1 { 512 } else { 1 };
+            for _ in 0..100_000 {
+                match result.step() {
+                    QueryStep::Progress => (),
+                    QueryStep::Rows(batch) => {
+                        assert_eq!(batch.len(), 1);
+                        assert_eq!(batch.column_count(), *partition.last().unwrap());
+                        for column in 0..batch.column_count() {
+                            assert_eq!(batch.value(0, column), Some(Value::Int64(expected)));
+                        }
+                        rows += batch.len();
+                    }
+                    QueryStep::Finished => {
+                        finished = true;
+                        break;
+                    }
+                    QueryStep::Failed(error) => panic!("prepared aggregate rows: {error}"),
+                }
+            }
+            assert!(finished);
+            assert_eq!(rows, 1);
+            drop(result);
+            assert_eq!(Heap::now(), prepared_heap);
+            drop(prepared);
+            accepted += 1;
+        }
+        assert_eq!(Heap::now(), before);
+        assert_eq!(db.reserved_memory_bytes(), resident);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+    assert_eq!((accepted, rejected), (14, 54));
+    println!(
+        "prepared aggregate shapes passed: 14 accepted and 54 rejected; attribution, rows and release"
+    );
+    Ok(())
+}
+
 // Legacy scan attribution derives from its explicit fixed reservation. The
 // arena and typed batch allocations are charged at their requested extents;
 // 1,344 sixteen-byte descriptors and 4,096 u32 selection entries consume the

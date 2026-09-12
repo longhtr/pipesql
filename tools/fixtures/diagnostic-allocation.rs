@@ -260,6 +260,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if mode == "mixed-grouping-shapes" {
         return grouping_ownership::run(&root);
     }
+    if mode == "prepared-aggregate-shapes" || mode == "prepared-aggregate-attribution-negative" {
+        return ownership::prepared_aggregate_shapes(
+            &root,
+            mode == "prepared-aggregate-attribution-negative",
+        );
+    }
     if mode == "grouped-allocation-shapes" {
         ownership::grouped_allocation_shapes();
         return Ok(());

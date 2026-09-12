@@ -114,6 +114,10 @@ constants over two full batches, and global/grouped text extrema. They reconcile
 requested allocations with independently derived scan and aggregate charges at
 admission and output, then check complete release. A wrong attribution term must
 fail. Both pathname lengths run through the same selection.
+Prepared aggregate cases cover widths 1–10 and four partitions of the ten-entry
+budget across repeated stages. Widths 11–64 must reject and release preparation
+ownership. The caller checks each retained-vector allowance independently,
+executes COUNT results over 512 source rows, and rejects a wrong allowance.
 Composed-reader bound failures are reported after the
 barrier participants join. This selection also checks the complete append
 allocation-size ranges and full-width maximum-column growth, reuse, publication,

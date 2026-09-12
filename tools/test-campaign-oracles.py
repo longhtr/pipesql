@@ -120,6 +120,10 @@ class AllocationInterpretation(unittest.TestCase):
                           run.call_args_list)
             self.assertEqual(sum(message.startswith("incomplete legacy constant allocation checks:")
                                  for message in failures), 2)
+            self.assertIn((("prepared-aggregate-shapes", "prepared-aggregates-path384", 384), {}),
+                          run.call_args_list)
+            self.assertEqual(sum(message.startswith("incomplete prepared aggregate allocation checks:")
+                                 for message in failures), 2)
             # A zero exit and other completion markers cannot stand in for
             # observing each explicitly selected native allocation regime.
             self.assertEqual(sum(message.startswith("missing reader allocator control:")
