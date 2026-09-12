@@ -24,6 +24,27 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
+## Current: STRING and DATE constant projections
+
+Add constant labels and dates through SELECT, EXTEND and SET. The current
+computation owner supports numeric expressions and typed copies; text constants
+already have a bounded, owned decoder for filters. Preserve those ownership and
+source-lifetime boundaries when connecting constants to projection results.
+
+1. Establish failing public cases and trace parser, binder, demand and batch
+   materialization before choosing the constant representation.
+2. Implement existing STRING/DATE constant rules with fresh computed identities,
+   simultaneous scope and independent validation. Preserve admission, bounds,
+   cancellation, refusal and replay across applicable producers.
+3. Check independent values, diagnostics, source-text release, maximum widths
+   and composed operators; update the tutorial and contract/test maps.
+4. Run focused checks and both complete platform gates, record scoped evidence,
+   remove outputs and commit locally without publication.
+
+Untyped NULL projections, casts, arbitrary STRING functions and unrelated
+expression forms remain outside this milestone. No new expression framework is
+planned; reassess if the current computation owner needs a prerequisite repair.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
