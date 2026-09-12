@@ -7,35 +7,34 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 679 frozen inputs retained in `5697961`
+Both complete 24-stage gates verify the 680 frozen inputs retained in `b1a9570`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with read-only source. Input manifests match before/after and across gates:
-`0fa6b54e8b728d23e9f2a22fb89321b684b18d9d030364bbdaef5c2f5efbb944`.
-Only the two notes files change during finalization. The other 677 inputs retain
-fingerprint `f6bccc8b87796a8bdc468c07e1297f4dd4d5bd96be2fb6e6d14cc12c6af47987`;
-all inputs remain tracked. Final documentation verification passes 521 local links.
+`d2f0a3849cb99a040dbfcc03a1421cad0f213de88f0a7dfaebb8132d869c251a`.
+Only the two notes files change during finalization. The other 678 inputs retain
+fingerprint `6d1d5510e873c9416b269744a23c4ecf6c98d5468ecaec6efeba4b020fb734ba`;
+all inputs remain tracked. Final documentation verification passes 526 local links.
 
-Each platform executes 539 ordinary Rust tests, including all 96 public catalog
-tests and all four analytic-count cases, plus the separate lease subprocess.
+Each platform executes 544 ordinary Rust tests, including all 97 public catalog
+tests and all five analytic-count cases, plus the separate lease subprocess.
 No ordinary test is ignored or filtered; the selected lease child reports six
 filtered siblings. Maintenance passes 96 tooling tests, 44 independent codec
-fixtures and 520 local links. Independent aggregate semantics pass 24 cases and
-composition passes 311 cases. Both allocation campaigns retain positions 0–925
-and healthy control 926 at each pathname length; the ordered lists were
-reconciled explicitly. The caller ceiling increased to 1,000 to contain the new
-census; no engine allowance increased. Native initialization passes 30 macOS
-and 80 GNU/Linux cells; synchronization passes 241 cells and I/O passes 1,046
+fixtures and 526 local links. Independent aggregate semantics pass 24 cases and
+composition passes 311 cases. Both allocation campaigns retain positions 0–954
+and healthy control 955 at each pathname length; the ordered lists were
+reconciled explicitly. The caller ceiling remains 1,000; no engine allowance increased. Native initialization passes 30 macOS
+and 80 GNU/Linux cells; synchronization passes 241 cells and I/O passes 1,094
 cells per platform. Interruption checks retain 76 append cuts, 46 recovery cuts
 and 249 independent graph checks. All 43 graph cases and their negative controls
 pass. Linux retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,681.540 seconds
-on macOS and 861.388 seconds on Linux; overlapping verification runs are not
+Both receipts have zero finalization errors. Stage times total 1,734.762 seconds
+on macOS and 843.931 seconds on Linux; overlapping verification runs are not
 performance benchmarks. Receipt SHA-256 values are respectively
-`ed2d152d352e8c535979bfc3cb2217ac78178a97b96fc864fdf9d38a8f7b34d2` and
-`1f03552183d9fe1b2a8e9cdc227c633880a217b775a48540b04008bb773098b2`.
+`bab5ea2f4f2a0c8c9dcd6632dccec8744a00cf6b5c144abf16a3c2706cd06980` and
+`9fa49c3fd64fcf443ac8aeaf99a20a6abd7597bbaab42a21c8fba9be34a28ad7`.
 Owned gate/control outputs, source exports, logs and containers are removed.
 The existing verification image and toolchains remain. Windows, broader
 durability, physical-memory and sanitizer qualification remain unfinished.
@@ -73,9 +72,37 @@ The documented `examples/window-count.sql` flow runs against fresh declared sale
 databases on both platforms. Schema, encoded rows, row count and final successful
 status match exactly: north/5/3, north/10/3 and south/20/3. Full gates compile the
 examples; these separate CLI executions establish the example's runtime result.
-Count-only projections currently retain ordinal records and may require temporary
-storage. This is a bounded implementation, not a claim of optimal execution,
+The initial implementation retained ordinal records even for count-only
+projections; the storage reduction below removes that cost. Neither establishes optimal execution,
 arbitrary-allocator bounds or whole-process/RSS limits.
+
+### Analytic count storage reduction
+
+`b1a9570` selects an inline counter when validated physical input has zero fields.
+It consumes complete input in bounded batches, then emits the original cardinality
+with the final count. Demanded values retain the checked ordinal spool. The
+counter inherits the existing 134,217,728-row bound and receives no file authority.
+Its inline state belongs to the admitted runtime node; output and shared row
+scratch remain separately admitted. Persistent codecs and independent validators
+are unchanged.
+
+Both frozen ownership campaigns observe 529 public steps and zero temporary bytes
+for 512 count-only rows, versus 7,710 steps and 32,888 bytes at `0e94fa7`. The
+nineteen-count case also uses no scratch file. Typed, wide, consecutive and grouped
+cases retain their explicit spill expectations and independent ownership equations.
+These complete-query counts are resource observations, not elapsed-time benchmarks.
+
+Four counter tests cover literal cardinality, malformed batches, exact/short
+admission, the row bound, cancellation and replay. Public tests exercise one-byte
+temporary limits, demanded-value refusal, suppressed and demanded expression
+errors, empty input, UNION, snapshots, early drop and healthy reuse. Runtime replay
+checks prefix and complete emission without further I/O. Legacy expectations now
+state storage and width explicitly instead of inferring spill from SQL spelling.
+Allocation campaigns require all three count-only phases with independent total
+16; native I/O retains the original 120.0 oracle and adds count-only total 9.
+The documented window example runs on fresh databases on both platforms and
+produces north/5/3, north/10/3 and south/20/3. The full checkpoint above includes
+all retained tests and failure campaigns.
 
 ### Analytic allocation ownership
 
