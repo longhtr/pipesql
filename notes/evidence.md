@@ -448,6 +448,17 @@ owns current equations and the outstanding physical-memory obligation.
 
 ### Attribution of composed memory
 
+The diagnostic and contract changes are committed in `56f133d`. Production
+sources match the preceding complete gate; this tooling-only change was verified
+with the focused ownership campaign on both platforms, all 84 tooling tests,
+39 codec fixtures, caller formatting, and 446 local documentation links. The
+retained Rust/Python/build inputs match the read-only export used on Linux.
+These focused runs are not a new complete gate. Final evidence/plan prose was
+consolidated afterward. The driver SHA-256 values were:
+
+- macOS diagnostic driver: `83eb291fe8171e4129f04a21c934e8cc09652447e3cb06d9815883a7266cef9d`
+- GNU/Linux diagnostic driver: `0b585cec8fcfc4d12656d8b8bd8cc031806f1315cf0b10e0e87e0c88f3cbc477`
+
 The focused ownership caller now checks the [resource equations](../docs/resources.md#interpret-composed-memory-observations)
 for preparation and the two parked readers alongside the append. Each owner
 reports requested and allocator-usable bytes; their sum must match the separately
