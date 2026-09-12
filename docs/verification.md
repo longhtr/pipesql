@@ -457,10 +457,16 @@ compiler/runtime changes remain distinct from instrumentation effects.
 The [maintained AddressSanitizer command](testing.md#qualify-native-sanitizer-observations)
 checks stationary pthread-mutex storage, guard lifetime, move/reentry behavior,
 threaded protected-value updates, poisoning, and forgotten-guard teardown through
-the four existing filesystem tests. The instrumented build covers the filesystem
+the four existing filesystem tests. Its explicit pathname scope checks native
+metadata and directory-record decoding, cursor independence, bounded traversal,
+refusal, and platform-specific name handling against existing independent tests.
+Required test sets must match discovery and completion; tests from another scope
+or platform cannot substitute for missing coverage. The instrumented build covers
+the filesystem
 crate, its test code, and the locally compiled libc Rust bindings. It uses the
-nightly's prebuilt standard library and native system pthread implementation;
-those libraries are not rebuilt with instrumentation. Their internal accesses
+nightly's prebuilt standard library and native system libraries;
+those libraries and the kernel are not rebuilt with instrumentation. Their
+internal accesses
 are outside this coverage, even when runtime interceptors observe some effects.
 
 Record compiler commit, target, LLVM version, prebuilt standard-library archive,

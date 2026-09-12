@@ -40,7 +40,8 @@ two notes files and verified 487 local documentation links. The later grouping
 example and walkthrough changes are qualified in the
 [grouping cost record](#grouping-capacity-cost) and
 [explicit batch checks](#explicit-string-append-batches); later caller changes add
-[composed ownership checks](#composed-query-allocation-boundaries). These focused
+[composed ownership checks](#composed-query-allocation-boundaries) and
+[pathname sanitizer qualification](#pathname-sanitizer-qualification). These focused
 checks did not rerun the complete
 gate. Engine source is unchanged. This identifies source, not reproducible binaries.
 
@@ -1322,6 +1323,71 @@ the earlier disagreement among retired compiler/standard-library controls;
 no current engine defect, general race freedom, or whole-engine memory-safety
 claim follows. ThreadSanitizer, instrumented standard libraries, other native
 boundaries, and Windows remain separate qualification work.
+
+### Pathname sanitizer qualification
+
+The explicit `--scope pathname` selection extends the maintained diagnostic to
+existing native traversal, metadata, directory-cursor, and record-decoder tests.
+Required sets are explicit: 16 macOS tests and 14 GNU/Linux tests. Discovery and
+successful completion must match the selected names exactly; the receipt retains
+those names. The default remains the four-test mutex scope. Test temporary
+directories are owned by the diagnostic, including after an aborted subprocess.
+No native implementation or fixture changed.
+
+The final macOS pathname and default mutex runs pass under Rust 1.98.1,
+uninstrumented diagnostic nightly, and AddressSanitizer nightly. The diagnostic
+compiler is `f248f4038796913873f11ca65b1b901e311c8dae` (September 5, 2026;
+LLVM 23.1.1). Both clean controls complete, and isolated heap-bounds controls emit
+the required diagnostic and exit 86. Each run records unchanged inputs and no
+finalization errors. The shared input-manifest SHA-256 is
+`53254b5917b37f2998687ffb3f8017d55085ad8f7ff658a0a1deb6bff1478d50`.
+The pathname ASan test executable SHA-256 is
+`113dee537aeb7a17384a33337cb22583012518651555d0dadbdacbbf7f786251`.
+The runtime and prebuilt standard-library hashes match the preceding diagnostic.
+
+macOS uses arm64 Darwin 25.6.0, Python 3.14.7, libiconv, and libSystem 1359.0.0.
+The pathname scope executes all 16 tests in each configuration; mutex executes
+all four. The final pathname/mutex receipt SHA-256 values are
+`2b2da3b1167646ccdeb5e01f4dbf788215d91bb607b1c48c9e4f466e7f9486b1` and
+`9966c51ef7b509737d22116921c60cd96acd1b947e690507bbbfa9f91a29f010`.
+
+GNU arm64 Linux also passes all 14 pathname tests and all four default mutex
+tests in each of the three configurations. It uses the same diagnostic compiler,
+Python 3.11.2, glibc 2.36, libm, libgcc_s, and native container storage under
+UID/GID 1000. Its ASan runtime and prebuilt standard-library hashes match the
+preceding diagnostic. The pathname ASan test executable SHA-256 is
+`529dacc681b8db6ee0f2a4ed01a0b269551426f8b250fffbb659b08e06cb7497`.
+The pathname/mutex receipt SHA-256 values are
+`40e160d6ca970542641de646ffd097ff3e7665a3aa235a374fe351f40414298a` and
+`7b92d951c9c87d5dfb40039d24e9cb62859269363b84491445d6b247e12d3619`.
+Both receipts pass clean/fault controls, unchanged inputs, and final cleanup.
+All four runs share the input manifest recorded above. Only documentation and
+plan/evidence prose changed afterward.
+
+Linux's dated nightly was provisioned in an owned container directory because
+the retained image had only the pinned compiler. At the 20-minute reassessment,
+58 of 66 MiB of the final compiler archive was downloaded; the existing download
+completed within the added ten-minute allowance. The optional tool-manager
+self-update was stopped and disabled after compiler installation. Qualification
+then ran from fresh outputs using the installed compiler; that setup interruption
+is not a test result. Existing image and host toolchains are preserved.
+
+| Scope/platform | Stock test seconds | Nightly test seconds | ASan test seconds |
+| --- | ---: | ---: | ---: |
+| Pathname/macOS | 0.664 | 0.671 | 0.873 |
+| Pathname/GNU Linux | 0.051 | 0.048 | 0.067 |
+| Mutex/macOS | 0.006 | 0.010 | 0.215 |
+| Mutex/GNU Linux | 0.001 | 0.002 | 0.008 |
+
+These are single diagnostic process observations, not performance comparisons.
+Verifier tests and maintenance pass: 95 tooling tests, 44 independent codec
+fixtures, and 498 final local documentation links. Negative selections cover missing, duplicate, ignored, and
+wrong-platform cases. Owned results, exported sources, temporary toolchain,
+and container are removed. This is focused Rust wrapper/test instrumentation;
+standard-library, system-library, and kernel internals remain uninstrumented.
+It does not establish general race freedom, thread-stack bounds, whole-engine
+memory safety, Windows support, or durability. The full engine gate was not
+rerun because no native or engine implementation changed.
 
 ## Query semantics and accepted costs
 

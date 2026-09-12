@@ -232,8 +232,9 @@ public, internal, and stock-artifact paths.
 
 ## Qualify native sanitizer observations
 
-Use this focused diagnostic when changing native mutex storage or investigating
-sanitizer reports. It requires macOS or GNU/Linux, the pinned Rust toolchain,
+Use this focused diagnostic when changing native mutex storage, pathname
+handling, or investigating sanitizer reports. It requires macOS or GNU/Linux,
+the pinned Rust toolchain,
 a native compiler, and an installed nightly with AddressSanitizer support.
 The [verified environment](../notes/evidence.md#platform-and-sanitizer-limitations)
 identifies exercised compiler/runtime versions. Install a dated toolchain before
@@ -245,6 +246,14 @@ python3 -B tools/check-native-sanitizer.py \
   --toolchain nightly-2026-09-06 --output /absolute/new-sanitizer-results
 ```
 
+The default scope is `mutex`. Select pathname traversal, directory cursors, and
+native record decoding with a separate fresh output:
+
+```sh
+python3 -B tools/check-native-sanitizer.py --scope pathname \
+  --toolchain nightly-2026-09-06 --output /absolute/new-pathname-sanitizer-results
+```
+
 Supply a new directory outside the checkout. The command refuses existing outputs
 and requires identical native targets for the stock and diagnostic compilers.
 macOS uses `otool` to record linked libraries; GNU/Linux uses `ldd`. Run the command
@@ -252,9 +261,13 @@ as an unprivileged user. It does not install dependencies or change toolchains.
 
 The command first checks a clean control and an isolated deliberate heap-bounds
 fault. The fault must produce the expected AddressSanitizer report and exit 86.
-It then executes all four native-mutex tests with the pinned compiler, the chosen
-nightly without instrumentation, and the same nightly with AddressSanitizer.
-Each run must report the exact required test names and successful completion.
+It then executes the selected tests with the pinned compiler, the chosen nightly
+without instrumentation, and the same nightly with AddressSanitizer. Mutex scope
+selects four tests. Pathname scope selects 16 tests on macOS and 14 on GNU/Linux,
+including platform-specific traversal and record boundaries. Both discovery and
+completion must match the exact required names saved in the receipt. Stack-size
+observation is outside these scopes. Native test fixtures live in owned temporary
+directories that are removed even if the subprocess aborts.
 
 Accept the result only when the command exits zero and `result.json` reports
 `passed`, unchanged inputs, and no finalization errors. The directory retains

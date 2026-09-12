@@ -43,6 +43,29 @@ class Interpretation(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 CHECK["verify_tests"](text)
 
+    def test_pathname_platform_discovery_and_completion_are_exact(self):
+        for system, count in [("Darwin", 16), ("Linux", 14)]:
+            expected = CHECK["PATHNAME_TESTS"] | CHECK["PATHNAME_PLATFORM_TESTS"][system]
+            self.assertEqual(len(expected), count)
+            self.assertTrue(expected.isdisjoint(CHECK["MUTEX_TESTS"]))
+            discovery = [f"{name}: test" for name in sorted(expected)]
+            passed = [f"test {name} ... ok" for name in sorted(expected)]
+            summary = f"test result: ok. {count} passed; 0 failed; 0 ignored;"
+            CHECK["verify_discovery"]("\n".join(discovery), expected)
+            CHECK["verify_tests"]("\n".join([*passed, summary]), expected)
+            for lines in [[], discovery[:-1], discovery + discovery[:1],
+                          discovery + ["unselected::test: test"]]:
+                with self.subTest(system=system, lines=lines), self.assertRaises(ValueError):
+                    CHECK["verify_discovery"]("\n".join(lines), expected)
+            for lines in [passed[:-1], passed + passed[:1],
+                          [*passed[:-1], passed[-1].replace("ok", "ignored")]]:
+                with self.subTest(system=system, lines=lines), self.assertRaises(ValueError):
+                    CHECK["verify_tests"]("\n".join([*lines, summary]), expected)
+            other = "Linux" if system == "Darwin" else "Darwin"
+            with self.assertRaises(ValueError):
+                CHECK["verify_discovery"]("\n".join(discovery),
+                    CHECK["PATHNAME_TESTS"] | CHECK["PATHNAME_PLATFORM_TESTS"][other])
+
     def test_executable_requires_one_owned_cargo_artifact(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory).resolve() / "target"

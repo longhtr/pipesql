@@ -268,27 +268,23 @@ boundaries, not transient peaks or arbitrary histories. Owned outputs are
 removed and changes committed locally without publication. Reopen only for a
 concrete affected owner, new workload, or attribution counterexample.
 
-## Current: pathname sanitizer qualification
+## Completed: pathname sanitizer qualification
 
-The maintained AddressSanitizer command selects only four native mutex tests.
-Native pathname traversal, directory cursors, metadata decoding, and Darwin
-name-record offsets have existing independent boundary tests but no corresponding
-maintained sanitizer selection. Extend the existing diagnostic with an explicit
-pathname scope while preserving the current mutex command and receipts.
+The existing AddressSanitizer diagnostic now selects an explicit pathname scope:
+16 existing macOS tests and 14 GNU/Linux tests. Exact pre-run discovery and
+completion reject missing, duplicate, ignored, and wrong-platform selections.
+Native test temporary directories remain owned through subprocess failure.
+The default four-test mutex scope is preserved.
 
-Inspect actual wrappers and platform-specific tests before fixing the selection.
-Require exact discovery and completion under the pinned compiler, the installed
-nightly without instrumentation, and that nightly with AddressSanitizer on
-macOS and native-storage GNU arm64 Linux. Preserve clean/fault controls,
-timeouts, descendant cleanup, isolated artifacts, and uninstrumented system
-library/kernel limits. Bound initial compatibility investigation to 20 minutes
-per platform. Do not claim thread-stack qualification from this selection.
-
-The diagnostic entry point and pathname/decoder test owners have been inspected.
-Implementation and diagnostic runs have not started; no owned process or scratch
-output is active. Next reconcile the exact platform test sets and receipt
-consumers, then implement the bounded selection and its verifier tests. Complete
-required checks, concise evidence, cleanup, and local commits without publication.
+Both scopes pass stock, uninstrumented nightly, and AddressSanitizer runs on
+both platforms, including clean/fault controls, matching frozen inputs, and
+owned-build cleanup. Maintenance passes 95 tooling tests and 44 codec fixtures.
+No native implementation or fixture changed. Linux's missing dated nightly was
+provisioned temporarily without changing the retained image or host toolchains;
+the [qualification record](evidence.md#pathname-sanitizer-qualification) retains
+identities, selected scope, setup reassessment, and instrumentation limits.
+Owned outputs are removed and changes committed locally without publication.
+Do not repeat this qualification without an affected boundary or new report.
 
 ## Applying DuckDB lessons
 

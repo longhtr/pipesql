@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Qualify AddressSanitizer observations around stationary native mutex storage.
+"""Qualify AddressSanitizer observations for native mutexes or pathname handling.
 
 The nightly toolchain must already be installed. Standard libraries and native
-pthread implementations remain uninstrumented; this is not a race-freedom gate.
+libraries and the kernel remain uninstrumented; this is not a race-freedom gate.
 """
 import argparse
 import hashlib
@@ -27,6 +27,36 @@ MUTEX_TESTS = {
     "mutex::tests::native_mutex_serializes_real_threads_and_drops_value_once",
     "mutex::tests::panic_poisoning_refuses_protected_state",
     "mutex::tests::forgotten_guard_keeps_native_storage_alive",
+}
+
+PATHNAME_TESTS = {
+    "tests::decoder_bounds_and_mutations",
+    "tests::decoder_reviewed_abi",
+    "tests::native_canonical_names_match_reference_on_joined_workers",
+    "tests::native_directory_names_refusal_and_independent_cursors",
+    "tests::native_directory_cursors_are_independent_on_real_threads",
+    "tests::native_path_metadata_matches_independent_std_and_opened_files",
+    "tests::native_path_mutations_and_canonicalization_match_std",
+    "tests::native_directory_open_errors_and_long_path",
+    "tests::directory_total_bound_is_independent_of_per_call_work",
+}
+PATHNAME_PLATFORM_TESTS = {
+    "Darwin": {
+        "tests::decoder_flags_offsets_and_native_error",
+        "tests::native_deep_absolute_links_preserve_the_33_link_boundary",
+        "syscall::path::tests::native_budget_refuses_the_next_call_and_stays_exhausted",
+        "syscall::path::tests::root_resolution_obeys_admission_before_native_effects",
+        "syscall::path::tests::invalid_input_and_slot_growth_do_not_publish",
+        "syscall::path::name_record::tests::offset_length_and_termination_are_independent",
+        "syscall::path::name_record::tests::maximum_name_and_non_utf8_are_borrowed_without_allocation",
+    },
+    "Linux": {
+        "tests::canonicalization_preserves_expanded_suffixes_with_a_short_final_name",
+        "tests::canonicalization_preserves_native_directory_permission_errors",
+        "tests::canonicalization_preserves_errors_at_the_native_name_ceiling",
+        "syscall::linux_path::tests::native_admission_precedes_entry_and_preserves_native_errors",
+        "syscall::linux_path::tests::suffix_refusal_preserves_pending_bytes_and_typed_cause",
+    },
 }
 
 
@@ -62,16 +92,22 @@ def test_executable(stdout, target):
                 and event.get("executable")):
             candidates.append(Path(event["executable"]).resolve())
     if len(candidates) != 1 or target.resolve() not in candidates[0].parents:
-        raise ValueError("expected one mutex test executable in the owned target")
+        raise ValueError("expected one filesystem test executable in the owned target")
     return require_executable(candidates[0])
 
 
-def verify_tests(stdout):
+def verify_discovery(stdout, expected):
+    found = re.findall(r"^(\S+): test$", stdout, re.MULTILINE)
+    if len(found) != len(expected) or set(found) != expected:
+        raise ValueError("test discovery differs from the required scope")
+
+
+def verify_tests(stdout, expected=MUTEX_TESTS):
     passed = re.findall(r"^test (\S+) \.\.\. ok$", stdout, re.MULTILINE)
-    if len(passed) != len(MUTEX_TESTS) or set(passed) != MUTEX_TESTS:
-        raise ValueError("mutex test discovery/completion differs from the four required cases")
-    if "test result: ok. 4 passed; 0 failed; 0 ignored;" not in stdout:
-        raise ValueError("mutex test summary does not establish completion")
+    if len(passed) != len(expected) or set(passed) != expected:
+        raise ValueError("test completion differs from the required scope")
+    if f"test result: ok. {len(expected)} passed; 0 failed; 0 ignored;" not in stdout:
+        raise ValueError("test summary does not establish completion")
 
 
 def verify_control(mode, result):
@@ -91,18 +127,25 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain", required=True, help="installed diagnostic nightly selector")
     parser.add_argument("--output", type=Path, required=True, help="new absolute directory outside the checkout")
+    parser.add_argument("--scope", choices=("mutex", "pathname"), default="mutex",
+                        help="native boundary to qualify (default: mutex)")
     options = parser.parse_args(argv)
     if not options.output.is_absolute():
         parser.error("--output must be absolute")
     if platform.system() not in ("Darwin", "Linux"):
         parser.error("this diagnostic currently supports macOS and GNU/Linux")
+    required = MUTEX_TESTS if options.scope == "mutex" else (
+        PATHNAME_TESTS | PATHNAME_PLATFORM_TESTS[platform.system()]
+    )
     output = prepare_output(options.output, ROOT)
     work = output / "build"
     receipt = {
-        "status": "failed", "scope": "native-mutex-address-sanitizer",
+        "status": "failed", "scope": f"native-{options.scope}-address-sanitizer",
+        "required_tests": sorted(required),
         "platform": platform.platform(), "revision": None,
         "libc": platform.libc_ver(), "python": platform.python_version(),
         "standard_library_instrumented": False, "native_pthread_instrumented": False,
+        "native_libraries_instrumented": False, "kernel_instrumented": False,
         "asan_options": ASAN_OPTIONS, "commands": [], "artifacts": {},
     }
 
@@ -179,6 +222,10 @@ def main(argv=None):
         ):
             target = work / label
             env = environment(target, instrumented)
+            # Test aborts cannot strand native directory fixtures in ambient /tmp.
+            temporary = work / f"{label}-temporary"
+            temporary.mkdir()
+            env.update(TMPDIR=str(temporary), TMP=str(temporary), TEMP=str(temporary))
             build = command(f"{label}-build", ["cargo", f"+{selector}", "test", "--release",
                     "--offline", "--locked", "--target", host, "-p", "pipesql-filesystem",
                     "--no-run", "--message-format=json"], env)
@@ -187,8 +234,11 @@ def main(argv=None):
             if instrumented:
                 linker = ["otool", "-L"] if platform.system() == "Darwin" else ["ldd"]
                 command("native-dependencies", [*linker, str(binary)], env, 30)
-            result = command(f"{label}-tests", [str(binary), "mutex::tests", "--test-threads=1"], env, 30)
-            verify_tests(result.stdout)
+            selection = [str(binary), *sorted(required), "--exact"]
+            listing = command(f"{label}-discovery", [*selection, "--list"], env, 30)
+            verify_discovery(listing.stdout, required)
+            result = command(f"{label}-tests", [*selection, "--test-threads=1"], env, 30)
+            verify_tests(result.stdout, required)
             if "Sanitizer" in result.stderr:
                 raise ValueError(f"{label}: sanitizer report in otherwise successful test run")
         completed = True
