@@ -154,12 +154,24 @@ physical workspace and larger small-append reservation. Owned outputs are remove
 and changes are committed locally. Custom allocators and process/RSS bounds remain
 separate qualifications.
 
-## Queued: sorting-reader allocation bounds
+## Current: sorting-reader allocation bounds
 
 The same final ownership runs retain a macOS ORDER BY/DISTINCT reader whose
 534,404-byte charge covers 538,784 usable bytes on the short path and 539,104 on
 the 384-byte path. GNU/Linux remains within the charge. This is a separate live
 reader deficit of 4,380/4,700 bytes, not an append regression.
+
+The first macOS trace reconciles 21 live allocations exactly with the parked
+reader's independently sampled heap. The largest increment is 12,288 bytes:
+266,240 requested, 278,528 usable. This is the native INT64 source payload
+(`32768 * 8` value bytes plus 4,096 validity bytes), admitted in
+[scan/declared.rs](../src/execution/scan/declared.rs) from
+[native_unit.rs](../src/native_unit.rs). Smaller requests of 12,368, 8,456, 4,272,
+2,976, and 1,712 bytes round to 14,336, 10,240, 5,120, 3,072, and 1,792.
+Their exact owners still need attribution before choosing the repair. The
+workspace investigation therefore includes upstream scan/payload admission;
+adding a blanket sorter allowance would target the wrong owner. No production
+reader repair has begun. The disposable trace and its outputs were removed.
 
 Trace the retained allocations through [blocking.rs](../src/execution/blocking.rs)
 and its run buffers, merge readers/writer, and sorted-input ownership before
