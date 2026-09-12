@@ -28,6 +28,25 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
+## Current: snapshot lifetime learning example
+
+Add a small public-library example and walkthrough for a prepared snapshot that
+survives a later append and reclamation. Existing examples teach creation,
+query composition, grouping and cancellation; snapshot lifetime currently needs
+the interface contracts and integration tests to reconstruct the full flow.
+
+1. Trace preparation pins, append publication, execution and reclamation through
+   their current owners and public snapshot tests before choosing the example.
+2. Keep one sequential example with literal inputs and explicit old/new results.
+   Show reclamation while the old plan lives, release that plan, reclaim again,
+   and reopen to verify the latest rows. Explain ownership at the relevant calls;
+   do not promise deterministic reclaimed-byte counts or arbitrary concurrency.
+3. Link a concise walkthrough into the existing learning path. Use a fresh
+   absolute output path with clear artifact ownership and cleanup instructions.
+4. Execute the documented flow on macOS and unprivileged native-storage GNU/Linux,
+   run required example/tool/documentation checks, remove owned verification
+   outputs and commit locally. Preserve engine contracts and publication limits.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
