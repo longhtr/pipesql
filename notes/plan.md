@@ -11,8 +11,8 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 24-stage gates for `a315e21` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 496 Rust tests and 298
+The complete 24-stage gates for `1633477` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 498 Rust tests and 298
 composition cases, plus its applicable native and allocation campaigns. Bounded
 thread scenarios and their ordinary-thread counterparts execute on both platforms,
 including full-width union preparation and execution.
@@ -130,45 +130,47 @@ sources are unchanged. The documented generator also runs from outside the
 repository into a fresh output. Final documentation checks cover the corrected
 five-public-stack-scenario map. [Evidence](evidence.md#full-verification-checkpoint)
 records the frozen inputs and costs. Owned outputs are removed; changes are
-committed locally without publication. The append allocation deficit below
-remains unresolved and is the next milestone.
+committed locally without publication. The append repair below is also complete;
+the sorting-reader allocation deficit remains queued.
 
-## Current: append allocation bounds
+## Completed: append allocation bounds
 
-The [ownership measurements](evidence.md#attribution-of-composed-memory) show a
-macOS append whose allocator-usable extents exceed its logical charge by 7,615
-bytes. Reproduce the deficit on current inputs, trace the responsible allocations,
-and repair append admission with a justified bound before allocation or effects.
-Preserve publication outcomes, refusal, cancellation, and physical-release order.
-Do not infer a whole-process cap from fixing one owner or silently increase every
-budget by an unexplained constant.
+The reproduced 7,615-byte macOS deficit came from summing encoding and later
+commit scratch in one allocation. Commit `1633477` sizes that shared workspace by
+the maximum of the two phases. Larger reference arrays and workspaces also cross
+native size classes; admission now reserves a qualified 16,384-byte rounding
+ceiling for each of its three retained allocations before allocation/issuance.
+The [resource contract](../docs/resources.md#streaming-append) owns the equations,
+request-size ranges, growth/release order, and allocator premises.
 
-The current ownership caller on `b8a7e4a` reproduces the 7,615-byte deficit on
-macOS; GNU/Linux remains within the charge. Both pathname lengths and independent
-wrong-row/wrong-attribution controls pass. A bounded allocation trace attributes
-the retained requests to 65,641 bytes of encoding workspace (81,920 usable on
-macOS), 65,536 admission bytes, and 64 reference bytes. The last two requests have
-no macOS rounding. Encoding uses 105 bytes in this case; commit later reuses the
-workspace for 65,536 bytes. Current sizing sums these disjoint lifetimes.
+Both complete gates pass on matching frozen inputs. The independent caller checks
+460,865 workspace sizes, 4,096 reference counts, and a missing-ceiling negative
+control. Full-width small/maximum/small writes exercise growth, reuse, 1,025 and
+4,096 retained reference capacities, independent COUNT/SUM results, publication,
+and release. Exact/short admission, old-buffer release before growth, allocation
+refusal, cancellation, recovery, and all retained interruption schedules pass.
+The [evidence](evidence.md#attribution-of-composed-memory) records the smaller
+physical workspace and larger small-append reservation. Owned outputs are removed
+and changes are committed locally. Custom allocators and process/RSS bounds remain
+separate qualifications.
 
-The implementation now sizes shared encoding/commit storage by the maximum of
-the two phases. A complete native allocation-size census also found reference
-rounding up to 16,352 bytes and workspace rounding up to 16,383 bytes on macOS;
-fixing the small workspace alone would not repair those shapes. Admission now
-reserves an explicit 16,384-byte rounding ceiling for each of the three retained
-allocations before allocation/issuance, leaving requested bytes and unused
-allowance separate in the independent equation. This premise is checked over all
-460,865 workspace sizes and 4,096 reference counts, with a missing-ceiling control.
-The stock GNU allocator fits the same ceiling. No generic allocator layer was added.
+## Queued: sorting-reader allocation bounds
 
-Focused macOS checks pass exact/short admission, exact growth and release of the
-old buffer, and full-width small/maximum/small writes with 1,025 and 4,096 retained
-reference capacities. Publication returns independent COUNT/SUM results and
-releases the owners. The existing wrong-row and wrong-attribution controls remain.
-Remaining work: final readability/contract review, complete frozen macOS and
-unprivileged native-storage GNU/Linux gates, discovery reconciliation, concise
-evidence, owned-output cleanup, and verified local commits. Custom allocators,
-other engine owners, and process/RSS bounds remain separate qualifications.
+The same final ownership runs retain a macOS ORDER BY/DISTINCT reader whose
+534,404-byte charge covers 538,784 usable bytes on the short path and 539,104 on
+the 384-byte path. GNU/Linux remains within the charge. This is a separate live
+reader deficit of 4,380/4,700 bytes, not an append regression.
+
+Trace the retained allocations through [blocking.rs](../src/execution/blocking.rs)
+and its run buffers, merge readers/writer, and sorted-input ownership before
+choosing a repair. Preserve the independent owner equation, complete rows,
+spill/replay, exact/short admission, cancellation, and cleanup. Bound the actual
+allocation geometry before effects rather than increasing a general budget or
+borrowing unused allowance from another owner. Qualify supported allocator/size
+premises on macOS and unprivileged native-storage GNU/Linux; retain other owners,
+custom allocators, arbitrary schedules, and process memory as separate limits.
+Complete focused and full checks, concise documentation/evidence, owned-output
+cleanup, and local commits. Do not add query features or an allocator framework.
 
 ## Applying DuckDB lessons
 

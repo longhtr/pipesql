@@ -7,7 +7,7 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 12, 2026 complete gates for `a315e21` passed all 24 stages on
+The September 12, 2026 complete gates for `1633477` passed all 24 stages on
 macOS and GNU arm64 Linux. Both used Rust 1.98.1, release artifacts, offline
 locked dependencies, and warnings-denied compilation and documentation. macOS
 used arm64 Darwin 25.6.0, Python 3.14.7, and the native Apple toolchain. Linux
@@ -18,46 +18,46 @@ attempt models, Clippy, Rust tests, rustdoc, doctests, stock CLI construction,
 aggregate semantics and composition, public/CLI allocation, native
 initialization/synchronization/byte I/O, catalog interruption, and independent
 graph inspection. Maintenance passed 93 tooling tests, 44 independent codec
-fixtures, and 472 local documentation links. Independent semantics checked 24
+fixtures, and 475 local documentation links. Independent semantics checked 24
 cases; composition checked 298 cases. Both semantic campaigns used the same
 unchanged CLI on each platform. Native callers retained isolated build targets.
 
-Each platform executed 496 ordinary Rust tests without failures or ignored tests.
-macOS executed 364 library and 21 filesystem tests; Linux executed 366 library
+Each platform executed 498 ordinary Rust tests without failures or ignored tests.
+macOS executed 366 library and 21 filesystem tests; Linux executed 368 library
 and 19 filesystem tests. Shared suites executed 15 CLI, 76 catalog, seven
 execution, seven lifecycle, and six load tests. The lease test separately ran its
 normal child and intentionally killed its early-teardown child, then verified
-reopening. The former empty child entry and duplicate cleanup regression were
-removed; the shared cleanup regression moved to lifecycle. Four example targets
+reopening. Both new append admission/growth boundary tests execute on each
+platform. Four example targets
 compiled without test bodies; that compilation is not runtime example evidence.
 All eight public union tests executed on both platforms.
 
 All 24 stage statuses were zero. The 670 manifested inputs matched before/after
 and across both runs; Linux used a read-only export. The frozen manifest SHA-256
-is `1d03c578085298857fa3eb6d850b3b3535538b9f715fe6bfe546ae7938fcf322`.
-Commit `a315e21` retains those exact inputs. The two notes files and the stack-test
-count in `docs/testing.md` and `tests/README.md` were finalized afterward; final
-documentation verification covers those prose-only changes. No runtime source,
-fixture, or tool changed afterward. This identifies source, not reproducible
-binaries.
+is `8a9adaaf52393e4ecdecd748b6bf2cd0877be1ac0540e1f9fccb137283e6ccec`.
+Commit `1633477` retains those exact inputs. Only the two notes files were
+finalized afterward; final documentation verification covers those prose-only
+changes. No runtime source, fixture, or tool changed afterward. This identifies
+source, not reproducible binaries.
 
-The stages took 1,577.890 seconds on macOS and 822.455 seconds on Linux; these
+The stages took 1,611.484 seconds on macOS and 799.625 seconds on Linux; these
 are verification costs, not query benchmarks. The respective result-receipt
-SHA-256 values are `ee3582ee8f1d623c23d4ed19a5ef82c2300a3fd703c08fe614a8f54eee9a137d`
-and `c5d9c46a6771f57b295f15c6bb0387726520a0e812410c266b2f5db4da8bb025`.
+SHA-256 values are `d72fd4d49dbb570994ac168cef72c4e17bc420e9d0331b7eec6faa57f04f6b11`
+and `1dec0d572766f6d478cdbbda28369e98d7dd88995dad63d89d479ca2df465a80`.
 Finalization reported no errors and removed owned targets and composition
 databases. Successful logs, exports, the verification container, and remaining
 scratch outputs were removed; the user-owned image and toolchains remain.
 Current callers and fixtures reconstruct cases; hashes do not restore removed
-logs. An earlier Clippy rejection was repaired before these complete runs.
+logs.
 
-The [finite review](plan.md#completed-testing-and-tooling-cleanup) accounts for
-all maintained testing/tooling areas and consequential removals. Five old/new
-semantic snapshot comparisons preserved exact bytes, including empty input and
-a DOUBLE block crossing. Catalog generation from outside the repository produced
-13 exact files in a fresh directory; negative controls rejected damaged vectors
-and reused output names. No persisted fixture, independent oracle/model, fault
-schedule, or platform exclusion was removed.
+The [finite testing/tooling review](plan.md#completed-testing-and-tooling-cleanup)
+remains complete at `a315e21`; its fixture, oracle, and failure controls are retained.
+The current append repair adds exhaustive allocation-size observations and
+full-width public growth/reuse/publication checks. Both platforms retain 790
+catalog allocation-refusal prefixes plus healthy controls at both pathname lengths,
+76 append interruption cuts, 46 recovery cuts, 249 independent graph checks during
+interruption, and 43 graph cases with their oracle controls. Native I/O exercises
+1,028 cells. Platform exclusions and persistent-byte compatibility remain intact.
 
 The declared-table and union tutorials last ran on both platforms at `98de11f`
 and are unchanged. The union query produced north's total 25 across four rows and
@@ -500,71 +500,71 @@ owns current equations and the outstanding physical-memory obligation.
 
 ### Attribution of composed memory
 
-The diagnostic and contract changes are committed in `56f133d`. Production
-sources match the preceding complete gate; this tooling-only change was verified
-with the focused ownership campaign on both platforms, all 84 tooling tests,
-39 codec fixtures, caller formatting, and 446 local documentation links. The
-retained Rust/Python/build inputs match the read-only export used on Linux.
-These focused runs are not a new complete gate. Final evidence/plan prose was
-consolidated afterward. The driver SHA-256 values were:
+The [resource equations](../docs/resources.md#interpret-composed-memory-observations)
+separate logical charges, live requested bytes, usable extents, inline handles,
+path allowances, and caller synchronization. Owners are sampled while readers
+are parked; their independently observed changes must sum to the global change.
+Cancellation and completion release the affected owner while preserving the
+others. Caller barriers and observation mutexes are destroyed and measured before
+database-close reconciliation. No constant subtraction hides caller allocations.
 
-- macOS diagnostic driver: `83eb291fe8171e4129f04a21c934e8cc09652447e3cb06d9815883a7266cef9d`
-- GNU/Linux diagnostic driver: `0b585cec8fcfc4d12656d8b8bd8cc031806f1315cf0b10e0e87e0c88f3cbc477`
+The append deficit was reproduced on `b8a7e4a` runtime inputs. Its small write
+charged 139,905 bytes and requested 131,241; macOS reported 147,520 usable bytes,
+exceeding the charge by 7,615. GNU/Linux reported 131,272 usable bytes. A bounded
+caller trace isolated requests of 65,641, 65,536, and 64 bytes, occupying 81,920,
+65,536, and 64 usable bytes on macOS. The first request summed 96 metadata bytes,
+nine column bytes, and 65,536 later commit-scratch bytes despite disjoint lifetimes.
+The disposable trace was removed; `813a049` records its finding.
 
-The focused ownership caller now checks the [resource equations](../docs/resources.md#interpret-composed-memory-observations)
-for preparation and the two parked readers alongside the append. Each owner
-reports requested and allocator-usable bytes; their sum must match the separately
-sampled global change. Cancellation and completion must release that owner's
-allocations while preserving the other owners. The existing complete-row,
-allocation-refusal, temporary-refusal, and descriptor checks remain intact.
+Repair `1633477` takes the maximum of encoding and commit workspace requirements.
+The complete native size census additionally observes rounding up to 16,383 bytes
+for workspaces and 16,352 for reference arrays on macOS. The largest GNU/Linux
+observations are 3,687 and eight bytes. Each of the three retained allocations
+therefore receives its own explicit 16,384-byte ceiling before allocation or
+issuance. The caller checks all 460,865 workspace sizes and 4,096 reference counts,
+then verifies full-width writes at the maximum encoded-column size with reference
+capacities of 1,025 and 4,096. Small/maximum/small writes must grow and reuse the
+workspace, publish COUNT/SUM results of `(24, 168)` then `(48, 336)`, and release
+heap, logical, and temporary ownership. Internal exact/one-byte-short tests check
+admission before effects and old-workspace release before replacement.
 
-Both short and 384-byte paths pass on macOS and GNU arm64 Linux with the same
-Rust 1.98.1 toolchain and native environments as the full checkpoint. The focused
-command builds the ordinary release library offline with locked dependencies;
-the caller compiles with warnings denied. Linux runs unprivileged with native
-container storage and network access disabled. A new negative control changes a
-preparation allowance by one byte and is rejected at the attribution equation.
-The original wrong-row control is rejected independently.
-A logical-admission case holds five additional readers, rejects the sixth with
-`required > limit`, then restores the original live allocations, charges, and
-temporary ownership. Allocation injection is disabled during this case.
+Both full gates include these checks, short/384-byte composed ownership, physical
+and logical allocation refusal, temporary refusal, cancellation, commit, and final
+release. Negative controls reject a missing rounding ceiling, an incorrect complete
+row, and a one-byte attribution error at distinct checks. Current driver SHA-256:
 
-Selected short-path observations are:
+- macOS: `798edd4823b3e9cc8c4e58643d42d4746a18761bd456a84d572fe46dcda643f6`
+- GNU/Linux: `dbc2288d4b9870a2d912b950c5f33055f43e70c0c533c0cc1e8cc3d1f698af6b`
+
+Selected final observations are:
 
 | Platform and owner | Logical charge | Requested bytes | Usable bytes |
 | --- | ---: | ---: | ---: |
-| macOS, prepared ORDER BY | 13,400 | 9,160 | 10,240 |
-| GNU/Linux, prepared ORDER BY | 13,400 | 9,160 | 9,160 |
-| macOS, append after write | 139,905 | 131,241 | 147,520 |
-| GNU/Linux, append after write | 139,905 | 131,241 | 131,272 |
-| macOS, parked ORDER BY | 534,404 | 521,684 | 538,784 |
-| GNU/Linux, parked ORDER BY | 534,404 | 521,632 | 525,888 |
+| macOS, small append | 188,952 | 131,136 | 131,136 |
+| GNU/Linux, small append | 188,952 | 131,136 | 131,160 |
+| macOS, maximum-column append with 1,025 references | 682,552 | 624,736 | 655,360 |
+| GNU/Linux, same append | 682,552 | 624,736 | 626,720 |
+| macOS, maximum-column append with 4,096 references | 780,824 | 723,008 | 737,280 |
+| GNU/Linux, same append | 780,824 | 723,008 | 723,032 |
+| macOS, parked ORDER BY or DISTINCT, short path | 534,404 | 521,684 | 538,784 |
+| GNU/Linux, same reader | 534,404 | 521,632 | 525,888 |
 | Both, terminal reader | 552 | 0 | 0 |
 
-The reader request differs because the canonical paths have different lengths.
-The equations account for that length rather than hard-coding either result.
-On macOS the append's usable extents exceed its charge by 7,615 bytes. This is
-an observed limit of logical admission, not evidence of a usable-heap cap.
+For the small append, usable macOS memory decreases by 16,384 bytes while the
+logical charge increases by 49,047 bytes. For encoding demands at least 65,536
+bytes, shared workspace drops 65,536 requested bytes and the added rounding
+reservation is 49,152 bytes, reducing the retained logical charge by 16,384.
+These are capacity/accounting changes, not throughput or RSS measurements.
 
-The current ownership campaign was repeated after the testing/tooling cleanup
-on `b8a7e4a` runtime inputs. Both platforms and pathname lengths retain the same
-append charge/request/usable measurements above, and both independent negative
-controls reject their intended fault. A bounded, allocation-free trace in the
-caller records three retained append allocations on macOS: requests of 65,641,
-65,536, and 64 bytes occupy 81,920, 65,536, and 64 usable bytes, respectively.
-The first is the encoding workspace: 96 metadata bytes, nine column bytes, and
-65,536 commit scratch bytes. Construction and commit use that buffer in separate
-phases. This isolates the observed rounding source; no production repair or
-broader append bound has yet been verified. The disposable trace and build
-outputs were removed after recording these observations.
-
-The first owner-attribution run failed final release because the new caller
-observation mutexes were still live. Explicit destruction releases their measured
-storage together with the barriers before database-close reconciliation. No
-constant subtraction or relaxed baseline assertion masks caller allocations.
-These controls observe parked live allocations, not peaks, foreign allocations,
-allocator metadata/retention, or physical stack pages. Native durability,
-Windows, whole-process memory, and arbitrary schedules remain unqualified.
+The reader request differs with canonical pathname length; the independent
+equation accounts for it. On the 384-byte path, macOS readers request 521,954
+bytes and occupy 539,104 usable bytes under the same 534,404-byte charge. The
+remaining short/long reader deficits of 4,380/4,700 bytes are queued separately.
+Append's ceiling is a qualified premise for the exercised stock allocators and
+request-size domains, not arbitrary global allocators or all allocator states.
+Parked samples exclude transient peaks, direct foreign allocations, allocator
+metadata/retention, and physical stack pages. Windows, broader durability,
+arbitrary schedules, and whole-process memory remain unqualified.
 
 ### Grouping learning workload
 
