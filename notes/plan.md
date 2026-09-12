@@ -24,16 +24,33 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: analytic allocation ownership
+## Current: analytic count without retained input values
 
-The complete ownership selections for `0e94fa7` pass on macOS and GNU arm64
-Linux with matching inputs. Seven analytic cases at each pathname length retain
-independent row, attribution and release checks; the negative control rejects.
-The [analytic ownership record](evidence.md#analytic-allocation-ownership)
-identifies exact inputs, equations and observation limits. No engine repair was
-needed. Both maintenance runs pass, owned outputs are removed and verified
-changes are committed locally. Reassess the priorities below before activating
-another bounded milestone.
+The [analytic ownership observation](evidence.md#analytic-allocation-ownership)
+at `0e94fa7` found no allocation gap. It measured 32,888 temporary bytes and 7,710
+public steps for 512 count-only rows. Eliminate the ordinal spool when physical
+input demand contains no values, while preserving the checked spool for demanded
+fields. This targets measured resource cost, not a new language profile.
+
+1. Trace input demand, row evaluation, runtime ownership, admission and replay.
+   Select a compact count-and-emit owner from the validated zero-field input.
+2. Preserve full input consumption, cardinality, empty input, ordinary expression
+   demand, LIMIT behavior and cleared semantic order. Retain the current row
+   bound and bounded work, cancellation, failure, snapshots and cleanup.
+3. Check zero-temp execution for eligible inputs and retained spill for typed
+   inputs. Add independent result and planner/admission negative controls,
+   exact/short resource checks and cancellation/replay coverage. Update the
+   existing ownership caller's explicit storage expectations.
+4. Compare complete-query steps and temporary bytes with the recorded baseline.
+   Update resource and learning documentation. Run focused checks, both complete
+   frozen gates and the example; reconcile discovery and manifests, record
+   concise evidence, remove owned outputs and commit locally.
+
+Initial tracing confirms that physical inputs already expose their demanded
+column count. Runtime admission currently constructs the sorted owner for every
+analytic stage. Its replay resets checked-run cursors while retaining the count.
+The existing LIMIT consumer demonstrates bounded counter ownership and output
+through RowValues. No execution change has been made for this milestone yet.
 
 ## Next engineering priorities
 
