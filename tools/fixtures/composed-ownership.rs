@@ -91,8 +91,10 @@ pub(super) fn analytic_shapes(
         vec!["COUNT(*) OVER ()"; 20].join(",")
     );
     let rejected_heap = Heap::now();
+    let rejected_memory = db.reserved_memory_bytes();
     assert!(matches!(db.prepare(&rejected), Err(Error::Parse { .. })));
     assert_eq!(Heap::now(), rejected_heap);
+    assert_eq!(db.reserved_memory_bytes(), rejected_memory);
     let wide = format!(
         "FROM facts |> SELECT {},COUNT(*) OVER () AS n",
         vec!["t"; 63].join(",")
