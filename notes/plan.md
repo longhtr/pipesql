@@ -331,68 +331,24 @@ expected count is rejected by the stock composition checker. The
 [verification checkpoint](evidence.md#full-verification-checkpoint) records the
 failed initial deadline, final matching inputs, exclusions and cleanup.
 
-The expanded macOS allocation stage took 1,033.072 seconds, exceeding its former
-900-second deadline. The retained 1,200-second outer deadline preserves every
-cell, the 20-second cell timeout and descendant cleanup. This measured cost makes
-repeated healthy query execution in the catalog healing path a concrete candidate
-for the next bounded tooling improvement; establish its protected contracts
-before removing any repetition.
+## Completed: catalog allocation healing witnesses
 
-## Current: catalog allocation healing witnesses
+`aa5c382` replaces nine redundant post-reopen operator reruns with one ordered
+scan checking all persisted fields, NULLs, duplicate multiplicity, and scratch
+use and release. Receipt resolution and writer retry remain separate. Query
+controllers do not survive reopen; all armed semantic queries and same-handle
+scan/debt checks remain unchanged. The transferred DOUBLE expectation closes the
+former basic scan's missing-field coverage.
 
-The completed allocation stage costs 1,033.072 seconds on macOS and 601.897
-seconds on GNU arm64 Linux. After `finish` disarms observation, the catalog caller
-reopens and resolves receipts, checks a typed scan, reruns nine healthy query
-shapes, and verifies a writer. The complete faulted query sequence and its
-same-handle checks already run before `finish`. Review these distinct owners;
-do not remove a protected assertion merely to fit a shorter deadline.
-
-Finite worklist:
-
-1. Map post-reopen assertions to persisted typed values, receipts, scratch reuse
-   and writer usability. The current basic scan omits `measure`; aggregate
-   checks still carry its value/NULL expectations. Transfer that coverage before
-   removing healthy aggregate reruns.
-2. Replace only redundant post-reopen query repetition with locally readable,
-   independent typed-result and scratch/writer witnesses. Preserve the armed
-   sequence, every prefix and healthy control, all required phase observations,
-   continuing-refusal destruction, and same-handle debt behavior. Add no runner
-   framework or engine/resource-limit change.
-3. Challenge the revised healed-result/debt oracle with meaningful negative
-   controls. Reconcile the short/long allocation censuses and outcomes, then
-   measure the complete maintained campaign on unchanged engine inputs on both
-   platforms with isolated native outputs.
-4. Run consequential tooling/campaign checks, update the existing maps and
-   concise evidence, remove owned outputs, and commit verified changes locally.
-   Preserve the image/toolchains and publication restrictions.
-
-The post-reopen replacement is implemented as one ordered scan of all three
-stored columns, including exact INT64 values, DOUBLE 3.5/NULL, Unicode/control
-text and duplicate multiplicity. It requires observed temporary use for nonempty
-input and complete memory/temp release. Receipt resolution and the writer retry
-remain outside this query. `Database` retains the catalog registry, lease,
-resource authorities and shared scratch admission; query controllers are owned
-and destroyed by each result. The former healthy aggregate computations do not
-protect additional persisted operator state. Their input-value assertions have
-moved to the explicit typed scan; their semantic oracles and all armed calls
-remain unchanged.
-
-A textual comparison against `1153e8d` confirms the entire armed run, diagnostics,
-same-handle checks and outcome classification are unchanged. Healthy short/long
-censuses remain 863. Complete default campaigns now pass on both platforms, including every refusal
-position 0–862 and the full-prefix control 863 at both pathname lengths. All 38
-observed catalog phases match across platforms; the existing required-outcome
-checks pass. Both maintenance runs pass 96 tooling tests and 44 codec fixtures.
-Disposable controls reject a wrong DOUBLE expectation, refused scratch, and a
-masked RecoveryRequired at observed prefix 399; matching healthy controls pass
-on both platforms. ORDER BY creates scratch before requesting even empty input;
-nonempty rows additionally require a charged run and complete release.
-
-Observed campaign costs are approximately 712.875 seconds on macOS and 351.443
-seconds on Linux, compared with the prior complete-gate observations of 1,033.072
-and 601.897 seconds. These are single-run verification costs, not a controlled
-benchmark. Engine/native/vendor/build inputs are unchanged. Final evidence,
-owned-output removal and local commits remain.
+The finite worklist is complete: owner/assertion mapping, replacement, negative
+controls, and verification/cleanup. Both complete allocation campaigns retain
+all 863 refusal positions and the healthy control at both pathname lengths,
+with matching 38 catalog phases. Wrong-value, refused-scratch and masked-debt
+controls reject on both platforms. Maintenance passes 96 tooling tests and 44
+codec fixtures. The [focused evidence](evidence.md#catalog-healing-witnesses)
+records measured costs and verification scope. No engine limit, runner, timeout,
+or independent semantic oracle changed. Owned outputs are removed; changes are
+committed locally. Publication remains unresolved.
 
 ## Applying DuckDB lessons
 

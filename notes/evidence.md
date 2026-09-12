@@ -80,6 +80,46 @@ retain their existing limitations. Release gates do not qualify debug small-stac
 execution; an exploratory debug selection aborted and its owned outputs were
 removed.
 
+## Catalog healing witnesses
+
+`aa5c382` consolidates only the catalog allocation caller's post-reopen queries.
+An ordered scan independently checks all three stored columns, exact INT64 and
+DOUBLE values, NULLs, Unicode/control text and duplicate multiplicity. It checks
+nonempty scratch use and final memory/temp release. Receipt resolution and a
+usable writer remain separate. The complete armed sequence, diagnostics,
+destruction, same-handle scan/debt checks and outcome classification are textually
+unchanged from `1153e8d`. Public aggregate tests retain ordinary close/reopen
+semantic checks; no engine, filesystem, vendor or build input changed.
+
+Complete default `tools/check-diagnostic-allocation.py` campaigns pass on macOS
+and unprivileged native-storage GNU arm64 Linux. Each executes refusal positions
+0–862 and healthy control 863 at both short and 384-byte pathnames. Both observe
+the same 38 catalog phases and pass the unchanged required-outcome checks and
+remaining lifecycle/load/recovery cells. Linux retains both Darwin ACL exclusions.
+Maintenance on each platform passes 96 tooling tests and 44 independent codec
+fixtures. Formatting and warnings-denied standalone caller compilation pass.
+These focused checks supplement the preceding full-gate checkpoint.
+
+Disposable callers against the same stock library challenge the changed oracle
+on each platform. Replacing its DOUBLE 3.5 expectation with 3.75 rejects; reducing
+only reopened temporary capacity to one byte rejects. Masking the same-handle
+scratch error at allocation prefix 399 rejects the RecoveryRequired assertion.
+Matching healthy full-census and prefix-399 controls pass. No modified caller
+or generated database is a maintained input.
+
+Observed complete campaign costs are about 712.875 seconds on macOS (log lifetime)
+and 351.443 seconds on Linux (monotonic subprocess duration), versus the prior
+full-gate allocation stages' 1,033.072 and 601.897 seconds. These single-run costs
+include builds and are not a controlled benchmark. Runs overlapped other work;
+the direct library builds used empty RUSTFLAGS while the earlier gate denied
+warnings. Compiler, engine inputs and optimization profile are unchanged.
+The shared exported 671-input manifest SHA-256 was
+`91f95f5b6c10056f474769fd063cf5af3c8a2c660548e3099ada6a18f13a8e1d`;
+subsequent finalization edits affect the notes. Logs, controls, build targets,
+export, databases and both stopped verification containers are removed. The
+existing image and toolchains remain. Windows, broader durability and physical
+memory qualification are unchanged.
+
 ## Positional UNION DISTINCT
 
 `c908071` normalizes each complete argument list to binary union stages followed
