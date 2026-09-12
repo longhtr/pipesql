@@ -370,10 +370,9 @@ are removed and changes are committed locally; publication remains unresolved.
 
 ## Current: STRING reader allocation attribution
 
-The maintained `composed-ownership.rs::reader_shapes` checks one and 64 INT64,
-DOUBLE and DATE columns through ORDER BY and DISTINCT. STRING has distinct
-variable-length payload and offset ownership and is absent from this shape
-census. Extend this existing resource qualification before adding a new operator.
+The original `composed-ownership.rs::reader_shapes` covered one and 64 INT64,
+DOUBLE and DATE columns through ORDER BY and DISTINCT. This milestone extends
+that existing qualification to STRING's variable-length payload and offsets.
 The completed snapshot milestone remains closed.
 
 Finite worklist:
@@ -391,10 +390,35 @@ Finite worklist:
    remove outputs and commit locally. Preserve publication restrictions and the
    existing verification image/toolchains.
 
-Initial caller inspection confirms all twelve current shape cases use fixed-width
+Initial caller inspection confirms all twelve original shape cases use fixed-width
 values. They sample after spill and compare live requested/usable extents with
 logical admission, then require exact row multiplicities and baseline release.
 Keep those checks intact when adding STRING coverage.
+
+The initial extension adds empty/short Unicode and 65,536-byte text profiles.
+The short-text 64-column ORDER BY case exposes a macOS deficit: 55,230,368
+usable bytes against a 55,177,616-byte charge (52,752 bytes). The independent
+assertion remains unchanged. A disposable allocation trace of the current
+caller attributes 62,464 rounding bytes to 128 metadata allocations requesting
+2,072 bytes and occupying 2,560 each. `batch.rs::TextColumn` owns 256 pairs of
+u32 offsets plus a String in a singleton Vec. The 524,288-byte payloads and
+65,536-byte text arenas have no rounding excess in this observation.
+
+The repair keeps TextColumn inline in Data and gives its span array a
+separate 2,048-byte allocation. No allocation is added: spans replace the former
+singleton owner, while the String retains its own arena. Admission charges actual
+column metadata, spans and text capacity. The first repaired macOS ownership run
+passes all 20 reader cases; full-width short-text ORDER BY observes 55,166,880
+usable bytes against a 55,176,592-byte charge. Both pathname profiles now pass
+through the existing runner with unchanged per-cell timeouts and the original
+64 MB memory budget. STRING uses a 64 MB temporary budget for complete-row runs;
+the fixed-width cases retain 8 MB. Each profile executes at one and 64 columns,
+with exact short/384-byte database pathnames. Strengthened batch
+checks cover short-reservation preservation, sparse span writes, replacement and
+reuse of both allocations. Disposable macOS controls reject a wrong expected empty string and an incorrect
+STRING DISTINCT multiplicity with exit 101 at their equality assertions. The
+three batch tests and maintenance checks pass. Linux and full retained verification
+remain; do not treat focused success as broader qualification.
 
 ## Applying DuckDB lessons
 

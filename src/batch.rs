@@ -13,7 +13,7 @@ pub(crate) const MAX_BYTES: u64 = (MAX_ROW_VALUES * (size_of::<Column>() + ROWS 
 pub(crate) const MAX_TEXT_BYTES: usize = 65_536;
 // A variable-text owner dominates every supported fixed-width column payload.
 pub(crate) const MAX_BYTES_WITH_TEXT: u64 =
-    (MAX_ROW_VALUES * (size_of::<Column>() + size_of::<TextColumn>() + MAX_TEXT_BYTES)) as u64;
+    (MAX_ROW_VALUES * (size_of::<Column>() + ROWS * size_of::<TextSpan>() + MAX_TEXT_BYTES)) as u64;
 
 #[derive(Clone, Copy)]
 struct TextSpan {
@@ -22,13 +22,16 @@ struct TextSpan {
 }
 
 struct TextColumn {
-    spans: [TextSpan; ROWS],
+    // Keep the small owner in Column. A separate power-of-two span allocation
+    // avoids rounding a heap object that combined these spans and a String.
+    spans: Vec<TextSpan>,
     bytes: String,
 }
 
 impl TextColumn {
-    fn new(capacity: usize, limit: u64) -> Result<Vec<Self>, Error> {
-        let mut owner = allocate(1, 1, "text batch metadata", limit)?;
+    fn new(capacity: usize, limit: u64) -> Result<Self, Error> {
+        let mut spans = allocate(ROWS, ROWS, "text batch spans", limit)?;
+        spans.resize(ROWS, TextSpan { start: 0, end: 0 });
         let mut bytes = String::new();
         bytes
             .try_reserve_exact(capacity)
@@ -44,11 +47,7 @@ impl TextColumn {
                 limit: capacity as u64,
             });
         }
-        owner.push(Self {
-            spans: [TextSpan { start: 0, end: 0 }; ROWS],
-            bytes,
-        });
-        Ok(owner)
+        Ok(Self { spans, bytes })
     }
 
     fn set(&mut self, row: usize, value: &str) -> Result<(), Error> {
@@ -85,7 +84,7 @@ enum Data {
     Double(Vec<f64>),
     Int64(Vec<i64>),
     String(Vec<FixedKey>),
-    Text(Vec<TextColumn>),
+    Text(TextColumn),
     Date(Vec<DateValue>),
 }
 
@@ -207,7 +206,7 @@ impl Batch {
                     });
                 }
                 bytes = bytes
-                    .checked_add(size_of::<TextColumn>())
+                    .checked_add(ROWS * size_of::<TextSpan>())
                     .and_then(|bytes| bytes.checked_add(*capacity))
                     .ok_or(Error::Corrupt("text batch extent"))?;
             }
@@ -293,7 +292,7 @@ impl Batch {
         for column in &mut self.columns {
             column.valid.fill(0);
             if let Data::Text(text) = &mut column.data {
-                text[0].bytes.clear();
+                text.bytes.clear();
             }
         }
     }
@@ -315,7 +314,7 @@ impl Batch {
             Data::Double(v) => Value::Double(v[row]),
             Data::Int64(v) => Value::Int64(v[row]),
             Data::String(v) => Value::String(StringValue::new(v[row].as_str())),
-            Data::Text(v) => Value::String(StringValue::new(v[0].value(row))),
+            Data::Text(v) => Value::String(StringValue::new(v.value(row))),
             Data::Date(v) => Value::Date(v[row]),
         })
     }
@@ -424,7 +423,7 @@ impl Batch {
                 .ok_or(Error::Corrupt("value outside fixed key domain"))?;
                 v[row] = key;
             }
-            (Data::Text(v), Value::String(value)) => v[0].set(row, value.as_str())?,
+            (Data::Text(v), Value::String(value)) => v.set(row, value.as_str())?,
             (Data::Date(v), Value::Date(value)) => v[row] = value,
             _ => return Err(Error::Corrupt("batch output type disagrees")),
         }
@@ -467,6 +466,15 @@ mod tests {
         let capacities = [Some(MAX_TEXT_BYTES), Some(0)];
         let bytes = Batch::required_bytes_with_text(&types, &capacities).unwrap();
         let memory = crate::resources::MemoryAuthority::new(bytes);
+        let mut short = memory.reserve(bytes - 1, "short text batch test").unwrap();
+        assert!(matches!(
+            OwnedBatch::new_with_text(&types, &capacities, &mut short),
+            Err(Error::Corrupt("reservation split exceeds admitted bytes"))
+        ));
+        assert_eq!(short.bytes(), bytes - 1);
+        assert_eq!(memory.reserved(), bytes - 1);
+        drop(short);
+        assert_eq!(memory.reserved(), 0);
         let mut reservation = memory.reserve(bytes, "text batch test").unwrap();
         let mut batch = OwnedBatch::new_with_text(&types, &capacities, &mut reservation).unwrap();
         let full = "雪".repeat(MAX_TEXT_BYTES / 3) + "x";
@@ -480,7 +488,11 @@ mod tests {
         batch.set(1, 0, Value::Null).unwrap();
         batch.publish_rows(2);
         let allocation = match &batch.columns[0].data {
-            Data::Text(v) => v[0].bytes.as_ptr(),
+            Data::Text(v) => {
+                assert_eq!(v.spans.len(), ROWS);
+                assert_eq!(v.spans.capacity(), ROWS);
+                (v.bytes.as_ptr(), v.spans.as_ptr())
+            }
             _ => unreachable!(),
         };
         assert!(
@@ -506,10 +518,27 @@ mod tests {
         assert_eq!(batch.value(0, 1), Some(Value::Null));
         assert_eq!(
             match &batch.columns[0].data {
-                Data::Text(v) => v[0].bytes.as_ptr(),
+                Data::Text(v) => (v.bytes.as_ptr(), v.spans.as_ptr()),
                 _ => unreachable!(),
             },
             allocation
+        );
+        // Span ownership must support sparse writes and replacement; offsets
+        // cannot be inferred from the preceding row's end.
+        batch
+            .set(ROWS - 1, 0, Value::String(StringValue::new("雪")))
+            .unwrap();
+        batch
+            .set(0, 0, Value::String(StringValue::new("last write")))
+            .unwrap();
+        batch.publish_rows(ROWS);
+        assert_eq!(
+            batch.value(ROWS - 1, 0),
+            Some(Value::String(StringValue::new("雪")))
+        );
+        assert_eq!(
+            batch.value(0, 0),
+            Some(Value::String(StringValue::new("last write")))
         );
         assert!(
             Batch::required_bytes_with_text(&[DataType::String], &[Some(MAX_TEXT_BYTES + 1)])

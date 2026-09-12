@@ -104,8 +104,10 @@ reconcile prepared queries, parked readers, and an append. The
 [resource equations](../docs/resources.md#interpret-composed-memory-observations)
 explain logical charges, requested/usable bytes, caller storage, and observer
 limits. It checks reader usable extents against admission, including one- and
-64-column INT64, DOUBLE, and DATE ORDER BY/DISTINCT cases with complete nullable
-results and final release. Composed-reader bound failures are reported after the
+64-column INT64, DOUBLE, DATE and STRING ORDER BY/DISTINCT cases at short and
+384-byte database pathnames. STRING covers empty/short Unicode and 65,536-byte
+values. Each case checks complete nullable results, duplicate counts and final
+release. Composed-reader bound failures are reported after the
 barrier participants join. This selection also checks the complete append
 allocation-size ranges and full-width maximum-column growth, reuse, publication,
 and release. Its controls

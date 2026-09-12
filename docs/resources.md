@@ -201,6 +201,15 @@ separately owned physical-plan, workspace, and aggregate allocations. The
 scratch charge is released at completion or failure; the terminal handle retains
 only its own size.
 
+A text batch keeps its String and span-vector handles inline in the column.
+Its separately allocated 256 start/end span pairs occupy 2,048 bytes; the text
+arena retains its admitted capacity. This avoids a per-column singleton heap
+object combining the spans and String handle, whose 2,072-byte request occupied
+2,560 usable bytes on the measured macOS allocator. Batch admission includes the
+column metadata, actual span capacity and text capacity. Sparse writes and
+replacement retain independent start/end spans until clear; neither owner grows
+during result steps. Physical owners are destroyed before their reservation.
+
 ## Declared scan admission
 
 Declared-table source admission reserves the reader owner, bounded paths,
@@ -225,8 +234,9 @@ it already uses the larger, aligned STRING capacity for every column.
 Payload buffers are allocated once and reused across units. Padding is never an
 encoded value: the existing metadata and payload validators still enforce the
 stored length and canonical representation. The ownership campaign exercises
-ORDER BY and DISTINCT with INT64, DOUBLE, and DATE at one and 64 columns, checking
-complete nullable rows, requested/usable attribution, and release on the qualified
+ORDER BY and DISTINCT with INT64, DOUBLE, DATE and STRING at one and 64 columns.
+Short and 384-byte pathnames cover complete nullable rows, requested/usable
+attribution, and release on the qualified
 stock macOS and GNU/Linux allocators. These checks and the composed-reader
 checkpoints retain the equation above; they do not qualify custom allocators,
 every producer graph, transient allocation peaks, or process/RSS bounds.

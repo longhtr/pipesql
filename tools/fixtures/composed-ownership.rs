@@ -16,14 +16,32 @@ pub(super) fn reader_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error
     use pipesql::DateValue;
     std::fs::create_dir(root)?;
     let dates = [2, 1, 2, 0].map(|day| DateValue::from_days_since_unix_epoch(day).unwrap());
-    for (kind, values) in [
-        (DataType::Int64, ColumnValues::Int64(&[2, 1, 2, 0])),
-        (DataType::Double, ColumnValues::Double(&[2., 1., 2., 0.])),
-        (DataType::Date, ColumnValues::Date(&dates)),
+    let maximum = format!("{}x", "雪".repeat(21_845));
+    assert_eq!(maximum.len(), 65_536);
+    let short = ["雪\t\n", "", "雪\t\n", "ignored"];
+    let long = [maximum.as_str(), "a", maximum.as_str(), "ignored"];
+    for (profile, kind, values) in [
+        ("int64", DataType::Int64, ColumnValues::Int64(&[2, 1, 2, 0])),
+        (
+            "float",
+            DataType::Double,
+            ColumnValues::Double(&[2., 1., 2., 0.]),
+        ),
+        ("dates", DataType::Date, ColumnValues::Date(&dates)),
+        ("short", DataType::String, ColumnValues::String(&short)),
+        ("large", DataType::String, ColumnValues::String(&long)),
     ] {
         for width in [1, 64] {
-            let path = root.join(format!("{kind:?}-{width}"));
-            let db = Database::create_empty(&path, Config::new(64_000_000, TEMP)?)?;
+            let path = root.join(format!("{profile}-{width:02}"));
+            // Maximum text rows need larger run files; retain the same memory
+            // budget as the fixed-width cases while admitting their scratch.
+            let temporary = if kind == DataType::String {
+                64_000_000
+            } else {
+                TEMP
+            };
+            let config = Config::new(64_000_000, temporary)?;
+            let db = Database::create_empty(&path, config)?;
             let cancel = CancellationToken::new();
             let names: Vec<_> = (0..width).map(|i| format!("c{i}")).collect();
             let declarations: Vec<_> = names
@@ -46,7 +64,13 @@ pub(super) fn reader_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error
                 "typed",
                 AppendLimits {
                     batches: 1,
-                    encoded_bytes: 100_000,
+                    encoded_bytes: if kind == DataType::String {
+                        // Two maximum cells plus one short cell, offsets and
+                        // validity in each of at most 64 columns.
+                        9_000_000
+                    } else {
+                        100_000
+                    },
                 },
                 &cancel,
             )?;
@@ -57,7 +81,9 @@ pub(super) fn reader_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error
                 ("FROM typed |> ORDER BY c0 NULLS FIRST", false),
                 ("FROM typed |> DISTINCT", true),
             ] {
-                println!("reader shape type={kind:?} width={width} distinct={distinct}");
+                println!(
+                    "reader shape profile={profile} type={kind:?} width={width} distinct={distinct}"
+                );
                 let prepared = db.prepare(sql)?;
                 let before = Live::now();
                 let memory = db.reserved_memory_bytes();
@@ -114,6 +140,19 @@ pub(super) fn reader_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error
                                         assert!((1..=2).contains(&n));
                                         n as usize
                                     }
+                                    Some(Value::String(text)) if kind == DataType::String => {
+                                        let expected = if profile == "short" {
+                                            ["", "雪\t\n"]
+                                        } else {
+                                            ["a", maximum.as_str()]
+                                        };
+                                        if text.as_str() == expected[0] {
+                                            1
+                                        } else {
+                                            assert_eq!(text.as_str(), expected[1]);
+                                            2
+                                        }
+                                    }
                                     unexpected => panic!("typed reader value: {unexpected:?}"),
                                 };
                                 for column in 1..width {
@@ -139,7 +178,7 @@ pub(super) fn reader_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error
         }
     }
     println!(
-        "reader shapes passed: 12 fixed-width ordering/distinct cases; rows, admission and release"
+        "reader shapes passed: 12 fixed-width and 8 STRING ordering/distinct cases; rows, admission and release"
     );
     Ok(())
 }

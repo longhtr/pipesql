@@ -199,10 +199,13 @@ def check_ownership(work, run, failures):
     print(grouped.stdout + grouped.stderr, end="", flush=True)
     if "grouped allocation shapes passed: buffers=514 hash-layouts=91" not in grouped.stdout:
         failures.append("incomplete grouped allocation shape checks")
-    readers = run("reader-allocation-shapes", "reader-allocation-shapes")
-    print(readers.stdout + readers.stderr, end="", flush=True)
-    if "reader shapes passed: 12 fixed-width ordering/distinct cases; rows, admission and release" not in readers.stdout:
-        failures.append("incomplete typed reader allocation checks")
+    for label, length in [("short", None), ("path384", 384)]:
+        readers = run(
+            "reader-allocation-shapes", f"reader-shapes-{label}", length
+        )
+        print(readers.stdout + readers.stderr, end="", flush=True)
+        if "reader shapes passed: 12 fixed-width and 8 STRING ordering/distinct cases; rows, admission and release" not in readers.stdout:
+            failures.append(f"incomplete typed reader allocation checks: {label}")
     shapes = run("append-allocation-shapes", "append-allocation-shapes")
     print(shapes.stdout + shapes.stderr, end="", flush=True)
     if (
