@@ -38,6 +38,34 @@ Owned gate/control outputs, source exports, logs and containers are removed.
 The existing verification image and toolchains remain. Windows, broader
 durability, physical-memory and sanitizer qualification remain unfinished.
 
+### Snapshot lifetime learning example
+
+`db66f28` adds `examples/snapshots.rs` and its linked walkthrough. Literal amounts
+10 and 20 belong to the first prepared generation; appending 30 produces a new
+view. The example verifies the old rows after reclamation while the old plan is
+pinned, verifies the new three-row view, drops the old plan, reclaims again and
+verifies the latest rows after close/reopen. Each result must finish successfully
+with exactly the expected ordered values. Reclaimed filenames/bytes are not
+predicted. The reading path connects preparation's retained snapshot to the
+reclamation walk's captured current and pinned views.
+
+The documented flow produces identical five-line output on stock macOS and
+unprivileged native-storage GNU arm64 Linux. Both compile/run the release example
+and pass warnings-denied example Clippy. Cargo discovers the new example target;
+the existing all-target gate includes it automatically. Missing/extra arguments,
+a relative path and an existing database path reject on macOS; the existing-path
+control also runs on GNU/Linux. The macOS existing database's file hashes remain
+unchanged after rejection. Linux executes the documented directory cleanup.
+
+Maintenance passes 96 tooling tests and 44 independent codec fixtures. Final
+formatting and documentation checks pass, including 509 local links. Engine
+sources are unchanged; full engine gates were not repeated for this example and
+walkthrough. The source example matches the file executed on both platforms;
+the final documentation-only edit adds direct owner links. All owned example
+outputs, builds, exports, logs and the verification container are removed. The
+user-owned verification image/toolchains remain. This is a sequential lifetime
+example, not additional arbitrary-concurrency, Windows or durability qualification.
+
 ### Prepared aggregate descriptor ownership
 
 Tool-only follow-up `63c3c2d` preserves the engine inputs of the full checkpoint
