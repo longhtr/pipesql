@@ -36,6 +36,22 @@ class FixtureCoverage(unittest.TestCase):
                     self.assertEqual(path.read_bytes(), damaged)
                     path.write_bytes(original)
 
+    def test_database_assembly_refuses_existing_directory_or_link(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "database"
+            fixtures = TOOLS.parent / "tests/fixtures"
+            catalog_fixtures.write_database(output, fixtures)
+            original = (output / "CONTROL").read_bytes()
+            with self.assertRaises(FileExistsError):
+                catalog_fixtures.write_database(output, fixtures)
+            self.assertEqual((output / "CONTROL").read_bytes(), original)
+            link = Path(directory) / "link"
+            missing = Path(directory) / "missing"
+            link.symlink_to(missing)
+            with self.assertRaises(FileExistsError):
+                catalog_fixtures.write_database(link, fixtures)
+            self.assertFalse(missing.exists())
+
     def test_generation_is_exact_and_refuses_existing_output(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "generated"

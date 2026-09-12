@@ -14,6 +14,7 @@ import tempfile
 import time
 
 import catalog_graph as g
+from catalog_fixtures import write_database
 
 from check_process import owned_process, run as run_process
 from check_support import build_library, source_revision
@@ -231,19 +232,7 @@ def check_genesis_lease_and_fixture(work, driver, seed):
     # Independent retained bytes deliberately reverse physical/declared column
     # order and use nonordinal IDs. This challenges an ordinal-only decoder.
     fixture = work / "independent-fixture"
-    (fixture / "units").mkdir(parents=True)
-    (fixture / "private").mkdir()
-    (fixture / "LOCK").touch()
-    for name in ("CONTROL", "ROOT.A", "ROOT.B", "WAL"):
-        shutil.copyfile(ROOT / "tests/fixtures/catalog-roots" / name, fixture / name)
-    for name, source_name in [
-        ("0000000000000003-00000001.obj", "catalog-schema/columns.bin"),
-        ("0000000000000003-00000002.obj", "catalog-schema/native-unit.bin"),
-        ("0000000000000005-00000003.obj", "catalog-roots/table-data.bin"),
-        ("0000000000000005-00000004.obj", "catalog-roots/catalog.bin"),
-        ("0000000000000005-00000005.obj", "catalog-roots/successes.bin"),
-    ]:
-        shutil.copyfile(ROOT / "tests/fixtures" / source_name, fixture / "units" / name)
+    write_database(fixture, ROOT / "tests/fixtures")
     independent = g.inspect(fixture)
     assert independent["successes"] == [3, 5] and independent["issued"] == 6
     assert [c["id"] for c in independent["tables"][0]["columns"]] == [29, 3]

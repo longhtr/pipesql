@@ -313,7 +313,7 @@ impl Parsed {
 #[derive(Clone, Copy)]
 enum ChildCompletion {
     Derived { join: Option<SourceSpan> },
-    UnionAll(SourceSpan),
+    Union { pipe: SourceSpan, distinct: bool },
 }
 
 struct Parser<'a> {
@@ -642,6 +642,7 @@ impl Parser<'_> {
         frames: &mut [ChildCompletion; MAX_STAGES],
         depth: &mut usize,
         pipe: SourceSpan,
+        distinct: bool,
     ) -> Result<(), Error> {
         let open = self.take(Kind::LeftParen)?;
         if *depth == frames.len() {
@@ -650,7 +651,7 @@ impl Parser<'_> {
                 span: open,
             });
         }
-        frames[*depth] = ChildCompletion::UnionAll(pipe);
+        frames[*depth] = ChildCompletion::Union { pipe, distinct };
         *depth += 1;
         self.take(Kind::From)?;
         Ok(())
@@ -728,14 +729,21 @@ impl Parser<'_> {
                             self.join_condition(&mut parsed, pipe)?;
                         }
                     }
-                    ChildCompletion::UnionAll(pipe) => {
+                    ChildCompletion::Union { pipe, distinct } => {
                         parsed.push_stage(ParsedStage::UnionAll(pipe), close)?;
                         if self.peek() == Kind::Comma {
                             self.take(Kind::Comma)?;
                             if self.peek() == Kind::LeftParen {
-                                self.union_argument(&mut frames, &mut depth, pipe)?;
+                                self.union_argument(&mut frames, &mut depth, pipe, distinct)?;
                                 need_source = true;
+                                continue;
                             }
+                        }
+                        // Deduplicate the complete argument list once, through the
+                        // ordinary DISTINCT binder, demand pass, and sorter. This
+                        // extra stage consumes the same shared stage budget.
+                        if distinct {
+                            parsed.push_stage(ParsedStage::Distinct(pipe), close)?;
                         }
                     }
                 }
@@ -754,8 +762,14 @@ impl Parser<'_> {
             let stage = match self.peek() {
                 Kind::Reserved if self.is_word("UNION") => {
                     self.word("UNION")?;
-                    self.word("ALL")?;
-                    self.union_argument(&mut frames, &mut depth, pipe)?;
+                    let distinct = if self.peek() == Kind::Distinct {
+                        self.take(Kind::Distinct)?;
+                        true
+                    } else {
+                        self.word("ALL")?;
+                        false
+                    };
+                    self.union_argument(&mut frames, &mut depth, pipe, distinct)?;
                     need_source = true;
                     continue;
                 }
@@ -1067,6 +1081,49 @@ mod tests {
     }
 
     #[test]
+    fn union_distinct_deduplicates_after_all_arguments_and_restores_nested_modes() {
+        let sql =
+            "FROM a |> UNION DISTINCT (FROM b), (FROM c |> UNION ALL (FROM d)), |> AS combined";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.source_count, 4);
+        assert_eq!(parsed.len, 8);
+        let stages = &parsed.stages[..usize::from(parsed.len)];
+        assert!(matches!(stages[0], ParsedStage::Source(1)));
+        assert!(matches!(stages[1], ParsedStage::UnionAll(_)));
+        assert!(matches!(stages[2], ParsedStage::Source(2)));
+        assert!(matches!(stages[3], ParsedStage::Source(3)));
+        assert!(matches!(stages[4], ParsedStage::UnionAll(_)));
+        assert!(matches!(stages[5], ParsedStage::UnionAll(_)));
+        let ParsedStage::Distinct(span) = stages[6] else {
+            panic!("complete union must deduplicate before its following alias");
+        };
+        assert_eq!(usize::from(span.start), sql.find("|>").unwrap());
+        assert!(matches!(stages[7], ParsedStage::Alias(_)));
+
+        let parsed =
+            parse_query("FROM a |> UNION ALL (FROM b |> UNION DISTINCT (FROM c))").unwrap();
+        assert_eq!(parsed.len, 5);
+        assert!(matches!(parsed.stages[2], ParsedStage::UnionAll(_)));
+        assert!(matches!(parsed.stages[3], ParsedStage::Distinct(_)));
+        assert!(matches!(parsed.stages[4], ParsedStage::UnionAll(_)));
+    }
+
+    #[test]
+    fn union_distinct_charges_its_deduplication_stage_to_the_shared_limit() {
+        let arguments = ["(FROM b)"; MAX_STAGES / 2 - 1].join(", ");
+        let sql = format!("FROM a |> UNION DISTINCT {arguments} |> SELECT x");
+        assert_eq!(usize::from(parse_query(&sql).unwrap().len), MAX_STAGES);
+        let arguments = format!("{arguments}, (FROM b)");
+        assert!(matches!(
+            parse_query(&format!("FROM a |> UNION DISTINCT {arguments}")),
+            Err(Error::Parse {
+                message: "normalized stage limit exceeded",
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn union_and_join_children_keep_distinct_completion_kinds() {
         let sql = "FROM a |> JOIN (FROM b |> UNION ALL (FROM (FROM c) AS c)) AS r ON a.x=r.x";
         let parsed = parse_query(sql).unwrap();
@@ -1095,7 +1152,9 @@ mod tests {
             "FROM a |> UNION ALL b",
             "FROM a |> UNION ALL TABLE b",
             "FROM a |> UNION ALL (SELECT x)",
-            "FROM a |> UNION DISTINCT (FROM b)",
+            "FROM a |> UNION DISTINCT",
+            "FROM a |> UNION DISTINCT ()",
+            "FROM a |> UNION DISTINCT BY NAME (FROM b)",
             "FROM a |> UNION ALL BY NAME (FROM b)",
             "FROM a |> UNION ALL CORRESPONDING (FROM b)",
             "FROM a |> UNION ALL (FROM b) AS r",

@@ -49,15 +49,18 @@ fn public_union_composes_with_spill_and_temporary_refusal() {
     }
     writer.commit(&cancel).unwrap();
     db.close().unwrap();
-    for (sql, grouped) in [
+    for (sql, grouped, copies) in [
         (
             "FROM words |> ORDER BY k |> UNION ALL (FROM words |> ORDER BY k)",
             false,
+            2,
         ),
         (
             "FROM words |> UNION ALL (FROM words) |> AGGREGATE COUNT(*) AS n GROUP BY k",
             true,
+            1,
         ),
+        ("FROM words |> UNION DISTINCT (FROM words)", false, 1),
     ] {
         for temp_limit in [16_000_000, 1] {
             let db = Database::open(
@@ -111,7 +114,8 @@ fn public_union_composes_with_spill_and_temporary_refusal() {
                         .collect()
                 } else {
                     keys.iter()
-                        .chain(&keys)
+                        .cycle()
+                        .take(ROWS * copies)
                         .map(|key| vec![Cell::Text(key.clone())])
                         .collect()
                 };
@@ -198,9 +202,6 @@ fn check_union_width() {
         .map(String::as_str)
         .collect::<Vec<_>>()
         .join(",");
-    let sql = format!("FROM left_rows |> UNION ALL (FROM right_rows) |> SELECT {columns}");
-    let prepared = db.prepare(&sql).unwrap();
-    assert_eq!(prepared.result_column_count(), 64);
     let expected: Vec<Vec<Cell>> = [0, 100]
         .into_iter()
         .map(|base| {
@@ -211,13 +212,21 @@ fn check_union_width() {
                 .collect()
         })
         .collect();
-    assert_eq!(
-        collect(&mut db.execute(&prepared, &cancel).unwrap()),
-        expected
-    );
-    drop(prepared);
+    for mode in ["ALL", "DISTINCT"] {
+        let sql = format!("FROM left_rows |> UNION {mode} (FROM right_rows) |> SELECT {columns}");
+        let prepared = db.prepare(&sql).unwrap();
+        assert_eq!(prepared.result_column_count(), 64);
+        assert_eq!(
+            collect(&mut db.execute(&prepared, &cancel).unwrap()),
+            expected
+        );
+        drop(prepared);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
     for sql in [
         "FROM left_rows |> UNION ALL (FROM too_wide)".to_owned(),
+        "FROM left_rows |> UNION DISTINCT (FROM too_wide)".to_owned(),
         format!("FROM left_rows |> UNION ALL (FROM right_rows) |> SELECT {columns},c0"),
     ] {
         assert!(
@@ -231,6 +240,89 @@ fn check_union_width() {
     }
     assert_eq!(db.reserved_temp_bytes(), 0);
     db.close().unwrap();
+}
+
+#[test]
+fn public_union_distinct_compares_complete_positional_rows() {
+    let (_directory, db) = join_fixture();
+    for (sql, expected) in [
+        (
+            "FROM facts |> SELECT k AS x |> UNION DISTINCT (FROM facts |> SELECT k AS y), (FROM facts |> SELECT 2 AS z) |> ORDER BY x NULLS FIRST",
+            vec![
+                vec![Cell::Null],
+                vec![Cell::Integer(1)],
+                vec![Cell::Integer(2)],
+            ],
+        ),
+        (
+            "FROM facts |> SELECT k,v |> UNION DISTINCT (FROM facts |> SELECT k,v) |> SELECT k |> ORDER BY k NULLS FIRST",
+            vec![
+                vec![Cell::Null],
+                vec![Cell::Integer(1)],
+                vec![Cell::Integer(1)],
+                vec![Cell::Integer(2)],
+            ],
+        ),
+        (
+            "FROM facts |> SELECT v AS x |> UNION DISTINCT (FROM facts |> SELECT v AS x |> UNION ALL (FROM facts |> SELECT v AS x)), (FROM facts |> SELECT v+1 AS x) |> ORDER BY x",
+            integers(&[10, 11, 20, 21, 30, 31, 40, 41]),
+        ),
+        (
+            "FROM facts |> UNION DISTINCT (FROM facts) |> AS u |> JOIN dimensions AS d ON u.k=d.k |> SELECT u.v |> ORDER BY v",
+            integers(&[10, 10, 20, 20, 30]),
+        ),
+        (
+            "FROM facts |> WHERE v<0 |> SELECT v*9223372036854775807 AS v |> UNION DISTINCT (FROM facts |> SELECT v) |> ORDER BY v",
+            integers(&[10, 20, 30, 40]),
+        ),
+        (
+            "FROM facts |> WHERE v<0 |> UNION DISTINCT (FROM facts |> WHERE v<0) |> AGGREGATE COUNT(*) AS n",
+            integers(&[0]),
+        ),
+    ] {
+        query(&db, sql, expected);
+    }
+    for sql in [
+        "FROM facts |> SELECT k AS x |> UNION DISTINCT (FROM facts |> SELECT k AS y) |> SELECT y",
+        "FROM facts |> UNION DISTINCT (FROM facts) |> SELECT facts.k",
+        "FROM facts |> UNION DISTINCT (FROM dimensions)",
+    ] {
+        assert!(matches!(db.prepare(sql), Err(Error::Bind { .. })), "{sql}");
+    }
+}
+
+#[test]
+fn public_union_distinct_demands_projected_away_fields_before_limit() {
+    let (_directory, db) = join_fixture();
+    let baseline = db.reserved_memory_bytes();
+    for sql in [
+        "FROM facts |> SELECT v,v*9223372036854775807 AS unused |> UNION DISTINCT (FROM facts |> SELECT v,1 AS unused) |> SELECT v |> LIMIT 1",
+        "FROM facts |> SELECT v,1 AS unused |> UNION DISTINCT (FROM facts |> SELECT v,v*9223372036854775807 AS unused) |> SELECT v |> LIMIT 1",
+    ] {
+        let cancel = CancellationToken::new();
+        let prepared = db.prepare(sql).unwrap();
+        let mut result = db.execute(&prepared, &cancel).unwrap();
+        let mut failed = false;
+        for _ in 0..2000 {
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Rows(_) | QueryStep::Finished => {
+                    panic!("deduplication skipped a demanded value: {sql}")
+                }
+                QueryStep::Failed(Error::ArithmeticOverflow { span, .. }) => {
+                    assert_eq!(&sql[span.start()..span.end()], "v*9223372036854775807");
+                    failed = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("wrong failure: {error}"),
+            }
+        }
+        assert!(failed);
+        drop(result);
+        drop(prepared);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
 }
 
 #[test]
@@ -346,10 +438,21 @@ fn public_union_propagates_demanded_branch_errors_with_original_spans() {
 fn public_union_cancellation_releases_each_scheduled_prefix() {
     let (_directory, db) = join_fixture();
     let baseline = db.reserved_memory_bytes();
-    for sql in [
-        "FROM facts |> UNION ALL (FROM facts) |> SELECT v",
-        "FROM facts |> ORDER BY v |> UNION ALL (FROM facts |> ORDER BY v) |> SELECT v",
-        "FROM facts |> AGGREGATE COUNT(*) AS n |> UNION ALL (FROM facts |> AGGREGATE COUNT(*) AS n)",
+    for (sql, expected_rows) in [
+        ("FROM facts |> UNION ALL (FROM facts) |> SELECT v", 8),
+        ("FROM facts |> UNION DISTINCT (FROM facts) |> SELECT v", 4),
+        (
+            "FROM facts |> UNION DISTINCT (FROM facts) |> AGGREGATE COUNT(*) AS n",
+            1,
+        ),
+        (
+            "FROM facts |> ORDER BY v |> UNION ALL (FROM facts |> ORDER BY v) |> SELECT v",
+            8,
+        ),
+        (
+            "FROM facts |> AGGREGATE COUNT(*) AS n |> UNION ALL (FROM facts |> AGGREGATE COUNT(*) AS n)",
+            2,
+        ),
     ] {
         let prepared = db.prepare(sql).unwrap();
         let retained = db.reserved_memory_bytes();
@@ -361,12 +464,14 @@ fn public_union_cancellation_releases_each_scheduled_prefix() {
             let mut result = db.execute(&prepared, &cancel).unwrap();
             let mut terminal = false;
             let mut completed = false;
+            let mut rows = 0;
             for step in 0..2000 {
                 if step == cancel_after {
                     cancel.cancel();
                 }
                 match result.step() {
-                    QueryStep::Progress | QueryStep::Rows(_) => (),
+                    QueryStep::Progress => (),
+                    QueryStep::Rows(batch) => rows += batch.len(),
                     QueryStep::Finished => {
                         completed = true;
                         terminal = true;
@@ -385,8 +490,15 @@ fn public_union_cancellation_releases_each_scheduled_prefix() {
             assert_eq!(db.reserved_memory_bytes(), retained);
             assert_eq!(db.reserved_temp_bytes(), 0);
             if completed {
-                assert!(!cancel.is_cancelled());
-                break;
+                assert_eq!(
+                    rows, expected_rows,
+                    "{sql}: complete output after cancellation"
+                );
+                // A producer that has finished its work can report completion
+                // after late cancellation. Still sweep the remaining boundary.
+                if !cancel.is_cancelled() {
+                    break;
+                }
             }
             prefixes += 1;
         }
@@ -479,6 +591,130 @@ fn public_union_keeps_typed_bytes_and_one_snapshot_across_branches() {
     expected.sort_unstable();
     assert_eq!(collect(&mut db.execute(&fresh, &cancel).unwrap()), expected);
     drop(fresh);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    db.close().unwrap();
+}
+
+#[test]
+fn public_union_distinct_keeps_typed_representatives_and_prepared_snapshot() {
+    let directory = Directory::new();
+    let db = Database::create_empty(&directory.database(), config()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table("typed", &declarations(), &cancel).unwrap();
+    let baseline = db.reserved_memory_bytes();
+    let sql = "FROM typed |> UNION DISTINCT (FROM typed)";
+    let empty = db.prepare(sql).unwrap();
+    let first_day = DateValue::from_days_since_unix_epoch(-719_162).unwrap();
+    let last_day = DateValue::from_days_since_unix_epoch(2_932_896).unwrap();
+    let mut writer = db.begin_append("typed", limits(), &cancel).unwrap();
+    writer
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::String(&["ignored", "ignored", "雪", "雪"]),
+                    validity: &[12],
+                },
+                ColumnInput {
+                    values: ColumnValues::Int64(&[i64::MIN, i64::MIN, i64::MAX, i64::MAX]),
+                    validity: &[15],
+                },
+                ColumnInput {
+                    values: ColumnValues::Double(&[
+                        -0.0,
+                        0.0,
+                        f64::from_bits(0x7ff8_0000_0000_0042),
+                        f64::from_bits(0x7ff8_0000_0000_0099),
+                    ]),
+                    validity: &[15],
+                },
+                ColumnInput {
+                    values: ColumnValues::Date(&[first_day, first_day, last_day, last_day]),
+                    validity: &[15],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    writer.commit(&cancel).unwrap();
+    assert!(collect(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
+    drop(empty);
+    let prepared = db.prepare(sql).unwrap();
+    let mut running = db.execute(&prepared, &cancel).unwrap();
+    let mut writer = db.begin_append("typed", limits(), &cancel).unwrap();
+    writer
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::String(&["new"]),
+                    validity: &[1],
+                },
+                ColumnInput {
+                    values: ColumnValues::Int64(&[0]),
+                    validity: &[1],
+                },
+                ColumnInput {
+                    values: ColumnValues::Double(&[1.5]),
+                    validity: &[1],
+                },
+                ColumnInput {
+                    values: ColumnValues::Date(
+                        &[DateValue::from_days_since_unix_epoch(0).unwrap()],
+                    ),
+                    validity: &[1],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    writer.commit(&cancel).unwrap();
+
+    // Compare all non-floating fields literally. Floating representatives may
+    // retain either original encoding within each not-distinct class; they must
+    // not acquire a new encoding during deduplication.
+    let check = |mut rows: Vec<Vec<Cell>>, fresh: bool| {
+        assert_eq!(rows.len(), if fresh { 3 } else { 2 });
+        rows.sort_unstable_by(|left, right| left[1].cmp(&right[1]));
+        let Cell::Number(bits) = rows[0][2] else {
+            panic!("zero representative is not DOUBLE")
+        };
+        assert!([(-0.0_f64).to_bits(), 0.0_f64.to_bits()].contains(&bits));
+        rows[0][2] = Cell::Number(0);
+        let last = rows.last_mut().unwrap();
+        let Cell::Number(bits) = last[2] else {
+            panic!("NaN representative is not DOUBLE")
+        };
+        assert!([0x7ff8_0000_0000_0042, 0x7ff8_0000_0000_0099].contains(&bits));
+        last[2] = Cell::Number(0x7ff8_0000_0000_0042);
+        let mut expected = vec![vec![
+            Cell::Null,
+            Cell::Integer(i64::MIN),
+            Cell::Number(0),
+            Cell::Day(-719_162),
+        ]];
+        if fresh {
+            expected.push(vec![
+                Cell::Text("new".into()),
+                Cell::Integer(0),
+                Cell::Number(1.5_f64.to_bits()),
+                Cell::Day(0),
+            ]);
+        }
+        expected.push(vec![
+            Cell::Text("雪".into()),
+            Cell::Integer(i64::MAX),
+            Cell::Number(0x7ff8_0000_0000_0042),
+            Cell::Day(2_932_896),
+        ]);
+        assert_eq!(rows, expected);
+    };
+    check(collect(&mut running), false);
+    drop(running);
+    check(collect(&mut db.execute(&prepared, &cancel).unwrap()), false);
+    drop(prepared);
+    let fresh = db.prepare(sql).unwrap();
+    check(collect(&mut db.execute(&fresh, &cancel).unwrap()), true);
+    drop(fresh);
+    assert_eq!(db.reserved_memory_bytes(), baseline);
     assert_eq!(db.reserved_temp_bytes(), 0);
     db.close().unwrap();
 }

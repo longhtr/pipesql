@@ -10,6 +10,7 @@ use crate::{AppendLimits, ColumnDeclaration, ColumnInput, ColumnValues, Config};
 
 const QUERY: &str = "FROM facts |> ORDER BY k DESC,v ASC |> SELECT v";
 const DISTINCT_QUERY: &str = "FROM facts |> SELECT k,k+0 AS copy |> DISTINCT |> SELECT k";
+const UNION_DISTINCT_QUERY: &str = "FROM facts |> SELECT k,k+0 AS copy |> UNION DISTINCT (FROM facts |> SELECT k,k+0 AS copy) |> SELECT k";
 const STEPS: usize = 100_000;
 
 fn database(directory: &Directory) -> Database {
@@ -120,7 +121,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
     let directory = Directory::new();
     let db = database(&directory);
     let cancel = CancellationToken::new();
-    for sql in [QUERY, DISTINCT_QUERY] {
+    for sql in [QUERY, DISTINCT_QUERY, UNION_DISTINCT_QUERY] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         let result = db.execute(&query, &cancel).unwrap();
@@ -187,7 +188,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
 fn cancellation_covers_every_order_phase_and_completion() {
     let directory = Directory::new();
     let db = database(&directory);
-    for sql in [QUERY, DISTINCT_QUERY] {
+    for sql in [QUERY, DISTINCT_QUERY, UNION_DISTINCT_QUERY] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         for target in 0..10 {
@@ -237,7 +238,7 @@ fn cancellation_covers_every_order_phase_and_completion() {
 fn sorted_output_faults_and_temp_refusal_are_terminal_and_release_owners() {
     let directory = Directory::new();
     let db = database(&directory);
-    for sql in [QUERY, DISTINCT_QUERY] {
+    for sql in [QUERY, DISTINCT_QUERY, UNION_DISTINCT_QUERY] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         let cancel = CancellationToken::new();

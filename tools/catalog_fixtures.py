@@ -8,6 +8,7 @@ with retained fixtures; importing this module does no file I/O.
 import argparse
 from pathlib import Path
 import struct
+import shutil
 
 
 def checksum(data):
@@ -145,6 +146,26 @@ def encode_roots():
         struct.pack_into("<I", record, 108, checksum(record))
         output[name] = bytes(record)
     return output
+
+
+def write_database(destination, fixtures):
+    """Assemble the retained namespace-7 fixture in a fresh database directory."""
+    destination.mkdir()
+    (destination / "units").mkdir()
+    (destination / "private").mkdir()
+    (destination / "LOCK").touch()
+    for name in ("CONTROL", "ROOT.A", "ROOT.B", "WAL"):
+        shutil.copyfile(fixtures / "catalog-roots" / name, destination / name)
+    # Creator IDs deliberately have gaps; physical and declared column orders
+    # differ. Preserve the fixture's checked object graph exactly.
+    for name, source_name in [
+        ("0000000000000003-00000001.obj", "catalog-schema/columns.bin"),
+        ("0000000000000003-00000002.obj", "catalog-schema/native-unit.bin"),
+        ("0000000000000005-00000003.obj", "catalog-roots/table-data.bin"),
+        ("0000000000000005-00000004.obj", "catalog-roots/catalog.bin"),
+        ("0000000000000005-00000005.obj", "catalog-roots/successes.bin"),
+    ]:
+        shutil.copyfile(fixtures / source_name, destination / "units" / name)
 
 
 def vectors():

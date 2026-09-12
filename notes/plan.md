@@ -319,13 +319,39 @@ later projected away. Keep snapshot, span, admission, replay, cancellation, and
 cleanup contracts. Any normalized deduplication stage must consume the existing
 16-stage budget; do not expand token, column, or resource ceilings.
 
-The language contract and union parser continuation owners have been inspected.
-Implementation has not started. Next trace DISTINCT binding/demand and physical
-validation before choosing the normalized representation. Add independent public
-semantics/composition and affected failure/resource witnesses using current
-suites, update contracts and the learning path, and run complete frozen macOS
-and native-storage GNU arm64 Linux gates. Reconcile discovery/manifests, retain
-concise evidence, remove owned outputs, and commit locally without publication.
+The parser normalizes each complete DISTINCT argument list to binary unions and
+one ordinary DISTINCT stage. Binding, independent validation, demand, admission,
+and execution reuse existing owners. Focused release checks pass for parser and
+semantic/physical mutations, exact preparation admission, full-width/small-stack
+execution, complete-row and demanded-error semantics, typed representatives and
+snapshots, cancellation prefixes, sorter faults and grouping fallback replay.
+Late cancellation may observe an already finished producer; the prefix sweep now
+requires complete output in that case and continues to an uncancelled completion.
+A prior debug selection aborted on the documented release-only small-stack case;
+its eight abandoned directories were removed. No engine ceiling changed.
+
+The stock CLI composition corpus passes 304 cases: the original 298 retain their
+2 MB limit, and six positional union cases use the retained independent catalog
+fixture at an explicit 4 MB limit. Fixture assembly is shared with graph checking;
+it still copies the same checked bytes into fresh destinations. The catalog
+allocation caller now includes UNION DISTINCT prepare/execute/step and healed
+results. Its measured short-path census rose from 795 to 863, exceeding the former
+800 work ceiling; the campaign ceiling is now 900, with every measured prefix
+still required. This ceiling limits campaign work, not engine memory. The full
+short/long refusal sweep passed all 863 refusal positions and healthy controls
+at each pathname length (573.550 seconds on macOS).
+
+The focused maintenance run passed 96 tooling tests, 44 independent codec
+fixtures and 507 local links. Warning-denied all-target Clippy passed. The updated
+UNION tutorial produces north total 15/count 3 and south total 20/count 1; the
+retained column-transform, grouping, STRING and composed examples also complete
+with their full oracles on macOS. Legacy union refusal now names UNION for both
+modes and preserves its operator span.
+
+Remaining finite work: complete frozen macOS/Linux gates, Linux tutorial results,
+discovery/manifests, concise evidence, owned-output cleanup, and final local
+commits. Current verification is focused and does not establish full or
+cross-platform completion.
 
 ## Applying DuckDB lessons
 

@@ -538,10 +538,7 @@ pub(crate) fn prepare<'db>(
         .iter()
         .find(|stage| matches!(stage, ParsedStage::UnionAll(_)))
     {
-        return Err(bind_error(
-            "UNION ALL requires declared-table storage",
-            *span,
-        ));
+        return Err(bind_error("UNION requires declared-table storage", *span));
     }
     if parsed.source_count != 1 {
         return Err(bind_error(

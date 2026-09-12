@@ -32,7 +32,7 @@ the command and output ownership.
 | [models/attempt_publication.py](models/attempt_publication.py) | Root/fence representation model under stated persistence premises. |
 | `aggregate-rounding-vectors.py` | Independent rational rounding vectors; `--check` compares retained inputs. |
 | `check-aggregate-semantics.py` | Public stock CLI aggregate boundary campaign. |
-| `check-composable-aggregates.py` | Independent public composition corpus through the stock CLI. |
+| `check-composable-aggregates.py` | Independent public composition corpus through the stock CLI: legacy aggregates and positional unions over the retained catalog fixture. |
 | `test-q1-compare.py` | Regression tests for strict typed output parsing and comparison. |
 
 The models do not execute the engine or prove filesystem persistence. Their

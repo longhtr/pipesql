@@ -12,7 +12,7 @@ use std::path::Path;
 
 const FIRST: &str = "first 雪";
 // Bounds campaign work, not engine memory. Every measured prefix is exercised.
-pub(super) const ALLOCATION_LIMIT: usize = 800;
+pub(super) const ALLOCATION_LIMIT: usize = 900;
 const SECOND: &str = "next \t\n";
 const QUERY: &str = "FROM facts |> SELECT note,amount";
 const COLUMNS: [ColumnDeclaration<'static>; 3] = [
@@ -36,6 +36,7 @@ const AGGREGATE: &str = "FROM facts |> AGGREGATE SUM(amount) AS ignored, AVG(amo
 const GROUPED: &str = "FROM facts |> EXTEND amount+0 AS adjusted |> SET note=note |> DROP amount |> RENAME adjusted AS amount |> AGGREGATE AVG(amount) AS ai,SUM(measure) AS total,AVG(measure) AS mean,COUNT(*) AS n,MIN(amount) AS amin,MAX(amount) AS amax,MIN(note) AS tmin,MAX(note) AS tmax GROUP AND ORDER BY note |> SELECT note,ai+0.0 AS ai,total+0.0 AS total,mean+0.0 AS mean,n+0 AS n,amin,amax,tmin,tmax";
 const DISTINCT: &str = "FROM facts |> SELECT note,amount |> DISTINCT";
 const UNION: &str = "FROM facts |> SELECT note,amount |> UNION ALL (FROM facts |> SELECT note,amount) |> ORDER BY note,amount |> AGGREGATE COUNT(*) AS n";
+const UNION_DISTINCT: &str = "FROM facts |> SELECT note,amount |> UNION DISTINCT (FROM facts |> SELECT note,amount) |> AGGREGATE COUNT(*) AS n";
 const REPEATED: &str = "FROM facts |> AGGREGATE COUNT(*) AS n GROUP BY note |> AGGREGATE SUM(n) AS subtotal GROUP BY n |> AGGREGATE SUM(subtotal) AS total,COUNT(*) AS distinct_sizes";
 fn consume_repeated(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(), Error> {
     let mut seen = false;
@@ -399,6 +400,13 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
             phase = "union-step";
             consume_count(result, 8)?;
             drop(union);
+            phase = "union-distinct-prepare";
+            let union_distinct = db.prepare(UNION_DISTINCT)?;
+            phase = "union-distinct-execute";
+            let result = db.execute(&union_distinct, &cancel)?;
+            phase = "union-distinct-step";
+            consume_count(result, 3)?;
+            drop(union_distinct);
             phase = "distinct-prepare";
             let distinct = db.prepare(DISTINCT)?;
             phase = "distinct-execute";
@@ -565,6 +573,12 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
     let union = db.prepare(UNION)?;
     consume_count(db.execute(&union, &cancel)?, rows * 2)?;
     drop(union);
+    let union_distinct = db.prepare(UNION_DISTINCT)?;
+    consume_count(
+        db.execute(&union_distinct, &cancel)?,
+        if rows == 0 { 0 } else { 3 },
+    )?;
+    drop(union_distinct);
     let distinct = db.prepare(DISTINCT)?;
     consume_rows(
         db.execute(&distinct, &cancel)?,

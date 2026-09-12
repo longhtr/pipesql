@@ -256,14 +256,16 @@ mod tests {
             .unwrap();
         writer.commit(&cancel).unwrap();
         let baseline = db.reserved_memory_bytes();
-        for (suffix, expected) in [
-            ("", vec![1, 2, 2]),
-            (" |> LIMIT 1", vec![1]),
-            (" |> UNION ALL (FROM facts)", vec![1, 2, 2, 1, 2]),
+        for (mode, suffix, expected) in [
+            ("ALL", "", vec![1, 2, 2]),
+            ("ALL", " |> LIMIT 1", vec![1]),
+            ("ALL", " |> UNION ALL (FROM facts)", vec![1, 2, 2, 1, 2]),
+            ("DISTINCT", "", vec![1, 2]),
+            ("DISTINCT", " |> LIMIT 1", vec![1]),
         ] {
             let query = db
                 .prepare(&format!(
-                    "FROM facts |> UNION ALL (FROM facts |> AGGREGATE COUNT(*) AS n){suffix}"
+                    "FROM facts |> UNION {mode} (FROM facts |> AGGREGATE COUNT(*) AS n){suffix}"
                 ))
                 .unwrap();
             for complete in [false, true] {

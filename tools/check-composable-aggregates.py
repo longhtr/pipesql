@@ -12,6 +12,7 @@ import struct
 import sys
 import tempfile
 
+from catalog_fixtures import write_database
 from check_process import run as run_process
 from check_support import build_cli, require_executable
 
@@ -139,7 +140,7 @@ class QueryChecks:
         self.work = work
         self.observations = []
 
-    def run(self, database, sql):
+    def run(self, database, sql, limits=QUERY_LIMITS):
         (self.work / "query.sql").write_text(sql)
         return run_process(
             [
@@ -149,7 +150,7 @@ class QueryChecks:
                 str(self.work / database),
                 "--query-file",
                 str(self.work / "query.sql"),
-                *QUERY_LIMITS,
+                *limits,
             ],
             capture_output=True,
             text=True,
@@ -189,8 +190,8 @@ class QueryChecks:
             }
         )
 
-    def composed(self, label, sql, expected, database="data", ordered=True):
-        call = self.run(database, sql)
+    def composed(self, label, sql, expected, database="data", ordered=True, limits=QUERY_LIMITS):
+        call = self.run(database, sql, limits)
         assert call.returncode == 0, (label, call.stdout, call.stderr)
         actual = parse_rows(call.stdout)
         assert actual == expected if ordered else sorted(actual) == sorted(expected), (
@@ -1211,6 +1212,46 @@ def check_stored_corruption_and_bits(queries, work, encoder, rows):
         )
 
 
+def check_positional_unions(queries, work):
+    write_database(work / "declared", ROOT / "tests/fixtures")
+    # Two declared STRING scan batches and a sorted row need more than the
+    # legacy corpus budget. Preserve that corpus's 2 MB limit.
+    limits = ["--memory-limit-bytes", "4000000", "--temp-limit-bytes", "1000000"]
+    # The independent fixture has four distinct (note, amount) rows, including
+    # NULL, an empty string, Unicode, negative zero, a NaN, and positive infinity.
+    for mode, count in [("ALL", 8), ("DISTINCT", 4)]:
+        queries.composed(
+            "positional-union-" + mode.lower(),
+            f"FROM facts |> UNION {mode} (FROM facts |> SELECT note AS text,amount AS value) |> AGGREGATE COUNT(*) AS n",
+            [[encoded(count)]],
+            "declared",
+            limits=limits,
+        )
+    for label, sql, expected in [
+        (
+            "union-distinct-complete-row",
+            "FROM facts |> SELECT note,1 AS n |> UNION DISTINCT (FROM facts |> SELECT note,1 AS n) |> SELECT n",
+            [[encoded(1)]] * 4,
+        ),
+        (
+            "union-distinct-null-class",
+            "FROM facts |> WHERE note IS NULL |> UNION DISTINCT (FROM facts |> WHERE note IS NULL) |> SELECT amount",
+            [["8000000000000000"]],
+        ),
+        (
+            "union-distinct-nested-mode",
+            "FROM facts |> SELECT 1 AS n |> UNION DISTINCT (FROM facts |> SELECT 1 AS n |> UNION ALL (FROM facts |> SELECT 2 AS n)) |> ORDER BY n",
+            [[encoded(1)], [encoded(2)]],
+        ),
+        (
+            "union-distinct-empty",
+            "FROM facts |> WHERE amount < -1e308 AND amount > 0 |> UNION DISTINCT (FROM facts |> WHERE amount < -1e308 AND amount > 0) |> AGGREGATE COUNT(*) AS n",
+            [[encoded(0)]],
+        ),
+    ]:
+        queries.composed(label, sql, expected, "declared", limits=limits)
+
+
 def campaign(cli, work):
     work.mkdir()
     encoder = runpy.run_path(str(ROOT / "tools/snapshot-fixtures.py"))["write_snapshot"]
@@ -1224,6 +1265,7 @@ def campaign(cli, work):
         timeout=90,
     )
     queries = QueryChecks(cli, work)
+    check_positional_unions(queries, work)
     check_grouping(queries, rows)
     check_expressions_and_reference_queries(queries, rows)
     check_dates_and_predicates(queries, work, encoder, rows)

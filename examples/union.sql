@@ -1,7 +1,7 @@
 FROM sales
 |> WHERE region = 'north'
 |> SELECT region,amount
-|> UNION ALL (
+|> UNION DISTINCT (
   FROM sales
   |> WHERE amount >= 10
   |> SELECT region AS area,amount AS value

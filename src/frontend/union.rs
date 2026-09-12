@@ -178,71 +178,74 @@ mod tests {
             &cancel,
         )
         .unwrap();
-        let sql = "FROM l |> SELECT a AS x,a AS y |> UNION ALL (FROM r |> SELECT b,c)";
         let baseline = db.reserved_memory_bytes();
-        for mutation in 0..12 {
-            let mut query = db.prepare(sql).unwrap();
-            let union = &query.plan.unions[0];
-            let first = union.output(0).unwrap();
-            let second = union.output(1).unwrap();
-            assert_ne!(first.identity(), second.identity());
-            assert!(first.nullable());
-            assert!(!second.nullable());
-            assert_eq!(union.inputs(0).unwrap()[0], union.inputs(1).unwrap()[0]);
-            assert_ne!(union.inputs(0).unwrap()[1], union.inputs(1).unwrap()[1]);
-            assert_eq!(query.result_column(0).unwrap().name, Some("x"));
-            assert_eq!(query.result_column(1).unwrap().name, Some("y"));
-            assert_eq!(
-                query
-                    .plan
-                    .order_key(query.plan.final_relation(), 0)
-                    .unwrap(),
-                None
-            );
-            let last = usize::from(query.plan.count) - 1;
-            let union = &mut query.plan.unions[0];
-            match mutation {
-                0 => (),
-                1 => union.first = ColumnId::EMPTY,
-                2 => union.count = 65,
-                3 => union.count = 1,
-                4 => union.inputs[1].swap(0, 1),
-                5 => union.inputs[0][0] = first,
-                6 => {
-                    union.inputs[1][0] = SemanticColumn::new(
-                        union.inputs[1][0].identity().value(),
-                        DataType::Double,
-                        true,
-                    )
-                }
-                7 => {
-                    union.inputs[1][0] = SemanticColumn::new(
-                        union.inputs[1][0].identity().value(),
-                        DataType::Int64,
-                        false,
-                    )
-                }
-                8 => union.inputs[1][63] = first,
-                9 => query.plan.range_columns[last + 1].insert(first.identity()),
-                10 => {
-                    query.plan.stages[last].stage = Stage::UnionAll {
-                        right: query.plan.final_relation(),
-                        descriptor: 0,
+        for mode in ["ALL", "DISTINCT"] {
+            let sql =
+                format!("FROM l |> SELECT a AS x,a AS y |> UNION {mode} (FROM r |> SELECT b,c)");
+            for mutation in 0..12 {
+                let mut query = db.prepare(&sql).unwrap();
+                let union = &query.plan.unions[0];
+                let first = union.output(0).unwrap();
+                let second = union.output(1).unwrap();
+                assert_ne!(first.identity(), second.identity());
+                assert!(first.nullable());
+                assert!(!second.nullable());
+                assert_eq!(union.inputs(0).unwrap()[0], union.inputs(1).unwrap()[0]);
+                assert_ne!(union.inputs(0).unwrap()[1], union.inputs(1).unwrap()[1]);
+                assert_eq!(query.result_column(0).unwrap().name, Some("x"));
+                assert_eq!(query.result_column(1).unwrap().name, Some("y"));
+                assert_eq!(
+                    query
+                        .plan
+                        .order_key(query.plan.final_relation(), 0)
+                        .unwrap(),
+                    None
+                );
+                let last = usize::from(query.plan.count) - 1 - usize::from(mode == "DISTINCT");
+                let union = &mut query.plan.unions[0];
+                match mutation {
+                    0 => (),
+                    1 => union.first = ColumnId::EMPTY,
+                    2 => union.count = 65,
+                    3 => union.count = 1,
+                    4 => union.inputs[1].swap(0, 1),
+                    5 => union.inputs[0][0] = first,
+                    6 => {
+                        union.inputs[1][0] = SemanticColumn::new(
+                            union.inputs[1][0].identity().value(),
+                            DataType::Double,
+                            true,
+                        )
                     }
-                }
-                11 => {
-                    query.plan.stages[last].stage = Stage::UnionAll {
-                        right: query.plan.stages[last].input,
-                        descriptor: 0,
+                    7 => {
+                        union.inputs[1][0] = SemanticColumn::new(
+                            union.inputs[1][0].identity().value(),
+                            DataType::Int64,
+                            false,
+                        )
                     }
+                    8 => union.inputs[1][63] = first,
+                    9 => query.plan.range_columns[last + 1].insert(first.identity()),
+                    10 => {
+                        query.plan.stages[last].stage = Stage::UnionAll {
+                            right: query.plan.final_relation(),
+                            descriptor: 0,
+                        }
+                    }
+                    11 => {
+                        query.plan.stages[last].stage = Stage::UnionAll {
+                            right: query.plan.stages[last].input,
+                            descriptor: 0,
+                        }
+                    }
+                    _ => unreachable!(),
                 }
-                _ => unreachable!(),
+                assert_eq!(
+                    validate(&query.plan).is_ok(),
+                    mutation == 0,
+                    "{mode}: mutation {mutation}"
+                );
             }
-            assert_eq!(
-                validate(&query.plan).is_ok(),
-                mutation == 0,
-                "mutation {mutation}"
-            );
         }
         for sql in [
             "FROM l |> UNION ALL (FROM r |> SELECT b) |> SELECT l.a",

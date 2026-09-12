@@ -212,6 +212,15 @@ every allocation prefix on short and long paths, including typed refusal and
 exact results after healed reopen. Logical memory admission alone cannot
 establish physical allocator-failure cleanup.
 
+UNION DISTINCT adds complete positional-row deduplication to those checks.
+Retain UNION ALL controls; challenge nested mode restoration, the extra normalized
+stage, all-field demand and original error spans, typed representatives, snapshot
+retention, and both input mappings in independent validators. Exercise full-width
+small-stack execution, every scheduled cancellation prefix, sorter fault edges,
+and observed downstream grouping replay. The stock CLI uses the independent
+catalog fixture alongside the legacy composition corpus. The public allocator
+caller requires preparation, execution and stepping refusals for both union modes.
+
 DISTINCT verification covers all ordinary-output identities, duplicate-output
 sharing, fresh identity ranges, preserved visible ranges and cleared semantic
 order. Include all 64 columns and maximum byte widths, repeated stages, empty

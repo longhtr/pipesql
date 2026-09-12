@@ -102,14 +102,19 @@ cargo run --release --offline --locked --bin pipesql -- query \
 ```
 
 The first branch selects north's sales. The second selects every sale of at least
-10. UNION ALL keeps both copies of the north sale worth 10. It matches columns by
+10. UNION DISTINCT keeps one copy of the north sale worth 10. It matches columns by
 position: the second branch's `area` and `value` feed the first branch's `region`
 and `amount`. Grouping therefore produces:
 
 | region | total | n |
 | --- | ---: | ---: |
-| north | 25 | 4 |
+| north | 15 | 3 |
 | south | 20 | 1 |
+
+Change `UNION DISTINCT` to `UNION ALL` in the example to retain both copies of
+the north sale worth 10: north then has total 25 and count 4. DISTINCT compares
+the complete `(region, amount)` row before grouping, so the north sale worth 5
+and its NULL amount remain separate rows.
 
 The NULL amount contributes a row to COUNT(*) but no value to SUM. GROUP AND ORDER
 BY establishes the displayed order; union itself establishes none. Require
@@ -120,7 +125,12 @@ output position gets a fresh identity and two input mappings. The
 [demand pass](../src/execution/planning/demand.rs) translates required outputs
 into branch inputs. The [union consumer](../src/execution/union.rs) copies one
 batch at a time while the [scheduler](../src/execution/runtime.rs) retains child
-ownership. See the [union contract](language.md#union-all) for scope and errors.
+ownership. The [parser](../src/frontend/parser.rs) adds one ordinary DISTINCT
+stage after the complete argument list for UNION DISTINCT. Its complete-row
+comparison demands every input field and uses the existing bounded
+[distinct owner](execution.md#duplicate-removal), including temporary storage
+when necessary. See the [union contract](language.md#union-distinct) for scope
+and errors.
 
 ## Finish and clean up
 

@@ -314,6 +314,16 @@ optional buffer and hash growth. Allocation or competing resource admission can
 still fail, with partial owners released normally. No independent memory budget
 is introduced.
 
+Explicit UNION DISTINCT uses binary positional union producers followed by one
+ordinary DISTINCT producer for the complete argument list. Nested lists each own
+their deduplication stage. The parser charges that stage to the shared stage
+ceiling, and binding, demand analysis, independent validation, admission and
+runtime construction follow the existing UNION ALL and DISTINCT paths. Every
+union output field remains demanded for complete-row comparison, even when a
+later projection removes it. The DISTINCT producer can retain a sorted run and
+replay it for downstream grouping without reopening either branch. No new
+scheduler state or resource account is introduced.
+
 ### Replay and terminal cleanup
 
 An aggregate can replay its retained output once after accumulation and

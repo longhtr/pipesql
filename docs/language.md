@@ -99,6 +99,7 @@ separate from this query manifest.
 | `AGGREGATE SUM(expression) AS name`, `AVG(expression) AS name`, `COUNT(*) AS name`, `COUNT(expression) AS name`, `MIN(expression) AS name`, `MAX(expression) AS name` | Aggregate stages may repeat; each consumes the preceding relation. All aggregate stages together may introduce at most ten output identities, including grouping keys. Every entry requires an explicit alias. SUM/AVG accept INT64 or DOUBLE expressions. COUNT/MIN/MAX also accept direct STRING/DATE columns. SUM/MIN/MAX preserve the argument type; AVG returns DOUBLE; COUNT returns nonnullable INT64. Other aggregates return nullable results. |
 | `DISTINCT` | Removes duplicate complete rows on declared tables. Preserves output names and shared identities through fresh replacements; clears order. See [equality](#values-null-and-equality). |
 | `UNION ALL (pipe_query) [, (pipe_query), ...]` | Combines declared-table pipelines by position, preserving duplicates. Requires matching widths and scalar types. See [UNION ALL](#union-all) for names, demand, and bounds. |
+| `UNION DISTINCT (pipe_query) [, (pipe_query), ...]` | Combines matching positional pipelines and removes duplicate complete rows. See [UNION DISTINCT](#union-distinct) for demand and the additional stage. |
 | `LIMIT count [OFFSET skip_rows]` | Selects a prefix on legacy or declared tables. Count and offset are non-negative INT64 constant expressions; see [LIMIT](#limit) for demand and error rules. |
 | `GROUP BY key [, key]` | Legacy tables group by up to two distinct visible source STRING identities. Declared-table keys are specified below. Group aliases inherited from earlier projections are valid. |
 | `GROUP AND ORDER BY key [, key]` | Additionally establishes ascending key order, preserved by following projections and filters. Ordinary GROUP BY establishes no semantic order. |
@@ -347,7 +348,7 @@ scope, demand, stack, and admission checks.
 Each argument is a parenthesized, independent FROM-based pipe query. At least one
 argument is required; a trailing comma is allowed. Arguments can contain joins,
 derived inputs, and nested unions. TABLE arguments, hints, name-based
-correspondence, UNION DISTINCT, INTERSECT, and EXCEPT remain unsupported.
+correspondence, bare UNION, INTERSECT, and EXCEPT remain unsupported.
 
 Inputs must have equal ordinary column counts and identical scalar types at
 each position. No numeric widening or untyped NULL coercion occurs. Output names
@@ -382,6 +383,26 @@ count reaches the source-occurrence capacity.
 The [tutorial](getting-started.md#combine-pipeline-results) demonstrates positional
 names and duplicates. [Resources](resources.md#union-all-admission) owns admission
 and replay ownership.
+
+## UNION DISTINCT
+
+This form uses the same positional arguments, type checks, output names, range
+isolation, and snapshot rules as UNION ALL. It removes duplicate complete rows
+under the existing [DISTINCT equality contract](#values-null-and-equality),
+including NULL, NaN, and signed-zero equivalence. Output order and the retained
+representative of equivalent rows remain unspecified.
+
+The parser normalizes the complete argument list to binary unions followed by
+one ordinary DISTINCT stage. That final stage consumes one additional slot in
+the existing 16-stage budget, even for empty inputs. Nested UNION DISTINCT lists
+have their own deduplication stage; mixing ALL and DISTINCT preserves each list's
+boundary. No token, column, or source bound is enlarged.
+
+Every duplicate-comparison field is demanded in both inputs, including fields
+later projected away. A downstream LIMIT requesting rows cannot skip a later
+branch's demanded error before deduplication finishes. Original expression spans
+remain attached to those errors. The existing bounded DISTINCT sorter supplies
+admission, temporary storage, replay, and result cleanup.
 
 ## Relation state
 

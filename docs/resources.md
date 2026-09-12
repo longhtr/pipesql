@@ -262,6 +262,13 @@ admission. Branch sorting, grouping, and joins retain their own temporary-space
 and replay obligations. Completion, cancellation, failure, and abandonment release
 the query's retained owners through the existing result lifecycle.
 
+UNION DISTINCT normalizes to the same binary union owners followed by one
+ordinary DISTINCT owner for the complete argument list. The extra parsed stage
+admits its descriptor, sorted input, and output through the existing equations
+below. It can require temporary storage even when UNION ALL would stream. All
+comparison fields remain demanded regardless of later projection. It adds no
+new resource account, spool implementation, or replay authority.
+
 ## Join, ordering and DISTINCT admission
 
 DISTINCT uses one complete-row sorted-input owner with every unique field as a

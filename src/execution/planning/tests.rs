@@ -78,6 +78,40 @@ fn union_branch_positions_and_demands_are_validated_independently() {
             "mutation {mutation}"
         );
     }
+    drop(query);
+    // UNION DISTINCT must retain both comparison fields even when its final
+    // projection needs only x. Its DISTINCT producer cannot bypass the union.
+    let query = db.prepare("FROM facts |> SELECT a AS x,b AS y |> UNION DISTINCT (FROM facts |> SELECT b,a) |> SELECT x").unwrap();
+    for mutation in 0..4 {
+        let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
+        assert_eq!(plan.pipelines.len(), 4);
+        assert_eq!(plan.pipelines[0].column_count, 2);
+        assert_eq!(plan.pipelines[1].column_count, 2);
+        assert_eq!(plan.pipelines[2].column_count, 2);
+        match mutation {
+            0 => (),
+            1 => plan.pipelines[2].column_count = 1,
+            2 => {
+                plan.pipelines[3].producer = Producer::Distinct {
+                    input: PipelineId(0),
+                    descriptor: 0,
+                }
+            }
+            3 => {
+                plan.pipelines[3].producer = Producer::UnionAll {
+                    left: PipelineId(0),
+                    right: PipelineId(1),
+                    descriptor: 0,
+                }
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            validate_physical(&plan, &query, &db, RootState::Empty, 0).is_ok(),
+            mutation == 0,
+            "union distinct mutation {mutation}",
+        );
+    }
 }
 
 #[test]
