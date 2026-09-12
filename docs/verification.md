@@ -419,6 +419,15 @@ arbitrary races, every overlapping cut, C-runtime memory, allocator-retained
 pages, or RSS; see the [ownership
 record](../notes/evidence.md#resource-ownership-and-admission).
 
+For the maintained nullable join/aggregate/order workload, compare the current
+prepared/result charge with live requested and allocator-usable increments
+after execute and every public step, including Finished. Keep caller heap storage
+fixed across that interval and require complete independent rows plus restoration
+of the original heap, descriptors, and reservations after release. A wrong-owner
+attribution must fail the same guard after result and release checks. These
+observations qualify the exercised stable boundaries; they do not measure
+transient allocations inside a step or arbitrary allocation histories.
+
 Recovery allocation checks cover short/384-byte paths, empty/data missing-peer
 repair, corrupt roots, and Darwin repair-rename permission failure. The
 supervisor must remove its owned ACL after child failure or timeout. Check exact

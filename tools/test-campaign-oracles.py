@@ -99,6 +99,24 @@ class GroupExpectations(unittest.TestCase):
 
 
 class AllocationInterpretation(unittest.TestCase):
+    def test_ownership_requires_joined_completion(self):
+        marker = "joined shapes passed: 2 budgets; complete rows, step ownership and release"
+        for output, missing in [("", True), (marker, False)]:
+            failures = []
+            run = Mock(return_value=subprocess.CompletedProcess([], 0, output, ""))
+            # Exercise interpretation only; the timeout control and native
+            # negative subprocesses have their own retained execution checks.
+            def native(command, **options):
+                if command[0] == "/usr/bin/time":
+                    raise subprocess.TimeoutExpired(command, 1, output="observed child live")
+                return subprocess.CompletedProcess(command, 1, "", "injected rejection")
+            with self.subTest(output=output), patch.dict(
+                ALLOCATION["check_ownership"].__globals__, {"run_process": native}
+            ), redirect_stdout(io.StringIO()):
+                ALLOCATION["check_ownership"](Path("unused"), run, failures)
+            self.assertEqual("incomplete joined allocation ownership checks" in failures, missing)
+            self.assertIn((("joined-shapes", "joined-shapes"), {}), run.call_args_list)
+
     def test_pathname_scope_runs_only_its_cells_and_common_mutex_control(self):
         run = Mock(return_value=subprocess.CompletedProcess(
             [], 0, "native mutex contention passed without Rust allocation\n", ""

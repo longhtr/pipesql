@@ -121,6 +121,18 @@ complete prepared/result owner with requested and usable extents, and checks
 release. A fresh size census alone does not establish these history-dependent
 observations.
 
+The same selection runs the nullable self-join, aggregation, and ordering workload
+at 2.2 MB and 12 MB. `joined_shapes` in
+[`composed-ownership.rs`](fixtures/composed-ownership.rs) checks all 4,096 descending
+groups, NULL counts and sums, and final heap/descriptor/reservation release.
+It samples requested and usable allocations after execute and every public step,
+including Finished, against the current prepared/result charge. A nonexistent
+owner in the negative control must fail the same usable-byte guard after full
+rows and release. The subprocess deadline bounds completion; the sample count
+is not capped to the smaller grouping workload's step count. These stable
+boundaries do not measure allocations made and freed inside a step or qualify
+other schemas, allocator histories, or RSS.
+
 Catalog controls also check the combined GROUPED prepared-query/result owner
 against requested and allocator-usable bytes while preserving complete nullable
 and extrema results. `--catalog-only --controls-only` reproduces those healthy

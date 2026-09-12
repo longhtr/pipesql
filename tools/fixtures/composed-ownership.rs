@@ -353,6 +353,153 @@ pub(super) fn append_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+// The workload matches the learning example; expected values below follow the
+// literal two source rows per key, independently of the sorter and hash layout.
+pub(super) fn joined_shapes(
+    root: &Path,
+    wrong_attribution: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir(root)?;
+    let path = root.join("database");
+    let cancel = CancellationToken::new();
+    create_joined_sales(&path, &cancel)?;
+    // Initialize stdout before the observed interval. No caller heap storage
+    // changes between this baseline and destruction of prepared/result owners.
+    println!("joined shapes: nullable self-join, grouping, descending order");
+    for budget in [2_200_000, 12_000_000] {
+        let db = Database::open(&path, Config::new(budget, TEMP)?)?;
+        let before = Live::now();
+        let memory = db.reserved_memory_bytes();
+        let query = db.prepare(
+            "FROM sales AS s |> JOIN sales AS copies ON s.region = copies.region \
+             |> AGGREGATE COUNT(*) AS n,COUNT(s.amount) AS present,SUM(s.amount) AS total \
+             GROUP BY s.region |> ORDER BY region DESC",
+        )?;
+        let mut result = db.execute(&query, &cancel)?;
+        let mut seen = 0;
+        let mut progress = 0;
+        let mut row_steps = 0;
+        let mut finished = false;
+        let mut minimum_headroom = i128::MAX;
+        let mut peak_temp = 0;
+        // Sample execute, every returned step, and Finished before dropping the
+        // owner. Borrowed rows are checked before sampling and allocate nothing.
+        // The campaign bounds this complete workload with its subprocess deadline.
+        loop {
+            let charge = query.accounted_memory_bytes() + result.accounted_memory_bytes();
+            assert_eq!(db.reserved_memory_bytes(), memory + charge);
+            let requested = LIVE_REQUESTED
+                .load(Ordering::Relaxed)
+                .checked_sub(before.requested)
+                .unwrap();
+            let usable = LIVE_USABLE
+                .load(Ordering::Relaxed)
+                .checked_sub(before.usable)
+                .unwrap();
+            assert!(
+                requested as u64 <= charge,
+                "joined requested allocation admission"
+            );
+            // The negative control adds a nonexistent owner to the measured heap.
+            // It must fail this same guard after full rows and release are checked.
+            let attributed = usable as u128 + u128::from(wrong_attribution) * u128::from(charge);
+            minimum_headroom = minimum_headroom.min(i128::from(charge) - attributed as i128);
+            peak_temp = peak_temp.max(db.reserved_temp_bytes());
+            if finished {
+                break;
+            }
+            match result.step() {
+                QueryStep::Progress => progress += 1,
+                QueryStep::Finished => finished = true,
+                QueryStep::Failed(error) => panic!("joined query: {error:?}"),
+                QueryStep::Rows(batch) => {
+                    row_steps += 1;
+                    assert_eq!(batch.column_count(), 4);
+                    for row in 0..batch.len() {
+                        assert!(seen < ROWS);
+                        let key = (ROWS - 1 - seen) as i64;
+                        let (present, total) = match key % 4 {
+                            0 => (0, Value::Null),
+                            1 => (2, Value::Int64(6)),
+                            _ => (4, Value::Int64(8)),
+                        };
+                        assert_eq!(batch.value(row, 0), Some(Value::Int64(key)));
+                        assert_eq!(batch.value(row, 1), Some(Value::Int64(4)));
+                        assert_eq!(batch.value(row, 2), Some(Value::Int64(present)));
+                        assert_eq!(batch.value(row, 3), Some(total));
+                        seen += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            finished && seen == ROWS && progress > 0 && row_steps > 0,
+            "joined incomplete: finished={finished} rows={seen} progress={progress} row_steps={row_steps}"
+        );
+        assert!(peak_temp > 0, "joined workload must exercise sorted inputs");
+        drop(result);
+        drop(query);
+        assert_eq!(Live::now(), before);
+        assert_eq!(db.reserved_memory_bytes(), memory);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        db.close()?;
+        println!(
+            "joined budget={budget} rows={seen} progress={progress} row-steps={row_steps} minimum-usable-headroom={minimum_headroom} temporary={peak_temp} release=complete"
+        );
+        assert!(minimum_headroom >= 0, "joined usable ownership attribution");
+    }
+    println!("joined shapes passed: 2 budgets; complete rows, step ownership and release");
+    Ok(())
+}
+
+fn create_joined_sales(path: &Path, cancel: &CancellationToken) -> Result<(), pipesql::Error> {
+    // Build with a separate budget so the experiment measures query admission.
+    let db = Database::create_empty(path, Config::new(32_000_000, TEMP)?)?;
+    db.declare_table(
+        "sales",
+        &["region", "amount"].map(|name| ColumnDeclaration {
+            name,
+            data_type: DataType::Int64,
+            nullable: name == "amount",
+        }),
+        cancel,
+    )?;
+    let mut append = db.begin_append(
+        "sales",
+        AppendLimits {
+            batches: (2 * ROWS / 256) as u32,
+            encoded_bytes: 1_000_000,
+        },
+        cancel,
+    )?;
+    for amount in [1, 3] {
+        for start in (0..ROWS).step_by(256) {
+            let regions: [i64; 256] = std::array::from_fn(|row| (ROWS - 1 - start - row) as i64);
+            let mut validity = [0_u8; 256 / 8];
+            for (row, region) in regions.iter().enumerate() {
+                if region % 4 >= 2 || (region % 4 == 1 && amount == 3) {
+                    validity[row / 8] |= 1 << (row % 8);
+                }
+            }
+            append.write(
+                &[
+                    ColumnInput {
+                        values: ColumnValues::Int64(&regions),
+                        validity: &[255; 256 / 8],
+                    },
+                    ColumnInput {
+                        values: ColumnValues::Int64(&[amount; 256]),
+                        validity: &validity,
+                    },
+                ],
+                cancel,
+            )?;
+        }
+    }
+    append.commit(cancel)?;
+    db.close()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Live {
     requested: usize,

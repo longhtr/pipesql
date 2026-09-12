@@ -39,7 +39,9 @@ Commit `986b673` retains those exact inputs. That checkpoint finalized only the
 two notes files and verified 487 local documentation links. The later grouping
 example and walkthrough changes are qualified in the
 [grouping cost record](#grouping-capacity-cost) and
-[explicit batch checks](#explicit-string-append-batches); they did not rerun the complete
+[explicit batch checks](#explicit-string-append-batches); later caller changes add
+[composed ownership checks](#composed-query-allocation-boundaries). These focused
+checks did not rerun the complete
 gate. Engine source is unchanged. This identifies source, not reproducible binaries.
 
 The stages took 1,572.247 seconds on macOS and 771.258 seconds on Linux; these
@@ -678,6 +680,60 @@ also fit: charge 3,957,784 at both paths, macOS usable 3,917,040/3,917,360 and L
 3,907,536/3,907,840. The catalog census is now 795 allocations at each pathname
 length, and every refusal prefix executes. Other schemas, allocator histories,
 transient peaks, Windows, and whole-process/RSS memory remain unqualified.
+
+### Composed-query allocation boundaries
+
+The September 12 stock public allocation caller now observes the nullable
+self-join, grouping, and descending-order workload from
+[`examples/composed.rs`](../examples/composed.rs). Two literal rows per key yield
+four joined pairs; expected present counts and sums are independently fixed by
+the key's NULL class. Both 2.2 MB and 12 MB budgets check all 4,096 groups,
+completion, and exact final heap, descriptor, and reservation release.
+
+After execute and each public step (including Finished), requested and usable
+Rust allocation increments are compared with the current prepared/result charge.
+Caller heap storage stays fixed across the interval. Database reservations must
+equal their original baseline plus those charges. This tests the combined owners,
+not a decomposition by operator or allocations made and freed inside a step.
+
+| Platform | Query budget | Progress steps | Row steps | Minimum usable headroom | Sampled temporary peak |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| macOS arm64 | 2,200,000 | 848,808 | 4,096 | 11,800 | 2,336,640 |
+| macOS arm64 | 12,000,000 | 549,765 | 4,096 | 11,800 | 1,263,448 |
+| GNU arm64 Linux | 2,200,000 | 848,808 | 4,096 | 12,960 | 2,336,640 |
+| GNU arm64 Linux | 12,000,000 | 549,765 | 4,096 | 12,960 | 1,263,448 |
+
+No requested- or usable-byte deficit was observed, so no engine allowance or
+implementation changed. The first probe's borrowed 200,000-step bound stopped
+before output. The maintained check uses the existing 20-second subprocess
+deadline, which bounds the complete workload and descendant cleanup. Both
+budgets finish within it. A wrong-owner control adds a nonexistent charge-sized
+owner to measured usable bytes; after all rows and release at 2.2 MB, the same
+usable-byte guard rejects it. The tooling interpretation test rejects missing
+joined completion. Both the ownership selection and default campaign discover
+the case through their existing `check_ownership` entry point.
+
+`RUSTFLAGS=-Dwarnings python3 -B tools/check-diagnostic-allocation.py --ownership-only`
+passes on both platforms, including retained mixed grouping, typed readers,
+append shapes, parked readers/writer, timeout cleanup, and negative controls.
+The runtime sources are unchanged from `986b673`. Builds use Rust 1.98.1 with
+release, offline locked dependencies. macOS uses Darwin 25.6.0/Python 3.14.7;
+Linux uses Python 3.11.2, the retained image, UID/GID 1000, read-only sources,
+and native container storage. The changed caller sources match across platforms.
+The composed fixture SHA-256 is
+`a326794b39a233a5e91b05c7b4a67d9dac7c5ad3b1176b412442efb1c022459c`.
+
+| Platform | Stock library SHA-256 | Caller SHA-256 |
+| --- | --- | --- |
+| macOS | `aff5b12d70bfca44dc11f3e490dadcbe76f31ca443932b4a329579e564e5b5b5` | `8fa309e78d35094c788239200a1dcaaf46b23b797c48238420f110cef5339b7a` |
+| GNU/Linux | `cd9955b88fc6bf271e68ed59f98fa85220852ed7ba38a977ab8046b2b91008c6` | `4a352485ff48a5b22089a4766fc3b98c7ea4e583a22af1b15d0376e47af1c10a` |
+
+Formatting and maintenance pass: 94 tooling tests, 44 independent codec
+fixtures, and 496 final local documentation links. This is focused public ownership coverage, not another full engine
+or allocation-refusal gate. Owned source exports, builds, databases, logs, and
+the container are removed; image/toolchains are retained. Arbitrary schemas,
+allocation histories, transient peaks, Windows, and whole-process/RSS bounds
+remain unqualified.
 
 ### Explicit STRING append batches
 

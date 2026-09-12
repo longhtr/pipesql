@@ -251,28 +251,22 @@ time on both platforms; no hash-runtime change or speedup is claimed. Owned
 outputs are removed and the changes committed locally without publication.
 Do not repeat these measurements without a concrete new question.
 
-## Current: composed-query allocation attribution
+## Completed: composed-query allocation attribution
 
-The public allocation campaign exercises joined-order allocation refusal, but
-its usable-byte guards currently cover reader and grouped-query owners rather
-than the complete join/aggregate/order learning workload. Extend the existing
-stock caller for the nullable self-join in `examples/composed.rs`, using its
-2.2 MB and 12 MB budgets. Preserve the independent four-pairs-per-key oracle,
-NULL counts/sums, descending output, completion, and final release.
+The existing stock caller now checks nullable self-join, aggregation, and
+ordering at 2.2 MB and 12 MB, after execute and every public step including
+Finished. Complete independent rows, current prepared/result charges, and final
+heap/descriptor/reservation release pass on macOS and GNU arm64 Linux. Minimum
+usable headroom is 11,800/12,960 bytes respectively; no engine repair is indicated.
 
-Sample requested and usable allocations at explicit stable public-step
-boundaries and reconcile prepared/result charges without counting caller-owned
-storage. Include a wrong-attribution control. Inspect the shared sorter owners
-before interpreting any deficit. Bound initial reproduction and allocation
-tracing to 20 minutes per platform; repair a demonstrated owner rather than
-inflate allowances. Keep arbitrary histories and transient peaks unqualified.
-
-The example, attribution entry points, and joined-order failure consumer have
-been inspected. No implementation, measurement process, or owned scratch output
-has started. Next trace the shared attribution snapshots and sorter admission,
-then add the finite public case. Verify the affected campaigns on macOS and
-native-storage GNU arm64 Linux, run complete gates if engine code changes,
-finish required tooling/documentation checks, and commit locally after cleanup.
+The wrong-owner control fails after complete rows and release. Both full
+ownership selections and retained controls pass; maintenance checks 94 tooling
+tests and 44 codec fixtures. The existing subprocess deadline bounds this
+workload's larger step count. The [boundary record](evidence.md#composed-query-allocation-boundaries)
+owns exact observations and scope. This qualifies combined owners at stable
+boundaries, not transient peaks or arbitrary histories. Owned outputs are
+removed and changes committed locally without publication. Reopen only for a
+concrete affected owner, new workload, or attribution counterexample.
 
 ## Applying DuckDB lessons
 

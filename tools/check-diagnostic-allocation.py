@@ -187,6 +187,10 @@ def run_cell(work, failures, mode, label, database_bytes=None):
 
 
 def check_ownership(work, run, failures):
+    joined = run("joined-shapes", "joined-shapes")
+    print(joined.stdout + joined.stderr, end="", flush=True)
+    if "joined shapes passed: 2 budgets; complete rows, step ownership and release" not in joined.stdout:
+        failures.append("incomplete joined allocation ownership checks")
     mixed = run("mixed-grouping-shapes", "mixed-grouping-shapes")
     print(mixed.stdout + mixed.stderr, end="", flush=True)
     if "mixed shapes completed: 40 cases, deficits=0" not in mixed.stdout:
@@ -243,6 +247,7 @@ def check_ownership(work, run, failures):
                 f"ownership-{label}: missing composed ownership completion"
             )
     for mode, expected in [
+        ("joined-attribution-negative", "joined usable ownership attribution"),
         ("append-allocation-shapes-negative", "append allocation rounding"),
         ("ownership-negative", "complete-row oracle"),
         ("ownership-attribution-negative", "prepared ownership attribution"),
