@@ -7,36 +7,75 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the runtime and documentation inputs in
-`8a7b1ee` on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux. Both use Rust 1.98.1,
-release artifacts, locked offline builds, and warnings-denied compilation and
-documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage with
-read-only source. The 675 inputs match before/after and across gates. Their
-manifest SHA-256 is
-`072168e99b00d450cb570438fffe1105d0fbd7121fa72dbc1342988f6896816f`.
-Only the two notes files change during finalization. The other 673 inputs retain
-fingerprint `aaaa22a5da18e2146dce6170d6983ddebcc694d7a218f336e6fa4d79a2f982b5`;
-all inputs remain tracked. Final documentation verification passes 502 local links.
+Both complete 24-stage gates verify the 679 frozen inputs retained in `5697961`
+on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
+1.98.1, release artifacts, locked offline builds and warnings-denied compilation
+and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
+with read-only source. Input manifests match before/after and across gates:
+`0fa6b54e8b728d23e9f2a22fb89321b684b18d9d030364bbdaef5c2f5efbb944`.
+Only the two notes files change during finalization. The other 677 inputs retain
+fingerprint `f6bccc8b87796a8bdc468c07e1297f4dd4d5bd96be2fb6e6d14cc12c6af47987`;
+all inputs remain tracked. Final documentation verification passes 521 local links.
 
-Each platform executes 525 ordinary Rust tests, including all 92 public catalog
-tests, and the separate lease subprocess. No ordinary test is ignored or
-filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 502 local links.
-Independent aggregate semantics pass 24 cases and composition passes 311 cases.
-Both complete allocation campaigns retain positions 0–858 and healthy control
-859 at each pathname length; the ordered prefix lists were reconciled explicitly.
-Native checks pass, including 1,028 I/O cells; interruption checks retain 76 append
-cuts, 46 recovery cuts and 249 independent graph checks. All 43 graph cases and
-their negative controls pass. Linux retains the two Darwin ACL exclusions.
+Each platform executes 539 ordinary Rust tests, including all 96 public catalog
+tests and all four analytic-count cases, plus the separate lease subprocess.
+No ordinary test is ignored or filtered; the selected lease child reports six
+filtered siblings. Maintenance passes 96 tooling tests, 44 independent codec
+fixtures and 520 local links. Independent aggregate semantics pass 24 cases and
+composition passes 311 cases. Both allocation campaigns retain positions 0–925
+and healthy control 926 at each pathname length; the ordered lists were
+reconciled explicitly. The caller ceiling increased to 1,000 to contain the new
+census; no engine allowance increased. Native initialization passes 30 macOS
+and 80 GNU/Linux cells; synchronization passes 241 cells and I/O passes 1,046
+cells per platform. Interruption checks retain 76 append cuts, 46 recovery cuts
+and 249 independent graph checks. All 43 graph cases and their negative controls
+pass. Linux retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,556.650 seconds
-on macOS and 801.197 seconds on Linux; these overlapping verification runs are
-not performance benchmarks. Receipt SHA-256 values are respectively
-`a78304563ea743e3968f437d0a3b002ff6a468e0b3f862e7f910f4932594f806` and
-`c8fac8381e94710dc9582ce9787d4a84ff988bd4700028a24f6d4d30c825ed2f`.
+Both receipts have zero finalization errors. Stage times total 1,681.540 seconds
+on macOS and 861.388 seconds on Linux; overlapping verification runs are not
+performance benchmarks. Receipt SHA-256 values are respectively
+`ed2d152d352e8c535979bfc3cb2217ac78178a97b96fc864fdf9d38a8f7b34d2` and
+`1f03552183d9fe1b2a8e9cdc227c633880a217b775a48540b04008bb773098b2`.
 Owned gate/control outputs, source exports, logs and containers are removed.
 The existing verification image and toolchains remain. Windows, broader
 durability, physical-memory and sanitizer qualification remain unfinished.
+
+### Full-partition analytic count
+
+`5697961` implements `COUNT(*) OVER ()` in SELECT and EXTEND through the existing
+parser, binder, independent validators, physical planner and scheduler. One
+checked sorted-input owner captures demanded fields and ordinals, then emits
+rows with the complete count. Ordinary expressions in that projection retain
+the original input scope and evaluate during emission, preserving downstream
+LIMIT's demanded-error boundary. Repeated counts share storage but receive
+separate semantic identities. Analytic evaluation clears semantic relation order.
+
+Literal row oracles cover empty input, repeated counts, mixed expressions,
+original ranges, predicates, LIMIT before/after, DISTINCT, grouping, joins,
+unions, nested count stages, snapshots and typed spilled rows. Semantic and
+physical mutation controls remain independent of lowering. Existing exact/short
+admission, ten cancellation phases, seven scratch failure/corruption cases and
+forced grouping replay now exercise analytic count too. The catalog allocation
+caller checks count preparation, execution and stepping. The native derived-join
+caller includes count while retaining its independent expected result of 120.0.
+
+Integration exposed three repaired boundaries. Internal grouped results can
+carry zero fields when their consumer demands only cardinality; checked frames
+and unused-aggregate error suppression remain intact, including forced hash
+fallback. Legacy queries can use shared scratch with recovery limited to empty,
+single-link disposable names. Tests cover every constructor effect, fourteen
+process-death cuts, live readers, strict writer admission and corrupt debris.
+Authoritative persistent codecs are unchanged. Finally, an earlier legacy scan
+uses bounded cell writes when a later STRING constant requires UTF-8 batches;
+a direct LIMIT/constant regression protects this independently of analytic count.
+
+The documented `examples/window-count.sql` flow runs against fresh declared sales
+databases on both platforms. Schema, encoded rows, row count and final successful
+status match exactly: north/5/3, north/10/3 and south/20/3. Full gates compile the
+examples; these separate CLI executions establish the example's runtime result.
+Count-only projections currently retain ordinal records and may require temporary
+storage. This is a bounded implementation, not a claim of optimal execution,
+arbitrary-allocator bounds or whole-process/RSS limits.
 
 ### Snapshot lifetime learning example
 
@@ -68,8 +107,7 @@ example, not additional arbitrary-concurrency, Windows or durability qualificati
 
 ### Prepared aggregate descriptor ownership
 
-Tool-only follow-up `63c3c2d` preserves the engine inputs of the full checkpoint
-above. The complete ownership selection passes on stock macOS and unprivileged
+Tool-only follow-up `63c3c2d` preserves the engine inputs of the frozen checkpoint at `8a7b1ee`. The complete ownership selection passes on stock macOS and unprivileged
 GNU arm64 Linux with native database storage. Each pathname length executes
 widths 1–10, partitions `[1,9]`, `[5,5]`, `[9,1]` and ten single-entry stages,
 and rejection controls for widths 11–64. The query-wide aggregate budget remains
@@ -528,7 +566,7 @@ construction frame before binding repaired that failure.
 The column-transformation gates at `5a3cb0a` covered all 298 independent
 composition cases. Their allocation caller composed EXTEND, SET, DROP, and RENAME
 against unchanged expected rows; both platforms passed all 723 catalog refusal
-prefixes and the healthy control on short and 384-byte paths. The current union
+prefixes and the healthy control on short and 384-byte paths. The current
 checkpoint above extends that caller and records its larger census.
 Cancellation, exact admission refusal, invalid scope/identity controls, typed
 copies, and the 65-value sorting regression execute in the Rust suites.
@@ -1683,8 +1721,8 @@ control and the Rust scenario helper both rejected an oversized 2-MiB request;
 macOS reported 2,109,440 bytes and Linux reported 2,097,152. The C observer also
 checked that its local variable lay inside the returned native stack interval.
 Observation failures fail the tests. These controls do not measure peak frames,
-guard residency, or a whole-process cap. The full gates for this change passed; the checkpoint above identifies their
-verified inputs.
+guard residency, or a whole-process cap. The full gates for this change passed; the current checkpoint also retains
+these regression controls.
 
 The September 11 shared-mount investigation reproduced the failure using the
 unchanged stock catalog caller from `4931770`: 7 of 20 fresh setups failed on the
