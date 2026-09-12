@@ -90,6 +90,31 @@ result. To follow the implementation, read `bind_extend`, `bind_set`,
 rules](language.md#computed-projection-demand). These transformations share their
 producer's execution controller; only demanded numeric definitions are evaluated.
 
+## Filter by membership
+
+Run [examples/membership.sql](../examples/membership.sql) against the same sales
+database:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/membership.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+The result is north with amount 5, then south with amount 20. The list's NULL
+candidate does not match the NULL amount. A match yields TRUE; a nonmatch with
+NULL yields UNKNOWN, which WHERE excludes. Negating this membership test returns
+no rows because NOT preserves UNKNOWN. Require successful exit and
+`status=queried` before accepting the result.
+
+Follow `boolean_leaf` in the [Boolean parser](../src/frontend/parser/boolean.rs)
+to see each candidate become an equality decision joined by OR. The
+[row predicate](../src/execution/predicate.rs) preserves UNKNOWN under negation;
+the existing forward decisions retain branch demand without a separate membership
+execution engine. The [membership contract](language.md#literal-list-membership)
+owns type and size limits.
+
 ## Combine pipeline results
 
 Run [examples/union.sql](../examples/union.sql) against the same database:

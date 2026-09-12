@@ -13,6 +13,50 @@ impl Drop for Directory {
 }
 
 #[test]
+fn membership_literals_and_decisions_match_the_semantic_plan() {
+    let directory = Directory(std::env::temp_dir().join(format!(
+        "pipesql-physical-membership-{}",
+        std::process::id()
+    )));
+    let db = Database::create_empty(
+        &directory.0,
+        crate::Config::new(4_000_000, 2_000_000).unwrap(),
+    )
+    .unwrap();
+    db.declare_table(
+        "facts",
+        &[crate::ColumnDeclaration {
+            name: "a",
+            data_type: DataType::Int64,
+            nullable: true,
+        }],
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    let query = db
+        .prepare("FROM facts |> WHERE NOT a IN (1,NULL,3)")
+        .unwrap();
+    for mutation in 0..5 {
+        let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
+        let pipeline = &mut plan.pipelines[0];
+        assert_eq!(pipeline.filter_count, 3);
+        match mutation {
+            0 => (),
+            1 => pipeline.filters[1].predicate = &frontend::Predicate::IsNull { negated: false },
+            2 => pipeline.filters[1].control.negated = false,
+            3 => pipeline.filters[0].control.matched = 0,
+            4 => pipeline.filter_count = 2,
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            validate_physical(&plan, &query, &db, RootState::Empty, 0).is_ok(),
+            mutation == 0,
+            "membership mutation {mutation}"
+        );
+    }
+}
+
+#[test]
 fn union_branch_positions_and_demands_are_validated_independently() {
     let directory = Directory(
         std::env::temp_dir().join(format!("pipesql-physical-union-{}", std::process::id())),

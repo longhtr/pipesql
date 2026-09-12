@@ -283,7 +283,14 @@ impl StoredColumn<'_> {
                     ..
                 },
             )
-            | (column, Predicate::IsNull { .. }) => {
+            | (column, Predicate::IsNull { .. })
+            | (
+                column,
+                Predicate::Compare {
+                    literal: FilterLiteral::Null,
+                    ..
+                },
+            ) => {
                 for index in 0..selection.len() {
                     let row = selection[index];
                     let value = column.value(usize::try_from(row).expect("block row fits"))?;

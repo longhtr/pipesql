@@ -75,6 +75,7 @@ pub(super) struct ParsedDateShift {
 
 #[derive(Clone, Copy)]
 pub(super) enum ParsedLiteral {
+    Null,
     String(SourceSpan),
     Numeric(ParsedRange),
     Date {

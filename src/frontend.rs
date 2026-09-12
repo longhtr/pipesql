@@ -264,6 +264,7 @@ impl Comparison {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FilterLiteral {
+    Null,
     Double(u64),
     Int64(i64),
     Date(DateValue),
@@ -273,6 +274,7 @@ pub(crate) enum FilterLiteral {
 impl FilterLiteral {
     fn valid_for(self, data_type: DataType) -> bool {
         match self {
+            Self::Null => true,
             Self::Double(bits) => {
                 matches!(data_type, DataType::Double | DataType::Int64)
                     && f64::from_bits(bits).is_finite()
@@ -298,7 +300,13 @@ pub(crate) enum Predicate {
 impl Predicate {
     fn valid_for(self, data_type: DataType) -> bool {
         match self {
-            Self::Compare { literal, .. } => literal.valid_for(data_type),
+            Self::Compare {
+                comparison,
+                literal,
+            } => {
+                literal.valid_for(data_type)
+                    && (literal != FilterLiteral::Null || comparison == Comparison::Equal)
+            }
             Self::IsNull { .. } => true,
         }
     }

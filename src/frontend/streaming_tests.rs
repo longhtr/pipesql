@@ -178,6 +178,47 @@ fn semantic_plan_mutations_refuse() {
             "count validity mutation {mutation}"
         );
     }
+    for mutation in 0..4 {
+        let mut query = database
+            .prepare("FROM lineitem |> WHERE l_quantity IN (1,NULL,3)")
+            .unwrap();
+        validate(&query.plan).unwrap();
+        let filter = query
+            .plan
+            .stages
+            .iter_mut()
+            .find_map(|node| match &mut node.stage {
+                Stage::Where(filter)
+                    if matches!(
+                        filter.predicate,
+                        Predicate::Compare {
+                            literal: FilterLiteral::Null,
+                            ..
+                        }
+                    ) =>
+                {
+                    Some(filter)
+                }
+                _ => None,
+            })
+            .unwrap();
+        match mutation {
+            0 => {
+                let Predicate::Compare { comparison, .. } = &mut filter.predicate else {
+                    unreachable!()
+                };
+                *comparison = Comparison::Less;
+            }
+            1 => filter.control.end = 0,
+            2 => filter.control.matched = u8::MAX,
+            3 => filter.column = ColumnId::EMPTY,
+            _ => unreachable!(),
+        }
+        assert!(
+            validate(&query.plan).is_err(),
+            "membership mutation {mutation}"
+        );
+    }
     assert_eq!(
         database.reserved_memory_bytes(),
         database.path_memory_bytes()

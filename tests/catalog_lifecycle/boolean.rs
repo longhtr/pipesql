@@ -267,10 +267,11 @@ fn check_boolean_scan_scratch(small_stack: bool) {
                 let cancel = CancellationToken::new();
                 for (projection, column, rows) in [("id", "id", 4096_u64), ("id+0 AS x", "x", 256)]
                 {
-                    let mut charges = [0; 2];
+                    let mut charges = [0; 3];
                     for (index, predicate) in [
                         format!("{column}>=0 AND {column}<=3"),
                         format!("{column}=0 OR {column}=1"),
+                        format!("{column} IN (0,NULL,1)"),
                     ]
                     .iter()
                     .enumerate()
@@ -287,6 +288,7 @@ fn check_boolean_scan_scratch(small_stack: bool) {
                         assert_eq!(db.reserved_memory_bytes(), baseline);
                     }
                     assert_eq!(charges[1] - charges[0], rows * 5 + 2 * 4096);
+                    assert_eq!(charges[2], charges[1]);
                 }
                 let source = format!(
                     "FROM facts |> WHERE {}id<0{} |> SELECT id",

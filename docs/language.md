@@ -94,8 +94,9 @@ separate from this query manifest.
 | `DROP name, ...` | Removes all ordinary columns matching each name, including duplicate names. Rejects removal of the entire row. |
 | `RENAME old AS new, ...` | Renames one unambiguous ordinary column per target without changing its value, position, type, or identity. Simultaneous swaps and new duplicate names are valid. |
 | `WHERE name comparison constant` | Accepts `<`, `<=`, `=`, `!=`, `>=`, `>` over numeric, DATE or STRING columns and compatible constants. |
+| `WHERE name IN (constant, ...)` | Tests membership in a nonempty list of equality-compatible constants, including NULL. Each candidate consumes one normalized stage. See [literal-list membership](#literal-list-membership). |
 | `WHERE name IS [NOT] NULL` | Tests a visible column, including a computed or aggregate output. IS NULL retains NULL values; IS NOT NULL retains non-NULL values, including zero, empty text and NaN. Both tests preserve column demand and input order. |
-| `WHERE` Boolean expression | Comparisons and NULL tests compose with NOT, AND, OR and parentheses. NOT binds above AND, which binds above OR. Each leaf consumes one normalized stage; inclusive BETWEEN consumes two. See the demand rules below. |
+| `WHERE` Boolean expression | Comparisons, NULL tests and membership compose with NOT, AND, OR and parentheses. NOT binds above AND, which binds above OR. Each leaf consumes one normalized stage; inclusive BETWEEN consumes two. See the demand rules below. |
 | `AGGREGATE SUM(expression) AS name`, `AVG(expression) AS name`, `COUNT(*) AS name`, `COUNT(expression) AS name`, `MIN(expression) AS name`, `MAX(expression) AS name` | Aggregate stages may repeat; each consumes the preceding relation. All aggregate stages together may introduce at most ten output identities, including grouping keys. Every entry requires an explicit alias. SUM/AVG accept INT64 or DOUBLE expressions. COUNT/MIN/MAX also accept direct STRING/DATE columns. SUM/MIN/MAX preserve the argument type; AVG returns DOUBLE; COUNT returns nonnullable INT64. Other aggregates return nullable results. |
 | `DISTINCT` | Removes duplicate complete rows on declared tables. Preserves output names and shared identities through fresh replacements; clears order. See [equality](#values-null-and-equality). |
 | `UNION ALL (pipe_query) [, (pipe_query), ...]` | Combines declared-table pipelines by position, preserving duplicates. Requires matching widths and scalar types. See [UNION ALL](#union-all) for names, demand, and bounds. |
@@ -565,9 +566,32 @@ An expression is evaluated only when the relation demands it. Optimization may
 remove an unused pure expression. It may not remove an assertion, constraint,
 persistent sink, or another semantic effect.
 
+### Literal-list membership
+
+`name IN (constant, ...)` searches a visible column, including a computed or
+aggregate output. Numeric, STRING and DATE constants follow the same typing and
+constant-expression rules as equality comparisons. NULL is additionally accepted
+as a list candidate. Search operands must be direct visible references. Empty lists, column-valued
+candidates, subquery IN, NOT IN spelling and IN UNNEST remain rejected. Use `NOT (name IN (...))` for negated membership.
+
+A matching non-NULL candidate yields TRUE. Without a match, a NULL search value
+or any NULL candidate yields UNKNOWN; otherwise the result is FALSE. Duplicate
+candidates do not duplicate rows. WHERE retains only TRUE, and NOT preserves
+UNKNOWN. Thus `amount IN (5,20,NULL)` retains amounts 5 and 20, while its negation
+retains no rows. NaN follows the existing equality contract and matches no
+numeric candidate. Membership binds at comparison precedence.
+
+The parser lowers the list to equality leaves joined by OR in written order.
+It uses the existing bounded Boolean decisions, semantic/physical validators and
+column-demand rules. Each candidate consumes one of the shared 16 normalized
+stages; surrounding transformations use the same budget. NULL equality is an
+internal leaf for membership, not newly accepted `name = NULL` syntax. All list
+candidates bind before execution, even inside a skipped branch. The broader
+[target expression form](#target-in-predicates) remains unfinished.
+
 ### Boolean filter demand
 
-WHERE comparisons and NULL tests compose with `NOT`, `AND`, `OR` and
+WHERE comparisons, membership and NULL tests compose with `NOT`, `AND`, `OR` and
 parentheses. Comparison and NULL tests bind above NOT, followed by AND and then
 OR. BETWEEN is inclusive and its internal AND belongs to its two bounds. All
 names, types and constant operands are checked during preparation, including

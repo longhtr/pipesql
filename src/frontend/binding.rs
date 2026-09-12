@@ -455,6 +455,7 @@ fn bind_literal(
     parsed: &Parsed,
 ) -> Result<FilterLiteral, Error> {
     match literal {
+        ParsedLiteral::Null => Ok(FilterLiteral::Null),
         ParsedLiteral::String(span) => {
             let (value, _) = crate::text_literal::TextLiteral::parse(text(source, span))
                 .map_err(|message| bind_error(message, span))?;

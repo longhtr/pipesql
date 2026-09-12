@@ -35,7 +35,7 @@ impl PhysicalFilter<'_> {
                 literal,
             } => (comparison, literal),
         };
-        if value == Value::Null {
+        if value == Value::Null || *literal == FilterLiteral::Null {
             return Ok(false);
         } // UNKNOWN matches neither requested truth.
         Ok(match (value, literal) {

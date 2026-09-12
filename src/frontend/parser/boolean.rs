@@ -1,6 +1,7 @@
 //! Bounded WHERE syntax and forward decisions. Names and types stay in binding.
 use super::{
-    Comparison, Error, FilterControl, Kind, MAX_TOKENS, Parsed, ParsedStage, Parser, SourceSpan,
+    Comparison, Error, FilterControl, Kind, MAX_TOKENS, Parsed, ParsedLiteral, ParsedStage, Parser,
+    SourceSpan,
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -248,6 +249,40 @@ impl Parser<'_> {
             self.word("NULL")?;
             parsed.push_stage(ParsedStage::WhereNull { column, negated }, span)?;
             syntax.leaf(first)
+        } else if self.is_word("IN") {
+            self.word("IN")?;
+            self.take(Kind::LeftParen)?;
+            // Membership is a local OR of equality leaves. Reuse the existing
+            // forward decisions so NOT retains UNKNOWN and enclosing Boolean
+            // branches retain their written-order demand. Each candidate costs
+            // one normalized stage, just as BETWEEN costs two comparisons.
+            loop {
+                let literal = if self.is_word("NULL") {
+                    self.word("NULL")?;
+                    ParsedLiteral::Null
+                } else {
+                    self.comparison_literal(parsed)?
+                };
+                let candidate = parsed.len;
+                parsed.push_stage(
+                    ParsedStage::Where {
+                        column,
+                        comparison: Comparison::Equal,
+                        literal,
+                    },
+                    span,
+                )?;
+                syntax.leaf(candidate)?;
+                if candidate != first {
+                    syntax.operator(Operator::Or)?;
+                    syntax.reduce(span)?;
+                }
+                if self.peek() != Kind::Comma {
+                    self.take(Kind::RightParen)?;
+                    return Ok(());
+                }
+                self.take(Kind::Comma)?;
+            }
         } else if self.is_word("BETWEEN") {
             self.word("BETWEEN")?;
             let lower = self.comparison_literal(parsed)?;

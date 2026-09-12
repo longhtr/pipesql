@@ -730,6 +730,22 @@ def check_derived_queries(queries, work, encoder):
 
 
 def check_text_null_and_boolean_filters(queries):
+    # Independent repeated rows are (10,A), (20,A), (90,B), all on 1970-01-01.
+    for predicate, total in [
+        ("l_quantity IN (10,90,10)", 100.0),
+        ("NOT l_quantity IN (10,NULL)", None),
+        ("l_quantity IN (NULL)", None),
+        ("l_returnflag IN ('B',NULL)", 90.0),
+        ("NOT l_returnflag IN ('A')", 90.0),
+        ("l_shipdate IN (NULL,DATE '1970-01-01')", 120.0),
+        ("NOT l_shipdate IN (NULL)", None),
+    ]:
+        queries.composed(
+            "legacy-membership-filter",
+            f"FROM lineitem |> WHERE {predicate} |> AGGREGATE SUM(l_quantity) AS total",
+            [[encoded(total)]],
+            "repeated",
+        )
     for symbol, compare in [
         ("<", operator.lt),
         ("<=", operator.le),

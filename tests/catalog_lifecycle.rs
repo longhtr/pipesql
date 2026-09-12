@@ -27,6 +27,9 @@ mod joins;
 #[path = "catalog_lifecycle/limit.rs"]
 mod limit;
 
+#[path = "catalog_lifecycle/membership.rs"]
+mod membership;
+
 #[path = "catalog_lifecycle/null_predicate.rs"]
 mod null_predicate;
 
