@@ -111,6 +111,8 @@ static ALLOCATOR: Allocator = Allocator;
 
 #[path = "catalog-allocation.rs"]
 mod catalog;
+#[path = "grouping-ownership.rs"]
+mod grouping_ownership;
 #[path = "composed-ownership.rs"]
 mod ownership;
 #[path = "workload-allocation.rs"]
@@ -252,6 +254,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::path::PathBuf::from(args.next().expect("owned probe directory"));
     let mode = args.next().expect("probe mode");
     assert!(args.next().is_none());
+    if mode == "mixed-grouping-shapes" {
+        return grouping_ownership::run(&root);
+    }
     if mode == "grouped-allocation-shapes" {
         ownership::grouped_allocation_shapes();
         return Ok(());

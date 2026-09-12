@@ -194,6 +194,41 @@ census qualifies the exercised stock allocator families, not arbitrary schemas
 or process/RSS memory. Owned outputs are removed and changes committed locally;
 no publication occurred.
 
+## Current: mixed aggregate allocation qualification
+
+The completed GROUPED census covers its actual state widths; it does not cover
+other mixed aggregate layouts. Power-of-two group counts still multiply arbitrary
+state widths, so establish their allocation behavior before expanding the claim.
+
+Finite worklist: inspect current cell ownership and limits; exercise narrow,
+non-power-of-two, and near-limit mixed layouts through visible public SQL at
+bounded budgets; compare complete rows with independently calculated values and
+attribute requested/usable prepared/result ownership. Run the same cases on
+macOS and native-storage GNU arm64 Linux. Trace a concrete deficit before changing
+runtime sizing; preserve fallback, replay, refusal, cancellation, and release.
+The first 40-case macOS profile completes all rows and releases all owners, but
+16 cases at 16 MB exceed their complete charge. The largest observed excess is
+2,819,476 bytes for seven integer extrema. A 48-allocation trace reconciles that
+owner exactly and identifies a 7,700,480-byte hash key arena occupying 10,551,296
+usable bytes; other large buffers fit their requests. This differs from the fresh
+size census and requires checking allocation history before choosing a repair.
+The isolated query fits; the prior query sequence changes reuse. Rounding only
+key arenas leaves seven deficits in large cell arrays. The current prototype
+requests power-of-two large cell capacities and key arenas, retains logical
+lengths, and admits padded key slots. Metadata sizing reduces group capacity to
+fit its half-budget. All 40 macOS cases and 36 grouping tests pass, including a
+new comparison between actual capacities and the complete hash charge. The
+maintained ownership campaign passes on macOS and GNU/Linux. The old library
+fails the maintained usable-byte guard after all 40 complete-row/hash/release
+cases. Linux caught an unnecessary fallback when the prototype rounded the
+encoded-key limit down despite spare capacity; correcting the rounding order
+preserves the existing 4,096-group hash/spill test without changing its budget
+or assertion. Complete frozen gates remain.
+
+Finish affected checks and required gates, document the measured scope, remove
+owned outputs, and commit locally. Do not turn the profile into a general heap or
+RSS claim, add query features, or publish changes.
+
 ## Applying DuckDB lessons
 
 DuckDB's published designs inform the following work. These are PipeSQL design

@@ -177,7 +177,7 @@ pub(super) fn grouped_allocation_shapes() {
     }
     let mut arrays = (0, 0);
     // One f64, one i128, two nullable counters, one count/flag, four extrema,
-    // four 16-byte text spans, and one 24-byte key slot per group.
+    // four 16-byte text spans, and one 32-byte key slot per group.
     for exponent in 0..=12 {
         let groups = 1 << exponent;
         for observed in [
@@ -187,7 +187,7 @@ pub(super) fn grouped_allocation_shapes() {
             allocation_extent::<u32>(groups),
             allocation_extent::<[u64; 4]>(groups),
             allocation_extent::<[u64; 8]>(groups),
-            allocation_extent::<[u64; 3]>(groups),
+            allocation_extent::<[u64; 4]>(groups),
         ] {
             assert!(
                 observed.1 <= 16_384,

@@ -187,6 +187,10 @@ def run_cell(work, failures, mode, label, database_bytes=None):
 
 
 def check_ownership(work, run, failures):
+    mixed = run("mixed-grouping-shapes", "mixed-grouping-shapes")
+    print(mixed.stdout + mixed.stderr, end="", flush=True)
+    if "mixed shapes completed: 40 cases, deficits=0" not in mixed.stdout:
+        failures.append("incomplete mixed grouping allocation checks")
     grouped = run("grouped-allocation-shapes", "grouped-allocation-shapes")
     print(grouped.stdout + grouped.stderr, end="", flush=True)
     if "grouped allocation shapes passed: buffers=514 hash-layouts=91" not in grouped.stdout:

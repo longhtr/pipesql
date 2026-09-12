@@ -302,7 +302,7 @@ graphs.
 
 ## Blocking buffer capacity
 
-Sort frames, run bytes, prior keys, hash lookup keys, and hash key arenas request
+Sort frames, run bytes, prior keys, and hash lookup keys request
 whole 16-KiB allocation units when their byte requirement exceeds 16 KiB.
 Smaller buffers retain their exact requested capacity. Run-span arrays apply the
 same rule to their byte extent; a span's width must divide the allocation unit.
@@ -370,17 +370,25 @@ selects the largest row limit whose rounded buffer allocations fit; padding does
 not consume the independently retained fallback minimum. Scalar lanes use
 the remaining budget up to 256. Optional hash storage starts with half the
 remaining capacity for group slots and rounds the slot count down to a power of
-two. Cell and slot arrays follow that count; buckets also retain their power-of-two
-bound. Key bytes use the remaining budget, excluding an unaffordable partial
-allocation unit. Fewer hash slots can cause earlier fallback; this is a capacity
-policy, not a throughput guarantee. When STRING extrema are retained, metadata admits at most 4,096
+two. Large cell arrays request power-of-two physical capacities while retaining
+exact logical state lengths. Key slots use 16-byte alignment so their width is
+also a power of two; that padding is part of the charge. Sizing halves the group
+count further if those physical arrays would exceed the metadata half-budget.
+Buckets retain their power-of-two bound. Above 16 KiB, the available key budget
+rounds down to a power of two. The encoded-key limit is then capped at the bytes
+needed for all admitted groups; its allocation rounds up to a power of two
+within that budget.
+The query reserves and requests those physical capacities before allocation;
+unused capacity cannot admit more groups or state lanes. Fewer hash slots or key
+bytes can cause earlier fallback; this is a capacity policy, not a throughput
+guarantee. When STRING extrema are retained, metadata admits at most 4,096
 groups; larger cardinalities use the external path. Numeric-only hash sizing
 retains its row-bound ceiling. Text arena allocations are admitted as needed
-rather than reserving maximum-width text for every metadata slot. The key arena
+rather than reserving maximum-width text for every metadata slot. The encoded-key limit
 is also bounded by the group-slot capacity multiplied
 by the maximum encoded key width: each occupied slot stores one key, and a full
-slot array already forces fallback. Reserving more key bytes cannot increase
-the admitted workload. These are sizing policies, not distribution or performance
+slot array already forces fallback. Additional encoded-key space cannot increase
+the admitted workload; physical allocation padding is charged separately. These are sizing policies, not distribution or performance
 guarantees.
 Admission may refuse if concurrent reservations change availability. After
 admission, replay, sorting and reduction never reacquire their retained minimum.

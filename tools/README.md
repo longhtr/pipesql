@@ -113,6 +113,13 @@ reject a missing rounding ceiling, a wrong result, and wrong attribution.
 The selection also observes 514 large blocking-buffer capacities and 91
 power-of-two hash layouts for the GROUPED caller; usable extents and final
 release are measured independently of the engine's sizing functions.
+[`grouping-ownership.rs`](fixtures/grouping-ownership.rs) adds 40 sequential public
+cases at 4 MB and 16 MB: one/three/five/seven/nine states for floating sums,
+integer sums, integer minima, and mixed layouts. It retains allocator reuse
+between queries, checks every row against the literal input values, compares the
+complete prepared/result owner with requested and usable extents, and checks
+release. A fresh size census alone does not establish these history-dependent
+observations.
 
 Catalog controls also check the combined GROUPED prepared-query/result owner
 against requested and allocator-usable bytes while preserving complete nullable

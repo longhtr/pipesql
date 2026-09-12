@@ -853,3 +853,56 @@ fn compact_text_growth_preserves_values_and_releases_both_buffers_on_cancellatio
         assert_eq!(database.reserved_temp_bytes(), 0);
     }
 }
+
+#[test]
+fn hash_state_padding_is_allocated_without_extending_logical_lanes() {
+    let directory = Directory::new();
+    let database = database(&directory);
+    let query = database
+        .prepare("FROM facts |> AGGREGATE SUM(n) AS a,SUM(n+1) AS b,SUM(n+2) AS c")
+        .unwrap();
+    let aggregate = AggregateState::new(
+        &database.memory,
+        query.plan.aggregates.first().unwrap(),
+        query.plan.aggregate_demand(0),
+        1,
+        query.plan.input_columns(),
+    )
+    .unwrap();
+    let keys = schema(&[(DataType::Double, true)]);
+    let before = database.reserved_memory_bytes();
+    let groups = MemoryGroups::new(&database, &aggregate, &keys, 1_024, 65_536).unwrap();
+    assert_eq!(groups.cells.integers.len(), 3_072);
+    assert_eq!(groups.cells.integers.capacity(), 4_096);
+    assert!(groups.cells.integers.iter().all(|value| *value == 0));
+    // Capacity is observed from each live allocation, independently of the
+    // requirement calculation. A charge-only padding change fails this equality.
+    fn bytes<T>(values: &Vec<T>) -> usize {
+        values.capacity() * size_of::<T>()
+    }
+    let allocated = bytes(&groups.cells.values)
+        + bytes(&groups.cells.integers)
+        + bytes(&groups.cells.nonnull_counts)
+        + bytes(&groups.cells.counts)
+        + bytes(&groups.cells.flags)
+        + bytes(&groups.cells.extrema)
+        + bytes(&groups.cells.text_spans)
+        + bytes(&groups.key)
+        + bytes(&groups.arena)
+        + bytes(&groups.entries)
+        + bytes(&groups.buckets)
+        + bytes(&groups.positions);
+    assert_eq!(
+        groups.memory_bytes(),
+        (size_of::<MemoryGroups<'_>>() + allocated) as u64
+    );
+    assert_eq!(
+        database.reserved_memory_bytes(),
+        before + groups.memory_bytes()
+    );
+    drop(groups);
+    assert_eq!(database.reserved_memory_bytes(), before);
+    drop(aggregate);
+    drop(query);
+    database.close().unwrap();
+}

@@ -134,7 +134,9 @@ Legacy load tests separate [normal loading and admission](../src/load/tests/load
 [publication and recovery](../src/load/tests/publication.rs), and
 [failure schedules](../src/load/tests/failures.rs). Their shared namespace reader
 keeps its independent checksum and layout expectations. Staging and private-unit
-readback checks live beside those owners.
+readback checks live beside those owners. Hash-state capacity checks
+compare the admission charge with actual Vec capacities and keep logical lanes
+separate from physical padding.
 
 CLI [parser tests](../src/cli/command/tests.rs) exercise grammar and argument
 ownership. Query-source, diagnostic, native-capture, and sink tests stay beside

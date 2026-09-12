@@ -15,6 +15,9 @@ const MAX_HASH_PROBES: usize = 64;
 const MAX_LOOKUP_BYTES: usize = 8 * MAX_KEY_BYTES;
 const EMPTY: u32 = u32::MAX;
 
+// A power-of-two slot width keeps group arrays on the same capacity geometry
+// as numeric state arrays. The padding is owned and charged before allocation.
+#[repr(align(16))]
 #[derive(Clone, Copy)]
 struct KeySlot {
     start: usize,
@@ -114,7 +117,10 @@ impl<'db> MemoryGroups<'db> {
         let (bucket_count, bytes) = Self::requirement(aggregate, keys, capacity, key_limit)?;
         let base = &aggregate.cells;
         let key_capacity = buffer_capacity(keys.max_bytes)?;
-        let arena_capacity = buffer_capacity(key_limit)?;
+        let arena_capacity = array_capacity(key_limit, 1)
+            .ok_or(Error::Corrupt("hash key arena allocation capacity"))?;
+        let entry_capacity = array_capacity(capacity, size_of::<KeySlot>())
+            .ok_or(Error::Corrupt("hash key slot capacity"))?;
         let reservation = database.reserve_memory(bytes, "optional hash groups")?;
         Ok(Self {
             cells: AggregateCells {
@@ -138,7 +144,7 @@ impl<'db> MemoryGroups<'db> {
             },
             key: allocate(key_capacity, key_capacity, "hash lookup key", bytes)?,
             arena: allocate(arena_capacity, arena_capacity, "group key arena", bytes)?,
-            entries: allocate(capacity, capacity, "group key slots", bytes)?,
+            entries: allocate(entry_capacity, entry_capacity, "group key slots", bytes)?,
             buckets: filled(bucket_count, EMPTY, bytes)?,
             positions: filled(BATCH_ROWS, (0, 0), bytes)?,
             shape: ArgumentShape::from_aggregate(aggregate),
@@ -180,7 +186,8 @@ impl<'db> MemoryGroups<'db> {
                 .checked_mul(capacity)
                 .ok_or(Error::Corrupt("hash cell count"))
         };
-        let arena_capacity = buffer_capacity(key_limit)?;
+        let arena_capacity = array_capacity(key_limit, 1)
+            .ok_or(Error::Corrupt("hash key arena allocation capacity"))?;
         let key_capacity = buffer_capacity(keys.max_bytes)?;
         let bytes = [
             (count(base.values.len())?, size_of::<f64>()),
@@ -203,8 +210,8 @@ impl<'db> MemoryGroups<'db> {
         ]
         .into_iter()
         .try_fold(size_of::<Self>(), |total, (count, width)| {
-            count
-                .checked_mul(width)
+            array_capacity(count, width)
+                .and_then(|count| count.checked_mul(width))
                 .and_then(|bytes| total.checked_add(bytes))
         })
         .and_then(|bytes| bytes.checked_add(arena_capacity))
@@ -257,8 +264,14 @@ impl<'db> MemoryGroups<'db> {
         // Keep cell and slot arrays on power-of-two group capacities. Their
         // element widths then avoid the large partial allocation classes of
         // arbitrary row counts. Key bytes use the remaining budget below.
-        let capacity = 1 << capacity.ilog2();
-        let (_, arrays) = Self::requirement(aggregate, keys, capacity, 0)?;
+        let mut capacity = 1 << capacity.ilog2();
+        let (_, mut arrays) = Self::requirement(aggregate, keys, capacity, 0)?;
+        // Physical cell capacities can exceed their logical state counts.
+        // Keep the metadata half-budget before assigning the key arena.
+        while capacity > 1 && arrays > first + extra / 2 {
+            capacity /= 2;
+            arrays = Self::requirement(aggregate, keys, capacity, 0)?.1;
+        }
         let key_bytes = available
             .checked_sub(arrays)
             .ok_or(Error::Corrupt("hash sizing exceeds available memory"))?;
@@ -269,13 +282,17 @@ impl<'db> MemoryGroups<'db> {
             .ok_or(Error::Corrupt("hash key capacity overflow"))?;
         let key_bytes = usize::try_from(key_bytes)
             .map_err(|_| Error::Corrupt("hash key arena does not fit"))?;
-        // A partial large allocation unit cannot be admitted. Clamp to the
-        // encoded-key bound afterward; its rounded capacity still fits here.
+        // Large key arenas use power-of-two capacities. They otherwise consume
+        // arbitrary remainders that may reuse much larger native allocations
+        // after previous queries. Round down within the remaining admission;
+        // an exhausted arena still uses the independently admitted fallback.
         let key_bytes = if key_bytes > BUFFER_ALLOCATION_UNIT {
-            key_bytes & !(BUFFER_ALLOCATION_UNIT - 1)
+            1 << key_bytes.ilog2()
         } else {
             key_bytes
         };
+        // Keep the full encoded-key limit when its rounded allocation fits.
+        // Clamping before rounding down would discard keys despite available space.
         Ok((capacity, key_bytes.min(maximum_key_bytes)))
     }
 
@@ -677,8 +694,23 @@ impl<'db> MemoryGroups<'db> {
     }
 }
 
+// Large arrays own a power-of-two physical extent. Vec length still describes
+// exactly the logical groups and state lanes consumed by folding and replay.
+fn array_capacity(count: usize, width: usize) -> Option<usize> {
+    if !width.is_power_of_two() {
+        return None;
+    }
+    if count.checked_mul(width)? > BUFFER_ALLOCATION_UNIT {
+        count.checked_next_power_of_two()
+    } else {
+        Some(count)
+    }
+}
+
 fn filled<T: Copy>(count: usize, value: T, charge: u64) -> Result<Vec<T>, Error> {
-    let mut output = allocate(count, count, "hash group arrays", charge)?;
+    let capacity = array_capacity(count, size_of::<T>())
+        .ok_or(Error::Corrupt("hash array allocation capacity"))?;
+    let mut output = allocate(capacity, capacity, "hash group arrays", charge)?;
     output.resize(count, value);
     Ok(output)
 }
