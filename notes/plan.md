@@ -386,6 +386,32 @@ platform. Every current catalog allocation prefix remains covered. Owned outputs
 are removed and changes are committed locally. Windows, transient peaks and
 whole-process memory remain separate qualifications.
 
+## Current: literal-list IN filters
+
+The next bounded language milestone admits `column IN (literal, ...)` in WHERE,
+following the [target membership contract](../docs/language.md#target-in-predicates).
+It supports local analytical filtering without introducing subqueries or a new
+expression framework. The current comparison parser, semantic predicates and
+physical filter decisions provide the starting point. The target's general
+expression operands remain outside this first profile.
+
+1. Establish a failing public membership case and trace parsing, binding,
+   independent validation, demand and row filtering before choosing storage.
+2. Implement a nonempty bounded list with equality-compatible literals, NULL,
+   duplicates and three-valued behavior under NOT/AND/OR. Preserve spans,
+   preparation checks for skipped branches and bounded iteration. Keep subquery
+   IN, NOT IN spelling, IN UNNEST and general expression operands rejected.
+3. Challenge independent truth-table/value and malformed-plan oracles. Cover
+   composition, demanded errors, admission, failure, cancellation and release
+   through retained public and native campaigns.
+4. Update the accepted language profile, maps and runnable learning path. Run
+   focused checks and both complete native-storage platform gates, record scoped
+   evidence, remove owned outputs and commit locally without publication.
+
+Reassess after the first representation and oracle pass if the current Boolean
+control flow requires a broader prerequisite. Keep this profile finite; do not
+silently implement or promise the entire target expression contract.
+
 ## Applying DuckDB lessons
 
 DuckDB's published designs inform the following work. These are PipeSQL design
