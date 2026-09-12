@@ -11,8 +11,8 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 24-stage gates for `ca5f59e` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 499 Rust tests and 298
+The complete 24-stage gates for `495cbdd` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 500 Rust tests and 298
 composition cases, plus its applicable native and allocation campaigns. Bounded
 thread scenarios and their ordinary-thread counterparts execute on both platforms,
 including full-width union preparation and execution.
@@ -131,7 +131,7 @@ repository into a fresh output. Final documentation checks cover the corrected
 five-public-stack-scenario map. [Evidence](evidence.md#full-verification-checkpoint)
 records the frozen inputs and costs. Owned outputs are removed; changes are
 committed locally without publication. The append repair below is also complete;
-the sorting-reader repair is also complete. The grouped-query excess below remains open.
+the sorting-reader and grouped-query repairs below are also complete.
 
 ## Completed: append allocation bounds
 
@@ -174,60 +174,25 @@ their actual spill, temporary refusal, cancellation, and release assertions rema
 initial gate failures, and qualification limits. Owned outputs are removed and
 changes are committed locally without publication.
 
-## Current: grouped-query allocation bounds
+## Completed: grouped-query allocation bounds
 
-The same healthy catalog controls expose a macOS GROUPED prepared-query/result
-excess of 111,496 bytes on the short path and 112,080 on the 384-byte path.
-Requested bytes fit the charge; allocator-usable bytes do not. GNU/Linux fits
-both. The [measured inputs](evidence.md#attribution-of-composed-memory) and
-[catalog caller](../tools/fixtures/catalog-allocation.rs) identify the exact query,
-checkpoint, independent nullable/extrema row expectations, and public entry path.
+Commit `495cbdd` repairs the reproduced 111,496/112,080-byte macOS GROUPED
+prepared/result deficits. The 66-allocation trace located large buffer tails and
+hash-array capacity rounding. Large blocking buffers now own charged 16-KiB
+units, optional run growth fits those capacities, and hash group counts use powers
+of two. Encoded row/frame limits and the external fallback minimum remain intact.
+The [resource contract](../docs/resources.md#blocking-buffer-capacity) owns the
+policy; [evidence](evidence.md#attribution-of-composed-memory) records the trace,
+old-library rejection, complete owner measurements, and qualification limits.
 
-The healthy controls reproduce both deficits on current runtime inputs, with
-the same library hash as the full gate. They do not repeat the refusal sweep.
-The retained-owner trace below identifies the repair boundaries. Bound allocation geometry before effects,
-preserving independent attribution, full rows, hash growth and fallback,
-spill/replay, exact/short admission, allocation refusal, cancellation, and release.
-Qualify affected stock allocator/size premises on macOS and native-storage GNU/Linux;
-retain other allocators, schedules, transient peaks, and process/RSS memory as
-separate limits. Finish focused and required complete checks, current contracts,
-concise evidence, owned-output cleanup, and local commits. Do not add query
-features or another allocation framework.
-
-The disposable caller trace reconciles all 66 retained allocations exactly with
-the independent grouped-query heap delta. Large result/run/merge/prior-key
-buffers request 196,709, 364,548, 131,133 (twice), and 65,541 bytes, occupying
-212,992, 376,832, 147,456 (twice), and 81,920 on macOS. The hash owner admits
-2,836 groups: its cell/span/slot arrays and key arena also cross native classes.
-The trace adds no heap allocation and leaves the public library uninstrumented.
-
-The implementation now selects power-of-two hash group capacities and allocates
-large byte buffers and run-span arrays in whole 16-KiB units. Encoded record and
-run byte/row limits remain explicit. Optional run growth searches the rounded
-allocation steps within the available budget; it cannot consume the fallback
-minimum. The sampled hash capacity changes from 2,836 to 2,048 groups. Its key
-arena uses the remaining admitted capacity; this policy can cause earlier fallback
-for workloads with more groups and is not a throughput claim.
-
-Focused macOS checks pass: 35 grouping and 23 blocking tests, including exact and
-one-byte-short admission, replay, corruption, cancellation, and padding boundaries.
-The exact-minimum oracles now subtract actual optional run allocations rather than
-logical limits, keeping the expected minimum independent of the sizing helper.
-The maintained public caller rejects the previous library's usable excess and
-accepts the prototype on both pathname lengths. The prototype short/long usable
-samples are 3,933,424/3,933,744 bytes under a 3,974,168-byte charge.
-
-Focused GNU arm64 Linux checks passed 109 execution tests and all five public
-grouping tests. Healthy catalog controls retained the full-row oracle at both
-pathname lengths, with usable extents 3,927,992/3,928,296 below the 3,974,168-byte
-charge. The ownership campaign passed on both platforms, including 514 large
-buffer sizes and 91 layouts for this caller’s hash states. Darwin large buffers
-had zero rounding; GNU/Linux’s largest tail was 4,080 bytes. These bounded size
-families do not qualify arbitrary schemas, allocators, or transient schedules.
-
-Remaining work: run complete frozen gates, update concise evidence, remove owned
-trace/build outputs, review, and commit. No complete gate has yet run for this
-implementation.
+Both complete 24-stage gates pass on identical frozen inputs with 500 ordinary
+Rust tests per platform. The new padding regression, independent full-row oracle,
+exact/short admission, growth/fallback, spill/replay, refusal, cancellation, and
+release pass. The public caller now checks allocator-usable bytes against the
+complete grouped charge at both pathname lengths. The 514-buffer/91-hash-layout
+census qualifies the exercised stock allocator families, not arbitrary schemas
+or process/RSS memory. Owned outputs are removed and changes committed locally;
+no publication occurred.
 
 ## Applying DuckDB lessons
 
