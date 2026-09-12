@@ -11,8 +11,8 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 24-stage gates for `b8f1b8f` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 507 ordinary Rust tests and 304
+The complete 24-stage gates for `71b8b71` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 508 ordinary Rust tests and 304
 composition cases, plus its applicable native and allocation campaigns. Bounded
 thread scenarios and their ordinary-thread counterparts execute on both platforms,
 including full-width union preparation and execution.
@@ -368,88 +368,23 @@ and precise scope. This qualifies overlapping lifetimes in the exercised schedul
 not arbitrary races, sanitizer coverage or hardware durability. Owned outputs
 are removed and changes are committed locally; publication remains unresolved.
 
-## Current: STRING reader allocation attribution
+## Completed: STRING reader allocation attribution
 
-The original `composed-ownership.rs::reader_shapes` covered one and 64 INT64,
-DOUBLE and DATE columns through ORDER BY and DISTINCT. This milestone extends
-that existing qualification to STRING's variable-length payload and offsets.
-The completed snapshot milestone remains closed.
+The finite worklist is complete: trace owners, extend the existing caller,
+repair measured deficits, challenge the oracles, reconcile discovery, and verify
+both complete gates. Text metadata now has an inline owner and a power-of-two
+span allocation. Declared payloads and blocking buffers share one physical
+capacity policy without changing encoded or logical row/run limits.
+The [resource contract](../docs/resources.md#blocking-buffer-capacity) owns that
+policy; [evidence](evidence.md#string-reader-allocation-attribution) records the
+measured excesses, costs, negative controls and platform limits.
 
-Finite worklist:
-
-1. Trace STRING source, offset and replay allocations against their admitted
-   capacities; choose a finite narrow/full-width profile within codec limits.
-2. Extend the existing reader caller with visible NULL, duplicate, Unicode and
-   varying-length expected values. Preserve the independent ownership equations,
-   retained fixed-width cases, admission, spill and complete release checks.
-3. Reproduce and trace any usable-allocation excess on current inputs before
-   repairing its real owner. Challenge consequential new assertions; add no
-   arbitrary allowance, framework or process-memory claim.
-4. Reconcile maps and discovery, run focused ownership and required complete
-   checks on macOS and native-storage GNU arm64 Linux, record scoped evidence,
-   remove outputs and commit locally. Preserve publication restrictions and the
-   existing verification image/toolchains.
-
-Initial caller inspection confirms all twelve original shape cases use fixed-width
-values. They sample after spill and compare live requested/usable extents with
-logical admission, then require exact row multiplicities and baseline release.
-Keep those checks intact when adding STRING coverage.
-
-The initial extension adds empty/short Unicode and 65,536-byte text profiles.
-The short-text 64-column ORDER BY case exposes a macOS deficit: 55,230,368
-usable bytes against a 55,177,616-byte charge (52,752 bytes). The independent
-assertion remains unchanged. A disposable allocation trace of the current
-caller attributes 62,464 rounding bytes to 128 metadata allocations requesting
-2,072 bytes and occupying 2,560 each. `batch.rs::TextColumn` owns 256 pairs of
-u32 offsets plus a String in a singleton Vec. The 524,288-byte payloads and
-65,536-byte text arenas have no rounding excess in this observation.
-
-The repair keeps TextColumn inline in Data and gives its span array a
-separate 2,048-byte allocation. No allocation is added: spans replace the former
-singleton owner, while the String retains its own arena. Admission charges actual
-column metadata, spans and text capacity. The first repaired macOS ownership run
-passes all 20 reader cases; full-width short-text ORDER BY observes 55,166,880
-usable bytes against a 55,176,592-byte charge. Both pathname profiles now pass
-through the existing runner with unchanged per-cell timeouts and the original
-64 MB memory budget. STRING uses a 64 MB temporary budget for complete-row runs;
-the fixed-width cases retain 8 MB. Each profile executes at one and 64 columns,
-with exact short/384-byte database pathnames. Strengthened batch
-checks cover short-reservation preservation, sparse span writes, replacement and
-reuse of both allocations. Disposable macOS controls reject a wrong expected empty string and an incorrect
-STRING DISTINCT multiplicity with exit 101 at their equality assertions. The
-three batch tests and maintenance checks pass. The initial full gates at `03e4736` both stop at Rust tests: two legacy scan
-checks still expect 64-byte column metadata instead of the actual 80-byte owner.
-Their independent exact-admission expectations are being updated; no engine
-limit is being raised to hide these failures. Later gate stages did not run.
-
-The Linux healthy STRING control separately fails at 64-column short ORDER BY:
-55,178,688 usable bytes exceed its 55,176,592-byte charge. A traced run exposes
-allocator-state dependence: 46 source payloads request 524,288 bytes and occupy
-528,368 each, and three sorting buffers request 4,210,688 and occupy 4,214,768.
-The trace's total usable extent is 55,365,984. This is separate from the repaired
-text metadata allocation. No attribution equation or assertion is weakened.
-
-A disposable capacity candidate leaves 32 bytes below each 16-KiB boundary for
-native allocation headers/alignment, while retaining at least the logical byte
-requirement. Only physical payload capacity is extended; encoded column limits
-remain 524,288 bytes. The candidate passes all 20 Linux reader shapes. Maximum
-STRING DISTINCT requires 64,586,992 logical bytes, so its fixture uses 64 MiB;
-fixed-width cases retain 64 MB. The same candidate also passes all 20 macOS shapes. It is now integrated through
-one capacity owner in resources.rs, used by declared payloads and blocking
-buffers. Native encoded limits stay unchanged; physical capacity and the maximum
-scan workspace are admitted separately. All 16 macOS scan tests and the complete
-macOS ownership campaign pass. Fresh GNU/Linux reader callers now check fixed
-128-KiB and 64-MiB mmap thresholds with observed allocation controls at both
-pathname lengths. All three GNU/Linux regimes pass at both pathname lengths, including observed
-mapped/arena controls. The final Linux healthy and wrong-value/duplicate controls
-pass their expected outcomes. All three resource tests and maintenance checks
-pass. The subsequent full gates at `a03f953` both stop in Rust tests on two additional
-stale physical-capacity assertions: the padding test expects 81,920 bytes and
-2,048 spans rather than 81,888 and 2,046, and the native refill test uses the
-encoded-column ceiling for physical allocation. Those physical expectations are updated. The original 65,537-byte/1,025-row refusal and checksummed-corruption
-controls remain unchanged, and the refill test now exercises padded capacity.
-All nine blocking tests and the native-unit suite pass on macOS. No complete
-gate is yet passing for this milestone.
+All twelve fixed-width and eight STRING cases pass at both pathname lengths.
+GNU/Linux also exercises observed mapped/arena allocation regimes. The complete
+24-stage gates pass on matching frozen inputs with 508 ordinary Rust tests per
+platform. Every current catalog allocation prefix remains covered. Owned outputs
+are removed and changes are committed locally. Windows, transient peaks and
+whole-process memory remain separate qualifications.
 
 ## Applying DuckDB lessons
 

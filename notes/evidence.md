@@ -7,33 +7,89 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates for `b8f1b8f` pass on macOS arm64 Darwin 25.6.0
+Both complete 24-stage gates for `71b8b71` pass on macOS arm64 Darwin 25.6.0
 and GNU arm64 Linux. Both use Rust 1.98.1, release artifacts, locked offline
 builds, and warnings-denied compilation and documentation. Linux uses uid/gid
 1000, glibc 2.36 and native overlay storage with read-only source. The 671 inputs
 match before/after and across gates. Their manifest SHA-256 is
-`15a3c0a0e4b36661ef6cb8ec6b85a78931afc7a8c38ea2dbbf9598cb9ed825c8`.
-Only the two notes files change during finalization.
+`936c2fdac877cc45635cd9464e3254da7073551ad78408e446f909198ad1416d`.
+Only the two notes files change during finalization; all 671 inputs remain
+tracked. Final documentation verification passes 510 local links.
 
-Each platform executes 507 ordinary Rust tests, including all 80 public catalog
+Each platform executes 508 ordinary Rust tests, including all 80 public catalog
 tests, and the separate lease subprocess. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 504 local links.
+passes 96 tooling tests, 44 independent codec fixtures and 507 local links.
 Independent aggregate semantics pass 24 cases and composition passes 304 cases.
-Both complete allocation campaigns retain positions 0–862 and healthy control
-863 at each pathname length. Native checks pass, including 1,028 I/O cells;
+Both complete allocation campaigns retain positions 0–857 and healthy control
+858 at each pathname length. Native checks pass, including 1,028 I/O cells;
 interruption checks retain 76 append cuts, 46 recovery cuts and 249 independent
 graph checks. All 43 graph cases and their negative controls pass. Linux retains
 the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,546.990 seconds
-on macOS and 781.665 seconds on Linux; these overlapping verification runs are
+Both receipts have zero finalization errors. Stage times total 1,625.505 seconds
+on macOS and 896.407 seconds on Linux; these overlapping verification runs are
 not performance benchmarks. Receipt SHA-256 values are respectively
-`40844a134f0611491aea3d2eb7529d250a01f39cbaf3dc762b5fce276dd8d8de` and
-`4290a398036767640d15ae8a3813fc2bc6963aa448de526ba5134e63697de014`.
+`9a768ebbb3bf5efeb67664ab4aff8edc89ee4c1efb8abe64b5439dbf78b41754` and
+`90571f57619baa8b84146713df01d4339cd2c81f5000fa9594902c953446b0d9`.
 Owned gate/control outputs, source exports, logs and containers are removed.
 The existing verification image and toolchains remain. Windows, broader
 durability, physical-memory and sanitizer qualification remain unfinished.
+
+### STRING reader allocation attribution
+
+Commits `03e4736`, `a03f953` and `71b8b71` extend the maintained
+`composed-ownership.rs::reader_shapes` caller and repair two measured allocation
+owners. The original twelve fixed-width cases remain. Eight STRING cases cover
+one/64 columns, ORDER BY/DISTINCT, NULL, duplicates, empty text, Unicode and
+65,536-byte cells. Independent values and multiplicities remain visible beside
+the SQL. Parked ownership, admission and final release assertions are unchanged.
+
+The initial macOS short-text 64-column ORDER BY case observes 55,230,368 usable
+bytes against a 55,177,616-byte charge. A disposable trace attributes 62,464
+rounding bytes to 128 text metadata allocations: each requests 2,072 bytes and
+occupies 2,560. `TextColumn` now stays inline in `Column`, with a separate
+2,048-byte span allocation. The span allocation replaces the former singleton
+owner; the text arena remains separate. Column metadata grows from 64 to 80
+bytes, while total requested ownership per text column falls by eight bytes.
+The first repaired observation is 55,166,880 usable against 55,176,592 charged.
+
+GNU/Linux then exposes a separate allocator-state-dependent excess. Its traced
+524,288-byte payloads occupy 528,368 when mapped, and 4,210,688-byte sorting
+buffers occupy 4,214,768. Shared `resources::buffer_capacity` now requests large
+buffers ending 32 bytes below a 16-KiB boundary for native headers/alignment.
+Admission charges that actual capacity; no allowance or attribution equation is
+weakened. Encoded column limits remain 524,288 bytes. STRING payload capacity
+increases to 540,640 bytes, an extra 16,352 bytes per column. Fixed-width padded
+payloads decrease by 32 bytes. The [resource contract](../docs/resources.md#blocking-buffer-capacity)
+owns the geometry and its native qualification limits.
+
+STRING fixtures use 64 MiB memory and 64 MB temporary storage; fixed-width
+fixtures retain 64 MB memory and 8 MB temporary storage. Maximum-width STRING
+DISTINCT charges 64,586,992 bytes. Focused integrated observations remain below
+that charge on both platforms. The complete gates execute 40 reader cases on
+macOS and 120 on GNU/Linux. Linux uses default, fixed 128-KiB and fixed 64-MiB
+mmap thresholds at both short and 384-byte pathnames. Independent allocation
+controls observe 4,080 and eight rounding bytes respectively for a 524,288-byte
+request, confirming that the configured regimes exercise different paths.
+
+Disposable wrong-empty-value and wrong-DISTINCT-multiplicity callers fail their
+exact equality assertions on both platforms; healthy callers pass. Tooling
+controls reject missing allocator observations even when other success markers
+are present. Batch checks retain short-reservation preservation, sparse and
+replacement writes, allocation reuse and release. The 514 buffer extents and 91
+hash layouts remain covered. Catalog allocation discovery now observes 858
+calls; both gates exercise every refusal position and the healthy prefix at each
+pathname length, rather than retaining the old layout's 863-call census.
+
+Earlier full gates at `03e4736` and `a03f953` fail in Rust tests on four stale
+physical-capacity expectations. Their later stages do not count as evidence.
+The corrected tests retain the original encoded limits, 65,537-byte/1,025-row
+refusals, checksummed corruption and failed-refill invalidation. The final full
+gates above pass all retained checks. This qualifies the observed native
+allocation profiles, not custom allocators, transient peaks, arbitrary schedules,
+Windows, whole-process memory or RSS. Source revisions and maintained fixtures
+reconstruct the controls; disposable traces and outputs are removed.
 
 ### Concurrent readers during reclamation
 
