@@ -88,9 +88,9 @@ separate from this query manifest.
 | `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN or UNION ALL. Comma-separated FROM inputs remain unsupported. |
 | `FROM (pipe_query) [AS alias]` | Uses the child query’s ordinary outputs as an independent input. A JOIN may also use this form. See [table subqueries](#table-subqueries) for scope and ordering. |
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
-| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`. Star expansion and other scalar expressions remain unsupported. |
-| `EXTEND expression [[AS] alias], ...` | Appends columns using the same direct-reference and numeric-expression profile as SELECT. Preserves all input columns, their identities, ranges, and order. Star expansion, aggregate calls, window expressions, and other scalar forms remain unsupported. |
-| `SET name=expression, ...` | Replaces each named ordinary column in place with a fresh identity. Accepts direct references of any supported type and the SELECT numeric-expression profile. Every expression sees the original input; replacements can change type and NULLability. |
+| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`. Also accepts bounded STRING and DATE constants described below. Star expansion and other scalar expressions remain unsupported. |
+| `EXTEND expression [[AS] alias], ...` | Appends columns using the same expression profile as SELECT. Preserves all input columns, their identities, ranges, and order. Star expansion, aggregate calls, window expressions, and other scalar forms remain unsupported. |
+| `SET name=expression, ...` | Replaces each named ordinary column in place with a fresh identity. Accepts direct references of any supported type and the SELECT expression profile. Every expression sees the original input; replacements can change type and NULLability. |
 | `DROP name, ...` | Removes all ordinary columns matching each name, including duplicate names. Rejects removal of the entire row. |
 | `RENAME old AS new, ...` | Renames one unambiguous ordinary column per target without changing its value, position, type, or identity. Simultaneous swaps and new duplicate names are valid. |
 | `WHERE name comparison constant` | Accepts `<`, `<=`, `=`, `!=`, `>=`, `>` over numeric, DATE or STRING columns and compatible constants. |
@@ -125,7 +125,8 @@ SELECT is optional, and every accepted relational prefix is executable.
 Each SELECT or EXTEND resolves all names against its complete input before publishing any
 alias. A column reference, including parentheses around it, retains its identity
 and implicit name. Numeric unary `+` retains identity but has no implicit name;
-other numeric computations receive fresh identities and are unnamed without an alias.
+other computations, including STRING and DATE constants, receive fresh identities
+and are unnamed without an alias.
 `ResultColumn.name` is None for an unnamed output. Such outputs remain in the
 row and can be used by ORDER BY ordinal, but cannot be referenced by name.
 Duplicate names are permitted in output and become a bind error when
@@ -182,6 +183,11 @@ DOUBLE overflow is `ArithmeticOverflow`. Runtime DOUBLE values preserve raw
 IEEE-754 bits, including nonfinite values. Division, scalar calls beyond the
 DATE forms below, other scalar expression forms and NULL literals are
 unsupported.
+
+SELECT, EXTEND and SET accept STRING constants and DATE constants, including
+parentheses around the constant. They are nonnullable and own their values in
+the prepared plan. STRING arithmetic, column-valued DATE calls and untyped NULL
+projections remain unsupported.
 
 DATE literals and constant DATE_ADD/DATE_SUB accept checked INT64 intervals in
 DAY, MONTH or YEAR units, with at most eight nested calls. Month/year shifts
@@ -290,7 +296,9 @@ A prior NaN never suppresses a later demanded scalar error.
 
 Projection and filters may follow aggregation, preserving exact INT64
 comparisons and demanded errors. The same aggregate signatures are available on
-the legacy `lineitem` path. Legacy grouping retains its two bounded STRING-key restriction.
+the legacy `lineitem` path. Legacy grouping retains its two nonnullable STRING-key restriction. Queries
+introducing text constants use the general grouping controller; fixed-key-only
+queries retain dense grouping.
 
 Declared GROUP BY accepts distinct visible INT64, DOUBLE, DATE and UTF-8 STRING
 identities, including nullable columns. Keys retain their types and NULLability

@@ -1,6 +1,6 @@
 //! Demand evaluation inside a producer, without crossing materialization boundaries.
 use super::{Error, Pipeline, Value};
-use crate::frontend::{DataType, MAX_COLUMNS, MAX_COMPUTED, MAX_ROW_VALUES};
+use crate::frontend::{Computation, DataType, MAX_COLUMNS, MAX_COMPUTED, MAX_ROW_VALUES};
 use crate::scalar::{MAX_OPS, NumericInput, NumericValues, Op};
 
 // One live producer step owns these fixed arrays. The result reserves their
@@ -35,6 +35,7 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
     pub(super) fn value<'row>(&mut self, slot: u8) -> Result<Value<'row>, Error>
     where
         F: FnMut(u8) -> Result<Value<'row>, Error>,
+        'query: 'row,
     {
         if usize::from(slot) < MAX_ROW_VALUES {
             return (self.raw)(slot);
@@ -45,6 +46,9 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
             .computed
             .get(target)
             .ok_or(Error::Corrupt("computed value slot"))?;
+        if let Computation::Constant(value) = &definition.expression {
+            return Ok(value.value());
+        }
         let cache = self.cache.get_or_insert([None; MAX_COMPUTED]);
         let needed = self.plan.dependencies(&[slot])?;
         for (index, needed) in needed[MAX_ROW_VALUES..=MAX_ROW_VALUES + target]
@@ -117,6 +121,7 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
     pub(super) fn retains<'row>(&mut self) -> Result<bool, Error>
     where
         F: FnMut(u8) -> Result<Value<'row>, Error>,
+        'query: 'row,
     {
         let mut index = 0;
         for _ in 0..self.plan.filter_count {
@@ -170,17 +175,14 @@ impl Pipeline<'_> {
             if !needed[MAX_ROW_VALUES + index] {
                 continue;
             }
-            let expression = self.computed[index].expression.numeric()?;
-            for op in &expression.ops[..usize::from(expression.len)] {
-                if let Op::Column(column) = op {
-                    let slot = usize::from(self.slots[column.identity().value() as usize]);
-                    if slot >= MAX_ROW_VALUES + index {
-                        return Err(Error::Corrupt(
-                            "computed dependency must precede definition",
-                        ));
-                    }
-                    needed[slot] = true;
+            for column in self.computed[index].expression.columns() {
+                let slot = usize::from(self.slots[column.identity().value() as usize]);
+                if slot >= MAX_ROW_VALUES + index {
+                    return Err(Error::Corrupt(
+                        "computed dependency must precede definition",
+                    ));
                 }
+                needed[slot] = true;
             }
         }
         Ok(needed)
@@ -255,6 +257,14 @@ impl BatchLayout {
         let mut layout = Self::EMPTY;
         for (slot, needed) in needed.iter().enumerate() {
             if *needed {
+                if slot >= MAX_ROW_VALUES
+                    && matches!(
+                        plan.computed[slot - MAX_ROW_VALUES].expression,
+                        Computation::Constant(_)
+                    )
+                {
+                    continue;
+                }
                 layout.mapping[slot] = layout.buffers;
                 layout.buffers += 1;
                 if slot >= MAX_ROW_VALUES {
@@ -342,6 +352,10 @@ impl BatchScratch {
                 continue;
             }
             let definition = &plan.computed[index];
+            if matches!(definition.expression, Computation::Constant(_)) {
+                self.ready[slot] = true;
+                continue;
+            }
             let expression = definition.expression.numeric()?;
             // Gather each source dependency once for this selection. No I/O occurs
             // here: the scan loaded these checked payloads in earlier steps.
@@ -424,15 +438,18 @@ impl BatchScratch {
         Ok(())
     }
 
-    pub(super) fn value(
+    pub(super) fn value<'query>(
         &self,
-        plan: &Pipeline,
+        plan: &Pipeline<'query>,
         slot: u8,
         row: usize,
-    ) -> Result<Value<'static>, Error> {
+    ) -> Result<Value<'query>, Error> {
         let slot = usize::from(slot);
         if row >= self.rows || !(MAX_ROW_VALUES..SLOTS).contains(&slot) || !self.ready[slot] {
             return Err(Error::Corrupt("computed batch value is not ready"));
+        }
+        if let Computation::Constant(value) = &plan.computed[slot - MAX_ROW_VALUES].expression {
+            return Ok(value.value());
         }
         let offset = usize::from(self.layout.mapping[slot]) * WORDS_PER_COLUMN;
         let bits = (self.data[offset + ROWS + row / 64] & (1 << (row % 64)) != 0)

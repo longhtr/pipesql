@@ -269,6 +269,7 @@ fn scalar_width_shrinks_to_one_before_typed_admission_failure() {
         semantic,
         query.plan.aggregate_demand(0),
         query.plan.input_columns(),
+        TextDomain::FixedKey,
     )
     .unwrap();
     let lane_bytes = groups.aggregate.scratch.len() / groups.aggregate.lanes * size_of::<u64>();
@@ -341,6 +342,7 @@ fn source_occurrences_do_not_split_shared_aggregate_state() {
         semantic,
         query.plan.aggregate_demand(0),
         query.plan.input_columns(),
+        TextDomain::FixedKey,
     )
     .unwrap();
     assert_eq!(groups.aggregate.states, 1);
@@ -367,6 +369,7 @@ fn integer_aggregate_range_covers_the_last_admitted_row_and_refuses_the_next() {
         query.plan.aggregates.first().unwrap(),
         query.plan.aggregate_demand(0),
         query.plan.input_columns(),
+        TextDomain::FixedKey,
     )
     .unwrap();
     groups.aggregate.cells.counts[0] = u32::try_from(MAX_AGGREGATE_ROWS - 1).unwrap();
@@ -648,6 +651,7 @@ fn aggregate_workspace_and_mappings_are_independently_checked() {
             semantic,
             query.plan.aggregate_demand(0),
             query.plan.input_columns(),
+            TextDomain::FixedKey,
         )
         .unwrap();
         groups
@@ -760,6 +764,7 @@ fn post_aggregate_mapping_and_demand_are_independently_checked() {
             semantic,
             query.plan.aggregate_demand(0),
             query.plan.input_columns(),
+            TextDomain::FixedKey,
         )
         .unwrap();
         assert_eq!(groups.aggregate.states, 1);

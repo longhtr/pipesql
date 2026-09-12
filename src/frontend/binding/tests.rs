@@ -327,7 +327,7 @@ fn limit_bounds_and_shared_parser_storage_are_checked() {
     assert!(std::mem::size_of::<ParsedAggregateEntry>() <= 24);
     assert!(std::mem::size_of::<Parsed>() <= 4500);
     eprintln!(
-        "parser bytes: parsed={} stage={} expression={} shared_numeric_ops={}",
+        "parser bytes: parsed={} stage={} expression={} shared_expression_ops={}",
         std::mem::size_of::<Parsed>(),
         std::mem::size_of::<ParsedStage>(),
         std::mem::size_of::<ParsedExpression>(),
@@ -412,7 +412,7 @@ fn pooled_numeric_programs_preserve_individual_bounds_and_spans() {
         "FROM lineitem |> LIMIT {expression} OFFSET {expression} |> LIMIT {expression} OFFSET {expression}"
     );
     let parsed = parse_query(&source).unwrap();
-    assert_eq!(parsed.numeric_op_count, 128);
+    assert_eq!(parsed.expression_op_count, 128);
     assert!(db.prepare(&source).is_ok());
     let too_many = source.replacen(&expression, &format!("-{expression}"), 1);
     assert!(matches!(db.prepare(&too_many), Err(Error::Parse { .. })));
@@ -1197,7 +1197,7 @@ fn extend_preserves_input_identity_ranges_and_input_only_alias_scope() {
         db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS n |> SELECT t.n")
             .is_err()
     );
-    for unsupported in ["*", "SUM(l_quantity)", "1 OVER ()", "'text'"] {
+    for unsupported in ["*", "SUM(l_quantity)", "1 OVER ()", "'text'+1"] {
         assert!(
             db.prepare(&format!("FROM lineitem |> EXTEND {unsupported}"))
                 .is_err()
@@ -1239,13 +1239,31 @@ fn extend_entries_are_syntax_bounded_and_validated_independently() {
 #[test]
 fn projection_preserves_nonreserved_operator_identifiers() {
     let (_directory, db) = database(4_000_000);
-    for sql in [
-        "FROM lineitem |> SELECT l_returnflag AS aggregate |> SELECT aggregate",
-        "FROM lineitem |> EXTEND l_returnflag aggregate |> SELECT aggregate",
+    for (sql, name) in [
+        (
+            "FROM lineitem |> SELECT l_returnflag AS aggregate |> SELECT aggregate",
+            "aggregate",
+        ),
+        (
+            "FROM lineitem |> SELECT l_returnflag AS date |> SELECT date",
+            "date",
+        ),
+        (
+            "FROM lineitem |> SELECT l_returnflag AS date_add |> SELECT (date_add)",
+            "date_add",
+        ),
+        (
+            "FROM lineitem |> SELECT l_returnflag AS date_sub |> SELECT date_sub",
+            "date_sub",
+        ),
+        (
+            "FROM lineitem |> EXTEND l_returnflag aggregate |> SELECT aggregate",
+            "aggregate",
+        ),
     ] {
         let query = db.prepare(sql).unwrap();
         let column = query.result_column(0).unwrap();
-        assert_eq!(column.name, Some("aggregate"));
+        assert_eq!(column.name, Some(name));
         assert_eq!(column.data_type, DataType::String);
     }
 }
@@ -1498,5 +1516,36 @@ fn set_assignments_and_typed_copies_are_validated_independently() {
             _ => unreachable!(),
         }
         assert!(validate(&query.plan).is_err(), "mutation {mutation}");
+    }
+}
+
+#[test]
+fn constant_definitions_reject_inconsistent_facts_and_provenance() {
+    let (_temp, database) = database(4_000_000);
+    for sql in [
+        "FROM lineitem |> SELECT '雪' AS value",
+        "FROM lineitem |> SELECT DATE '1970-01-02' AS value",
+    ] {
+        for mutation in 0..5 {
+            let mut query = database.prepare(sql).unwrap();
+            validate(&query.plan).unwrap();
+            let definition = &mut query.plan.computed[0];
+            let column = definition.column;
+            match mutation {
+                0 => {
+                    definition.column =
+                        SemanticColumn::new(column.identity().value(), DataType::Int64, false)
+                }
+                1 => {
+                    definition.column =
+                        SemanticColumn::new(column.identity().value(), column.data_type(), true)
+                }
+                2 => definition.column = SourceColumn::QUANTITY.semantic(),
+                3 => definition.span = ZERO_SPAN,
+                4 => definition.input = RelationId(16),
+                _ => unreachable!(),
+            }
+            assert!(validate(&query.plan).is_err(), "{sql}: mutation {mutation}");
+        }
     }
 }

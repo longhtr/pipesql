@@ -8,6 +8,7 @@ use std::mem::size_of;
 
 pub(crate) const ROWS: usize = 256;
 const _: () = assert!(ROWS <= crate::scalar::MAX_ROWS);
+#[cfg(test)]
 pub(crate) const MAX_BYTES: u64 = (MAX_ROW_VALUES * (size_of::<Column>() + ROWS * 8)) as u64;
 
 pub(crate) const MAX_TEXT_BYTES: usize = 65_536;
@@ -175,6 +176,7 @@ impl Batch {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn required_bytes(types: &[DataType]) -> Result<u64, Error> {
         Self::required_bytes_with_text(
             types,

@@ -32,13 +32,13 @@ pub(super) enum Aggregation<'db> {
 
 impl<'db> Aggregation<'db> {
     pub(super) fn minimum_bytes(
-        native: bool,
+        utf8: bool,
         aggregate: &'db AggregatePlan,
         demand: u16,
         input: impl Iterator<Item = SemanticColumn>,
         output: impl Iterator<Item = SemanticColumn>,
     ) -> Result<u64, Error> {
-        if native && aggregate.group_count != 0 {
+        if utf8 && aggregate.group_count != 0 {
             grouping::General::minimum_bytes(aggregate, demand, input, output)
         } else {
             let capacity = KEY_DOMAIN
@@ -48,7 +48,7 @@ impl<'db> Aggregation<'db> {
                 aggregate,
                 demand,
                 input,
-                TextDomain::for_storage(native),
+                TextDomain::for_values(utf8),
             )
             .required_bytes(capacity, 1)
         }
@@ -56,19 +56,25 @@ impl<'db> Aggregation<'db> {
 
     pub(super) fn open(
         database: &'db Database,
-        native: bool,
+        utf8: bool,
         aggregate: &'db AggregatePlan,
         demand: u16,
         input: impl Iterator<Item = SemanticColumn> + Clone,
         output: impl Iterator<Item = SemanticColumn> + Clone,
     ) -> Result<Self, Error> {
-        if native && aggregate.group_count != 0 {
+        if utf8 && aggregate.group_count != 0 {
             Ok(Self::General(grouping::General::open(
                 database, aggregate, demand, input, output,
             )?))
         } else {
-            let groups = Groups::new(database, aggregate, demand, input.clone())?;
-            groups.validate_plan(aggregate, demand, input, TextDomain::for_storage(native))?;
+            let groups = Groups::new(
+                database,
+                aggregate,
+                demand,
+                input.clone(),
+                TextDomain::for_values(utf8),
+            )?;
+            groups.validate_plan(aggregate, demand, input, TextDomain::for_values(utf8))?;
             Ok(Self::Dense(groups))
         }
     }
@@ -131,6 +137,7 @@ impl<'db> Groups<'db> {
         plan: &'db AggregatePlan,
         demand: u16,
         columns: impl Iterator<Item = SemanticColumn>,
+        text_domain: TextDomain,
     ) -> Result<Self, Error> {
         let mut inputs = [SourceColumn::QUANTITY.semantic(); MAX_ROW_VALUES];
         let mut count = 0;
@@ -157,7 +164,7 @@ impl<'db> Groups<'db> {
                     plan,
                     demand,
                     inputs[..count].iter().copied(),
-                    TextDomain::for_storage(database.catalog_registry().is_some()),
+                    text_domain,
                 ),
                 capacity,
             )?,

@@ -1,18 +1,18 @@
 //! Name, type, identity, and catalog binding; owns transient scope and prepared-plan admission.
 use super::lexer::ZERO_SPAN;
 use super::parser::{
-    Parsed, ParsedAggregateEntry, ParsedAggregateRange, ParsedExpression, ParsedLiteral, ParsedOp,
-    ParsedProjection, ParsedRange, ParsedStage, parse_query,
+    Parsed, ParsedAggregateEntry, ParsedAggregateRange, ParsedDateShift, ParsedExpression,
+    ParsedLiteral, ParsedOp, ParsedProjection, ParsedRange, ParsedStage, parse_query,
 };
 use super::validate;
 use super::{
     AggregateArgument, AggregateEntry, AggregateKind, AggregatePlan, ColumnFacts, ColumnId,
-    Comparison, Computation, Computed, DataType, Database, DateValue, DistinctPlan, Error,
-    Expression, Filter, FilterLiteral, Group, LimitBounds, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS,
-    MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_QUERY_COLUMNS, MAX_STAGES, Name, Node, Op, OrderKey,
-    Output, OwnedPlan, PREPARED_ALLOCATION_ALLOWANCE, Plan, Predicate, PreparedQuery, RelationId,
-    SemanticColumn, SetAssignment, SourceColumn, SourceOccurrence, SourceSpan, Stage, UnionPlan,
-    bind_error, initial_outputs, text,
+    Comparison, Computation, Computed, Constant, DataType, Database, DateValue, DistinctPlan,
+    Error, Expression, Filter, FilterLiteral, Group, LimitBounds, MAX_AGGREGATE_COLUMNS,
+    MAX_COLUMNS, MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_QUERY_COLUMNS, MAX_STAGES, Name, Node, Op,
+    OrderKey, Output, OwnedPlan, PREPARED_ALLOCATION_ALLOWANCE, Plan, Predicate, PreparedQuery,
+    RelationId, SemanticColumn, SetAssignment, SourceColumn, SourceOccurrence, SourceSpan, Stage,
+    UnionPlan, bind_error, initial_outputs, text,
 };
 use crate::date::DatePart;
 use std::mem::size_of;
@@ -432,7 +432,13 @@ fn bind_expression(
             ParsedOp::Subtract => Op::Subtract,
             ParsedOp::Multiply => Op::Multiply,
             ParsedOp::Negate => Op::Negate,
-            ParsedOp::Empty => return Err(Error::Corrupt("empty parsed scalar operation")),
+            ParsedOp::Empty
+            | ParsedOp::String(_)
+            | ParsedOp::Date(_)
+            | ParsedOp::DateInterval { .. }
+            | ParsedOp::DatePart(_) => {
+                return Err(Error::Corrupt("non-numeric parsed scalar operation"));
+            }
         };
     }
     let mut inputs = [SourceColumn::QUANTITY.semantic(); crate::scalar::MAX_OPS];
@@ -447,6 +453,50 @@ fn bind_expression(
     }
     expression.data_type = expression.infer(&inputs[..count])?;
     Ok(expression)
+}
+
+fn bind_date(
+    source: &str,
+    span: SourceSpan,
+    shifts: impl Iterator<Item = ParsedDateShift>,
+) -> Result<DateValue, Error> {
+    let (literal, _) = crate::text_literal::TextLiteral::parse(text(source, span))
+        .map_err(|message| bind_error(message, span))?;
+    let mut date = DateValue::parse(literal.as_str().as_bytes())
+        .ok_or_else(|| bind_error("invalid DATE literal", span))?;
+    for shift in shifts {
+        let magnitude: i128 = text(source, shift.amount)
+            .parse()
+            .map_err(|_| bind_error("INTERVAL requires an INT64 integer", shift.amount))?;
+        let signed = if shift.negative {
+            -magnitude
+        } else {
+            magnitude
+        };
+        let amount = i64::try_from(signed)
+            .map_err(|_| bind_error("INTERVAL exceeds INT64", shift.amount))?;
+        let amount = if shift.subtract {
+            amount
+                .checked_neg()
+                .ok_or_else(|| bind_error("DATE interval overflow", shift.amount))?
+        } else {
+            amount
+        };
+        let part = text(source, shift.part);
+        let part = if part.eq_ignore_ascii_case("DAY") {
+            DatePart::Day
+        } else if part.eq_ignore_ascii_case("MONTH") {
+            DatePart::Month
+        } else if part.eq_ignore_ascii_case("YEAR") {
+            DatePart::Year
+        } else {
+            return Err(bind_error("unsupported DATE interval unit", shift.part));
+        };
+        date = date
+            .shift(amount, part)
+            .ok_or_else(|| bind_error("DATE is outside supported calendar", span))?;
+    }
+    Ok(date)
 }
 
 fn bind_literal(
@@ -488,45 +538,11 @@ fn bind_literal(
             span,
             shifts,
             count,
-        } => {
-            let (literal, _) = crate::text_literal::TextLiteral::parse(text(source, span))
-                .map_err(|message| bind_error(message, span))?;
-            let mut date = DateValue::parse(literal.as_str().as_bytes())
-                .ok_or_else(|| bind_error("invalid DATE literal", span))?;
-            for shift in &shifts[..usize::from(count)] {
-                let magnitude: i128 = text(source, shift.amount)
-                    .parse()
-                    .map_err(|_| bind_error("INTERVAL requires an INT64 integer", shift.amount))?;
-                let signed = if shift.negative {
-                    -magnitude
-                } else {
-                    magnitude
-                };
-                let amount = i64::try_from(signed)
-                    .map_err(|_| bind_error("INTERVAL exceeds INT64", shift.amount))?;
-                let amount = if shift.subtract {
-                    amount
-                        .checked_neg()
-                        .ok_or_else(|| bind_error("DATE interval overflow", shift.amount))?
-                } else {
-                    amount
-                };
-                let part = text(source, shift.part);
-                let part = if part.eq_ignore_ascii_case("DAY") {
-                    DatePart::Day
-                } else if part.eq_ignore_ascii_case("MONTH") {
-                    DatePart::Month
-                } else if part.eq_ignore_ascii_case("YEAR") {
-                    DatePart::Year
-                } else {
-                    return Err(bind_error("unsupported DATE interval unit", shift.part));
-                };
-                date = date
-                    .shift(amount, part)
-                    .ok_or_else(|| bind_error("DATE is outside supported calendar", span))?;
-            }
-            Ok(FilterLiteral::Date(date))
-        }
+        } => Ok(FilterLiteral::Date(bind_date(
+            source,
+            span,
+            shifts[..usize::from(count)].iter().copied(),
+        )?)),
     }
 }
 
@@ -1264,7 +1280,7 @@ impl Binder<'_, '_> {
                         .ok_or(Error::Corrupt("SET copy has no semantic facts"))?,
                 )
             } else {
-                Computation::Numeric(self.bind_expression(&syntax)?)
+                self.bind_computation(&syntax)?
             };
             let column = SemanticColumn::new(
                 self.next_identity,
@@ -1391,6 +1407,52 @@ impl Binder<'_, '_> {
         Ok(Stage::Extend { start, len })
     }
 
+    fn bind_computation(&self, syntax: &ParsedExpression) -> Result<Computation, Error> {
+        let ops = &syntax.ops[..usize::from(syntax.len)];
+        let constant = match ops {
+            [ParsedOp::String(span)] => {
+                let (value, _) = crate::text_literal::TextLiteral::parse(text(self.source, *span))
+                    .map_err(|message| bind_error(message, *span))?;
+                Constant::String(value)
+            }
+            [ParsedOp::Date(span), shifts @ ..] => {
+                let (shifts, remainder) = shifts.as_chunks::<2>();
+                if !remainder.is_empty()
+                    || !shifts.iter().all(|pair| {
+                        matches!(pair, [ParsedOp::DateInterval { .. }, ParsedOp::DatePart(_)])
+                    })
+                {
+                    return Err(Error::Corrupt("invalid DATE constant program"));
+                }
+                Constant::Date(bind_date(
+                    self.source,
+                    *span,
+                    shifts.iter().map(|pair| {
+                        let [
+                            ParsedOp::DateInterval {
+                                amount,
+                                negative,
+                                subtract,
+                            },
+                            ParsedOp::DatePart(part),
+                        ] = pair
+                        else {
+                            unreachable!()
+                        };
+                        ParsedDateShift {
+                            amount: *amount,
+                            negative: *negative,
+                            subtract: *subtract,
+                            part: *part,
+                        }
+                    }),
+                )?)
+            }
+            _ => return Ok(Computation::Numeric(self.bind_expression(syntax)?)),
+        };
+        Ok(Computation::Constant(constant))
+    }
+
     fn bind_projection(
         &mut self,
         entry: &ParsedProjection,
@@ -1413,13 +1475,15 @@ impl Binder<'_, '_> {
         let id = if let Some(span) = direct {
             self.resolve(span)?
         } else {
-            let expression = self.bind_expression(&syntax)?;
-            if let [Op::Column(column)] = &expression.ops[..usize::from(expression.len)] {
+            let expression = self.bind_computation(&syntax)?;
+            if let Computation::Numeric(numeric) = &expression
+                && let [Op::Column(column)] = &numeric.ops[..usize::from(numeric.len)]
+            {
                 column.identity()
             } else {
                 let column = SemanticColumn::new(
                     self.next_identity,
-                    expression.data_type,
+                    expression.data_type(),
                     expression.nullable(),
                 );
                 self.next_identity += 1;
@@ -1429,7 +1493,7 @@ impl Binder<'_, '_> {
                 );
                 self.descriptors.computed.push(Computed {
                     column,
-                    expression: Computation::Numeric(expression),
+                    expression,
                     span: syntax.span,
                     input,
                 });

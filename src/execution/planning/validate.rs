@@ -420,7 +420,10 @@ fn identity_at(
         if semantic.producer(definition.input)? != relation {
             return Err(Error::Corrupt("computed slot belongs to another producer"));
         }
-        if !matches!(definition.expression, frontend::Computation::Numeric(_)) {
+        if !matches!(
+            definition.expression,
+            frontend::Computation::Numeric(_) | frontend::Computation::Constant(_)
+        ) {
             return Err(Error::Corrupt("typed copy mapped to numeric slot"));
         }
         return Ok(definition.column.identity());

@@ -89,6 +89,16 @@ pub(super) enum ParsedLiteral {
 pub(super) enum ParsedOp {
     Empty,
     Column(SourceSpan),
+    String(SourceSpan),
+    Date(SourceSpan),
+    // Separate interval and unit tokens keep every operation within eight
+    // bytes; DATE support must not enlarge the shared parser arena.
+    DateInterval {
+        amount: SourceSpan,
+        negative: bool,
+        subtract: bool,
+    },
+    DatePart(SourceSpan),
     Number(SourceSpan),
     NegativeNumber(SourceSpan),
     Add,
@@ -244,10 +254,10 @@ impl ParsedProjection {
 }
 
 pub(super) struct Parsed {
-    // Numeric programs share the token bound: each operation consumes at least
+    // Expression programs share the token bound: each operation consumes at least
     // one distinct token. Stage/aggregate entries retain ranges, not full stacks.
-    pub(super) numeric_ops: [ParsedOp; MAX_TOKENS],
-    pub(super) numeric_op_count: u8,
+    pub(super) expression_ops: [ParsedOp; MAX_TOKENS],
+    pub(super) expression_op_count: u8,
     pub(super) table: SourceSpan,
     pub(super) sources: [ParsedSource; MAX_STAGES],
     pub(super) source_count: u8,
@@ -266,15 +276,15 @@ pub(super) struct Parsed {
 
 impl Parsed {
     fn push_expression(&mut self, expression: ParsedExpression) -> Result<ParsedRange, Error> {
-        let start = usize::from(self.numeric_op_count);
+        let start = usize::from(self.expression_op_count);
         let len = usize::from(expression.len);
         let end = start
             .checked_add(len)
             .filter(|end| *end <= MAX_TOKENS)
-            .ok_or(Error::Corrupt("numeric operations exceed lexical bound"))?;
-        self.numeric_ops[start..end].copy_from_slice(&expression.ops[..len]);
-        self.numeric_op_count =
-            u8::try_from(end).map_err(|_| Error::Corrupt("numeric operation count"))?;
+            .ok_or(Error::Corrupt("expression operations exceed lexical bound"))?;
+        self.expression_ops[start..end].copy_from_slice(&expression.ops[..len]);
+        self.expression_op_count =
+            u8::try_from(end).map_err(|_| Error::Corrupt("expression operation count"))?;
         Ok(ParsedRange {
             span: expression.span,
             start: start as u8,
@@ -286,13 +296,13 @@ impl Parsed {
         let start = usize::from(range.start);
         let len = usize::from(range.len);
         let end = start + len;
-        if len == 0 || len > MAX_OPS || end > usize::from(self.numeric_op_count) {
+        if len == 0 || len > MAX_OPS || end > usize::from(self.expression_op_count) {
             return Err(Error::Corrupt("numeric expression range"));
         }
         let mut expression = ParsedExpression::EMPTY;
         expression.len = range.len;
         expression.span = range.span;
-        expression.ops[..len].copy_from_slice(&self.numeric_ops[start..end]);
+        expression.ops[..len].copy_from_slice(&self.expression_ops[start..end]);
         Ok(expression)
     }
 
@@ -430,6 +440,60 @@ impl Parser<'_> {
         Ok(ParsedLiteral::Numeric(
             parsed.push_expression(self.numeric_expression()?)?,
         ))
+    }
+
+    // Constants use the same token-bounded program storage as arithmetic. DATE
+    // syntax is parsed once here and folded by binding before source text drops.
+    fn projection_expression(&mut self, parsed: &mut Parsed) -> Result<ParsedExpression, Error> {
+        let first = self.position;
+        while self.peek() == Kind::LeftParen {
+            self.take(Kind::LeftParen)?;
+        }
+        let parentheses = self.position - first;
+        let next = self
+            .tokens
+            .values
+            .get(self.position + 1)
+            .filter(|_| self.position + 1 < self.tokens.len)
+            .map(|token| token.kind);
+        let date = (self.is_word("DATE") && next == Some(Kind::Quoted))
+            || ((self.is_word("DATE_ADD") || self.is_word("DATE_SUB"))
+                && next == Some(Kind::LeftParen));
+        if self.peek() != Kind::Quoted && !date {
+            self.position = first;
+            return self.numeric_expression();
+        }
+        let mut expression = ParsedExpression::EMPTY;
+        match self.comparison_literal(parsed)? {
+            ParsedLiteral::String(span) => expression.push(ParsedOp::String(span), span)?,
+            ParsedLiteral::Date {
+                span,
+                shifts,
+                count,
+            } => {
+                expression.push(ParsedOp::Date(span), span)?;
+                for shift in &shifts[..usize::from(count)] {
+                    expression.push(
+                        ParsedOp::DateInterval {
+                            amount: shift.amount,
+                            negative: shift.negative,
+                            subtract: shift.subtract,
+                        },
+                        shift.amount,
+                    )?;
+                    expression.push(ParsedOp::DatePart(shift.part), shift.part)?;
+                }
+            }
+            _ => return Err(Error::Corrupt("projection constant syntax")),
+        }
+        for _ in 0..parentheses {
+            self.take(Kind::RightParen)?;
+        }
+        expression.span = span(
+            usize::from(self.tokens.values[first].span.start),
+            usize::from(self.tokens.values[self.position - 1].span.end),
+        );
+        Ok(expression)
     }
 
     fn numeric_expression(&mut self) -> Result<ParsedExpression, Error> {
@@ -661,8 +725,8 @@ impl Parser<'_> {
     fn query(&mut self) -> Result<Parsed, Error> {
         self.take(Kind::From)?;
         let mut parsed = Parsed {
-            numeric_ops: [ParsedOp::Empty; MAX_TOKENS],
-            numeric_op_count: 0,
+            expression_ops: [ParsedOp::Empty; MAX_TOKENS],
+            expression_op_count: 0,
             table: ZERO_SPAN,
             sources: [ParsedSource::EMPTY; MAX_STAGES],
             source_count: 0,
@@ -955,7 +1019,7 @@ impl Parser<'_> {
                             ZERO_SPAN
                         };
                         let first = self.position;
-                        let expression = self.numeric_expression()?;
+                        let expression = self.projection_expression(&mut parsed)?;
                         // Parentheses retain an AST path reference; unary plus
                         // retains its numeric value but has no implicit name.
                         let direct = expression.len == 1

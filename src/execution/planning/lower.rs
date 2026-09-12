@@ -282,7 +282,9 @@ fn base_position(
                 "physical producer does not provide demanded identity",
             ))?;
         match &definition.expression {
-            frontend::Computation::Numeric(_) => return Ok((MAX_ROW_VALUES + index) as u8),
+            frontend::Computation::Numeric(_) | frontend::Computation::Constant(_) => {
+                return Ok((MAX_ROW_VALUES + index) as u8);
+            }
             frontend::Computation::Copy(column) => id = column.identity(),
         }
     }

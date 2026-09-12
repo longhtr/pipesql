@@ -62,7 +62,7 @@ impl BindingBudget {
                     fresh
                         || !(entry.expression.len == 1
                             && matches!(
-                                parsed.numeric_ops[usize::from(entry.expression.start)],
+                                parsed.expression_ops[usize::from(entry.expression.start)],
                                 ParsedOp::Column(_)
                             ))
                 })

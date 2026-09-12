@@ -35,6 +35,7 @@ fn shared_scaled_average_matches_independent_intervals() {
             semantic,
             query.plan.aggregate_demand(0),
             query.plan.input_columns(),
+            TextDomain::FixedKey,
         )
         .unwrap();
         let mut batch = Batch::new(&[DataType::Double], 1_000_000).unwrap();

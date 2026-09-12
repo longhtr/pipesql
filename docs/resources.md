@@ -245,8 +245,10 @@ every producer graph, transient allocation peaks, or process/RSS bounds.
 
 Each limiter owns one output batch and inline counters in its runtime node.
 Declared STRING columns reserve the same 65,536-byte per-column ceiling as
-source batches; legacy STRING columns retain the existing fixed-key
-representation. Output reservation precedes optional aggregate growth and source
+source batches. Legacy queries without text constants retain fixed-key storage;
+when a text constant is present, each STRING output reserves 8,192 bytes
+(256 rows × 32 literal bytes). This query-wide bound survives copies, grouping
+and later producers, including when a constant becomes undemanded. Output reservation precedes optional aggregate growth and source
 I/O. Selecting zero rows does not bypass these admission obligations. Source and
 temporary-file owners retained by a completed interior limiter remain charged
 until replay or query cleanup releases them. LIMIT introduces no separate memory
@@ -360,8 +362,9 @@ COUNT-only STRING/DATE arguments capture validity only.
 Each demanded MIN/MAX slot owns an eight-byte word per admitted group. Numeric
 slots store value bits; text slots store lengths and own separate reusable byte
 storage. The fixed accumulator reserves 65,536 bytes per declared STRING slot
-per group; legacy fixed-key text reserves one byte. Admission and independent
-validation receive the source domain explicitly. Disk reduction reuses one
+per group, including legacy queries that introduce UTF-8 constants; legacy
+fixed-key-only queries reserve one byte. Admission and independent validation
+receive this query text domain explicitly. Disk reduction reuses one
 fixed group's slots.
 
 Optional hash grouping stores explicit byte spans for STRING extrema. Each
@@ -446,9 +449,13 @@ exact OS code without allocating an OS message. Opaque custom formatting and
 caller-owned strings remain separate owners. Retaining an error does not release
 unresolved temporary-file charges.
 
-Text comparison literals retain at most 32 UTF-8 bytes in the semantic plan,
+Text literals retain at most 32 UTF-8 bytes in the semantic plan,
 covered by its ordinary charge. Physical filters borrow their predicates and
 literals. Decoding and comparison introduce no heap owner or per-row allocation.
+Projection constants share the admitted computed-descriptor allocation with
+numeric expressions. Their values bypass numeric scratch buffers; materialized
+STRING outputs use the batch capacities above. DATE shifts fold during binding
+with the same calendar checks as predicate constants.
 Boolean controls occupy four bytes per logical leaf; copied physical controls
 belong to pipeline admission. Temporary Boolean syntax arrays are bounded by 160
 tokens and do not survive preparation.

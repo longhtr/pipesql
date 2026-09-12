@@ -23,7 +23,7 @@ const BLOCK_BYTES: usize = 262_144;
 pub(in crate::execution) const BLOCK_ROWS: usize = 32_768;
 pub(in crate::execution) const MAX_WORKSPACE_BYTES: u64 = WORKSPACE_FIXED_BYTES
     + ARENA_BYTES as u64
-    + 2 * crate::batch::MAX_BYTES
+    + 2 * crate::batch::MAX_BYTES_WITH_TEXT
     + BranchScratch::MAX_BYTES;
 const ARENA_BYTES: usize = 5 * BLOCK_BYTES + 2 * BLOCK_ROWS;
 const WORKSPACE_FIXED_BYTES: u64 = 106_496;
@@ -334,6 +334,7 @@ pub(in crate::execution) struct Layout {
     input_types: [DataType; MAX_ROW_VALUES],
     input_count: usize,
     output_types: [DataType; MAX_ROW_VALUES],
+    text_capacity: Option<usize>,
     output_count: usize,
 }
 
@@ -344,7 +345,11 @@ impl Layout {
     ) -> Result<AdmittedScan<'_>, Error> {
         Ok(AdmittedScan {
             input: OwnedBatch::new(&[], &mut reservation)?,
-            output: OwnedBatch::new(&self.output_types[..self.output_count], &mut reservation)?,
+            output: OwnedBatch::new_with_text(
+                &self.output_types[..self.output_count],
+                &self.text_capacities(&self.output_types[..self.output_count])[..self.output_count],
+                &mut reservation,
+            )?,
             scan: ScanCursor {
                 computation: BatchScratch::new(self.computation)?,
                 source: Source::Legacy(Scan {
@@ -411,9 +416,20 @@ impl Layout {
             offsets,
             input_types,
             input_count,
+            text_capacity: crate::execution::output_text_capacity(query),
             output_types,
             output_count,
         }
+    }
+
+    fn text_capacities(&self, types: &[DataType]) -> [Option<usize>; MAX_ROW_VALUES] {
+        let mut text = [None; MAX_ROW_VALUES];
+        for (capacity, kind) in text.iter_mut().zip(types) {
+            if *kind == DataType::String {
+                *capacity = self.text_capacity;
+            }
+        }
+        text
     }
 
     fn arena_bytes(&self) -> usize {
@@ -421,8 +437,14 @@ impl Layout {
     }
 
     pub(in crate::execution) fn workspace_bytes(&self) -> Result<u64, Error> {
-        let input = Batch::required_bytes(&self.input_types[..self.input_count])?;
-        let output = Batch::required_bytes(&self.output_types[..self.output_count])?;
+        let input = Batch::required_bytes_with_text(
+            &self.input_types[..self.input_count],
+            &self.text_capacities(&self.input_types[..self.input_count])[..self.input_count],
+        )?;
+        let output = Batch::required_bytes_with_text(
+            &self.output_types[..self.output_count],
+            &self.text_capacities(&self.output_types[..self.output_count])[..self.output_count],
+        )?;
         (WORKSPACE_FIXED_BYTES + self.arena_bytes() as u64)
             .checked_add(input)
             .and_then(|bytes| bytes.checked_add(output))
@@ -436,7 +458,8 @@ impl Layout {
         plan: &PhysicalPlan,
         query: &PreparedQuery<'_>,
     ) -> Result<(), Error> {
-        if self.branch_rows != BranchScratch::rows(plan.scan())
+        if self.text_capacity != crate::execution::output_text_capacity(query)
+            || self.branch_rows != BranchScratch::rows(plan.scan())
             || self.computation != BatchLayout::new(plan.scan())?
             || self.input_count != plan.scan().column_count
             || self.output_count
@@ -527,12 +550,16 @@ pub(in crate::execution) fn open_workspace<'db>(
         "scan selection",
         reservation.bytes(),
     )?;
-    let input = OwnedBatch::new(
+    let input = OwnedBatch::new_with_text(
         &buffers.input_types[..buffers.input_count],
+        &buffers.text_capacities(&buffers.input_types[..buffers.input_count])
+            [..buffers.input_count],
         &mut reservation,
     )?;
-    let output = OwnedBatch::new(
+    let output = OwnedBatch::new_with_text(
         &buffers.output_types[..buffers.output_count],
+        &buffers.text_capacities(&buffers.output_types[..buffers.output_count])
+            [..buffers.output_count],
         &mut reservation,
     )?;
     let computation = BatchScratch::new(buffers.computation)?;

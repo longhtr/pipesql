@@ -273,6 +273,8 @@ fn public_computed_cancellation_releases_source_and_consuming_owners() {
     let (_directory, db) = join_fixture();
     let baseline = db.reserved_memory_bytes();
     for sql in [
+        "FROM facts |> SELECT '雪' AS label,DATE '1970-01-01' AS day |> ORDER BY label |> DISTINCT",
+        "FROM facts AS f |> EXTEND 'branch' AS tag |> JOIN dimensions AS d ON f.k=d.k |> SELECT tag,d.label |> ORDER BY tag",
         "FROM facts |> SELECT v+1 AS x |> WHERE x > 0",
         "FROM facts |> EXTEND v+1 AS x |> WHERE x > 0",
         "FROM facts AS f |> SET v=v+1 |> RENAME v AS adjusted |> DROP k |> WHERE f.k>0 |> ORDER BY adjusted |> SELECT f.v,adjusted",

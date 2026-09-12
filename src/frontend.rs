@@ -778,6 +778,37 @@ impl SetAssignment {
     };
 }
 
+/// Nonnumeric constants own their bounded payload in the prepared descriptor.
+/// They have no input dependencies and never enter the numeric scratch cache.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum Constant {
+    String(crate::text_literal::TextLiteral),
+    Date(DateValue),
+}
+
+impl Constant {
+    pub(crate) fn value(&self) -> crate::Value<'_> {
+        match self {
+            Self::String(value) => crate::Value::String(crate::StringValue::new(value.as_str())),
+            Self::Date(value) => crate::Value::Date(*value),
+        }
+    }
+
+    fn data_type(&self) -> DataType {
+        match self {
+            Self::String(_) => DataType::String,
+            Self::Date(_) => DataType::Date,
+        }
+    }
+
+    fn valid(&self) -> bool {
+        match self {
+            Self::String(value) => value.valid(),
+            Self::Date(value) => DateValue::from_days(value.days_since_unix_epoch()).is_some(),
+        }
+    }
+}
+
 // Inline programs keep one admitted descriptor allocation; boxing each numeric
 // expression would add another fallible owner per assignment.
 #[allow(clippy::large_enum_variant)]
@@ -785,6 +816,7 @@ impl SetAssignment {
 pub(crate) enum Computation {
     Copy(SemanticColumn),
     Numeric(Expression),
+    Constant(Constant),
 }
 
 impl Computation {
@@ -792,6 +824,7 @@ impl Computation {
         let (copy, expression) = match self {
             Self::Copy(column) => (Some(*column), None),
             Self::Numeric(expression) => (None, Some(expression)),
+            Self::Constant(_) => (None, None),
         };
         copy.into_iter()
             .chain(expression.into_iter().flat_map(|expression| {
@@ -810,7 +843,9 @@ impl Computation {
     pub(crate) fn numeric(&self) -> Result<&Expression, Error> {
         match self {
             Self::Numeric(expression) => Ok(expression),
-            Self::Copy(_) => Err(Error::Corrupt("typed copy reached a numeric kernel")),
+            Self::Copy(_) | Self::Constant(_) => Err(Error::Corrupt(
+                "nonnumeric computation reached a numeric kernel",
+            )),
         }
     }
 
@@ -818,6 +853,7 @@ impl Computation {
         match self {
             Self::Copy(column) => column.data_type(),
             Self::Numeric(expression) => expression.data_type,
+            Self::Constant(value) => value.data_type(),
         }
     }
 
@@ -825,6 +861,7 @@ impl Computation {
         match self {
             Self::Copy(column) => column.nullable(),
             Self::Numeric(expression) => expression.nullable(),
+            Self::Constant(_) => false,
         }
     }
 
@@ -833,6 +870,8 @@ impl Computation {
             Self::Copy(column) if available.contains(column) => Ok(()),
             Self::Copy(_) => Err(Error::Corrupt("copy input outside scope")),
             Self::Numeric(expression) => expression.validate(available),
+            Self::Constant(value) if value.valid() => Ok(()),
+            Self::Constant(_) => Err(Error::Corrupt("invalid computed constant")),
         }
     }
 }

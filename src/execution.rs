@@ -38,6 +38,24 @@ const BATCH_ROWS: usize = crate::batch::ROWS;
 const MAX_AGGREGATE_ROWS: u64 =
     crate::catalog::MAX_UNITS as u64 * crate::native_unit::MAX_ROWS as u64;
 
+// A legacy source contains one-byte fixed keys, but projections can introduce
+// bounded UTF-8. Reserve a full batch of the largest admitted literal in that
+// case. This query-wide domain also survives grouping and materialization.
+fn output_text_capacity(query: &crate::PreparedQuery<'_>) -> Option<usize> {
+    if query.snapshot.is_some() {
+        Some(crate::batch::MAX_TEXT_BYTES)
+    } else if query.plan.computed.iter().any(|definition| {
+        matches!(
+            definition.expression,
+            crate::frontend::Computation::Constant(crate::frontend::Constant::String(_))
+        )
+    }) {
+        Some(BATCH_ROWS * crate::text_literal::MAX_LITERAL_BYTES)
+    } else {
+        None
+    }
+}
+
 // The inline result owner includes runtime metadata and physical mappings.
 // Charge its target-specific storage; heap owners retain separate reservations.
 const RESULT_BYTES: u64 = size_of::<QueryResult<'_, '_>>() as u64;

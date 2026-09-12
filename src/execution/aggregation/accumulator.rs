@@ -27,8 +27,8 @@ pub(super) enum TextDomain {
 }
 
 impl TextDomain {
-    pub(super) fn for_storage(native: bool) -> Self {
-        if native { Self::Utf8 } else { Self::FixedKey }
+    pub(super) fn for_values(utf8: bool) -> Self {
+        if utf8 { Self::Utf8 } else { Self::FixedKey }
     }
 
     fn bytes(self) -> usize {

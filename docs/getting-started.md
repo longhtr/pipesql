@@ -90,6 +90,28 @@ result. To follow the implementation, read `bind_extend`, `bind_set`,
 rules](language.md#computed-projection-demand). These transformations share their
 producer's execution controller; only demanded numeric definitions are evaluated.
 
+## Add constant labels and dates
+
+Run [examples/constants.sql](../examples/constants.sql) against the sales database:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/constants.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+Each non-NULL amount receives label `reported` and date `2000-02-29`.
+The rows are north with amount 5, north with 10, then south with 20. Require
+successful exit and `status=queried` before accepting the result.
+
+Follow `projection_expression` in the [parser](../src/frontend/parser.rs) and
+`bind_computation` in the [binder](../src/frontend/binding.rs): binding decodes
+text and folds the calendar operation into an owned constant. The
+[computed-value reader](../src/execution/computed.rs) returns that value without
+numeric scratch, and the output batch copies the text into admitted storage.
+The prepared query does not retain its caller's SQL string.
+
 ## Filter by membership
 
 Run [examples/membership.sql](../examples/membership.sql) against the same sales

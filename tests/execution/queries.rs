@@ -190,3 +190,74 @@ fn legacy_limit_composes_across_batches_and_empty_aggregation() {
     }
     database.close().unwrap();
 }
+
+#[test]
+fn legacy_text_constants_survive_batches_grouping_and_extrema() {
+    let temp = TempDir::new();
+    let input = temp.0.join("lineitem.tbl");
+    fs::write(&input, ROW.repeat(600)).unwrap();
+    let mut database = Database::create(
+        &temp.0.join("database"),
+        pipesql::Config::new(16_000_000, 8_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    database.load_lineitem(&input, &cancel).unwrap();
+    let baseline = database.reserved_memory_bytes();
+    for (sql, expected) in [
+        (
+            "FROM lineitem |> SELECT '雪' AS label,DATE '1970-01-02' AS day",
+            vec![("雪".to_owned(), 1); 600],
+        ),
+        (
+            "FROM lineitem |> EXTEND '雪' AS label |> AGGREGATE COUNT(*) AS n GROUP BY label",
+            vec![("雪".to_owned(), 600)],
+        ),
+        (
+            "FROM lineitem |> EXTEND '雪' AS label |> AGGREGATE MIN(label) AS label,COUNT(*) AS n",
+            vec![("雪".to_owned(), 600)],
+        ),
+        (
+            "FROM lineitem |> AGGREGATE COUNT(*) AS n |> EXTEND '雪' AS label |> SELECT label,n",
+            vec![("雪".to_owned(), 600)],
+        ),
+        (
+            "FROM lineitem |> SELECT '雪' AS label,DATE '1970-01-02' AS day |> LIMIT 2",
+            vec![("雪".to_owned(), 1); 2],
+        ),
+    ] {
+        let prepared = database.prepare(sql).unwrap();
+        let mut result = database.execute(&prepared, &cancel).unwrap();
+        let mut actual = Vec::new();
+        let mut finished = false;
+        for _ in 0..100_000 {
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Rows(batch) => {
+                    for row in 0..batch.len() {
+                        let Some(Value::String(text)) = batch.value(row, 0) else {
+                            panic!("{sql}: text");
+                        };
+                        let number = match batch.value(row, 1) {
+                            Some(Value::Date(day)) => i64::from(day.days_since_unix_epoch()),
+                            Some(Value::Int64(value)) => value,
+                            value => panic!("{sql}: {value:?}"),
+                        };
+                        actual.push((text.as_str().to_owned(), number));
+                    }
+                }
+                QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("{sql}: {error}"),
+            }
+        }
+        assert!(finished, "{sql}");
+        assert_eq!(actual, expected, "{sql}");
+        drop(result);
+        drop(prepared);
+        assert_eq!(database.reserved_memory_bytes(), baseline, "{sql}");
+        assert_eq!(database.reserved_temp_bytes(), 0, "{sql}");
+    }
+}

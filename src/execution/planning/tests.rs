@@ -651,3 +651,47 @@ fn typed_copy_slots_preserve_fresh_identity_without_numeric_storage() {
         );
     }
 }
+
+#[test]
+fn constant_slots_preserve_identity_across_materialization() {
+    let directory = Directory(
+        std::env::temp_dir().join(format!("pipesql-physical-constants-{}", std::process::id())),
+    );
+    let db = Database::create_empty(
+        &directory.0,
+        crate::Config::new(4_000_000, 2_000_000).unwrap(),
+    )
+    .unwrap();
+    db.declare_table(
+        "facts",
+        &[crate::ColumnDeclaration {
+            name: "a",
+            data_type: DataType::Int64,
+            nullable: false,
+        }],
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    let query = db
+        .prepare("FROM facts |> SELECT '雪' AS label,DATE '1970-01-02' AS day |> ORDER BY label")
+        .unwrap();
+    for mutation in 0..5 {
+        let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
+        match mutation {
+            0 => (),
+            1 => plan.pipelines[0].columns[0] = 0,
+            2 => plan.pipelines[0].columns[0] = (MAX_ROW_VALUES + 1) as u8,
+            3 => plan.pipelines[1].columns[0] = MAX_ROW_VALUES as u8,
+            4 => {
+                let id = query.plan.computed[0].column.identity();
+                plan.pipelines[0].slots[id.value() as usize] = 0;
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            validate_physical(&plan, &query, &db, RootState::Empty, 0).is_ok(),
+            mutation == 0,
+            "mutation {mutation}"
+        );
+    }
+}

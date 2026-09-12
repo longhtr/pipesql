@@ -393,7 +393,7 @@ impl<'db> Runtime<'db> {
         if !self.aggregates.is_empty() {
             return Err(Error::Corrupt("aggregate owners already installed"));
         }
-        let native = query.snapshot.is_some();
+        let utf8 = super::output_text_capacity(query).is_some();
         let mut minima = [0; MAX_AGGREGATE_COLUMNS];
         let mut count = 0;
         let mut total = 0_u64;
@@ -408,7 +408,7 @@ impl<'db> Runtime<'db> {
                     return Err(Error::Corrupt("runtime aggregate owner index"));
                 }
                 minima[count] = Aggregation::minimum_bytes(
-                    native,
+                    utf8,
                     query
                         .plan
                         .aggregates
@@ -445,7 +445,7 @@ impl<'db> Runtime<'db> {
                 }
                 self.aggregates.push(Aggregation::open(
                     database,
-                    native,
+                    utf8,
                     &query.plan.aggregates[index],
                     demand,
                     plan.pipelines()[input.index()].output_columns(&query.plan),
@@ -772,8 +772,8 @@ impl<'db> Runtime<'db> {
     }
 }
 
-// Legacy strings are validated fixed keys. Declared STRING outputs reserve the
-// same per-column byte ceiling as their input batches before execution starts.
+// Every producer uses the admitted text domain, including constants introduced
+// above a legacy source and values carried through blocking operators.
 fn producer_output<'db>(
     database: &'db Database,
     query: &PreparedQuery<'_>,
@@ -783,8 +783,8 @@ fn producer_output<'db>(
     let mut text = [None; MAX_ROW_VALUES];
     for (index, column) in pipeline.output_columns(&query.plan).enumerate() {
         types[index] = column.data_type();
-        if types[index] == DataType::String && query.snapshot.is_some() {
-            text[index] = Some(crate::batch::MAX_TEXT_BYTES);
+        if types[index] == DataType::String {
+            text[index] = super::output_text_capacity(query);
         }
     }
     let types = &types[..pipeline.column_count];

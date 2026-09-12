@@ -66,6 +66,44 @@ fn check_loaded_queries(path: &Path) {
         assert!(finished);
         assert_eq!(rows, 1);
     }
+    // Full-width literals exercise owned prepared values and UTF-8
+    // batch admission on the same small stack as ordinary legacy queries.
+    let text = "12345678901234567890123456789012";
+    let sql = format!(
+        "FROM lineitem |> SELECT {}",
+        vec![format!("'{text}'"); 64].join(",")
+    );
+    {
+        let query = database.prepare(&sql).unwrap();
+        let cancel = CancellationToken::new();
+        let mut result = database.execute(&query, &cancel).unwrap();
+        let mut rows = 0;
+        let mut finished = false;
+        for _ in 0..1024 {
+            match result.step() {
+                QueryStep::Rows(batch) => {
+                    assert_eq!(batch.column_count(), 64);
+                    for row in 0..batch.len() {
+                        for column in 0..64 {
+                            let Some(Value::String(actual)) = batch.value(row, column) else {
+                                panic!("literal text");
+                            };
+                            assert_eq!(actual.as_str(), text);
+                        }
+                    }
+                    rows += batch.len();
+                }
+                QueryStep::Progress => (),
+                QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("constant projection: {error}"),
+            }
+        }
+        assert!(finished);
+        assert_eq!(rows, 1);
+    }
     // Constants and aggregate arguments share parser storage, including
     // BETWEEN's two bounds. Exercise their independent programs through
     // the public runtime.

@@ -12,6 +12,9 @@ mod boolean;
 #[path = "catalog_lifecycle/computed.rs"]
 mod computed;
 
+#[path = "catalog_lifecycle/constant_projection.rs"]
+mod constant_projection;
+
 #[path = "catalog_lifecycle/distinct.rs"]
 mod distinct;
 
