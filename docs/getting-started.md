@@ -231,9 +231,26 @@ done
 ```
 
 Arguments are a fresh absolute database path, group count, string bytes, and
-query memory bytes. Setup uses a separate budget and one row per input unit for
-both widths. Timing excludes setup, open, and preparation; it includes execution,
+query memory bytes, followed by optional batch rows (default 1). Setup uses a
+separate budget. The default keeps one row per input unit for both widths.
+Timing excludes setup, open, and preparation; it includes execution,
 full result validation, and destruction of the result owner.
+
+To explore bulk append, add `4` for either width or `256` for eight-byte text:
+
+```sh
+target/release/examples/string_grouping \
+  "$pipesql_strings_dir/bulk-short" 256 8 4000000 256
+target/release/examples/string_grouping \
+  "$pipesql_strings_dir/bulk-wide" 256 65536 16000000 4
+```
+
+Only batch sizes 1, 4, and 256 are accepted. A batch size of 256 requires
+short text; invalid combinations fail before database creation. Each pass ends
+with a smaller batch when necessary. Bulk append retains the rows and their order,
+but changes native input units and therefore setup and query I/O costs. Compare
+whole-process time separately from the printed execution/validation time; a
+batching improvement does not measure a change to the hash implementation.
 
 Short STRING extrema use compact hash storage. In the maintained workload,
 256 groups of eight-byte strings remain in memory at 4 MB. Maximum-width strings

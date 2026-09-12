@@ -235,29 +235,21 @@ checks pass. Owned outputs are removed and changes committed locally without
 publication. Do not repeat this profile without a concrete new workload or
 regression that can change the decision.
 
-## Current: explicit bulk input for the STRING example
+## Completed: explicit bulk input for the STRING example
 
-The cost profile spends roughly 2.7 seconds constructing and running the macOS
-256-group short-text example, while execution/validation takes about 17 ms.
-`create_words` writes each row as a separate native unit. This is a deliberate
-control that keeps batch shape constant across text widths, so preserve the
-one-row default rather than silently changing the existing study.
+The example retains one-row input units by default and accepts bounded batch
+sizes 4 and 256 (256 only for short text). Both descending passes, independently
+expected results, admission, completion, and release remain intact. The
+walkthrough distinguishes the original width study from the bulk-input exercise.
 
-Add an explicit batch-row option to the existing example: a small bounded set
-with four-row batches valid at both widths and a larger short-text-only choice.
-Retain low-pass then high-pass descending key order, independent complete rows,
-completion, and release. Reject unsupported combinations before creating a
-new database. Update the walkthrough to distinguish the width control from the
-bulk-input exercise; add no runtime abstraction or benchmark runner.
-
-Verify all eight existing default profiles and matching bulk cases on macOS and
-native-storage GNU arm64 Linux. Compare three repetitions of one-row versus bulk
-for 256 groups: short text at 4 MB and maximum-width text at 16 MB. Keep initial
-measurement/triage within 20 minutes per platform. Record both setup-inclusive
-and execution/validation time, and attribute changes to input-unit layout.
-Finish required checks, concise evidence, owned-output cleanup, and local commits.
-The consumer inspection is complete; implementation and measurements have not
-started, and no measurement process or scratch output is active.
+Each platform passes 20 matrix profiles, 12 timed executions, five pre-creation
+rejections, and both new Cargo example commands. The macOS wrong-count control
+fails at the row oracle. Formatting, Clippy, and maintenance checks pass.
+The [batch record](evidence.md#explicit-string-append-batches) identifies sources,
+commands, complete timing ranges, and limitations. Bulk input lowers setup-inclusive
+time on both platforms; no hash-runtime change or speedup is claimed. Owned
+outputs are removed and the changes committed locally without publication.
+Do not repeat these measurements without a concrete new question.
 
 ## Applying DuckDB lessons
 

@@ -38,7 +38,8 @@ is `46055588f4fdc21c3c66060e2bc7f0fe463543a6781af13dce03d2773c49cb42`.
 Commit `986b673` retains those exact inputs. That checkpoint finalized only the
 two notes files and verified 487 local documentation links. The later grouping
 example and walkthrough changes are qualified in the
-[grouping cost record](#grouping-capacity-cost); they did not rerun the complete
+[grouping cost record](#grouping-capacity-cost) and
+[explicit batch checks](#explicit-string-append-batches); they did not rerun the complete
 gate. Engine source is unchanged. This identifies source, not reproducible binaries.
 
 The stages took 1,572.247 seconds on macOS and 771.258 seconds on Linux; these
@@ -677,6 +678,75 @@ also fit: charge 3,957,784 at both paths, macOS usable 3,917,040/3,917,360 and L
 3,907,536/3,907,840. The catalog census is now 795 allocations at each pathname
 length, and every refusal prefix executes. Other schemas, allocator histories,
 transient peaks, Windows, and whole-process/RSS memory remain unqualified.
+
+### Explicit STRING append batches
+
+The September 12 example extension preserves one-row input units by default.
+It accepts four-row batches at both widths and 256-row batches for eight-byte
+text. Both passes still visit keys in descending order, with the complete low
+pass preceding the high pass. Fixed caller arrays bound setup storage; append
+admission uses the actual number of batches. Four-group runs with a requested
+256-row batch exercise a partial batch and its validity mask. The complete-row
+oracle remains independent of the append loop.
+
+The [walkthrough](../docs/getting-started.md#measure-string-grouping-costs) owns
+current commands. On each platform, eight default profiles, eight four-row
+profiles, and four short-text 256-row profiles pass, using groups 4/256, widths
+8/65536, and memory budgets 4 MB/80 MB. Every key, extrema, count, completion,
+and final release is checked. Five invalid argument profiles reject zero and
+unsupported batch sizes, oversized wide-text batches, extra arguments, and
+non-UTF-8 batch input before database creation. A macOS caller with deliberately
+wrong expected count rejects the result at the row oracle. Both new walkthrough
+commands also execute through Cargo's release example build on both platforms.
+
+The finite timing comparison runs three repetitions per shape, alternating
+one-row/bulk, bulk/one-row, then one-row/bulk. Each run creates a fresh database
+and checks all results. Groups are fixed at 256; short text uses 4 MB and wide
+text uses 16 MB. Both platforms use the unchanged `986b673` runtime sources,
+Rust 1.98.1, stock release libraries, and the same direct caller flags described
+in the preceding capacity comparison. macOS uses Darwin 25.6.0 and Python
+3.14.7; GNU arm64 Linux uses Python 3.11.2, the retained verification image,
+UID/GID 1000, and native container storage. Platform measurements run sequentially.
+The caller SHA-256 is
+`4edd9b61e93f4008ebcf3fd67e1f558d2a40e6914db113e39ccddab970b9c577`.
+
+Times below are milliseconds, median [minimum, maximum]. Whole-process time is
+parent monotonic time around `check_process.run`, including process startup,
+setup, opening, preparation, validation, and close. The printed query timer
+covers execution, complete validation, and result destruction. Each subprocess
+has a 120-second timeout; none times out. This is a fresh-process, recently
+constructed-input comparison, not a cold-cache or sustained workload study.
+
+| Platform | Text bytes | Batch rows | Whole process ms | Execution/validation ms |
+| --- | ---: | ---: | ---: | ---: |
+| macOS | 8 | 1 | 2678.989 [2655.385, 2702.689] | 16.206 [14.822, 17.635] |
+| macOS | 8 | 256 | 160.809 [153.329, 186.805] | 1.164 [1.133, 1.410] |
+| macOS | 65536 | 1 | 3216.896 [3207.142, 3246.272] | 423.752 [423.641, 426.140] |
+| macOS | 65536 | 4 | 1335.528 [1315.256, 1363.666] | 440.262 [433.319, 442.144] |
+| GNU arm64 Linux | 8 | 1 | 256.461 [254.368, 273.659] | 3.808 [3.808, 3.818] |
+| GNU arm64 Linux | 8 | 256 | 20.131 [18.342, 20.482] | 0.813 [0.782, 0.892] |
+| GNU arm64 Linux | 65536 | 1 | 1020.624 [984.841, 1030.090] | 551.614 [545.634, 554.263] |
+| GNU arm64 Linux | 65536 | 4 | 758.916 [750.234, 776.802] | 546.722 [541.617, 557.392] |
+
+Short-text temporary reservations remain zero. Wide-text runs at 16 MB retain
+67,169,320 sampled temporary bytes with either batch shape. The original matrix
+also retains its spill distinction: only 256 maximum-width groups at 4 MB use
+temporary storage; at 80 MB they fit without it. Reducing input units lowers
+setup-inclusive time on both platforms. Short-text query time also falls; wide
+query times remain close, with a modest increase on macOS. These are changes to
+input layout and I/O, not a hash-runtime speedup. Sampled logical reservations
+are not allocator-usable bytes, cumulative I/O, filesystem blocks, or RSS.
+
+Final timing-record SHA-256 values are
+`2315e3e0d8dff0b0c0148da152954e5f84d64e12496dd0010409f18d64997cd8`
+(macOS) and
+`bc35705ff7e0b14a6682854daf925415c19dead358ad2d107010a5a1ac35a6fb`
+(Linux). Formatting, all-target macOS Clippy, Linux example Clippy, and maintenance
+checks pass (93 tooling tests, 44 independent codec fixtures, and 492 final local
+documentation links). These focused example checks do not rerun or extend the complete
+engine gate. Owned outputs and the verification container are removed; the
+user-owned image and toolchains remain. Windows and broader qualification gaps
+remain unchanged.
 
 ### Grouping capacity cost
 

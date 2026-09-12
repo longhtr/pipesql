@@ -1,5 +1,6 @@
 //! Measure STRING extrema after constructing independently known input.
-//! Arguments: a new absolute database path, group count, text bytes, memory bytes.
+//! Arguments: a new absolute database path, group count, text bytes, memory bytes,
+//! and optional batch rows (default 1).
 
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
@@ -26,9 +27,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let groups = number()?;
     let width = number()?;
     let memory = number()?;
-    if args.next().is_some() || !matches!(groups, 4 | 256) || !matches!(width, 8 | 65_536) {
+    let batch_rows = match args.next() {
+        Some(value) => value
+            .to_str()
+            .ok_or("batch rows must be UTF-8")?
+            .parse::<u64>()?,
+        None => 1,
+    };
+    if args.next().is_some()
+        || !matches!(groups, 4 | 256)
+        || !matches!(width, 8 | 65_536)
+        || !matches!(batch_rows, 1 | 4 | 256)
+        || (batch_rows == 256 && width != 8)
+    {
         return Err(
-            "expected path, groups (4 or 256), text bytes (8 or 65536), and memory bytes".into(),
+            "expected path, groups (4 or 256), text bytes (8 or 65536), memory bytes, and optional batch rows (1, 4, or 256; 256 requires eight-byte text)".into(),
         );
     }
     let config = Config::new(memory, TEMP_BYTES)?;
@@ -36,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let low = "a".repeat(width as usize);
     let high = "z".repeat(width as usize);
     let cancel = CancellationToken::new();
-    create_words(Path::new(&path), groups, &low, &high, &cancel)?;
+    create_words(Path::new(&path), groups, batch_rows, &low, &high, &cancel)?;
     let db = Database::open(Path::new(&path), config)?;
     let query = db.prepare(QUERY)?;
     let baseline = db.reserved_memory_bytes();
@@ -94,7 +107,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     drop(query);
     db.close()?;
-    println!("verified groups={groups} text_bytes={width} memory_limit={memory}");
+    println!(
+        "verified groups={groups} text_bytes={width} memory_limit={memory} batch_rows={batch_rows}"
+    );
     println!("sampled logical bytes: memory={memory_peak}, temporary={temp_peak}");
     println!(
         "execution and validation seconds={:.6}",
@@ -106,6 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn create_words(
     path: &Path,
     groups: u64,
+    batch_rows: u64,
     low: &str,
     high: &str,
     cancel: &CancellationToken,
@@ -130,28 +146,43 @@ fn create_words(
     let mut append = db.begin_append(
         "words",
         AppendLimits {
-            batches: (2 * groups) as u32,
+            batches: (2 * groups.div_ceil(batch_rows)) as u32,
             encoded_bytes: 64_000_000,
         },
         cancel,
     )?;
-    // One row per input unit permits maximum-width text without changing the
-    // workload's batch shape between widths. Each key occurs with low and high.
+    // The default keeps the width study's one-row units. Bulk input preserves
+    // the same descending keys and complete low pass before the high pass.
+    // Four maximum-width strings fit in one native column payload; the larger
+    // batch choice is restricted to short strings before database creation.
+    let mut keys = [0_i64; 256];
     for word in [low, high] {
-        for key in (0..groups).rev() {
+        let words = [word; 256];
+        let mut remaining = groups;
+        while remaining != 0 {
+            let rows = remaining.min(batch_rows) as usize;
+            for (offset, key) in keys[..rows].iter_mut().enumerate() {
+                *key = (remaining - 1 - offset as u64) as i64;
+            }
+            let mut validity = [0xff_u8; 32];
+            let validity_bytes = rows.div_ceil(8);
+            if !rows.is_multiple_of(8) {
+                validity[validity_bytes - 1] = (1 << (rows % 8)) - 1;
+            }
             append.write(
                 &[
                     ColumnInput {
-                        values: ColumnValues::Int64(&[key as i64]),
-                        validity: &[1],
+                        values: ColumnValues::Int64(&keys[..rows]),
+                        validity: &validity[..validity_bytes],
                     },
                     ColumnInput {
-                        values: ColumnValues::String(&[word]),
-                        validity: &[1],
+                        values: ColumnValues::String(&words[..rows]),
+                        validity: &validity[..validity_bytes],
                     },
                 ],
                 cancel,
             )?;
+            remaining -= rows as u64;
         }
     }
     append.commit(cancel)?;
