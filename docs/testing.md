@@ -56,7 +56,7 @@ The [stack contract](resources.md#native-paths-stack-and-io) defines the
 48-KiB request and target-specific reported ceilings: 64 KiB on macOS and
 144 KiB on GNU arm64. The Linux ceiling accounts for the native 128-KiB minimum
 plus bounded runtime overhead; it is not a 64-KiB engine-frame claim.
-Four public catalog, two legacy load/execution, and six internal scenarios run
+Five public catalog, two legacy load/execution, and six internal scenarios run
 with these checks. Their ordinary-thread counterparts preserve the same
 functional expectations. No GNU arm64 stack scenario is ignored.
 

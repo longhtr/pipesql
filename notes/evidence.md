@@ -7,58 +7,70 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 12, 2026 complete gates for `98de11f` passed all 23 stages on
+The September 12, 2026 complete gates for `a315e21` passed all 24 stages on
 macOS and GNU arm64 Linux. Both used Rust 1.98.1, release artifacts, offline
 locked dependencies, and warnings-denied compilation and documentation. macOS
 used arm64 Darwin 25.6.0, Python 3.14.7, and the native Apple toolchain. Linux
 used the unprivileged native-storage environment described below.
 
 The gates covered formatting, maintenance, filesystem ABI, rounding vectors,
-attempt models, Clippy, Rust tests, rustdoc, doctests, aggregate semantics and
-composition, public/CLI allocation, native initialization/synchronization/byte
-I/O, catalog interruption, and independent graph inspection. Maintenance passed
-90 tooling tests, 39 independent codec fixtures, and 468 local documentation
-links. Independent semantics checked 24 cases; composition checked 298 cases.
+attempt models, Clippy, Rust tests, rustdoc, doctests, stock CLI construction,
+aggregate semantics and composition, public/CLI allocation, native
+initialization/synchronization/byte I/O, catalog interruption, and independent
+graph inspection. Maintenance passed 93 tooling tests, 44 independent codec
+fixtures, and 472 local documentation links. Independent semantics checked 24
+cases; composition checked 298 cases. Both semantic campaigns used the same
+unchanged CLI on each platform. Native callers retained isolated build targets.
 
-Each platform executed 498 Rust tests without failures or ignored tests, plus
-one selected lease subprocess excluded from that total. macOS executed 365
-library and 21 filesystem tests; Linux executed 367 library and 19 filesystem
-tests. Shared suites executed 15 CLI, 77 catalog, seven execution, seven
-lifecycle, and six load tests. Four example targets compiled without test bodies;
-that compilation is not runtime example evidence. All eight public union tests,
-including the full-width small-stack case, executed on both platforms.
+Each platform executed 496 ordinary Rust tests without failures or ignored tests.
+macOS executed 364 library and 21 filesystem tests; Linux executed 366 library
+and 19 filesystem tests. Shared suites executed 15 CLI, 76 catalog, seven
+execution, seven lifecycle, and six load tests. The lease test separately ran its
+normal child and intentionally killed its early-teardown child, then verified
+reopening. The former empty child entry and duplicate cleanup regression were
+removed; the shared cleanup regression moved to lifecycle. Four example targets
+compiled without test bodies; that compilation is not runtime example evidence.
+All eight public union tests executed on both platforms.
 
-The 673-file tracked tree supplied 672 manifested inputs. Linux used a read-only
-export. All stage statuses were zero; before/after manifests matched within and
-across both runs. Finalization reported no errors and removed both owned build
-targets. The frozen manifest SHA-256 is
-`95eeb5b6f85b534a3f01f6bca906222346414d30017922c53bc8449ee66399f7`.
-Only the two notes files were finalized afterward. The other 670 inputs have
-fingerprint `548fef6beee787baaf50d151e854a0bde369fdb519ac31c3a85aa554afa9d2cf`.
-To fingerprint the currently checked-out inputs:
+All 24 stage statuses were zero. The 670 manifested inputs matched before/after
+and across both runs; Linux used a read-only export. The frozen manifest SHA-256
+is `1d03c578085298857fa3eb6d850b3b3535538b9f715fe6bfe546ae7938fcf322`.
+Commit `a315e21` retains those exact inputs. The two notes files and the stack-test
+count in `docs/testing.md` and `tests/README.md` were finalized afterward; final
+documentation verification covers those prose-only changes. No runtime source,
+fixture, or tool changed afterward. This identifies source, not reproducible
+binaries.
 
-```sh
-python3 -B tools/source-manifest.py | python3 -c 'import hashlib, sys; print(hashlib.sha256("".join(line for line in sys.stdin if not line.split("  ", 1)[1].startswith("notes/")).encode()).hexdigest())'
-```
+The stages took 1,577.890 seconds on macOS and 822.455 seconds on Linux; these
+are verification costs, not query benchmarks. The respective result-receipt
+SHA-256 values are `ee3582ee8f1d623c23d4ed19a5ef82c2300a3fd703c08fe614a8f54eee9a137d`
+and `c5d9c46a6771f57b295f15c6bb0387726520a0e812410c266b2f5db4da8bb025`.
+Finalization reported no errors and removed owned targets and composition
+databases. Successful logs, exports, the verification container, and remaining
+scratch outputs were removed; the user-owned image and toolchains remain.
+Current callers and fixtures reconstruct cases; hashes do not restore removed
+logs. An earlier Clippy rejection was repaired before these complete runs.
 
-This identifies maintained source, not reproducible binaries. Final documentation
-checks cover the finalized notes. Both platforms ran the declared-table and union
-tutorial commands on fresh native databases. The union query produced north's
-total 25 across four rows and south's total 20 across one row, then reported
-`status=queried` and exited successfully. Owned tutorial databases and targets
-were removed. The earlier frontend walkthrough produced INT64 result 38 on macOS.
+The [finite review](plan.md#completed-testing-and-tooling-cleanup) accounts for
+all maintained testing/tooling areas and consequential removals. Five old/new
+semantic snapshot comparisons preserved exact bytes, including empty input and
+a DOUBLE block crossing. Catalog generation from outside the repository produced
+13 exact files in a fresh directory; negative controls rejected damaged vectors
+and reused output names. No persisted fixture, independent oracle/model, fault
+schedule, or platform exclusion was removed.
 
-The gate stages took 1,624.594 seconds on macOS and 895.841 seconds on Linux;
-these are verification costs, not query benchmarks. The respective result-receipt
-SHA-256 values are `b7c12f315146f51a5046f57d1a3fa7979d95041db320e4adbf84756068e40f0c`
-and `0a088e10e7cecf7255b2fabc3cfa0d2bb2ee12ded930af4279c1f0c1fe0d6ec5`.
-Raw successful logs and exports are disposable observations. Current callers and
-fixtures reconstruct the cases; receipt hashes do not restore removed logs.
+The declared-table and union tutorials last ran on both platforms at `98de11f`
+and are unchanged. The union query produced north's total 25 across four rows and
+south's total 20 across one row, then reported `status=queried` and exited
+successfully. The earlier frontend walkthrough produced INT64 result 38 on macOS.
+These are retained tutorial observations, not reruns during the tooling cleanup.
 
 Run `sh tools/check.sh --output /absolute/new-result-directory` with the
 [documented prerequisites](../docs/testing.md#complete-local-gate). The gate keeps
 stage logs and a JSON receipt, checks before/after source manifests, and removes
-its owned build target. Preserve failure context before disposing of a run.
+its owned build target and composition databases. Preserve failure context before
+disposing of a run. Windows, broader durability, physical memory bounds, and
+sanitizer/concurrency qualification retain their existing limitations.
 
 ## Positional UNION ALL
 

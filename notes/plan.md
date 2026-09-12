@@ -11,8 +11,8 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 23-stage gates for `98de11f` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 498 Rust tests and 298
+The complete 24-stage gates for `a315e21` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 496 Rust tests and 298
 composition cases, plus its applicable native and allocation campaigns. Bounded
 thread scenarios and their ordinary-thread counterparts execute on both platforms,
 including full-width union preparation and execution.
@@ -90,7 +90,7 @@ refusal, snapshots, cancellation, and full-width small-stack execution. The
 [evidence](evidence.md#positional-union-all) records provenance, checks, and limits.
 Do not reopen this milestone without a concrete defect or missing contract.
 
-## Current: testing and tooling cleanup
+## Completed: testing and tooling cleanup
 
 The finite review follows Cargo module inclusion and each Python command's actual
 callers, fixture construction, assertions, and effect/cleanup paths. The reviewed
@@ -119,11 +119,19 @@ removed. Five before/after snapshot-writer comparisons match, including empty
 input and a DOUBLE block crossing. New tooling controls reject damaged schema
 vectors and reused output names; gate controls check artifact ordering/cleanup.
 
-Remaining completion work: finish focused checks, freeze source for complete
-macOS and GNU/Linux gates, reconcile discovery and final navigation, record concise
-evidence within 641,696 bytes, remove owned scratch outputs, and commit reviewed
-changes locally with a clean tree. Do not publish or alter remote refs. The append
-allocation deficit below remains unresolved and queued.
+The final navigation pass and both complete gates pass on frozen implementation
+`a315e21`. Discovery reconciles 496 ordinary Rust tests per platform, with no
+ignored tests; the normal lease child and intentional early teardown run
+separately. Maintenance executes 93 tooling tests and compares 44 independent
+codec fixtures. Both platforms retain 24 semantic and 298 composition cases and
+all applicable native, allocation, interruption, and graph campaigns. Removed
+script/test names have no active consumers. Fixture bytes and oracle/model
+sources are unchanged. The documented generator also runs from outside the
+repository into a fresh output. Final documentation checks cover the corrected
+five-public-stack-scenario map. [Evidence](evidence.md#full-verification-checkpoint)
+records the frozen inputs and costs. Owned outputs are removed; changes are
+committed locally without publication. The append allocation deficit below
+remains unresolved and is the next milestone.
 
 ## Queued: append allocation bounds
 

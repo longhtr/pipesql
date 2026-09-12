@@ -13,7 +13,7 @@
 | [catalog_lifecycle.rs](catalog_lifecycle.rs) | Declared-table suite entry point and shared public fixtures. Contract tests live in its child modules below. |
 
 The catalog, legacy load, and legacy execution suites run on macOS and Linux.
-Four public catalog, two legacy, and six internal scenarios each have an ordinary
+Five public catalog, two legacy, and six internal scenarios each have an ordinary
 thread test and a bounded-thread variant with the same functional expectations.
 Both execute on GNU arm64. [Platform status](../docs/testing.md#platform-status)
 explains the requested size, target-specific reported ceilings, native controls,
