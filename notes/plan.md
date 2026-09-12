@@ -32,6 +32,22 @@ Keep fail-closed behavior. The sharing-layer cause remains unresolved; current
 checkout or diagnostic binary. Reopen causal investigation when new sharing-layer
 evidence can change the disposition.
 
+## Current: plan ownership cleanup
+
+Completed narratives now dominate this working plan. In one finite pass:
+
+1. Check every completed section against its contract/evidence owner and current
+   consumers; retain unique decisions, limitations and reconstruction inputs.
+2. Remove duplicated history, preserving the testing/tooling review's concise
+   dispositions and deletion rationale. Use retained Git revisions for history.
+3. Keep the verified baseline, unresolved qualification and publication limits,
+   and actionable priorities visible. Repair affected navigation and links.
+4. Verify documentation ownership and local links, review and commit locally.
+   Engine behavior and the already-passed full gates remain outside this change.
+
+Initial navigation inspection finds no fragment links into the completed plan
+sections. Evidence and contract links must still be checked before removal.
+
 ## Completed: column transformations
 
 SELECT, EXTEND, SET, DROP, RENAME, and AS form the current bounded
