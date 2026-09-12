@@ -830,6 +830,15 @@ storage. Old diagnostic binaries, host scripts, and raw successful logs are not
 required inputs. Further root-cause work needs evidence about the sharing layer;
 repeatedly passing a simpler probe cannot establish the missing identity premise.
 
+The verifier, fixtures, and contracts are committed in `97a253c`. The 90 tooling
+tests, caller formatting, 39 codec fixtures, and final local documentation links
+pass. Only notes changed after the frozen runtime checks; all other manifested
+inputs match that commit, with SHA-256 `716b5fc787cfbf70f8d263ac9f421c2600e21efb538d0db1aeb17fa018e321f5`.
+The prebuilt nightly standard-library archive hashes are:
+
+- macOS: `1d648294ae1483fce796cb48c40ee6898c3b653d1ce3e7d7aabadbc9f241b7b3`
+- GNU/Linux: `cad6d0959670f358aab642758084db7f4c830afcd788ab8927ad052a03d17d9e`
+
 The maintained [AddressSanitizer diagnostic](../docs/testing.md#qualify-native-sanitizer-observations)
 passes on arm64 macOS and GNU arm64 Linux for the native mutex boundary. Both
 use diagnostic rustc `f248f4038796913873f11ca65b1b901e311c8dae`
