@@ -7,59 +7,98 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 12, 2026 (local time) complete gates for `5a3cb0a` passed all 23
-stages on macOS and GNU arm64 Linux. The macOS environment was arm64 Darwin 25.6.0, Rust 1.98.1,
-Python 3.14.7, and the native Apple toolchain. The Linux environment is identified
-below. Checks used release artifacts, offline locked dependencies, and
-warnings-denied compilation and documentation.
+The September 12, 2026 complete gates for `98de11f` passed all 23 stages on
+macOS and GNU arm64 Linux. Both used Rust 1.98.1, release artifacts, offline
+locked dependencies, and warnings-denied compilation and documentation. macOS
+used arm64 Darwin 25.6.0, Python 3.14.7, and the native Apple toolchain. Linux
+used the unprivileged native-storage environment described below.
 
 The gates covered formatting, maintenance, filesystem ABI, rounding vectors,
 attempt models, Clippy, Rust tests, rustdoc, doctests, aggregate semantics and
 composition, public/CLI allocation, native initialization/synchronization/byte
 I/O, catalog interruption, and independent graph inspection. Maintenance passed
-84 tooling tests, 39 independent codec fixtures, and local documentation links.
-The seed-only graph command previously passed on both platforms; reuse of its
-output directory was rejected. Seed failure propagation and artifact identities
-have tooling regressions independent of engine execution.
+90 tooling tests, 39 independent codec fixtures, and 468 local documentation
+links. Independent semantics checked 24 cases; composition checked 298 cases.
 
-Rust suites executed 480 tests on each platform, with no failed or ignored
-tests. Each suite also executed one selected lease subprocess, excluded from
-these totals. macOS executed 355 library and 21 filesystem tests; Linux executed
-357 library and 19 filesystem tests. The remaining suites are shared. All 17 new
-column-transformation regressions executed on both platforms. The twelve
-bounded-thread scenarios and their ordinary-thread counterparts passed on both
-targets. The independent native stack control and
-the Rust oversized-thread negative control passed. The public directory cleanup
-regression executed, including its isolated unwind control.
+Each platform executed 498 Rust tests without failures or ignored tests, plus
+one selected lease subprocess excluded from that total. macOS executed 365
+library and 21 filesystem tests; Linux executed 367 library and 19 filesystem
+tests. Shared suites executed 15 CLI, 77 catalog, seven execution, seven
+lifecycle, and six load tests. Four example targets compiled without test bodies;
+that compilation is not runtime example evidence. All eight public union tests,
+including the full-width small-stack case, executed on both platforms.
 
-Both gates used matching frozen inputs from 666 tracked files, containing 665
-manifested inputs. Linux used a read-only export of the tracked tree.
-All stage statuses were zero, before/after manifests matched across both runs,
-and finalization reported no errors and removed owned build targets. The frozen
-manifest SHA-256 is
-`8643bbf6cca4891896f0dd99a8e5ce1a47b9fc56f7e03eaef433fabcd7712cee`.
-At that checkpoint, only the two notes files were finalized afterward. The
-other 663 manifested inputs have fingerprint
-`a19d6354ea9d020755880b7c475e3621a370ef883106cd7c175e184314971665`.
+The 673-file tracked tree supplied 672 manifested inputs. Linux used a read-only
+export. All stage statuses were zero; before/after manifests matched within and
+across both runs. Finalization reported no errors and removed both owned build
+targets. The frozen manifest SHA-256 is
+`95eeb5b6f85b534a3f01f6bca906222346414d30017922c53bc8449ee66399f7`.
+Only the two notes files were finalized afterward. The other 670 inputs have
+fingerprint `548fef6beee787baaf50d151e854a0bde369fdb519ac31c3a85aa554afa9d2cf`.
 To fingerprint the currently checked-out inputs:
 
 ```sh
 python3 -B tools/source-manifest.py | python3 -c 'import hashlib, sys; print(hashlib.sha256("".join(line for line in sys.stdin if not line.split("  ", 1)[1].startswith("notes/")).encode()).hexdigest())'
 ```
 
-This fingerprint identifies maintained source, not reproducible binaries. Final
-documentation checks cover the finalized notes. At the earlier `827cad5` checkpoint, the declared-table example ran
-on both platforms and printed `north total=15 rows=3 present=2` and
-`south total=20 rows=1 present=1`. The frontend walkthrough also produced its
-complete INT64 result, 38, on macOS. The current gate stages took 1,553 seconds on macOS and
-834 seconds on Linux; these are verification costs, not query benchmarks.
-Raw successful logs and retired source exports are not required inputs; current
-callers and fixtures reconstruct the generated cases.
+This identifies maintained source, not reproducible binaries. Final documentation
+checks cover the finalized notes. Both platforms ran the declared-table and union
+tutorial commands on fresh native databases. The union query produced north's
+total 25 across four rows and south's total 20 across one row, then reported
+`status=queried` and exited successfully. Owned tutorial databases and targets
+were removed. The earlier frontend walkthrough produced INT64 result 38 on macOS.
+
+The gate stages took 1,624.594 seconds on macOS and 895.841 seconds on Linux;
+these are verification costs, not query benchmarks. The respective result-receipt
+SHA-256 values are `b7c12f315146f51a5046f57d1a3fa7979d95041db320e4adbf84756068e40f0c`
+and `0a088e10e7cecf7255b2fabc3cfa0d2bb2ee12ded930af4279c1f0c1fe0d6ec5`.
+Raw successful logs and exports are disposable observations. Current callers and
+fixtures reconstruct the cases; receipt hashes do not restore removed logs.
 
 Run `sh tools/check.sh --output /absolute/new-result-directory` with the
 [documented prerequisites](../docs/testing.md#complete-local-gate). The gate keeps
 stage logs and a JSON receipt, checks before/after source manifests, and removes
 its owned build target. Preserve failure context before disposing of a run.
+
+## Positional UNION ALL
+
+The pinned GoogleSQL parser and analyzer fixtures are
+[`pipe_set_operation.test`](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/parser/testdata/pipe_set_operation.test)
+and the corresponding
+[analyzer fixture](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/analyzer/testdata/pipe_set_operation.test).
+Their SHA-256 values are `444ef8e948a1f1c9515c29760d63073bd9c9e045b311252bd4c5a605b1401751`
+and `4ba1033c2e770b5e7df93fb35cb476fa1b41a94ba36292ba84a9d624073dea3f`.
+The same revision's `resolver_query.cc` establishes argument scope, positional
+width checks, fresh outputs, first-input names, and removal of input ranges.
+GoogleSQL supports common-supertype coercion; PipeSQL's identical-type restriction
+is local. This is source/fixture inspection, not an upstream analyzer execution.
+
+The [language contract](../docs/language.md#union-all) records the bounded local
+profile. Reduced parser, binding, physical-plan, runtime, and public SQL tests
+keep independent expectations for positional names and identities, types and
+NULLability, scope, nested branches, transforms, joins, grouping, DISTINCT,
+ordering, LIMIT, demanded overflow spans, typed bytes, and pinned snapshots.
+Semantic and physical mutation tests reject corrupt mappings independently.
+
+Both full gates execute the 64-source-column and 64-output-column boundaries,
+including the small-stack path. Exact preparation and execution admission checks
+refuse one byte short and release reservations; execution refusal precedes source
+I/O even for LIMIT 0. Forced sorting/grouping spill, temporary-space refusal,
+cancellation at each scheduled prefix, and partial/full replay retain their
+independent results and release checks. Replay visits only previously initialized
+branches, preserving unvisited aggregates when a LIMIT ends a prefix.
+
+The public allocation caller composes typed union, sorting, and COUNT. Both
+platforms pass all 790 catalog refusal prefixes and the healthy control on short
+and 384-byte paths, including union preparation, execution, and stepping
+refusals, healed reopen, and retry. The unchanged census bound is 800. This is
+observed allocation coverage, not a whole-process memory guarantee.
+
+The broad development debug run aborted on a small-stack test; it is not passing
+evidence. The required release-profile gates pass with unchanged stack ceilings.
+No persistent format or publication algorithm changed. Linux's two Darwin ACL
+cells, Windows, broader filesystem durability, allocator-usable memory bounds,
+and sanitizer coverage retain their existing qualification limits.
 
 ## Column transformation semantics
 
@@ -94,10 +133,11 @@ not a performance improvement. The unchanged small-stack regression exposed
 stack growth during preparation. Allocating the admitted plan in a separate
 construction frame before binding repaired that failure.
 
-The complete gates above cover the final implementation, including all 298
-independent composition cases. The allocation caller composes EXTEND, SET, DROP,
-and RENAME against its unchanged expected rows; both platforms pass all 723
-catalog refusal prefixes and the healthy control on short and 384-byte paths.
+The column-transformation gates at `5a3cb0a` covered all 298 independent
+composition cases. Their allocation caller composed EXTEND, SET, DROP, and RENAME
+against unchanged expected rows; both platforms passed all 723 catalog refusal
+prefixes and the healthy control on short and 384-byte paths. The current union
+checkpoint above extends that caller and records its larger census.
 Cancellation, exact admission refusal, invalid scope/identity controls, typed
 copies, and the 65-value sorting regression execute in the Rust suites.
 
@@ -297,7 +337,7 @@ gate sets warnings-denied Rust and documentation flags. Keep database/output
 directories separate from a host-shared source mount.
 
 The September 12 run passed all 23 stages on the same frozen inputs described
-above. It executed 463 Rust tests, with no ignored tests and one
+above. It executed 498 Rust tests, with no ignored tests and one
 additional selected lease-subprocess execution. Both platforms passed 547 CLI
 allocation-prefix cases, 83 parser control/deny pairs, ambiguous publication
 resolving to aborted and durable outcomes, and closed/broken output sinks.

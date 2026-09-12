@@ -11,10 +11,12 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 23-stage gates for `5a3cb0a` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 480 Rust tests and 298
-composition cases, plus its applicable native and allocation campaigns. All twelve bounded-thread scenarios and their ordinary-thread
-counterparts execute on both platforms, with explicit target-specific ceilings.
+The complete 23-stage gates for `98de11f` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 498 Rust tests and 298
+composition cases, plus its applicable native and allocation campaigns. Bounded
+thread scenarios and their ordinary-thread counterparts execute on both platforms,
+including full-width union preparation and execution.
+Target-specific ceilings remain explicit.
 Two Darwin ACL-specific allocation cells remain excluded on Linux. Windows remains
 unfinished. The [platform matrix](../docs/testing.md#platform-status) distinguishes
 implementation, execution, and qualification; [evidence](evidence.md) records the
@@ -73,73 +75,37 @@ other native boundaries, Windows, and general race freedom remain unfinished.
 The [evidence](evidence.md#platform-and-sanitizer-limitations) records the limits.
 Do not repeat this investigation without a concrete new report or affected change.
 
-## Active: positional UNION ALL
+## Completed: positional UNION ALL
 
-Finish and qualify the implemented positional union profile from baseline
-`fc94fa1`. The [language contract](../docs/language.md#union-all) owns accepted
-syntax, correspondence, names, types, scope, ordering, and demand. The
-[resource contract](../docs/resources.md#union-all-admission) owns admission and
-replay. The [tutorial](../docs/getting-started.md#combine-pipeline-results) follows
-the implementation through a working sales query.
+The [language contract](../docs/language.md#union-all) owns positional syntax,
+names, types, scope, ordering, and demand. The runtime streams admitted branches
+through one output batch using the existing scheduler. Independent semantic and
+physical validators check mappings and graph edges. No whole-result union spool
+or second query pipeline was added.
 
-The parser uses bounded child continuations and normalizes arguments to binary
-nodes. Admitted semantic descriptors assign identities to positions and retain
-both input mappings. Independent semantic and physical validators check these
-mappings and graph edges. The runtime streams branches through one output batch
-and uses the existing scheduler; replay resets visited branches on demand.
-There is no full-result union spool or second query pipeline.
+The complete macOS and GNU/Linux gates pass on frozen implementation `98de11f`.
+All eight public union tests execute on both platforms, including forced spill,
+refusal, snapshots, cancellation, and full-width small-stack execution. The
+[tutorial](../docs/getting-started.md#combine-pipeline-results) runs on both;
+[evidence](evidence.md#positional-union-all) records provenance, checks, and limits.
+Do not reopen this milestone without a concrete defect or missing contract.
 
-The pinned GoogleSQL parser and analyzer fixtures are
-[`pipe_set_operation.test`](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/parser/testdata/pipe_set_operation.test)
-and the corresponding
-[analyzer fixture](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/analyzer/testdata/pipe_set_operation.test).
-Their SHA-256 values are `444ef8e948a1f1c9515c29760d63073bd9c9e045b311252bd4c5a605b1401751`
-and `4ba1033c2e770b5e7df93fb35cb476fa1b41a94ba36292ba84a9d624073dea3f`.
-The same revision's `resolver_query.cc` establishes argument scope, positional
-width checks, fresh outputs, first-input names, and removal of input ranges.
-GoogleSQL supports common-supertype coercion; PipeSQL's identical-type restriction
-is local. This is source/fixture inspection, not an upstream analyzer execution.
+## Next: append allocation bounds
 
-Development verification completed:
+The [ownership measurements](evidence.md#attribution-of-composed-memory) show a
+macOS append whose allocator-usable extents exceed its logical charge by 7,615
+bytes. Reproduce the deficit on current inputs, trace the responsible allocations,
+and repair append admission with a justified bound before allocation or effects.
+Preserve publication outcomes, refusal, cancellation, and physical-release order.
+Do not infer a whole-process cap from fixing one owner or silently increase every
+budget by an unexplained constant.
 
-- A macOS release-profile checkpoint passed 489 Rust tests and the selected lease
-  subprocess before subsequent tests were added. The broad debug run aborted on
-  a small-stack test; it is not passing evidence. Release stack limits are unchanged.
-- Focused tests cover positional duplicates, fresh identities, NULLability, scope,
-  nested branches, transforms, joins, grouping, DISTINCT, ordering, LIMIT, demanded
-  overflow spans, all scalar types, snapshots, cancellation, and partial/full replay.
-  Independent mutations reject invalid semantic and physical mappings and edges.
-- Source-pool and 64-column output boundaries pass on ordinary and small-stack
-  threads. Exact prepared/execution admission rejects one byte short and releases
-  reservations; execution refusal precedes source I/O, including for LIMIT 0.
-- Forced sorting/grouping spill and temporary-space refusal preserve results and
-  release owners. The allocation campaign includes a typed union/sort/count query
-  and retries: both path lengths pass every prefix of the 790-allocation census,
-  including required union preparation, execution, and stepping refusals.
-- The tutorial produces its documented two groups, completes successfully, and
-  removes its temporary database. Maintenance passes 90 tooling tests, 39 codec
-  fixtures, and 466 local links. Release Clippy and formatting pass.
-
-These checks establish development progress, not a completed gate on final inputs.
-The existing GNU arm64 image provides the pinned compiler, Python, GNU time, and
-unprivileged execution. Database files must use native container storage, not the
-host-shared mount with the documented identity qualification limit.
-
-Next actions:
-
-1. Freeze the reviewed implementation commit for complete macOS and GNU/Linux
-   gates. Reconcile discovered tests, exclusions, and before/after input manifests.
-   Preserve failures and repair prerequisites before accepting either gate.
-2. Verify the tutorial on Linux and complete required independent/public/native
-   campaigns. The legacy independent composition corpus remains separate;
-   union's independent expectations live in public Rust contract tests.
-3. Consolidate final provenance and limitations in existing evidence, replace this
-   development checklist with the remaining product work, and commit locally.
-   Remove owned outputs and finish with a clean tree. Retained evidence must stay
-   within 641,696 bytes. Do not push or modify remote refs.
-
-Do not add DISTINCT set operations, name-based correspondence, unrelated
-functions, speculative optimization, or another workflow framework.
+Start with the existing ownership caller on macOS and GNU/Linux. Keep independent
+allocation attribution and wrong-attribution controls. Extend the relevant append
+boundary/refusal cases, document the supported allocator/platform premises, and
+complete checks required by retained production changes. If the measurements
+invalidate the proposed cause, update this plan before expanding the repair.
+Do not add query features, a new allocator framework, or unrelated optimizations.
 
 ## Applying DuckDB lessons
 
