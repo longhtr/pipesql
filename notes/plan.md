@@ -338,6 +338,34 @@ repeated healthy query execution in the catalog healing path a concrete candidat
 for the next bounded tooling improvement; establish its protected contracts
 before removing any repetition.
 
+## Current: catalog allocation healing witnesses
+
+The completed allocation stage costs 1,033.072 seconds on macOS and 601.897
+seconds on GNU arm64 Linux. After `finish` disarms observation, the catalog caller
+reopens and resolves receipts, checks a typed scan, reruns nine healthy query
+shapes, and verifies a writer. The complete faulted query sequence and its
+same-handle checks already run before `finish`. Review these distinct owners;
+do not remove a protected assertion merely to fit a shorter deadline.
+
+Finite worklist:
+
+1. Map post-reopen assertions to persisted typed values, receipts, scratch reuse
+   and writer usability. The current basic scan omits `measure`; aggregate
+   checks still carry its value/NULL expectations. Transfer that coverage before
+   removing healthy aggregate reruns.
+2. Replace only redundant post-reopen query repetition with locally readable,
+   independent typed-result and scratch/writer witnesses. Preserve the armed
+   sequence, every prefix and healthy control, all required phase observations,
+   continuing-refusal destruction, and same-handle debt behavior. Add no runner
+   framework or engine/resource-limit change.
+3. Challenge the revised healed-result/debt oracle with meaningful negative
+   controls. Reconcile the short/long allocation censuses and outcomes, then
+   measure the complete maintained campaign on unchanged engine inputs on both
+   platforms with isolated native outputs.
+4. Run consequential tooling/campaign checks, update the existing maps and
+   concise evidence, remove owned outputs, and commit verified changes locally.
+   Preserve the image/toolchains and publication restrictions.
+
 ## Applying DuckDB lessons
 
 DuckDB's published designs inform the following work. These are PipeSQL design
