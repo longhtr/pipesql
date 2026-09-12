@@ -22,7 +22,7 @@ impl Temp {
 
 impl Drop for Temp {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        crate::test_cleanup::directory(&self.0);
     }
 }
 

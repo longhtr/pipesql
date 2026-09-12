@@ -314,8 +314,10 @@ parent revision is recorded when available. Retain the exact checked commit or a
 reconstructing patch for uncommitted inputs; runtime workloads need separate
 input records.
 
-The gate uses an isolated Cargo target and removes it after completion or
-handled failure. Native callers also own separate temporary targets. Preserve
+The gate uses an isolated Cargo target. After the Cargo test/doc stages it builds
+one stock CLI for both semantic campaigns, with no intervening build. It removes
+that target and the composition databases after completion or handled failure.
+Native callers own separate temporary targets. Preserve
 useful receipts and failing cases according to the engineering guide, then
 remove old run directories. Parallel campaign execution still requires
 shared-resource bounds and descendant-cleanup evidence; see the [campaign

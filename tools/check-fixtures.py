@@ -8,10 +8,22 @@ checks provenance drift, not recovery safety or the full corruption campaigns.
 import runpy
 from pathlib import Path
 
+import catalog_fixtures
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def check_fixtures() -> None:
+def compare(directory, expected):
+    """Check the complete file set and exact independent bytes without writing."""
+    assert {path.name for path in directory.iterdir()} == set(expected), directory
+    for name, generated in expected.items():
+        path = directory / name
+        assert path.is_file() and not path.is_symlink(), path
+        assert path.read_bytes() == generated, path
+    return len(expected)
+
+
+def check_fixtures(fixtures=ROOT / "tests/fixtures") -> None:
     if not __debug__:
         raise SystemExit(
             "fixture oracles require Python assertions (no -O/PYTHONOPTIMIZE)"
@@ -41,48 +53,18 @@ def check_fixtures() -> None:
         }
         if revision == 2:
             expected["EMPTY.UNIT"] = probe["encode_unit"](0)[0]
-        fixtures = ROOT / "tests/fixtures" / directory
-        assert {path.name for path in fixtures.iterdir()} == set(expected), directory
-        for name, generated in expected.items():
-            path = fixtures / name
-            assert not path.is_symlink() and path.is_file(), path
-            assert path.stat().st_size == len(generated), path
-            assert path.read_bytes() == generated, path
-            count += 1
+        count += compare(fixtures / directory, expected)
     current = runpy.run_path(str(ROOT / "tools/snapshot-fixtures.py"))["vectors"]()
-    directory = ROOT / "tests/fixtures/current-single-table-format"
-    assert {path.name for path in directory.iterdir()} == set(current)
-    for name, generated in current.items():
-        path = directory / name
-        assert (
-            path.is_file() and not path.is_symlink() and path.read_bytes() == generated
-        ), path
-        count += 1
+    count += compare(fixtures / "current-single-table-format", current)
     candidate = runpy.run_path(str(ROOT / "tools/candidate-fixtures.py"))["vectors"]
     for version, name in [
         (3, "rejected-multi-table-format"),
         (5, "candidate-multi-table-format"),
     ]:
         expected = candidate(version)
-        directory = ROOT / "tests/fixtures" / name
-        assert {path.name for path in directory.iterdir()} == set(expected)
-        for name, generated in expected.items():
-            path = directory / name
-            assert (
-                path.is_file()
-                and not path.is_symlink()
-                and path.read_bytes() == generated
-            ), path
-            count += 1
-    catalog = runpy.run_path(str(ROOT / "tools/catalog-root-fixture.py"))["expected"]()
-    directory = ROOT / "tests/fixtures/catalog-roots"
-    assert {path.name for path in directory.iterdir()} == set(catalog)
-    for name, generated in catalog.items():
-        path = directory / name
-        assert (
-            path.is_file() and not path.is_symlink() and path.read_bytes() == generated
-        ), path
-        count += 1
+        count += compare(fixtures / name, expected)
+    for name, expected in catalog_fixtures.vectors().items():
+        count += compare(fixtures / name, expected)
     print(f"independently reproduced codec fixtures={count}")
 
 

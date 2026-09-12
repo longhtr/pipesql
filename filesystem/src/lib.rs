@@ -424,3 +424,7 @@ fn validate_name(name: &[u8]) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/support/cleanup.rs"]
+mod test_cleanup;

@@ -19,10 +19,16 @@ Both execute on GNU arm64. [Platform status](../docs/testing.md#platform-status)
 explains the requested size, target-specific reported ceilings, native controls,
 and limits of the evidence.
 
-Public fixture directories report cleanup failures after successful scenarios and
-preserve the original panic during unwinding. The catalog fixture regression
+The four public suites share [directory ownership](support/mod.rs).
+Public and internal fixtures use the same test-only [cleanup function](support/cleanup.rs),
+which reports cleanup failures after successful scenarios and preserves the
+original panic during unwinding. The lifecycle fixture regression
 checks successful cleanup, an already removed directory, a real cleanup failure,
 and a subprocess unwind so a second panic cannot abort the parent harness.
+
+The process-lease test runs its own child branch under an exact selection and
+requires a readiness marker. It checks both normal release and early child
+teardown; no separate child-only test reports an empty success in an ordinary run.
 
 ## Legacy public contracts
 

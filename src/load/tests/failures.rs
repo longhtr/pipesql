@@ -194,7 +194,7 @@ fn ambiguous_publication_retains_reservation_until_recovery() {
 }
 
 #[test]
-fn review_aborted_attempt_must_not_resolve_to_a_later_load() {
+fn aborted_attempt_never_resolves_to_a_later_load() {
     let temp = TempDir::new();
     let input = temp.0.join("input.tbl");
     fs::write(&input, row("1", "100", "0.08", "1994-01-01")).unwrap();

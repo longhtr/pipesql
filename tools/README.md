@@ -67,10 +67,15 @@ not overwrite fixtures.
 
 | Encoders | Bytes owned |
 | --- | --- |
-| `snapshot-fixtures.py`, `candidate-fixtures.py` | Current legacy and retired/rejected snapshot vectors. |
-| `catalog-root-fixture.py`, `catalog-fixture.py`, `catalog-schema-fixture.py` | Catalog namespace roots, catalogs, and schemas. |
-| `table-data-fixture.py`, `native-unit-fixture.py` | Table indexes and typed units. |
-| `aggregate-fixtures.py` | Independently encoded semantic campaign inputs. |
+| `snapshot-fixtures.py` | Current legacy vectors and the common snapshot writer for both semantic campaigns. Expected query results stay in each campaign. |
+| `candidate-fixtures.py` | Retired/rejected multi-table vectors. |
+| `catalog_fixtures.py` | Schemas, catalogs, typed units, table indexes, and namespace roots. All 13 vectors are compared by the fixture gate. |
+
+To generate catalog vectors for inspection, run `python3 -B
+tools/catalog_fixtures.py /absolute/new-vector-directory`. The destination must
+not exist; the command does not overwrite committed fixtures. Remove that owned
+directory after comparison. `test-fixtures.py` checks exact generation, output
+refusal, and that damage to each catalog/schema vector fails the ordinary check.
 
 The independent legacy encoders and Q1 comparator live in
 [`oracles/`](oracles/README.md). Historical manifests must be replayed at their
@@ -158,6 +163,9 @@ that it is executable, print its SHA-256 identity, and require that identity to
 remain unchanged through a successful campaign. The composition checker also
 requires a new work directory with a supplied CLI; it refuses an existing one.
 Without supplied artifacts, both checkers build in a fresh temporary target.
+The full gate builds one stock CLI after its Cargo checks and supplies it to both
+campaigns sequentially. Each campaign checks its hash before and after execution.
+The gate removes the shared target and composition databases during finalization.
 
 ## Maintaining a tool
 

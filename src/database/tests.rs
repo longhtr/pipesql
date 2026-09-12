@@ -26,7 +26,7 @@ impl TempDir {
 
 impl Drop for TempDir {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        crate::test_cleanup::directory(&self.0);
     }
 }
 
@@ -242,7 +242,7 @@ fn opened_fence_checks_link_ownership_again_before_recovery() {
 }
 
 #[test]
-fn review_reopen_must_retry_an_interrupted_repair_barrier() {
+fn reopen_retries_an_interrupted_repair_barrier() {
     let temp = TempDir::new();
     let path = temp.database();
     Database::create(&path, config()).unwrap().close().unwrap();

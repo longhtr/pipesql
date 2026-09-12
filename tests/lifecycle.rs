@@ -1,37 +1,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
 use pipesql::{Config, Database, Error};
 
-static NEXT_TEMP: AtomicU64 = AtomicU64::new(1);
 const WAIT_STEPS: usize = 500;
 
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new() -> Self {
-        let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("pipesql-public-{}-{id}", std::process::id()));
-        fs::create_dir(&path).expect("create public test directory");
-        Self(path)
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        if let Err(error) = std::fs::remove_dir_all(&self.0) {
-            // Preserve the test failure during unwinding; report cleanup failures
-            // when the scenario itself completed successfully.
-            if error.kind() != std::io::ErrorKind::NotFound && !std::thread::panicking() {
-                panic!("remove test directory {}: {error}", self.0.display());
-            }
-        }
-    }
-}
+mod support;
+use support::Directory as TempDir;
 
 fn config() -> Config {
     Config::new(1_048_576, 1_048_576).expect("test config")
@@ -47,57 +25,101 @@ fn wait_for(path: &Path) {
     panic!("timed out waiting for child marker");
 }
 
-#[test]
-fn cross_process_lock_child() {
-    let Some(database) = std::env::var_os("PIPESQL_LOCK_CHILD_DATABASE") else {
-        return;
-    };
-    let ready = PathBuf::from(std::env::var_os("PIPESQL_LOCK_CHILD_READY").expect("ready path"));
-    let release =
-        PathBuf::from(std::env::var_os("PIPESQL_LOCK_CHILD_RELEASE").expect("release path"));
-    let database = Database::open(Path::new(&database), config()).expect("child opens database");
-    fs::write(&ready, []).expect("publish child readiness");
-    wait_for(&release);
-    database.close().expect("child closes database");
+// The lease child starts no subprocesses. Reap it before its database directory
+// is removed, including when a parent assertion fails before sending release.
+struct LeaseChild(std::process::Child);
+
+impl Drop for LeaseChild {
+    fn drop(&mut self) {
+        let cleanup = (|| -> std::io::Result<()> {
+            if self.0.try_wait()?.is_none() {
+                self.0.kill()?;
+                self.0.wait()?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = cleanup
+            && !std::thread::panicking()
+        {
+            panic!("reap lease child: {error}");
+        }
+    }
 }
 
 #[test]
 fn separate_process_excludes_canonical_and_alias_opens() {
+    const CHILD: &str = "PIPESQL_LOCK_CHILD_DATABASE";
+    if let Some(database) = std::env::var_os(CHILD) {
+        let ready = PathBuf::from(std::env::var_os("PIPESQL_LOCK_CHILD_READY").unwrap());
+        let release = PathBuf::from(std::env::var_os("PIPESQL_LOCK_CHILD_RELEASE").unwrap());
+        let database = Database::open(Path::new(&database), config()).unwrap();
+        fs::write(&ready, []).expect("publish child readiness");
+        wait_for(&release);
+        database.close().expect("child closes database");
+        return;
+    }
+
     let temp = TempDir::new();
     let database_path = temp.0.join("database");
     let alias_path = temp.0.join("alias");
-    let ready = temp.0.join("ready");
-    let release = temp.0.join("release");
     Database::create(&database_path, config())
         .expect("create")
         .close()
         .expect("close");
     std::os::unix::fs::symlink(&database_path, &alias_path).expect("create alias");
 
-    let mut child = Command::new(std::env::current_exe().expect("test executable"))
-        .arg("--exact")
-        .arg("cross_process_lock_child")
-        .arg("--nocapture")
-        .env("PIPESQL_LOCK_CHILD_DATABASE", &database_path)
-        .env("PIPESQL_LOCK_CHILD_READY", &ready)
-        .env("PIPESQL_LOCK_CHILD_RELEASE", &release)
-        .spawn()
-        .expect("spawn lock child");
-    wait_for(&ready);
-    assert!(matches!(
-        Database::open(&database_path, config()),
-        Err(Error::Locked)
-    ));
-    assert!(matches!(
-        Database::open(&alias_path, config()),
-        Err(Error::Locked)
-    ));
-    fs::write(&release, []).expect("release child");
-    assert!(child.wait().expect("wait for child").success());
-    Database::open(&alias_path, config())
-        .expect("open after child")
-        .close()
-        .expect("close after child");
+    for release_normally in [true, false] {
+        let ready = temp.0.join(format!("ready-{release_normally}"));
+        let release = temp.0.join(format!("release-{release_normally}"));
+        let mut child = LeaseChild(
+            Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "separate_process_excludes_canonical_and_alias_opens",
+                    "--nocapture",
+                ])
+                .env(CHILD, &database_path)
+                .env("PIPESQL_LOCK_CHILD_READY", &ready)
+                .env("PIPESQL_LOCK_CHILD_RELEASE", &release)
+                .spawn()
+                .expect("spawn lock child"),
+        );
+        for _ in 0..WAIT_STEPS {
+            assert!(
+                child.0.try_wait().unwrap().is_none(),
+                "lease child exited before release"
+            );
+            if ready.exists() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            ready.exists(),
+            "lease child never reached the selected test"
+        );
+        for path in [&database_path, &alias_path] {
+            assert!(matches!(Database::open(path, config()), Err(Error::Locked)));
+        }
+        if release_normally {
+            fs::write(&release, []).expect("release child");
+            let mut status = None;
+            for _ in 0..WAIT_STEPS {
+                status = child.0.try_wait().unwrap();
+                if status.is_some() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            assert!(status.expect("lease child did not finish").success());
+        }
+        drop(child);
+        // Also proves early teardown released the lease without a release marker.
+        Database::open(&alias_path, config())
+            .expect("open after child cleanup")
+            .close()
+            .expect("close after child cleanup");
+    }
 }
 
 #[test]
@@ -214,4 +236,61 @@ fn database_path_capacity_is_admitted_before_creation_and_retained_until_close()
     let database = Database::open(&path, config()).unwrap();
     assert_eq!(database.reserved_memory_bytes(), resident);
     database.close().unwrap();
+}
+
+#[test]
+fn fixture_cleanup_preserves_failure_context() {
+    const CHILD: &str = "PIPESQL_PUBLIC_DIRECTORY_UNWIND";
+    if std::env::var_os(CHILD).is_some() {
+        let directory = TempDir::new();
+        let path = directory.0.clone();
+        std::fs::remove_dir(&path).unwrap();
+        std::fs::write(&path, b"not a directory").unwrap();
+        let original = std::panic::catch_unwind(|| {
+            let _directory = directory;
+            panic!("original scenario failure");
+        })
+        .unwrap_err();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(
+            original.downcast_ref::<&str>(),
+            Some(&"original scenario failure")
+        );
+        std::process::exit(74);
+    }
+
+    let directory = TempDir::new();
+    let path = directory.0.clone();
+    drop(directory);
+    assert!(!path.exists());
+
+    let missing = TempDir::new();
+    std::fs::remove_dir(&missing.0).unwrap();
+    drop(missing);
+
+    let directory = TempDir::new();
+    let path = directory.0.clone();
+    std::fs::remove_dir(&path).unwrap();
+    std::fs::write(&path, b"not a directory").unwrap();
+    let failure = std::panic::catch_unwind(|| drop(directory)).unwrap_err();
+    std::fs::remove_file(path).unwrap();
+    assert!(
+        failure
+            .downcast_ref::<String>()
+            .unwrap()
+            .contains("remove test directory")
+    );
+
+    // A cleanup panic during unwinding would abort the child, not this harness.
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "fixture_cleanup_preserves_failure_context"])
+        .env(CHILD, "1")
+        .output()
+        .unwrap();
+    assert_eq!(
+        child.status.code(),
+        Some(74),
+        "{}",
+        String::from_utf8_lossy(&child.stderr)
+    );
 }

@@ -73,7 +73,7 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).unwrap();
+        crate::test_cleanup::directory(&self.0);
     }
 }
 

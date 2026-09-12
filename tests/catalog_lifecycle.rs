@@ -53,37 +53,13 @@ use pipesql::{
     CommitResolution, Config, DataType, Database, DateValue, Error, QueryResult, QueryStep, Value,
 };
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
-struct Directory(PathBuf);
+mod support;
+use support::Directory;
 
 impl Directory {
-    fn new() -> Self {
-        let path = std::env::temp_dir().join(format!(
-            "pipesql-public-catalog-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-
     fn database(&self) -> PathBuf {
         self.0.join("db")
-    }
-}
-
-impl Drop for Directory {
-    fn drop(&mut self) {
-        if let Err(error) = std::fs::remove_dir_all(&self.0) {
-            // Preserve the test failure during unwinding; report cleanup failures
-            // when the scenario itself completed successfully.
-            if error.kind() != std::io::ErrorKind::NotFound && !std::thread::panicking() {
-                panic!("remove test directory {}: {error}", self.0.display());
-            }
-        }
     }
 }
 
@@ -245,61 +221,4 @@ fn collect(result: &mut QueryResult<'_, '_>) -> Vec<Vec<Cell>> {
         }
     }
     panic!("small public fixture exceeded bounded progress allowance");
-}
-
-#[test]
-fn fixture_cleanup_preserves_failure_context() {
-    const CHILD: &str = "PIPESQL_PUBLIC_DIRECTORY_UNWIND";
-    if std::env::var_os(CHILD).is_some() {
-        let directory = Directory::new();
-        let path = directory.0.clone();
-        std::fs::remove_dir(&path).unwrap();
-        std::fs::write(&path, b"not a directory").unwrap();
-        let original = std::panic::catch_unwind(|| {
-            let _directory = directory;
-            panic!("original scenario failure");
-        })
-        .unwrap_err();
-        std::fs::remove_file(path).unwrap();
-        assert_eq!(
-            original.downcast_ref::<&str>(),
-            Some(&"original scenario failure")
-        );
-        std::process::exit(74);
-    }
-
-    let directory = Directory::new();
-    let path = directory.0.clone();
-    drop(directory);
-    assert!(!path.exists());
-
-    let missing = Directory::new();
-    std::fs::remove_dir(&missing.0).unwrap();
-    drop(missing);
-
-    let directory = Directory::new();
-    let path = directory.0.clone();
-    std::fs::remove_dir(&path).unwrap();
-    std::fs::write(&path, b"not a directory").unwrap();
-    let failure = std::panic::catch_unwind(|| drop(directory)).unwrap_err();
-    std::fs::remove_file(path).unwrap();
-    assert!(
-        failure
-            .downcast_ref::<String>()
-            .unwrap()
-            .contains("remove test directory")
-    );
-
-    // A cleanup panic during unwinding would abort the child, not this harness.
-    let child = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "fixture_cleanup_preserves_failure_context"])
-        .env(CHILD, "1")
-        .output()
-        .unwrap();
-    assert_eq!(
-        child.status.code(),
-        Some(74),
-        "{}",
-        String::from_utf8_lossy(&child.stderr)
-    );
 }

@@ -59,3 +59,7 @@ pub use native_unit::InputValues as ColumnValues;
 pub use storage_format::{DatabaseId, TransactionId};
 pub use transaction::{Append, Commit, CommitResolution};
 pub use value::{DateValue, StringValue, Value};
+
+#[cfg(test)]
+#[path = "../tests/support/cleanup.rs"]
+mod test_cleanup;

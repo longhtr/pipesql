@@ -22,13 +22,7 @@ impl Directory {
 
 impl Drop for Directory {
     fn drop(&mut self) {
-        if let Err(error) = std::fs::remove_dir_all(&self.0) {
-            // A test can fail before creating its database. During unwinding,
-            // preserve the original panic instead of aborting on a second one.
-            if error.kind() != std::io::ErrorKind::NotFound && !std::thread::panicking() {
-                panic!("remove test directory {}: {error}", self.0.display());
-            }
-        }
+        crate::test_cleanup::directory(&self.0);
     }
 }
 
@@ -111,60 +105,3 @@ fn result_values(result: &mut crate::QueryResult<'_, '_>) -> Vec<i64> {
 mod cleanup;
 mod scratch;
 mod traversal;
-
-#[test]
-fn directory_cleanup_preserves_failure_context() {
-    const CHILD: &str = "PIPESQL_TEST_DIRECTORY_UNWIND";
-    if std::env::var_os(CHILD).is_some() {
-        let directory = Directory::new();
-        let path = directory.0.clone();
-        std::fs::write(&path, b"not a directory").unwrap();
-        let original = std::panic::catch_unwind(|| {
-            let _directory = directory;
-            panic!("original scenario failure");
-        })
-        .unwrap_err();
-        std::fs::remove_file(path).unwrap();
-        assert_eq!(
-            original.downcast_ref::<&str>(),
-            Some(&"original scenario failure")
-        );
-        std::process::exit(74);
-    }
-
-    let missing = Directory::new();
-    drop(missing);
-    let directory = Directory::new();
-    let path = directory.0.clone();
-    std::fs::create_dir(&path).unwrap();
-    drop(directory);
-    assert!(!path.exists());
-
-    let directory = Directory::new();
-    let path = directory.0.clone();
-    std::fs::write(&path, b"not a directory").unwrap();
-    let cleanup = std::panic::catch_unwind(|| drop(directory)).unwrap_err();
-    std::fs::remove_file(path).unwrap();
-    assert!(
-        cleanup
-            .downcast_ref::<String>()
-            .unwrap()
-            .contains("remove test directory")
-    );
-
-    // Isolate the regression: a second panic during unwinding aborts its process.
-    let child = std::process::Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "catalog_snapshot::reclaim::tests::directory_cleanup_preserves_failure_context",
-        ])
-        .env(CHILD, "1")
-        .output()
-        .unwrap();
-    assert_eq!(
-        child.status.code(),
-        Some(74),
-        "{}",
-        String::from_utf8_lossy(&child.stderr)
-    );
-}

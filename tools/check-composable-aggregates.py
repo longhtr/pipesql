@@ -18,90 +18,6 @@ from check_support import build_cli, require_executable
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class SnapshotEncoder:
-    """Own the independent snapshot oracle for one composition campaign."""
-
-    def __init__(self):
-        self.model = runpy.run_path(str(ROOT / "tools/snapshot-fixtures.py"))
-
-    def write(self, path, rows):
-        """Encode a valid format-4 snapshot independently of the engine decoder."""
-        model = self.model
-        crc = model["CRC"]
-        path.mkdir()
-        (path / "units").mkdir()
-        (path / "private").mkdir()
-        vectors = model["vectors"]()
-        header = bytearray(vectors["UNIT"][:4096])
-        descriptors = bytearray(1344 * 16)
-        columns = [
-            b"".join(struct.pack("<Q", row[column]) for row in rows)
-            for column in range(4)
-        ]
-        columns += [
-            bytes(row[4] for row in rows),
-            bytes(row[5] for row in rows),
-            b"".join(struct.pack("<i", row[6]) for row in rows),
-        ]
-        payload = b"".join(columns)
-        offset, index = 28672, 0
-        for column, data in enumerate(columns):
-            width = 8 if column < 4 else (1 if column < 6 else 4)
-            # String blocks share the DOUBLE row geometry in this stored format.
-            rows_per_block = 65536 if column == 6 else 32768
-            block_bytes = rows_per_block * width
-            count = (len(rows) + rows_per_block - 1) // rows_per_block
-            old = struct.unpack_from("<IIIIIIQQ", header, 128 + column * 40)
-            struct.pack_into(
-                "<IIIIIIQQ",
-                header,
-                128 + column * 40,
-                old[0],
-                old[1],
-                width,
-                rows_per_block,
-                index,
-                count,
-                offset,
-                len(data),
-            )
-            for first in range(0, len(data), block_bytes):
-                block = data[first : first + block_bytes]
-                struct.pack_into(
-                    "<QII",
-                    descriptors,
-                    index * 16,
-                    offset + first,
-                    len(block),
-                    crc(block),
-                )
-                index += 1
-            offset += len(data)
-        struct.pack_into("<QQ", header, 48, len(rows), offset)
-        struct.pack_into("<I", header, 72, index)
-        struct.pack_into("<I", header, 112, crc(payload))
-        unit = model["LEGACY"]["refresh_unit_checksums"](
-            header + descriptors + bytes(3072) + payload
-        )
-        assert len(unit) == offset
-        metadata_crc = struct.unpack_from("<I", unit, 108)[0]
-        for name in ("ROOT.A", "ROOT.B", "WAL"):
-            value = bytearray(vectors[name])
-            struct.pack_into("<QQ", value, 88, len(rows), len(unit))
-            struct.pack_into("<I", value, 104, metadata_crc)
-            struct.pack_into("<I", value, 108, 0)
-            struct.pack_into("<I", value, 108, crc(value))
-            (path / name).write_bytes(value)
-        (path / "CONTROL").write_bytes(vectors["CONTROL"])
-        (path / "LOCK").write_bytes(b"")
-        (path / "units/0000000000000001.unit").write_bytes(unit)
-        return {
-            str(p.relative_to(path)): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted(path.rglob("*"))
-            if p.is_file()
-        }
-
-
 def raw(value):
     return struct.unpack("<Q", struct.pack("<d", value))[0]
 
@@ -591,7 +507,7 @@ def check_dates_and_predicates(queries, work, encoder, rows):
     )
     bad_rows = [r.copy() for r in rows]
     bad_rows[-1][6] = 2932897
-    encoder.write(work / "bad-date", bad_rows)
+    encoder(work / "bad-date", bad_rows)
     for mode, sql in [
         (
             "scan",
@@ -676,7 +592,7 @@ def check_numeric_failures(queries, work, encoder):
         ("late-nan", [MAX_DOUBLE, MAX_DOUBLE, float("nan")], "SUM", float("nan")),
         ("late-inf", [MAX_DOUBLE, MAX_DOUBLE, float("inf")], "SUM", float("inf")),
     ]:
-        encoder.write(
+        encoder(
             work / label,
             [[raw(value), raw(1.0), raw(0.0), raw(0.0), 65, 70, 0] for value in values],
         )
@@ -740,7 +656,7 @@ def check_numeric_failures(queries, work, encoder):
 def check_derived_queries(queries, work, encoder):
     # Unequal group sizes distinguish aggregation of groups (60) from
     # flattening the pipeline into an average of source rows (40).
-    encoder.write(
+    encoder(
         work / "repeated",
         [
             [raw(value), raw(1.0), raw(0.0), raw(0.0), key, 70, 0]
@@ -1221,7 +1137,7 @@ def check_stored_corruption_and_bits(queries, work, encoder, rows):
             label = f"invalid-key-{column}-{bad}"
             row = rows[0].copy()
             row[column] = bad
-            encoder.write(work / label, [row])
+            encoder(work / label, [row])
             key = ["l_returnflag", "l_linestatus"][column - 4]
             for shape in [
                 f"SELECT {key}",
@@ -1244,7 +1160,7 @@ def check_stored_corruption_and_bits(queries, work, encoder, rows):
                 [[encoded(1)]],
                 label,
             )
-    encoder.write(work / "price-corrupt", [rows[0]])
+    encoder(work / "price-corrupt", [rows[0]])
     unit = work / "price-corrupt/units/0000000000000001.unit"
     data = bytearray(unit.read_bytes())
     data[28672 + 8] ^= 1
@@ -1278,7 +1194,7 @@ def check_stored_corruption_and_bits(queries, work, encoder, rows):
         "price-corrupt",
     )
     for label, number in [("subnormal", double(1)), ("negative-zero", -0.0)]:
-        encoder.write(
+        encoder(
             work / label, [[raw(number), raw(1.0), raw(0.0), raw(0.0), 65, 70, 0]]
         )
         queries.composed(
@@ -1297,9 +1213,9 @@ def check_stored_corruption_and_bits(queries, work, encoder, rows):
 
 def campaign(cli, work):
     work.mkdir()
-    encoder = SnapshotEncoder()
+    encoder = runpy.run_path(str(ROOT / "tools/snapshot-fixtures.py"))["write_snapshot"]
     rows = source_rows()
-    encoder.write(work / "data", rows)
+    encoder(work / "data", rows)
     run_process(
         [str(cli), "create", "--database", str(work / "empty"), *QUERY_LIMITS],
         check=True,

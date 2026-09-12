@@ -30,7 +30,7 @@ def main(argv=None):
         parser.error("aggregate checks require Python assertions")
     if options.stock_cli is not None:
         options.stock_cli = require_executable(options.stock_cli.resolve())
-    fixture = runpy.run_path(str(ROOT / "tools/aggregate-fixtures.py"))["fixture"]
+    fixture = runpy.run_path(str(ROOT / "tools/snapshot-fixtures.py"))["write_snapshot"]
     cases = json.loads(
         (ROOT / "tests/fixtures/aggregate-semantics/cases.json").read_text()
     )
@@ -50,8 +50,11 @@ def main(argv=None):
         failures = []
         for case in cases:
             database = work / case["name"]
+            rows = [[int(value, 16) for value in row] for row in case["rows"]]
+            assert 1 <= len(rows) <= 4 and all(len(row) == 4 for row in rows)
             fixture(
-                database, [[int(value, 16) for value in row] for row in case["rows"]]
+                database,
+                [row + [ord("A"), ord("F"), 0] for row in rows],
             )
             query = (
                 ROOT

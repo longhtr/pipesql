@@ -26,7 +26,7 @@ class Stage:
     command: list[str]
 
 
-def stages(scope):
+def stages(scope, output):
     """Keep the gate's commands and deadlines visible in execution order."""
     python = [sys.executable, "-B"]
     fixtures = sorted(
@@ -110,14 +110,27 @@ def stages(scope):
             ],
         ),
     ]
+    # The two semantic campaigns only read this stock CLI. Build it after all
+    # Cargo test/doc stages, then keep its target unchanged until both finish.
+    binary = str(output / "target/release/pipesql")
     native = [
         Stage(
-            "aggregate-semantics", 180, [*python, "tools/check-aggregate-semantics.py"]
+            "stock-cli",
+            90,
+            ["cargo", "build", "--release", "--offline", "--locked"],
+        ),
+        Stage(
+            "aggregate-semantics",
+            180,
+            [*python, "tools/check-aggregate-semantics.py", binary],
         ),
         Stage(
             "aggregate-composition",
             480,
-            [*python, "tools/check-composable-aggregates.py"],
+            [
+                *python, "tools/check-composable-aggregates.py",
+                binary, str(output / "composition"),
+            ],
         ),
         Stage(
             "public-allocation", 900, [*python, "tools/check-diagnostic-allocation.py"]
@@ -249,11 +262,12 @@ def execute(steps, *, root, output, scope, revision=None):
                 finalization_errors.append("build/gate inputs changed during the run")
         except Exception as error:
             finalization_errors.append(f"cannot verify final inputs: {error}")
-        try:
-            if target.exists():
-                shutil.rmtree(target)
-        except Exception as error:
-            finalization_errors.append(f"cannot remove owned build target: {error}")
+        for owned in (target, output / "composition"):
+            try:
+                if owned.exists():
+                    shutil.rmtree(owned)
+            except Exception as error:
+                finalization_errors.append(f"cannot remove owned {owned.name}: {error}")
         receipt["finalization_errors"] = finalization_errors
         receipt["status"] = (
             "passed" if complete and not finalization_errors else "failed"
@@ -290,7 +304,7 @@ def main(argv=None):
     print(f"gate scope={options.scope} output={output}", flush=True)
     try:
         execute(
-            stages(options.scope),
+            stages(options.scope, output),
             root=ROOT,
             output=output,
             scope=options.scope,

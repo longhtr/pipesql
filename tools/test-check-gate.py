@@ -60,6 +60,9 @@ assert Path.cwd() == Path(os.environ['EXPECTED_ROOT'])
 target = Path(os.environ['CARGO_TARGET_DIR'])
 target.mkdir()
 (target / 'artifact').write_text('disposable build output')
+cases = target.parent / 'composition'
+cases.mkdir()
+(cases / 'database').write_text('disposable semantic input')
 assert '-D warnings' in os.environ['RUSTFLAGS']
 assert '-D warnings' in os.environ['RUSTDOCFLAGS']
 print('observed output')
@@ -79,6 +82,7 @@ print('observed output')
             (self.output / "01-environment.log").read_text(), "observed output\n"
         )
         self.assertFalse((self.output / "target").exists())
+        self.assertFalse((self.output / "composition").exists())
         self.assertEqual(unrelated.read_text(), "keep me")
         self.assertEqual(
             (self.output / "inputs-before.sha256").read_bytes(),
@@ -198,12 +202,13 @@ print('observed output')
         self.assertEqual(result["error"]["type"], "FileNotFoundError")
 
     def test_core_scope_cannot_include_or_replace_native_campaigns(self):
-        core = gate.stages("core")
-        full = gate.stages("full")
+        core = gate.stages("core", self.output)
+        full = gate.stages("full", self.output)
         self.assertEqual(full[: len(core)], core)
         self.assertEqual(
             {stage.name for stage in full[len(core) :]},
             {
+                "stock-cli",
                 "aggregate-semantics",
                 "aggregate-composition",
                 "public-allocation",
@@ -221,6 +226,18 @@ print('observed output')
             self.assertGreater(stage.timeout, 0)
         caller_format = next(stage for stage in core if stage.name == "caller-format")
         self.assertIn("tools/fixtures/composed-ownership.rs", caller_format.command)
+
+    def test_semantic_campaigns_share_one_stock_cli_after_cargo_checks(self):
+        stages = gate.stages("full", self.output)
+        names = [stage.name for stage in stages]
+        build = names.index("stock-cli")
+        semantic = names.index("aggregate-semantics")
+        composition = names.index("aggregate-composition")
+        self.assertLess(names.index("doc-tests"), build)
+        self.assertEqual((semantic, composition), (build + 1, build + 2))
+        binary = str(self.output / "target/release/pipesql")
+        self.assertEqual(stages[semantic].command[-1], binary)
+        self.assertEqual(stages[composition].command[-2:], [binary, str(self.output / "composition")])
 
 
 if __name__ == "__main__":

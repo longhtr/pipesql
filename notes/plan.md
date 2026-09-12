@@ -90,7 +90,42 @@ refusal, snapshots, cancellation, and full-width small-stack execution. The
 [evidence](evidence.md#positional-union-all) records provenance, checks, and limits.
 Do not reopen this milestone without a concrete defect or missing contract.
 
-## Next: append allocation bounds
+## Current: testing and tooling cleanup
+
+The finite review follows Cargo module inclusion and each Python command's actual
+callers, fixture construction, assertions, and effect/cleanup paths. The reviewed
+areas and retained contracts are below. The test/tool maps own navigation.
+
+| Reviewed area | Coverage, independence, and disposition |
+| --- | --- |
+| Four public suites and all child modules | Literal SQL/results and independent nullable-row/Boolean models cover lifecycle, scalar/aggregate composition, snapshots, spans, demand, spill, cancellation, and release. Keep ordinary/bounded-thread pairs: only the latter observes native stack extent. Share directory mechanics; fold the vacuous lease-child entry into its parent and verify early teardown. |
+| Frontend and physical planning | Lexer/parser/binding limits, identity/scope/span cases, and independent malformed-plan mutations remain beside their owners. Shape assertions support validator boundaries; they do not replace public result oracles. Remove two review-era test-name prefixes without changing bodies. |
+| Execution and resource tests | Scan, batch/scalar, accumulation/arguments, grouping/hash/reduction/replay, sorting/join/order, LIMIT/union, and authorities retain exact/short admission, measured capacities, row/byte bounds, demanded failures, cancellation at observed phases, and release. Generated row expectations and rational rounding vectors remain independent. Keep internal effects and corruption cases that public SQL cannot inject. |
+| Storage, database, and catalog tests | Schema/unit/index/history bytes, declaration/append/publication, pins/receipts, recovery/reclaim/scratch, and legacy loading retain independently encoded vectors, matching-checksum corruption, effect cuts, short I/O, abort/ambiguous outcomes, and healed retries. Replace ignored or panic-on-unwind directory cleanup across fixture owners; remove the now-duplicate cleanup regression. |
+| CLI and filesystem tests | Argument/source/sink/diagnostic ownership, native metadata/path/name/extent/locking/mutex behavior, real threads, and native stack controls remain. Keep the iterative deep-path teardown and platform guards; their OS/depth premises differ from ordinary directory mechanics. |
+| Fixtures and reference models | All persisted/SQL/numeric fixtures have maintained consumers or rejected-format provenance checks. Keep old-format independent encoders/decoders, the Q1 comparator, identity/publication/reclamation models, and their negative controls. Consolidate five catalog encoders and the duplicated semantic snapshot writer; remove six superseded script files and unused digest walks, preserving bytes and separate query expectations. Add the five catalog/schema vectors missing from the ordinary fixture check. |
+| Python commands and their tests | Maintenance discovers every `test-*.py`; syntax, docs, manifests, fixture comparison, entry-point guards, oracle rejection, build/loader selection, sanitizer interpretation, receipts, and live-process cleanup retain distinct controls. No maintained caller fixture, native observer, standalone identity diagnostic, or sanitizer control is dead. |
+| Campaigns and gate | Keep full allocation prefixes, healthy controls, native operation censuses/short-transfer crossings, graph mutations, and append/recovery interruption cuts. Independent graph/semantic checks remain outside producer code. A fresh Mac stock CLI build took 8.54 s; two semantic campaigns redundantly built it. The gate now builds it once after Cargo checks and supplies the immutable artifact sequentially, removing its target and case databases afterward. Native callers retain isolated targets. |
+| Documentation | Update test/tool maps, fixture generation, and gate artifact ownership. Ordinary shell/Cargo/Python entry points remain; no new runner or workflow framework. |
+
+Implemented worklist: shared test-only cleanup; lease-child discovery and bounded
+teardown; complete catalog fixture comparison and consolidated encoders; one stock
+CLI for both semantic campaigns; removal of stale naming and command references.
+The public cleanup test retains normal, missing-directory, real-error, and unwind
+controls. Rust discovery must reconcile two removed tests (the empty child entry
+and duplicate cleanup check), one moved cleanup test, and two renamed tests.
+No SQL result, fault schedule, persisted fixture byte, or platform exclusion was
+removed. Five before/after snapshot-writer comparisons match, including empty
+input and a DOUBLE block crossing. New tooling controls reject damaged schema
+vectors and reused output names; gate controls check artifact ordering/cleanup.
+
+Remaining completion work: finish focused checks, freeze source for complete
+macOS and GNU/Linux gates, reconcile discovery and final navigation, record concise
+evidence within 641,696 bytes, remove owned scratch outputs, and commit reviewed
+changes locally with a clean tree. Do not publish or alter remote refs. The append
+allocation deficit below remains unresolved and queued.
+
+## Queued: append allocation bounds
 
 The [ownership measurements](evidence.md#attribution-of-composed-memory) show a
 macOS append whose allocator-usable extents exceed its logical charge by 7,615
