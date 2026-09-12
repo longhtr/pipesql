@@ -41,12 +41,22 @@ for legacy constant batches; functional and bounded-stack coverage is complete.
 4. Run the affected caller/tool checks on macOS and unprivileged native-storage
    GNU arm64 Linux, document scoped evidence, remove outputs and commit locally.
 
-Initial trace: batch admission charges column records, 256 row spans and 8,192
-text bytes per legacy STRING output when a text constant is present. The scan
-adds its fixed workspace, arena and computation/branch owners. The existing
-`Owner::report` enforces exact attribution and must remain independent; deriving
-its legacy nonheap term is the next step. No allocation discrepancy is yet
-claimed. Arbitrary allocators and whole-process/RSS bounds remain unqualified.
+The direct six-case matrix passes on macOS. Independent attribution uses the
+106,496-byte scan reservation minus descriptor/selection allocations, the plan
+allowance and result handle. Global extrema add the aggregate vector allowance;
+grouped extrema also retain the pending scratch paths. The maximum-length grouped
+case exposed a 16,384-byte reporting gap: hash text growth reserves memory, but
+the public query report omitted its retained and pending reservations. Include
+both owners and reconcile the existing growth/cancellation/refusal test against
+the database reservation total. The wide prepared plan separately requests
+34,304 computation bytes, occupying 49,152 usable bytes on macOS; total prepared
+charge 51,824 falls below its 59,392 usable bytes. The repair applies existing
+buffer geometry to actual descriptor capacity, preserving logical limits and the
+independent attribution equation. The complete macOS ownership selection passes;
+wide prepared charge is now 66,296, requested 57,960 and usable 59,392 bytes.
+GNU/Linux ownership passed before the descriptor repair. Complete the final
+both-platform gates and evidence before closing this milestone. Arbitrary allocators
+and whole-process/RSS bounds remain unqualified.
 
 ## Next engineering priorities
 
