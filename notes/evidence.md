@@ -7,7 +7,7 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 12, 2026 complete gates for `1633477` passed all 24 stages on
+The September 12, 2026 complete gates for `ca5f59e` passed all 24 stages on
 macOS and GNU arm64 Linux. Both used Rust 1.98.1, release artifacts, offline
 locked dependencies, and warnings-denied compilation and documentation. macOS
 used arm64 Darwin 25.6.0, Python 3.14.7, and the native Apple toolchain. Linux
@@ -18,32 +18,32 @@ attempt models, Clippy, Rust tests, rustdoc, doctests, stock CLI construction,
 aggregate semantics and composition, public/CLI allocation, native
 initialization/synchronization/byte I/O, catalog interruption, and independent
 graph inspection. Maintenance passed 93 tooling tests, 44 independent codec
-fixtures, and 475 local documentation links. Independent semantics checked 24
+fixtures, and 480 local documentation links. Independent semantics checked 24
 cases; composition checked 298 cases. Both semantic campaigns used the same
 unchanged CLI on each platform. Native callers retained isolated build targets.
 
-Each platform executed 498 ordinary Rust tests without failures or ignored tests.
-macOS executed 366 library and 21 filesystem tests; Linux executed 368 library
+Each platform executed 499 ordinary Rust tests without failures or ignored tests.
+macOS executed 367 library and 21 filesystem tests; Linux executed 369 library
 and 19 filesystem tests. Shared suites executed 15 CLI, 76 catalog, seven
 execution, seven lifecycle, and six load tests. The lease test separately ran its
 normal child and intentionally killed its early-teardown child, then verified
-reopening. Both new append admission/growth boundary tests execute on each
-platform. Four example targets
-compiled without test bodies; that compilation is not runtime example evidence.
+reopening. The native payload-capacity test and both append admission/growth tests
+execute on each platform. Four example targets compiled without test bodies;
+that compilation is not runtime example evidence.
 All eight public union tests executed on both platforms.
 
 All 24 stage statuses were zero. The 670 manifested inputs matched before/after
 and across both runs; Linux used a read-only export. The frozen manifest SHA-256
-is `8a9adaaf52393e4ecdecd748b6bf2cd0877be1ac0540e1f9fccb137283e6ccec`.
-Commit `1633477` retains those exact inputs. Only the two notes files were
-finalized afterward; final documentation verification covers those prose-only
+is `3c71d1c6d2a621db0cada3182a79b8d129e51299a358501d005758e1c1eefddb`.
+Commit `ca5f59e` retains those exact inputs. Only the two notes files were
+finalized afterward; final documentation verification checks 483 local links and covers those prose-only
 changes. No runtime source, fixture, or tool changed afterward. This identifies
 source, not reproducible binaries.
 
-The stages took 1,611.484 seconds on macOS and 799.625 seconds on Linux; these
+The stages took 1,586.223 seconds on macOS and 819.286 seconds on Linux; these
 are verification costs, not query benchmarks. The respective result-receipt
-SHA-256 values are `d72fd4d49dbb570994ac168cef72c4e17bc420e9d0331b7eec6faa57f04f6b11`
-and `1dec0d572766f6d478cdbbda28369e98d7dd88995dad63d89d479ca2df465a80`.
+SHA-256 values are `79b280863bef5f83c0a7cd4c95976ff2e26067133682fda42ed2788c1fd46cef`
+and `1503fe9f47ced0dbdfa20aadc58d96e5d985f5cb71854547e04da398ea0c3fbd`.
 Finalization reported no errors and removed owned targets and composition
 databases. Successful logs, exports, the verification container, and remaining
 scratch outputs were removed; the user-owned image and toolchains remain.
@@ -52,8 +52,9 @@ logs.
 
 The [finite testing/tooling review](plan.md#completed-testing-and-tooling-cleanup)
 remains complete at `a315e21`; its fixture, oracle, and failure controls are retained.
-The current append repair adds exhaustive allocation-size observations and
-full-width public growth/reuse/publication checks. Both platforms retain 790
+The reader repair adds actual payload-capacity admission and 12 typed public
+ORDER BY/DISTINCT allocation checks. The exhaustive append allocation-size and
+full-width growth/reuse/publication checks remain. Both platforms retain 790
 catalog allocation-refusal prefixes plus healthy controls at both pathname lengths,
 76 append interruption cuts, 46 recovery cuts, 249 independent graph checks during
 interruption, and 43 graph cases with their oracle controls. Native I/O exercises
@@ -533,8 +534,8 @@ and logical allocation refusal, temporary refusal, cancellation, commit, and fin
 release. Negative controls reject a missing rounding ceiling, an incorrect complete
 row, and a one-byte attribution error at distinct checks. Current driver SHA-256:
 
-- macOS: `798edd4823b3e9cc8c4e58643d42d4746a18761bd456a84d572fe46dcda643f6`
-- GNU/Linux: `dbc2288d4b9870a2d912b950c5f33055f43e70c0c533c0cc1e8cc3d1f698af6b`
+- macOS: `428221297c35af8ffd1c75e99bb55b74f4dc8ca01ba392d40f41e1d944b5298f`
+- GNU/Linux: `2fb958e788f79eb8b25a1d8655402c4a5b5a623558cf65c5f2e295aaa37e3012`
 
 Selected final observations are:
 
@@ -546,8 +547,8 @@ Selected final observations are:
 | GNU/Linux, same append | 682,552 | 624,736 | 626,720 |
 | macOS, maximum-column append with 4,096 references | 780,824 | 723,008 | 737,280 |
 | GNU/Linux, same append | 780,824 | 723,008 | 723,032 |
-| macOS, parked ORDER BY or DISTINCT, short path | 534,404 | 521,684 | 538,784 |
-| GNU/Linux, same reader | 534,404 | 521,632 | 525,888 |
+| macOS, parked ORDER BY or DISTINCT, short path | 546,692 | 533,972 | 538,784 |
+| GNU/Linux, same reader | 546,692 | 533,920 | 538,176 |
 | Both, terminal reader | 552 | 0 | 0 |
 
 For the small append, usable macOS memory decreases by 16,384 bytes while the
@@ -556,10 +557,41 @@ bytes, shared workspace drops 65,536 requested bytes and the added rounding
 reservation is 49,152 bytes, reducing the retained logical charge by 16,384.
 These are capacity/accounting changes, not throughput or RSS measurements.
 
-The reader request differs with canonical pathname length; the independent
-equation accounts for it. On the 384-byte path, macOS readers request 521,954
-bytes and occupy 539,104 usable bytes under the same 534,404-byte charge. The
-remaining short/long reader deficits of 4,380/4,700 bytes are queued separately.
+Repair `ca5f59e` closes the sampled reader deficit by requesting and charging
+whole 16-KiB native payload capacities. The 21-allocation trace found the main
+increment in the INT64 source buffer: 266,240 requested bytes occupied 278,528
+usable bytes on macOS. Source and debug-type attribution of the smaller scan,
+run-arena, pipeline, controller, and node allocations is retained in that
+revision's plan. No sorter or generic allocation allowance was added; the
+independent reader equation is unchanged. A caller linked to the previous library
+rejects its usable extent with exit 101 after joining the parked readers.
+
+The stock caller checks one and 64 INT64, DOUBLE, and DATE columns through both
+ORDER BY and DISTINCT, complete nullable results, and final release. Internal
+checks observe all four payload capacities and exact/one-byte-short admission
+before I/O. The first full gates failed two nullable COUNT fixtures whose
+1,600,000-byte budget no longer admitted three fixed-width source buffers. Adding
+exactly 36,864 bytes to that test budget preserves actual spill, cancellation after
+spill, temporary refusal, retry, and release; both final gates execute those cases.
+
+On the 384-byte path, both readers request 534,242 bytes. macOS reports 539,104
+usable bytes and GNU/Linux 538,496, within the same 546,692-byte charge. The former
+macOS short/long deficits were 4,380/4,700 bytes under a 534,404-byte charge.
+The new request leaves macOS usable extents unchanged and increases the observed
+GNU/Linux extent by 12,288 bytes. This is an accounting/capacity repair, not a
+physical-memory reduction.
+
+The same full-gate healthy catalog controls expose a separate grouped-query
+owner excess. For short/384-byte paths, macOS reports charges of
+3,977,576/3,977,312 bytes, requested heap 3,926,846, and usable extents of
+4,089,072/4,089,392: deficits of 111,496/112,080 bytes. GNU/Linux charges
+3,977,644/3,977,328 cover requested 3,926,862 and usable 3,927,376/3,927,344.
+This sample includes the GROUPED prepared query and result immediately after
+execution admission in [catalog-allocation.rs](../tools/fixtures/catalog-allocation.rs).
+Its requested-byte assertion passes; it does not yet enforce a usable-byte bound.
+The [next repair](plan.md#next-grouped-query-allocation-bounds) must first trace
+those actual owners and preserve its independent full-row oracle.
+
 Append's ceiling is a qualified premise for the exercised stock allocators and
 request-size domains, not arbitrary global allocators or all allocator states.
 Parked samples exclude transient peaks, direct foreign allocations, allocator

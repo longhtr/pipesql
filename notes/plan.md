@@ -11,8 +11,8 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 24-stage gates for `1633477` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 498 Rust tests and 298
+The complete 24-stage gates for `ca5f59e` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 499 Rust tests and 298
 composition cases, plus its applicable native and allocation campaigns. Bounded
 thread scenarios and their ordinary-thread counterparts execute on both platforms,
 including full-width union preparation and execution.
@@ -131,7 +131,7 @@ repository into a fresh output. Final documentation checks cover the corrected
 five-public-stack-scenario map. [Evidence](evidence.md#full-verification-checkpoint)
 records the frozen inputs and costs. Owned outputs are removed; changes are
 committed locally without publication. The append repair below is also complete;
-the sorting-reader allocation repair is in progress.
+the sorting-reader repair is also complete. The grouped-query excess below remains open.
 
 ## Completed: append allocation bounds
 
@@ -154,55 +154,44 @@ physical workspace and larger small-append reservation. Owned outputs are remove
 and changes are committed locally. Custom allocators and process/RSS bounds remain
 separate qualifications.
 
-## Current: sorting-reader allocation bounds
+## Completed: sorting-reader allocation bounds
 
-The same final ownership runs retain a macOS ORDER BY/DISTINCT reader whose
-534,404-byte charge covers 538,784 usable bytes on the short path and 539,104 on
-the 384-byte path. GNU/Linux remains within the charge. This is a separate live
-reader deficit of 4,380/4,700 bytes, not an append regression.
+Commit `ca5f59e` repairs the reproduced macOS ORDER BY/DISTINCT deficits of
+4,380/4,700 bytes. A 21-allocation trace located the main size-class increment in
+the native INT64 payload. Admission now requests and charges whole 16-KiB
+payload capacities before allocation or I/O. The [resource contract](../docs/resources.md#declared-scan-admission)
+owns the type capacities, unchanged encoded limits, and physical-memory tradeoff.
+No sorter allowance, allocator framework, or query feature was added.
 
-The first macOS trace reconciles 21 live allocations exactly with the parked
-reader's independently sampled heap. The largest increment is 12,288 bytes:
-266,240 requested, 278,528 usable. This is the native INT64 source payload
-(`32768 * 8` value bytes plus 4,096 validity bytes), admitted in
-[scan/declared.rs](../src/execution/scan/declared.rs) from
-[native_unit.rs](../src/native_unit.rs). Source and unmodified-library debug
-types attribute the smaller requests: native Scan 12,368 → 14,336 usable;
-RunBuffer arena 8,456 → 10,240; two physical pipelines 4,272 → 5,120;
-Order controller 2,976 → 3,072; two runtime nodes 1,712 → 1,792. The run arena
-follows its existing record/row bound; the three 65,536-byte I/O buffers are exact.
-No missing sorter owner was found.
+Both complete 24-stage gates pass on identical frozen inputs, with 499 ordinary
+Rust tests per platform. The independent reader equation, complete-row oracle,
+12 one-/64-column typed cases, exact/short admission, spill/replay, cancellation,
+refusal, and final release pass. Linking the observer to the previous library
+rejects the original deficit after joining its barrier participants. Two grouping
+fixtures required exactly three payload increments of additional test budget;
+their actual spill, temporary refusal, cancellation, and release assertions remain.
+[Evidence](evidence.md#attribution-of-composed-memory) records the observations,
+initial gate failures, and qualification limits. Owned outputs are removed and
+changes are committed locally without publication.
 
-Finite worklist:
+## Next: grouped-query allocation bounds
 
-- Implemented: request and charge native payloads in whole 16-KiB units before
-  allocation or I/O. INT64/DOUBLE request 278,528 bytes; DATE requests 147,456;
-  STRING retains 524,288. The extra 12,288 bytes per fixed-width column are actual
-  owned capacity. Encoded validators and the maximum scan ceiling are unchanged.
-  The [resource contract](../docs/resources.md#declared-scan-admission) records the
-  physical-memory tradeoff; no sorter or generic allocator allowance was added.
-- Focused checks pass on macOS and native-storage GNU/Linux: the independent
-  requested/usable equation remains unchanged, and 12 one-/64-column typed
-  ORDER BY/DISTINCT cases check complete nullable rows and release. The composed
-  caller now rejects reader extents exceeding admission after joining its barrier
-  participants. Linking that observer to the previous library rejects the original
-  deficit with exit 101. Its initial in-barrier assertion timed out; deferring the
-  check preserves teardown and reports the intended failure.
-- The new internal test observes all four actual payload capacities and verifies
-  exact/one-byte-short admission before I/O and release. Retained native codec and
-  read-failure tests, Clippy, and maintenance pass. Finish both frozen complete
-  gates, final documentation/evidence, owned
-  scratch cleanup, and coherent local commits. Do not repeat the completed
-  tooling inventory or add query features or an allocator framework.
-- The first full gates both stop at two nullable COUNT fixtures: their 1,600,000
-  budget is below the new 1,609,391–1,609,460-byte aggregate minimum. Raise only that fixture
-  budget by 36,864 bytes, the three demanded fixed-width payload increments.
-  Preserve the observed spill/non-spill split, nullable results, cancellation after
-  spill, one-byte temporary-space refusal, retry, and complete release. Requalify
-  those cases before repeating the complete gates on a new frozen input set.
+The same healthy catalog controls expose a macOS GROUPED prepared-query/result
+excess of 111,496 bytes on the short path and 112,080 on the 384-byte path.
+Requested bytes fit the charge; allocator-usable bytes do not. GNU/Linux fits
+both. The [measured inputs](evidence.md#attribution-of-composed-memory) and
+[catalog caller](../tools/fixtures/catalog-allocation.rs) identify the exact query,
+checkpoint, independent nullable/extrema row expectations, and public entry path.
 
-Custom allocators, other producer graphs, arbitrary schedules, transient peaks,
-and process/RSS bounds remain separate qualifications.
+Reproduce that healthy observation on current inputs and trace retained owners
+before choosing a repair. Bound actual allocation geometry before effects,
+preserving independent attribution, full rows, hash growth and fallback,
+spill/replay, exact/short admission, allocation refusal, cancellation, and release.
+Qualify affected stock allocator/size premises on macOS and native-storage GNU/Linux;
+retain other allocators, schedules, transient peaks, and process/RSS memory as
+separate limits. Finish focused and required complete checks, current contracts,
+concise evidence, owned-output cleanup, and local commits. Do not add query
+features or another allocation framework.
 
 ## Applying DuckDB lessons
 
