@@ -38,6 +38,55 @@ Owned gate/control outputs, source exports, logs and containers are removed.
 The existing verification image and toolchains remain. Windows, broader
 durability, physical-memory and sanitizer qualification remain unfinished.
 
+### Prepared aggregate descriptor ownership
+
+Tool-only follow-up `63c3c2d` preserves the engine inputs of the full checkpoint
+above. The complete ownership selection passes on stock macOS and unprivileged
+GNU arm64 Linux with native database storage. Each pathname length executes
+widths 1–10, partitions `[1,9]`, `[5,5]`, `[9,1]` and ten single-entry stages,
+and rejection controls for widths 11–64. The query-wide aggregate budget remains
+ten outputs, including grouping keys. COUNT results are explicitly 512 over the
+literal source rows and one after another reducing stage. All cases check
+preparation attribution and release; accepted cases also check usable extents,
+complete results and result release. A one-byte preparation allowance error fails.
+The runner rejects missing completion markers even after a successful exit.
+
+The retained-family inventory is:
+
+| Owner | Source bound | Maintained consumers and checks |
+| --- | --- | --- |
+| Owned plan | One allocation; other fixed plan arrays live inside it. | Every prepared query; fixed-key and composed ownership controls. |
+| Computations | At most 80 syntax-pool entries; physical capacity is padded separately. | Projection binding/validation; constant ownership and exact/short preparation checks. |
+| Aggregate plans | At most ten, sharing the aggregate-output budget. | Aggregate binding and execution; the ten-stage case observes the maximum controller vector. |
+| Aggregate entries | At most ten across all plans, less any grouping keys. | Independent semantic validation checks each vector's length/capacity; the new complete width census and partitions observe allocation and release. |
+| DISTINCT descriptors | At most sixteen normalized stages. | Full-row distinct validation/execution, typed reader ownership and public catalog tests. |
+| UNION descriptors | At most eight: each adds a branch source and union node to the sixteen-stage pool. | Positional binding/validation, union scope admission and public union/composition cases. |
+
+`BindingBudget::calculate` reserves one fixed 4,096-byte allowance for the plan,
+one for each nonempty descriptor vector, and one per aggregate-entry vector.
+For the new COUNT queries, the independent caller uses exactly `2 + stages`
+allocations. Name-scope/catalog scratch is transient and outside the retained
+observation; the existing scope tests own its exact/short admission coverage.
+No production allocation function is used to calculate this attribution term.
+
+The ten-entry plan charges 27,648 bytes and requests 15,216. Usable extents are
+16,832 on macOS and 15,240 on GNU/Linux. Ten single-entry stages charge 68,400
+and request 19,104, with usable extents of 21,760 and 19,216 respectively. No gap
+was found and no engine allowance, capacity, validator or language limit changed.
+The family inventory identifies bounds and consumers; it does not turn the
+existing representative DISTINCT/UNION cases into exhaustive native qualification.
+
+Verification includes both complete ownership selections, all their retained
+controls, 96 tooling tests, 44 independent codec fixtures, caller formatting and
+502 local documentation links. Full engine gates were not repeated for these
+caller-only changes. The 675-input manifest at `63c3c2d` has SHA-256
+`578af6ce17fa7554af45c7fdbdb7757bbf960926b370b81eef4041414086ce8d`.
+Caller hashes are `836032ceebe248ddd97540d4944b39760f36fe7a85e0e8c6bf6ec3353b0cceb3`
+(macOS) and `cb136bd524b63cfab058a900c0e131412940946a8f6d3617bccd93cc5e9bff56`
+(GNU/Linux). Owned builds, fixture databases, exports, logs and the container are
+removed; the existing image/toolchains remain. Arbitrary allocators, transient
+whole-process peaks, RSS and Windows runtime remain unqualified.
+
 ### Legacy constant allocation ownership
 
 `21ba9c5` extends the existing public allocation caller with six direct legacy

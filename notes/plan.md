@@ -15,6 +15,10 @@ controls and limits. Linux retains two Darwin ACL exclusions. The
 [platform matrix](../docs/testing.md#platform-status) distinguishes implementation,
 execution and qualification; a passing gate does not establish release readiness.
 
+The prepared-aggregate caller follow-up in `63c3c2d` passes the complete ownership
+selection on both platforms, with unchanged engine inputs. Its retained-family
+inventory and scoped observations are recorded in the evidence.
+
 Use the [language manifest](../docs/language.md#current-public-query-manifest),
 [implementation reading path](../docs/README.md#learn-the-implementation),
 [test map](../tests/README.md) and [tool map](../tools/README.md) for current
@@ -23,35 +27,6 @@ archive. Completed milestones remain closed unless a concrete defect, affected
 boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
-
-## Current: prepared aggregate descriptor ownership
-
-The legacy constant milestone qualifies computation vectors and three-entry
-aggregate plans. It does not establish usable-allocation bounds for the full
-aggregate-entry range or entries divided among repeated aggregation stages.
-
-1. Trace retained aggregate plans and entry vectors through preparation,
-   independent validation, execution and release. Account for the other retained
-   descriptor families by their actual bounds and existing consumers.
-2. Extend the existing public caller with a finite one-to-64 entry census:
-   widths 1–10 are accepted; 11–64 are rejection controls under the existing
-   query-wide ten-output budget. Add representative repeated-aggregate partitions
-   within that budget. Keep SQL and expected results
-   explicit; derive attribution from admission before sampling. Preserve fixed
-   controls, usable comparisons, complete release and a meaningful negative.
-3. Reproduce and trace any gap before changing its owner. Use actual allocation
-   capacity, preserve semantic limits and independent validation, and verify
-   exact/short admission, allocation refusal and healthy reuse.
-4. Run consequential checks on macOS and unprivileged native-storage GNU/Linux,
-   including complete gates for an engine repair. Finish concise evidence,
-   navigation, cleanup and local commits. Do not expand this into an open-ended
-   allocator or whole-process-memory investigation.
-
-Initial trace: `BindingBudget::calculate` charges entry and aggregate-plan vectors
-plus one 4,096-byte allowance per allocation. `aggregate_entries` allocates the
-exact entry count; independent validation requires matching capacity and length.
-The query-wide ten-output budget bounds both families. No discrepancy is claimed;
-native observations of the complete accepted range are the next step.
 
 ## Next engineering priorities
 
