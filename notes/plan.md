@@ -305,6 +305,28 @@ Both Cargo commands and the wrong-sum control pass their expected outcomes;
 formatting, Clippy, and maintenance pass. No engine implementation changed.
 Owned outputs are removed and changes committed locally without publication.
 
+## Current: positional UNION DISTINCT
+
+Add explicit positional `UNION DISTINCT` for declared-table pipelines, using the
+existing union and bounded complete-row DISTINCT owners. Preserve the completed
+UNION ALL profile. Bare UNION, name-based correspondence, INTERSECT, EXCEPT, and
+legacy-format extensions remain outside this milestone.
+
+Matching positional schemas use left-input names and fresh output identities;
+input ranges and ordering do not survive. Deduplication follows the existing
+DISTINCT equality contract and demands every comparison field, including fields
+later projected away. Keep snapshot, span, admission, replay, cancellation, and
+cleanup contracts. Any normalized deduplication stage must consume the existing
+16-stage budget; do not expand token, column, or resource ceilings.
+
+The language contract and union parser continuation owners have been inspected.
+Implementation has not started. Next trace DISTINCT binding/demand and physical
+validation before choosing the normalized representation. Add independent public
+semantics/composition and affected failure/resource witnesses using current
+suites, update contracts and the learning path, and run complete frozen macOS
+and native-storage GNU arm64 Linux gates. Reconcile discovery/manifests, retain
+concise evidence, remove owned outputs, and commit locally without publication.
+
 ## Applying DuckDB lessons
 
 DuckDB's published designs inform the following work. These are PipeSQL design
