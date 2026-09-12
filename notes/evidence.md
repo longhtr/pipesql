@@ -1248,6 +1248,15 @@ relocation are alternatives, not required architecture. The checks below found
 no prerequisite engine defect. Measure complete-query time and I/O before
 proposing a performance change; preserve PipeSQL's own semantic contracts.
 
+DuckDB is not a universal differential oracle: its documented
+[floating-point ordering](https://duckdb.org/docs/current/sql/data_types/numeric#floating-point-types)
+places NaN above other numbers, while PipeSQL's MIN/MAX propagate NaN in both
+directions. NULL, overflow, floating-point, collation and ordering contracts must
+agree before results can be compared. Retain independent local expectations for
+incompatible behavior. The implementation's admitted text spans, replay
+validation and competing-owner checks are specified in the
+[resource contract](../docs/resources.md#declared-grouping-admission).
+
 [The runnable example](../examples/grouping.rs) generates 8,192 declared-table
 rows across 4,096 integer keys. Each key occurs with amounts 1 and 3. It verifies
 every ordered key, count 2, sum 4, minimum 1, and maximum 3. It requires
@@ -1697,6 +1706,42 @@ DISTINCT, narrow join batches, and wide-text join admission. Correct bounded
 execution does not establish competitive performance or equivalence between
 algebraically equivalent queries. New measurements must identify current source,
 reconstructible data, configured resources, complete results, and host context.
+
+## Testing and tooling cleanup
+
+The finite review implemented in `a315e21` followed Cargo module inclusion and
+actual Python callers, fixture construction, assertions, costs and cleanup paths.
+The [test map](../tests/README.md) and [tool map](../tools/README.md) own current
+navigation. The retained review dispositions are:
+
+| Reviewed area | Protected contract and disposition |
+| --- | --- |
+| Public suites and child modules | Literal SQL/results and independent nullable-row/Boolean models retained lifecycle, composition, snapshots, spans, demand, spill, cancellation and release. Ordinary/bounded-thread pairs remained because only the latter observes native stack extent. The empty lease-child entry was folded into its parent, retaining normal and early-teardown subprocess checks. |
+| Frontend and physical planning | Limits, identities, scope, spans and independent malformed-plan mutations remained beside their owners. Two historical test-name prefixes were removed without changing bodies; structural assertions still supplement public result oracles. |
+| Execution and resources | Scan, batch/scalar, aggregates, hash/reduction/replay, sorting/join/order, LIMIT/union and authority tests retained exact/short admission, actual capacities, row/byte bounds, demanded failures, phase-specific cancellation and release. Independent row and rational-rounding expectations remained unchanged. |
+| Storage, database and catalog | Independent encoded vectors, matching-checksum corruption, publication outcomes, pins/receipts, recovery/reclamation, short I/O and interruption schedules remained. Shared test-only directory cleanup replaced ignored errors and panic-on-unwind cleanup. The duplicate cleanup regression was removed; its retained owner checks normal, missing-directory, real-error and unwind paths. |
+| CLI and filesystem | Source/sink/diagnostic ownership and native metadata, paths, extents, locking, mutex, thread and stack checks remained. Iterative deep-path teardown and platform guards retained their distinct OS/depth premises. |
+| Fixtures and reference models | Five catalog encoders and the duplicated semantic snapshot writer were consolidated. Six superseded scripts and unused digest walks had no remaining consumers. Persisted bytes and separate expected query results were preserved; five before/after snapshot comparisons covered empty input and a DOUBLE block crossing. Five catalog/schema vectors were added to ordinary independent fixture comparison. Old-format encoders/decoders, Q1 comparison, identity/publication/reclamation models and their negative controls remained. |
+| Python commands and tests | Maintenance retained discovery of every `test-*.py`, entry-point guards, syntax/docs/manifests, fixture comparison, oracle rejection, build/loader selection, sanitizer interpretation, receipts and live-descendant cleanup. Maintained native observers, caller fixtures, identity diagnostics and sanitizer controls had active consumers. |
+| Campaigns and gate | Full allocation prefixes and healthy controls, native operation/partial-transfer cases, graph mutations and interruption cuts remained. Two semantic campaigns had redundantly built the stock CLI; a fresh macOS build cost 8.54 seconds. The gate now builds once and supplies the immutable artifact sequentially, then removes its target and case databases. Native callers retain isolated targets. |
+| Documentation | Maps, fixture generation and artifact ownership were corrected. The documented generator ran outside the repository into fresh output. Ordinary shell/Cargo/Python entry points remained; no workflow framework was added. |
+
+Final discovery reconciled two removed tests, one moved cleanup test and two
+renamed tests. No SQL result, fault schedule, persisted fixture byte or platform
+exclusion was removed. New controls rejected damaged schema vectors and reused
+output names; gate controls checked artifact ordering and cleanup. Both complete
+gates passed on `a315e21`: 496 ordinary Rust tests per platform, separate lease
+subprocesses, 93 tooling tests, 44 independent codec fixtures, 24 semantic cases
+and 298 composition cases. Removed names had no active consumers. Later changes
+have their own evidence and counts above.
+
+The working-plan consolidation removes completed narratives whose contracts,
+measurements and limitations are already retained here. `2280ae5:notes/plan.md`
+retains the original section dispositions and historical detail; no archive copy
+is required. The unresolved qualification and publication obligations remain in
+[the work plan](plan.md). Documentation verification passes 496 local links.
+Only the two notes files differ from the qualified runtime inputs; unchanged
+full gates were not repeated.
 
 ## Retired implementations and gate isolation
 
