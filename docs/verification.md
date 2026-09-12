@@ -437,6 +437,39 @@ positions, including an abort followed by a successful load. Unknown is never
 aborted. Closed-sink tests distinguish runtime sanitization from closure after
 bootstrap.
 
+### Native sanitizer observation
+
+Before interpreting an instrumented native-boundary result, establish that a
+known-clean control completes and a deliberate isolated fault is detected with
+the expected report and exit status. Compare the pinned production compiler,
+uninstrumented diagnostic compiler, and instrumented diagnostic compiler so
+compiler/runtime changes remain distinct from instrumentation effects.
+
+The [maintained AddressSanitizer command](testing.md#qualify-native-sanitizer-observations)
+checks stationary pthread-mutex storage, guard lifetime, move/reentry behavior,
+threaded protected-value updates, poisoning, and forgotten-guard teardown through
+the four existing filesystem tests. The instrumented build covers the filesystem
+crate, its test code, and the locally compiled libc Rust bindings. It uses the
+nightly's prebuilt standard library and native system pthread implementation;
+those libraries are not rebuilt with instrumentation. Their internal accesses
+are outside this coverage, even when runtime interceptors observe some effects.
+
+Record compiler commit, target, LLVM version, prebuilt standard-library archive,
+sanitizer runtime, native linked libraries, explicit options, artifact hashes,
+and unchanged source manifests. The command enables leak detection and rejects
+reports in its clean controls. It must reject missing or duplicate test results,
+empty selections, unrelated failures masquerading as fault detection, and
+ambiguous build artifacts. Keep fault scaffolding separate from production.
+
+A passing result covers the exercised access/lifetime paths. It does not prove
+race freedom, all mutex schedules, all foreign-library accesses, whole-engine
+memory safety, or native durability. AddressSanitizer supports partly
+uninstrumented programs with reduced observation coverage; see the
+[Rust sanitizer documentation](https://doc.rust-lang.org/nightly/unstable-book/compiler-flags/sanitizer.html).
+Standard-library instrumentation, ThreadSanitizer, and other native boundaries
+remain separate qualification work. Do not suppress unexplained reports or
+classify them as engine defects without a reproducible control.
+
 ### Linked native effects
 
 Native callers challenge actual linked transitions independently of engine

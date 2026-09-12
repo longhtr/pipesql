@@ -23,6 +23,7 @@ CAMPAIGNS = (
     "check-native-initialization.py",
     "check-native-sync.py",
     "check-native-io.py",
+    "check-native-sanitizer.py",
     "check-catalog-graph.py",
     "catalog_graph.py",
 )

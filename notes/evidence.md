@@ -830,13 +830,47 @@ storage. Old diagnostic binaries, host scripts, and raw successful logs are not
 required inputs. Further root-cause work needs evidence about the sharing layer;
 repeatedly passing a simpler probe cannot establish the missing identity premise.
 
-Sanitizer qualification is incomplete. Earlier diagnostic compiler/standard-library
-combinations disagreed about reports and error kinds in safe-std/native controls;
-the responsible difference was not isolated, and libSystem was not instrumented.
-Those retired diagnostic results establish neither a current engine defect nor
-race freedom. A new investigation must provision and identify its toolchain,
-standard library, sanitizer runtime, native dependencies, and a reproducible
-control before attributing a report or claiming a clean boundary.
+The maintained [AddressSanitizer diagnostic](../docs/testing.md#qualify-native-sanitizer-observations)
+passes on arm64 macOS and GNU arm64 Linux for the native mutex boundary. Both
+use diagnostic rustc `f248f4038796913873f11ca65b1b901e311c8dae`
+(1.100.0-nightly, September 5, 2026; LLVM 23.1.1), compared with the pinned
+1.98.1 compiler and the same nightly without instrumentation. Each configuration
+executes the four existing tests for stationary storage/moves, threaded updates
+and single destruction, poisoning, and forgotten-guard teardown. No test is
+ignored, and a selection missing any required case fails the verifier.
+
+The clean control completes; the isolated heap-bounds fault emits the expected
+AddressSanitizer report and exits 86. Runtime options are
+`halt_on_error=1:abort_on_error=0:exitcode=86:detect_leaks=1`. Both complete
+verifier runs report unchanged source manifests and successful owned-build
+cleanup. The frozen input fingerprint is
+`ce25bbda54dab6eaa862785ef01fcd65eb9ff672602d81b809658e47a99f0cce`.
+
+| Target | AddressSanitizer runtime SHA-256 | Instrumented test executable SHA-256 |
+| --- | --- | --- |
+| macOS arm64 | `f2154d27ed44e47a2de5409b19136d92d9c4b6c22b7636548c4bd6b2b823e76c` | `ef4e46be6f9796a2fe133046af0a0e2749999855aea49af5ee7683631323da84` |
+| GNU/Linux arm64 | `99d061c74157daffad9c90ac4ff6b87a6cb87d82ce9cc37cb3479a41e924fde9` | `2c029b8a0737b18edfe06628fb45fda8d90edfdff4a677dd44f016989ea12aff` |
+
+The diagnostic uses prebuilt standard-library archives, not rebuilt instrumented
+standard libraries. macOS links the nightly ASan dylib, libiconv, and libSystem
+1359.0.0. Linux embeds the supplied ASan archive and links glibc 2.36, libm,
+libgcc_s, and the native loader. System-library internal accesses are outside the
+instrumented Rust boundary. Leak detection is enabled, but passing these cases
+does not qualify every native allocation, access, schedule, or teardown path.
+The [verification contract](../docs/verification.md#native-sanitizer-observation)
+owns the permitted claims.
+
+Verifier tests independently reject missing/duplicate results, wrong diagnostics
+or exit codes, ambiguous artifacts, and instrumentation-altering environment
+settings. Failed commands and timeouts retain context and remove build outputs.
+The ordinary engine and filesystem implementation were unchanged by this work.
+These are focused diagnostic results, not a new full-engine gate.
+
+This comparison produced no report in the four mutex tests. It does not resolve
+the earlier disagreement among retired compiler/standard-library controls;
+no current engine defect, general race freedom, or whole-engine memory-safety
+claim follows. ThreadSanitizer, instrumented standard libraries, other native
+boundaries, and Windows remain separate qualification work.
 
 ## Query semantics and accepted costs
 

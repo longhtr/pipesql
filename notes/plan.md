@@ -57,29 +57,48 @@ allocator rounding can exceed an engine owner's logical charge, so physical
 memory remains a release obligation. The [evidence](evidence.md#attribution-of-composed-memory)
 records the measured scope; it does not establish a whole-process cap.
 
-## Next: qualify native sanitizer observations
+## Completed: native mutex sanitizer baseline
 
-Establish a reproducible diagnostic baseline before attributing native sanitizer
-reports to the DBMS. The current limitation is disagreement among retired
-toolchain/standard-library controls, with no qualified runtime baseline.
+The maintained [sanitizer command](../docs/testing.md#qualify-native-sanitizer-observations)
+passes on macOS and GNU/Linux. Clean/fault controls establish AddressSanitizer
+heap-bounds detection and its expected failure exit. The pinned compiler,
+uninstrumented nightly, and instrumented nightly each execute all four mutex
+tests. Receipts record unchanged inputs, compiler/runtime/artifact identities,
+linked native libraries, and cleanup. Verifier negative controls reject empty
+selections, wrong failures, and ambiguous artifacts.
 
-1. Inventory available compiler, Rust standard-library, and sanitizer runtimes.
-   Choose a small native boundary and document which code is instrumented.
-2. Use a known-clean control and a deliberate isolated fault control to verify
-   detection and exit status. Exercise the corresponding production boundary
-   with stock comparison and preserve its exact semantic/failure expectations.
-3. Retain a maintained replay command, compact observations, and explicit limits
-   for macOS and available GNU/Linux. Repair an established engine defect if one
-   is found; otherwise distinguish diagnostic limitations from engine failures.
+This qualifies the exercised Rust wrapper paths. Prebuilt standard libraries
+and native pthread implementations remain uninstrumented; ThreadSanitizer,
+other native boundaries, Windows, and general race freedom remain unfinished.
+The [evidence](evidence.md#platform-and-sanitizer-limitations) records the limits.
+Do not repeat this investigation without a concrete new report or affected change.
 
-Reassess after four hours of initial investigation. Do not install an unbounded
-matrix of toolchains, suppress unexplained reports, or claim race freedom from
-one passing control. Keep unsafe diagnostic scaffolding outside the engine.
-Finish with appropriate verification, local commits, current documentation,
-owned-output cleanup, and a clean tree.
+## Next: positional UNION ALL
 
-Do not push or modify remote refs. Windows remains unfinished; unavailable
-platform resources do not block the available verification.
+Add a bounded positional UNION ALL profile from the existing
+[language direction](../docs/language.md#deliberate-profile). This lets a learner
+combine compatible pipelines and provides a useful streaming multi-input
+operator without introducing another blocking algorithm.
+
+1. Establish the accepted grammar, input count, naming, type/NULLability, range
+   visibility, ordering, and demand rules from pinned GoogleSQL sources and
+   independent cases. State precisely which coercions and correspondence forms
+   remain unsupported before implementation.
+2. Implement through the existing semantic graph, independent validators,
+   physical planning, and execution owners. Admit all required producers before
+   execution; preserve bounded work, cancellation, exact errors, cleanup, and
+   persistent formats. Do not implement a second query pipeline or materialize
+   the whole union result.
+3. Exercise branch composition, duplicate rows, empty/NULL inputs, differing
+   column names, unsupported schemas, capacity boundaries, demanded errors,
+   memory/temporary refusal, and release. Provide a short working example and
+   current contracts. Finish with appropriate focused and complete frozen
+   verification on macOS and available GNU/Linux, compact evidence, local
+   commits, owned-output cleanup, and a clean tree.
+
+Do not add DISTINCT set operations, name-based correspondence, unrelated
+functions, speculative optimization, or another workflow framework in this
+milestone. Do not push or modify remote refs.
 
 ## Applying DuckDB lessons
 

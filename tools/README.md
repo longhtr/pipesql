@@ -86,6 +86,7 @@ recorded revision after a path move.
 | `check-native-initialization.py` | Darwin root-stat and Linux lstat/readlink observation, refusal, and overlapping callers. |
 | `check-native-sync.py` | Linked synchronization calls, refusal, and healed outcomes. |
 | `check-native-io.py` | Linked byte-I/O calls, partial progress, refusal, and healed outcomes. |
+| `check-native-sanitizer.py` | Explicit nightly AddressSanitizer controls and native-mutex tests, compared with stock and uninstrumented nightly builds. |
 | `check-catalog-interruption.py` | Stock catalog append/recovery process-termination cuts. |
 | `check-catalog-graph.py` | Independent persisted-graph checks and negative controls. |
 
@@ -102,6 +103,11 @@ limits. This selection retains result and attribution negative controls.
 On GNU/Linux, `check-diagnostic-allocation.py --pathname-only` selects expanded-path
 create/open allocation refusals, released-storage checks, successful retries,
 and the common mutex control. It does not qualify the other allocation cells.
+
+The [sanitizer command](../docs/testing.md#qualify-native-sanitizer-observations)
+requires an installed nightly and a new absolute output directory. It is separate
+from the pinned-toolchain gate. It retains source manifests, runtime/artifact
+identities, logs, and a result receipt while removing owned build outputs.
 
 The graph runner's `--seed-only --output /absolute/new-directory` builds the stock
 caller and independently inspects its seed, then stops before corruption cases.

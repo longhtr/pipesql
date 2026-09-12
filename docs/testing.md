@@ -230,6 +230,43 @@ is not evidence. The [test map](../tests/README.md) and [tool
 inventory](../tools/README.md) locate more specific checks and distinguish
 public, internal, and stock-artifact paths.
 
+## Qualify native sanitizer observations
+
+Use this focused diagnostic when changing native mutex storage or investigating
+sanitizer reports. It requires macOS or GNU/Linux, the pinned Rust toolchain,
+a native compiler, and an installed nightly with AddressSanitizer support.
+The [verified environment](../notes/evidence.md#platform-and-sanitizer-limitations)
+identifies exercised compiler/runtime versions. Install a dated toolchain before
+the offline diagnostic, or select an already installed equivalent:
+
+```sh
+rustup toolchain install nightly-2026-09-06 --profile minimal
+python3 -B tools/check-native-sanitizer.py \
+  --toolchain nightly-2026-09-06 --output /absolute/new-sanitizer-results
+```
+
+Supply a new directory outside the checkout. The command refuses existing outputs
+and requires identical native targets for the stock and diagnostic compilers.
+macOS uses `otool` to record linked libraries; GNU/Linux uses `ldd`. Run the command
+as an unprivileged user. It does not install dependencies or change toolchains.
+
+The command first checks a clean control and an isolated deliberate heap-bounds
+fault. The fault must produce the expected AddressSanitizer report and exit 86.
+It then executes all four native-mutex tests with the pinned compiler, the chosen
+nightly without instrumentation, and the same nightly with AddressSanitizer.
+Each run must report the exact required test names and successful completion.
+
+Accept the result only when the command exits zero and `result.json` reports
+`passed`, unchanged inputs, and no finalization errors. The directory retains
+compiler/runtime identities, test-artifact hashes, separate stdout/stderr logs,
+and before/after manifests. Build outputs are removed even after failure. A failed
+control invalidates the observation; inspect its logs before interpreting any
+production result. Remove the result directory after retaining necessary evidence.
+
+The [sanitizer contract](verification.md#native-sanitizer-observation) explains
+coverage and exclusions. This command does not replace the full regression gate
+or establish race freedom, whole-engine memory safety, or durability.
+
 ## Inspect a persisted catalog
 
 Use the independent inspector on a closed declared-table database or a quiescent
