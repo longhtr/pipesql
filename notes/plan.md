@@ -24,16 +24,34 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: full-partition analytic row count
+## Current: analytic allocation ownership
 
-`5697961` implements the bounded `COUNT(*) OVER ()` profile in SELECT and EXTEND.
-Both complete frozen gates and the documented example pass. The
-[count checkpoint](evidence.md#full-partition-analytic-count) records independent
-controls and the grouped-cardinality, legacy scratch and UTF-8 scan repairs.
-Discovery is reconciled, owned outputs are removed and the implementation is
-committed locally. Other analytic signatures, partitions and window ordering
-remain unsupported. Reassess the priorities below before activating another
-bounded milestone.
+The bounded analytic count implementation and both complete gates are retained
+in `5697961`; its [checkpoint](evidence.md#full-partition-analytic-count) records
+results and integration repairs. Independently measure this new public workload's
+allocation ownership before changing its execution strategy.
+
+1. Trace preparation, sorted-input construction, capture, spill, emission, replay
+   and release. Reuse the existing composed-ownership caller and runner. Keep
+   measurement scaffolding outside observed intervals and derive explicit
+   nonheap allowances from their contracts.
+2. Add a finite workload set covering count-only and repeated counts, typed
+   spilled rows and composition. Check literal expected rows, requested/usable
+   extents, public owner sums and complete release. Exercise both pathname
+   lengths and an attribution negative control.
+3. Reproduce any discrepancy on current inputs and repair its responsible owner
+   without allowance inflation or weaker equations. Preserve demanded errors,
+   independent validators, bounded work, cancellation, failure and cleanup.
+4. Run the complete ownership selection on macOS and native-storage GNU/Linux,
+   plus affected tooling checks. Engine changes require both complete frozen
+   gates. Update navigation and concise evidence, remove owned artifacts and
+   commit verified changes locally.
+
+Initial tracing confirms that count adds no preparation descriptor beyond the
+existing computation vector. Execution uses the sorted-input owner and its
+bootstrap reservation. The existing typed-reader observation samples after
+spill; the new selection must also distinguish constructor, emission and release
+boundaries. No new ownership measurement or repair has run yet.
 
 ## Next engineering priorities
 
