@@ -24,15 +24,35 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: analytic count without retained input values
+## Current: numeric division for analytical ratios
 
-`b1a9570` removes the ordinal spool for zero-field analytic input. The complete
-24-stage macOS and GNU arm64 Linux gates pass on identical frozen inputs, and the
-window example runs on fresh databases on both platforms. The
-[storage reduction](evidence.md#analytic-count-storage-reduction) records retained
-coverage and the measured change from 7,710 steps and 32,888 temporary bytes to
-529 steps and zero temporary bytes for 512 count-only rows. Demanded fields retain
-the checked spool. Owned outputs are removed and verification is committed locally.
+Count-only analytic storage reduction is complete at `b1a9570`; the
+[checkpoint](evidence.md#analytic-count-storage-reduction) records its verified
+resource improvement. The next useful expression boundary is numeric division:
+current projections can add, subtract and multiply, but cannot express ratios.
+Use the existing bounded scalar representation and frontend, without adding
+other scalar functions or changing persistent formats.
+
+1. Reduce type, NULL, zero-denominator, overflow and nonfinite cases from the
+   language owner's pinned GoogleSQL revision. Reassess after 45 minutes if
+   authoritative evidence cannot resolve a case; keep disputed forms unsupported.
+2. Trace token precedence, binding, independent expression validation, demand,
+   runtime evaluation and error causes. Implement division throughout the existing
+   numeric expression profile with explicit result types and source spans.
+3. Preserve checked integer subexpressions, unused-expression suppression, LIMIT
+   and Boolean demand, admission, cancellation and cleanup. Add independent
+   literal results and mutation controls, including mixed types and nested stages.
+4. Add a runnable ratio example and update language, resource and learning owners.
+   Extend applicable public failure callers. Run focused checks and both complete
+   frozen platform gates, reconcile discovery/manifests, record concise evidence,
+   remove owned outputs and commit locally under the publication restrictions.
+
+Initial navigation locates the operation in `frontend/lexer.rs`,
+`frontend/parser.rs`, `frontend/binding.rs` and `scalar.rs`. The pinned upstream
+[`GetFunctionTestsDivide`](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_math.cc#L939)
+contains explicit zero-denominator and nonfinite cases. Coercion, NULL and error
+mapping still need reconciliation before implementation; division remains
+unsupported in the current public contract.
 
 ## Next engineering priorities
 
