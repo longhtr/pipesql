@@ -7,7 +7,7 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 12, 2026 complete gates for `495cbdd` passed all 24 stages on
+The September 12, 2026 complete gates for `986b673` passed all 24 stages on
 macOS and GNU arm64 Linux. Both used Rust 1.98.1, release artifacts, offline
 locked dependencies, and warnings-denied compilation and documentation. macOS
 used arm64 Darwin 25.6.0, Python 3.14.7, and the native Apple toolchain. Linux
@@ -18,12 +18,12 @@ attempt models, Clippy, Rust tests, rustdoc, doctests, stock CLI construction,
 aggregate semantics and composition, public/CLI allocation, native
 initialization/synchronization/byte I/O, catalog interruption, and independent
 graph inspection. Maintenance passed 93 tooling tests, 44 independent codec
-fixtures, and 483 local documentation links. Independent semantics checked 24
+fixtures, and 484 local documentation links. Independent semantics checked 24
 cases; composition checked 298 cases. Both semantic campaigns used the same
 unchanged CLI on each platform. Native callers retained isolated build targets.
 
-Each platform executed 500 ordinary Rust tests without failures or ignored tests.
-macOS executed 368 library and 21 filesystem tests; Linux executed 370 library
+Each platform executed 501 ordinary Rust tests without failures or ignored tests.
+macOS executed 369 library and 21 filesystem tests; Linux executed 371 library
 and 19 filesystem tests. Shared suites executed 15 CLI, 76 catalog, seven
 execution, seven lifecycle, and six load tests. The lease test separately ran its
 normal child and intentionally killed its early-teardown child, then verified
@@ -32,18 +32,18 @@ execute on each platform. Four example targets compiled without test bodies;
 that compilation is not runtime example evidence.
 All eight public union tests executed on both platforms.
 
-All 24 stage statuses were zero. The 670 manifested inputs matched before/after
+All 24 stage statuses were zero. The 671 manifested inputs matched before/after
 and across both runs; Linux used a read-only export. The frozen manifest SHA-256
-is `f5fa828efdee1c989aacedd8839aaf83bcf02c5ff2ce2266eacd6f20136861c3`.
-Commit `495cbdd` retains those exact inputs. Only the two notes files were
-finalized afterward; final documentation verification checks 483 local links and covers those prose-only
-changes. No runtime source, fixture, or tool changed afterward. This identifies
+is `46055588f4fdc21c3c66060e2bc7f0fe463543a6781af13dce03d2773c49cb42`.
+Commit `986b673` retains those exact inputs. Only the two notes files were
+finalized afterward; final documentation verification checks 487 local links and
+covers those prose-only changes. No runtime source, fixture, or tool changed afterward. This identifies
 source, not reproducible binaries.
 
-The stages took 1,643.359 seconds on macOS and 848.084 seconds on Linux; these
+The stages took 1,572.247 seconds on macOS and 771.258 seconds on Linux; these
 are verification costs, not query benchmarks. The respective result-receipt
-SHA-256 values are `37e3b1d0da573854d2b49c67395a031f9ad91d0bcdd01e8175f648810f4ca873`
-and `6ff8dc2d96ae21434ae695ef16e7aa21c84c9eee7f96213e366f206dbef045cd`.
+SHA-256 values are `f5f08a663f4b84eb00301c75aff3c9509ab0d5082c9701bbab052fda357b20e7`
+and `a06d1b1ca3c6a1a40780c58238d3885116af090ce0ed62c85da64ea5dc29d6b3`.
 Finalization reported no errors and removed owned targets and composition
 databases. Successful logs, exports, the verification container, and remaining
 scratch outputs were removed; the user-owned image and toolchains remain.
@@ -55,8 +55,11 @@ remains complete at `a315e21`; its fixture, oracle, and failure controls are ret
 The reader repair retains actual payload-capacity admission and 12 typed public
 ORDER BY/DISTINCT allocation checks. The grouped repair adds physical buffer
 capacity admission, an independent encoded-limit regression, the complete grouped
-owner usable-byte check, and a bounded 514-buffer/91-hash-layout allocation census. The exhaustive append allocation-size and
-full-width growth/reuse/publication checks remain. Both platforms retain 790
+owner usable-byte check, and a bounded 514-buffer/91-hash-layout allocation census.
+The mixed-layout repair adds 40 sequential public cases, retains real hash-path
+checks, and compares the hash charge with actual physical capacities independently.
+The exhaustive append allocation-size and full-width growth/reuse/publication
+checks remain. Both platforms execute the current 795
 catalog allocation-refusal prefixes plus healthy controls at both pathname lengths,
 76 append interruption cuts, 46 recovery cuts, 249 independent graph checks during
 interruption, and 43 graph cases with their oracle controls. Native I/O exercises
@@ -630,6 +633,49 @@ request-size domains, not arbitrary global allocators or all allocator states.
 Parked samples exclude transient peaks, direct foreign allocations, allocator
 metadata/retention, and physical stack pages. Windows, broader durability,
 arbitrary schedules, and whole-process memory remain unqualified.
+
+### Mixed aggregate allocation history
+
+The fresh GROUPED size census did not qualify reuse after other queries. On
+`495cbdd` runtime inputs, the 40-case sequential macOS profile completed every
+row and released every owner, but 16 cases at the 16 MB budget exceeded their
+prepared/result charge. The largest excess was 2,819,476 bytes for seven integer
+minima: charge 15,980,652, requested 15,943,203, usable 18,800,128. A 48-allocation
+trace reconciled the complete owner and found its 7,700,480-byte key arena occupied
+10,551,296 usable bytes. The same isolated query occupied exactly its requested
+arena extent and fit admission. Allocation history was therefore a necessary
+reproduction input, not just the request size.
+
+Power-of-two key arenas alone left seven deficits; a further trace identified a
+3,670,016-byte state array occupying 4,194,304. Repair `986b673` requests real
+power-of-two capacities for large state arrays and key arenas. Logical state
+lengths and group/key limits stay separate. Key-slot padding is explicit and
+charged; sizing reduces optional group capacity when padded arrays would exceed
+the metadata budget. The [resource contract](../docs/resources.md#declared-grouping-admission)
+owns that policy and its possible earlier fallback. The actual-capacity regression
+rejects charging padding without allocating it.
+
+The first Linux public check caught an unnecessary spill caused by rounding the
+maximum encoded-key limit down despite spare capacity. The final sizing rounds
+the available budget before clamping that limit and reserves its rounded physical
+allocation. Existing 4,096-group hash/spill budgets and assertions remain unchanged.
+No query throughput improvement is claimed.
+
+[`grouping-ownership.rs`](../tools/fixtures/grouping-ownership.rs) preserves the
+reproduction sequence: 4 MB then 16 MB, one/three/five/seven/nine states, floating
+sums, integer sums, integer minima, and mixed layouts. Every cell is checked
+against the four literal source rows, with NULL key ordering, real hash execution,
+and complete owner release. The new caller linked to the old library rejects all
+16 original deficits after completing the 40 row/hash/release cases.
+
+Both complete final gates pass all 40 cases. Minimum usable headroom is 29,348
+bytes on macOS and 16,732 on GNU/Linux. The seven-minimum 16 MB case now charges
+14,178,412 bytes: macOS requests 14,140,978 and observes 14,147,088 usable; Linux
+requests 14,140,926 and observes 14,141,296. The original GROUPED healthy controls
+also fit: charge 3,957,784 at both paths, macOS usable 3,917,040/3,917,360 and Linux
+3,907,536/3,907,840. The catalog census is now 795 allocations at each pathname
+length, and every refusal prefix executes. Other schemas, allocator histories,
+transient peaks, Windows, and whole-process/RSS memory remain unqualified.
 
 ### Grouping learning workload
 

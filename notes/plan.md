@@ -11,8 +11,8 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 24-stage gates for `495cbdd` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 500 Rust tests and 298
+The complete 24-stage gates for `986b673` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 501 Rust tests and 298
 composition cases, plus its applicable native and allocation campaigns. Bounded
 thread scenarios and their ordinary-thread counterparts execute on both platforms,
 including full-width union preparation and execution.
@@ -194,40 +194,26 @@ census qualifies the exercised stock allocator families, not arbitrary schemas
 or process/RSS memory. Owned outputs are removed and changes committed locally;
 no publication occurred.
 
-## Current: mixed aggregate allocation qualification
+## Completed: mixed aggregate allocation qualification
 
-The completed GROUPED census covers its actual state widths; it does not cover
-other mixed aggregate layouts. Power-of-two group counts still multiply arbitrary
-state widths, so establish their allocation behavior before expanding the claim.
+Commit `986b673` repairs the allocation-history deficits exposed by the finite
+40-case public profile. Traces located retained native excess in arbitrary key
+arena and state-array extents. Large arrays now request charged power-of-two
+capacities while retaining exact logical state lengths. Key-slot padding is
+explicit, and metadata sizing reduces optional group capacity when necessary.
+The encoded-key limit remains complete when its rounded allocation fits.
 
-Finite worklist: inspect current cell ownership and limits; exercise narrow,
-non-power-of-two, and near-limit mixed layouts through visible public SQL at
-bounded budgets; compare complete rows with independently calculated values and
-attribute requested/usable prepared/result ownership. Run the same cases on
-macOS and native-storage GNU arm64 Linux. Trace a concrete deficit before changing
-runtime sizing; preserve fallback, replay, refusal, cancellation, and release.
-The first 40-case macOS profile completes all rows and releases all owners, but
-16 cases at 16 MB exceed their complete charge. The largest observed excess is
-2,819,476 bytes for seven integer extrema. A 48-allocation trace reconciles that
-owner exactly and identifies a 7,700,480-byte hash key arena occupying 10,551,296
-usable bytes; other large buffers fit their requests. This differs from the fresh
-size census and requires checking allocation history before choosing a repair.
-The isolated query fits; the prior query sequence changes reuse. Rounding only
-key arenas leaves seven deficits in large cell arrays. The current prototype
-requests power-of-two large cell capacities and key arenas, retains logical
-lengths, and admits padded key slots. Metadata sizing reduces group capacity to
-fit its half-budget. All 40 macOS cases and 36 grouping tests pass, including a
-new comparison between actual capacities and the complete hash charge. The
-maintained ownership campaign passes on macOS and GNU/Linux. The old library
-fails the maintained usable-byte guard after all 40 complete-row/hash/release
-cases. Linux caught an unnecessary fallback when the prototype rounded the
-encoded-key limit down despite spare capacity; correcting the rounding order
-preserves the existing 4,096-group hash/spill test without changing its budget
-or assertion. Complete frozen gates remain.
-
-Finish affected checks and required gates, document the measured scope, remove
-owned outputs, and commit locally. Do not turn the profile into a general heap or
-RSS claim, add query features, or publish changes.
+Both complete 24-stage gates pass on identical frozen inputs with 501 ordinary
+Rust tests per platform. All 40 sequential cases check complete independent rows,
+real hash execution, requested/usable ownership, and release; the old library
+fails the same guard after those checks. The actual-capacity unit test rejects
+charge-only padding. Existing 4,096-group hash/spill budgets, fallback/replay,
+refusal, cancellation, and release tests remain intact. The current catalog
+campaign exercises all 795 allocation prefixes at each pathname length.
+[Evidence](evidence.md#mixed-aggregate-allocation-history) records the causal
+sequence, rejected prototype, final measurements, and qualified scope. Owned
+outputs are removed and changes committed locally without publication. Arbitrary
+histories, transient peaks, and process/RSS memory remain separate obligations.
 
 ## Applying DuckDB lessons
 
