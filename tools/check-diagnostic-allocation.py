@@ -187,6 +187,10 @@ def run_cell(work, failures, mode, label, database_bytes=None):
 
 
 def check_ownership(work, run, failures):
+    readers = run("reader-allocation-shapes", "reader-allocation-shapes")
+    print(readers.stdout + readers.stderr, end="", flush=True)
+    if "reader shapes passed: 12 fixed-width ordering/distinct cases; rows, admission and release" not in readers.stdout:
+        failures.append("incomplete typed reader allocation checks")
     shapes = run("append-allocation-shapes", "append-allocation-shapes")
     print(shapes.stdout + shapes.stderr, end="", flush=True)
     if (

@@ -31,6 +31,15 @@ const _: () = assert!(MAX_COLUMNS <= u64::BITS as usize);
 // the native reader allocation, paths, selection and payload allocations.
 const FIXED_BYTES: usize =
     size_of::<Scan>() + 2 * crate::path::MAX_PATH_BYTES + COMPUTE_ROWS * size_of::<u32>();
+
+// Fixed-width payloads include a validity bitmap beyond their power-of-two value
+// region. That tail crosses a Darwin allocation class. Request and charge whole
+// 16-KiB units so the owner accounts for the capacity it actually retains. Native
+// column validation still limits encoded bytes; padding is never a stored value.
+fn payload_allocation_bytes(kind: DataType) -> usize {
+    native_unit::column_capacity(kind).next_multiple_of(16_384)
+}
+
 // Includes the catalog scratch that overlaps retained scan ownership at admission.
 pub(in crate::execution) const MAX_WORKSPACE_BYTES: u64 = FIXED_BYTES as u64
     + (MAX_COLUMNS * native_unit::MAX_COLUMN_BYTES) as u64
@@ -267,7 +276,7 @@ pub(in crate::execution) fn admit<'db>(
             return Err(Error::Corrupt("native source slot bound"));
         }
         if demand & (1 << index) != 0 {
-            capacities[index] = native_unit::column_capacity(column.data_type());
+            capacities[index] = payload_allocation_bytes(column.data_type());
         }
     }
     let payload_bytes = capacities
@@ -434,16 +443,100 @@ mod tests {
     use crate::{CancellationToken, Database, Error, Value, catalog, catalog_schema, native_unit};
     use std::path::PathBuf;
 
-    #[test]
-    fn native_query_read_faults_and_truncation_release_workspace() {
-        struct Fixture(PathBuf);
+    struct Fixture(PathBuf);
 
-        impl Drop for Fixture {
-            fn drop(&mut self) {
-                crate::test_cleanup::directory(&self.0);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            crate::test_cleanup::directory(&self.0);
+        }
+    }
+
+    #[test]
+    fn native_payload_capacity_is_owned_and_admitted_before_io() {
+        use crate::execution::planning;
+        let path = std::env::temp_dir().join(format!(
+            "pipesql-native-payload-capacity-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        let fixture = Fixture(path);
+        let db = Database::create_empty(
+            &fixture.0.join("db"),
+            crate::Config::new(4_000_000, 1_000_000).unwrap(),
+        )
+        .unwrap();
+        let cancel = CancellationToken::new();
+        for (name, kind, capacity) in [
+            ("ints", DataType::Int64, 278_528),
+            ("doubles", DataType::Double, 278_528),
+            ("dates", DataType::Date, 147_456),
+            ("strings", DataType::String, 524_288),
+        ] {
+            db.declare_table(
+                name,
+                &[crate::ColumnDeclaration {
+                    name: "n",
+                    data_type: kind,
+                    nullable: true,
+                }],
+                &cancel,
+            )
+            .unwrap();
+            let sql = format!("FROM {name} |> SELECT n");
+            let query = db.prepare(&sql).unwrap();
+            let plan =
+                planning::lower(&db, &query, query.snapshot.as_ref().unwrap().state(), 0).unwrap();
+            let admitted = super::admit(&db, &query, &plan, plan.scan(), None).unwrap();
+            let super::Source::Declared(scans) = &admitted.workspace.scan.source else {
+                panic!("native source");
+            };
+            assert_eq!(
+                scans[0].payloads[0].as_ref().unwrap().allocated_bytes(),
+                capacity
+            );
+            assert!(scans[0].payloads[1..].iter().all(Option::is_none));
+            drop(admitted);
+            drop(plan);
+            let before = db.reserved_memory_bytes();
+            let rows = db.execute(&query, &cancel).unwrap();
+            let admission = db.reserved_memory_bytes() - before + catalog::MAX_BYTES as u64;
+            drop(rows);
+            for short in [0, 1] {
+                let pressure = db
+                    .reserve_memory(
+                        db.config().memory_limit_bytes() - before - admission + short,
+                        "native payload exact admission",
+                    )
+                    .unwrap();
+                let mut effects = Effects::default();
+                let result = db.execute_with_effects(&query, &cancel, &mut effects);
+                if short == 0 {
+                    let mut rows = result.unwrap();
+                    finish_empty(&mut rows);
+                } else {
+                    assert!(matches!(result, Err(Error::Resource { .. })));
+                    assert_eq!(effects.count(), 0, "short admission precedes native I/O");
+                }
+                drop(pressure);
+                assert_eq!(db.reserved_memory_bytes(), before);
             }
         }
 
+        fn finish_empty(rows: &mut QueryResult<'_, '_>) {
+            for _ in 0..64 {
+                match rows.step() {
+                    QueryStep::Progress => (),
+                    QueryStep::Finished => return,
+                    QueryStep::Rows(_) => panic!("empty declared table returned rows"),
+                    QueryStep::Failed(error) => panic!("empty declared table: {error:?}"),
+                }
+            }
+            panic!("empty source completion");
+        }
+    }
+
+    #[test]
+    fn native_query_read_faults_and_truncation_release_workspace() {
         fn drain(result: &mut QueryResult<'_, '_>, effects: &mut Effects) -> Result<Vec<i64>, ()> {
             let mut rows = Vec::new();
             for _ in 0..64 {

@@ -108,6 +108,10 @@ use the same narrow fixture helpers. Directory cleanup reports unexpected failur
 after a successful test and preserves the original panic during unwinding.
 The interruption test derives its subprocess selector from its current module and
 requires the child to reach the selected exit boundary.
+
+The [declared scan tests](../src/execution/scan/declared.rs) observe allocated
+payload capacities for every type, exact/one-byte-short admission before I/O,
+native read faults, truncation, and workspace release.
 The internal [legacy scan tests](../src/execution/scan/legacy/tests.rs) cover scan admission,
 source effects, result ownership, and cancellation. These and the shared
 execution suites run on macOS and Linux with the documented target-specific

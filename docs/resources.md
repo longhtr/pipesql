@@ -205,11 +205,31 @@ only its own size.
 
 Declared-table source admission reserves the reader owner, bounded paths,
 selection, demanded payload buffers and result columns through the database
-account. One unit needs at most 266,240 bytes per INT64/DOUBLE column, 135,168
-per DATE column, or 524,288 per STRING column, including validity and text
-offsets. Payload buffers are allocated once and reused across units. Each unit
-reuses the existing metadata and payload validators; no second decoder or query
-controller is introduced.
+account. Encoded column limits include validity and text offsets. Admission
+requests and charges payload capacity in whole 16-KiB units:
+
+| Demanded column type | Maximum encoded bytes | Allocated payload capacity |
+| --- | --- | --- |
+| INT64 or DOUBLE | 266,240 | 278,528 |
+| DATE | 135,168 | 147,456 |
+| STRING | 524,288 | 524,288 |
+
+The fixed-width validity bitmap extends beyond the power-of-two value region,
+crossing a macOS allocation class. Rounding the actual request makes that retained
+capacity explicit before allocation or source I/O. It adds 12,288 requested and
+charged bytes per demanded fixed-width column; it does not reduce the measured
+macOS usable extent and can increase physical allocation on GNU/Linux. Missing
+columns still allocate nothing. The maximum scan workspace ceiling is unchanged:
+it already uses the larger, aligned STRING capacity for every column.
+
+Payload buffers are allocated once and reused across units. Padding is never an
+encoded value: the existing metadata and payload validators still enforce the
+stored length and canonical representation. The ownership campaign exercises
+ORDER BY and DISTINCT with INT64, DOUBLE, and DATE at one and 64 columns, checking
+complete nullable rows, requested/usable attribution, and release on the qualified
+stock macOS and GNU/Linux allocators. These checks and the composed-reader
+checkpoints retain the equation above; they do not qualify custom allocators,
+every producer graph, transient allocation peaks, or process/RSS bounds.
 
 ## LIMIT admission
 

@@ -131,7 +131,7 @@ repository into a fresh output. Final documentation checks cover the corrected
 five-public-stack-scenario map. [Evidence](evidence.md#full-verification-checkpoint)
 records the frozen inputs and costs. Owned outputs are removed; changes are
 committed locally without publication. The append repair below is also complete;
-the sorting-reader allocation deficit remains queued.
+the sorting-reader allocation repair is in progress.
 
 ## Completed: append allocation bounds
 
@@ -166,23 +166,43 @@ reader's independently sampled heap. The largest increment is 12,288 bytes:
 266,240 requested, 278,528 usable. This is the native INT64 source payload
 (`32768 * 8` value bytes plus 4,096 validity bytes), admitted in
 [scan/declared.rs](../src/execution/scan/declared.rs) from
-[native_unit.rs](../src/native_unit.rs). Smaller requests of 12,368, 8,456, 4,272,
-2,976, and 1,712 bytes round to 14,336, 10,240, 5,120, 3,072, and 1,792.
-Their exact owners still need attribution before choosing the repair. The
-workspace investigation therefore includes upstream scan/payload admission;
-adding a blanket sorter allowance would target the wrong owner. No production
-reader repair has begun. The disposable trace and its outputs were removed.
+[native_unit.rs](../src/native_unit.rs). Source and unmodified-library debug
+types attribute the smaller requests: native Scan 12,368 → 14,336 usable;
+RunBuffer arena 8,456 → 10,240; two physical pipelines 4,272 → 5,120;
+Order controller 2,976 → 3,072; two runtime nodes 1,712 → 1,792. The run arena
+follows its existing record/row bound; the three 65,536-byte I/O buffers are exact.
+No missing sorter owner was found.
 
-Trace the retained allocations through [blocking.rs](../src/execution/blocking.rs)
-and its run buffers, merge readers/writer, and sorted-input ownership before
-choosing a repair. Preserve the independent owner equation, complete rows,
-spill/replay, exact/short admission, cancellation, and cleanup. Bound the actual
-allocation geometry before effects rather than increasing a general budget or
-borrowing unused allowance from another owner. Qualify supported allocator/size
-premises on macOS and unprivileged native-storage GNU/Linux; retain other owners,
-custom allocators, arbitrary schedules, and process memory as separate limits.
-Complete focused and full checks, concise documentation/evidence, owned-output
-cleanup, and local commits. Do not add query features or an allocator framework.
+Finite worklist:
+
+- Implemented: request and charge native payloads in whole 16-KiB units before
+  allocation or I/O. INT64/DOUBLE request 278,528 bytes; DATE requests 147,456;
+  STRING retains 524,288. The extra 12,288 bytes per fixed-width column are actual
+  owned capacity. Encoded validators and the maximum scan ceiling are unchanged.
+  The [resource contract](../docs/resources.md#declared-scan-admission) records the
+  physical-memory tradeoff; no sorter or generic allocator allowance was added.
+- Focused checks pass on macOS and native-storage GNU/Linux: the independent
+  requested/usable equation remains unchanged, and 12 one-/64-column typed
+  ORDER BY/DISTINCT cases check complete nullable rows and release. The composed
+  caller now rejects reader extents exceeding admission after joining its barrier
+  participants. Linking that observer to the previous library rejects the original
+  deficit with exit 101. Its initial in-barrier assertion timed out; deferring the
+  check preserves teardown and reports the intended failure.
+- The new internal test observes all four actual payload capacities and verifies
+  exact/one-byte-short admission before I/O and release. Retained native codec and
+  read-failure tests, Clippy, and maintenance pass. Finish both frozen complete
+  gates, final documentation/evidence, owned
+  scratch cleanup, and coherent local commits. Do not repeat the completed
+  tooling inventory or add query features or an allocator framework.
+- The first full gates both stop at two nullable COUNT fixtures: their 1,600,000
+  budget is below the new 1,609,391–1,609,460-byte aggregate minimum. Raise only that fixture
+  budget by 36,864 bytes, the three demanded fixed-width payload increments.
+  Preserve the observed spill/non-spill split, nullable results, cancellation after
+  spill, one-byte temporary-space refusal, retry, and complete release. Requalify
+  those cases before repeating the complete gates on a new frozen input set.
+
+Custom allocators, other producer graphs, arbitrary schedules, transient peaks,
+and process/RSS bounds remain separate qualifications.
 
 ## Applying DuckDB lessons
 

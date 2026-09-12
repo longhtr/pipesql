@@ -12,6 +12,138 @@ const ROWS: usize = 4096;
 const MEMORY: u64 = 4_000_000;
 const TEMP: u64 = 8_000_000;
 
+pub(super) fn reader_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    use pipesql::DateValue;
+    std::fs::create_dir(root)?;
+    let dates = [2, 1, 2, 0].map(|day| DateValue::from_days_since_unix_epoch(day).unwrap());
+    for (kind, values) in [
+        (DataType::Int64, ColumnValues::Int64(&[2, 1, 2, 0])),
+        (DataType::Double, ColumnValues::Double(&[2., 1., 2., 0.])),
+        (DataType::Date, ColumnValues::Date(&dates)),
+    ] {
+        for width in [1, 64] {
+            let path = root.join(format!("{kind:?}-{width}"));
+            let db = Database::create_empty(&path, Config::new(64_000_000, TEMP)?)?;
+            let cancel = CancellationToken::new();
+            let names: Vec<_> = (0..width).map(|i| format!("c{i}")).collect();
+            let declarations: Vec<_> = names
+                .iter()
+                .map(|name| ColumnDeclaration {
+                    name,
+                    data_type: kind,
+                    nullable: true,
+                })
+                .collect();
+            db.declare_table("typed", &declarations, &cancel)?;
+            let columns = vec![
+                ColumnInput {
+                    values,
+                    validity: &[7]
+                };
+                width
+            ];
+            let mut append = db.begin_append(
+                "typed",
+                AppendLimits {
+                    batches: 1,
+                    encoded_bytes: 100_000,
+                },
+                &cancel,
+            )?;
+            append.write(&columns, &cancel)?;
+            append.commit(&cancel)?;
+            let path_bytes = std::fs::canonicalize(&path)?.as_os_str().len() + "/units".len();
+            for (sql, distinct) in [
+                ("FROM typed |> ORDER BY c0 NULLS FIRST", false),
+                ("FROM typed |> DISTINCT", true),
+            ] {
+                println!("reader shape type={kind:?} width={width} distinct={distinct}");
+                let prepared = db.prepare(sql)?;
+                let before = Live::now();
+                let memory = db.reserved_memory_bytes();
+                let mut rows = db.execute(&prepared, &cancel)?;
+                for _ in 0..200_000 {
+                    assert!(matches!(rows.step(), QueryStep::Progress));
+                    if db.reserved_temp_bytes() != 0 {
+                        break;
+                    }
+                }
+                assert!(db.reserved_temp_bytes() != 0, "reader parks after spill");
+                let owner = Owner {
+                    charge: rows.accounted_memory_bytes(),
+                    heap: Heap::now().increase_from(Heap {
+                        requested: before.requested,
+                        usable: before.usable,
+                    }),
+                };
+                // Same independent equation as the composed readers. The native
+                // payload padding is real requested capacity, not a new allowance.
+                owner.report(
+                    "typed-reader",
+                    (std::mem::size_of::<QueryResult<'_, '_>>() + 4096 + 8192 - path_bytes) as u64,
+                );
+                assert!(
+                    owner.heap.usable as u64 <= owner.charge,
+                    "reader usable allocations exceed admission"
+                );
+                let mut counts = [0; 3];
+                let mut previous = 0;
+                let mut finished = false;
+                for _ in 0..200_000 {
+                    match rows.step() {
+                        QueryStep::Progress => (),
+                        QueryStep::Finished => {
+                            finished = true;
+                            break;
+                        }
+                        QueryStep::Failed(error) => panic!("typed reader: {error:?}"),
+                        QueryStep::Rows(batch) => {
+                            for row in 0..batch.len() {
+                                let key = match batch.value(row, 0) {
+                                    Some(Value::Null) => 0,
+                                    Some(Value::Int64(n @ 1..=2)) if kind == DataType::Int64 => {
+                                        n as usize
+                                    }
+                                    Some(Value::Double(n))
+                                        if kind == DataType::Double && (n == 1. || n == 2.) =>
+                                    {
+                                        n as usize
+                                    }
+                                    Some(Value::Date(day)) if kind == DataType::Date => {
+                                        let n = day.days_since_unix_epoch();
+                                        assert!((1..=2).contains(&n));
+                                        n as usize
+                                    }
+                                    unexpected => panic!("typed reader value: {unexpected:?}"),
+                                };
+                                for column in 1..width {
+                                    assert_eq!(batch.value(row, column), batch.value(row, 0));
+                                }
+                                if !distinct {
+                                    assert!(key >= previous);
+                                }
+                                previous = key;
+                                counts[key] += 1;
+                            }
+                        }
+                    }
+                }
+                assert!(finished);
+                assert_eq!(counts, if distinct { [1, 1, 1] } else { [1, 1, 2] });
+                drop(rows);
+                assert_eq!(Live::now(), before);
+                assert_eq!(db.reserved_memory_bytes(), memory);
+                assert_eq!(db.reserved_temp_bytes(), 0);
+            }
+            db.close()?;
+        }
+    }
+    println!(
+        "reader shapes passed: 12 fixed-width ordering/distinct cases; rows, admission and release"
+    );
+    Ok(())
+}
+
 // The append contract admits three retained allocations separately from its
 // inline handle and paths. Challenge every permitted request size through the
 // same global allocator as the public library; do not copy its admission code.
@@ -403,6 +535,7 @@ pub(super) fn run(
     let observations = [Mutex::new(Owner::default()), Mutex::new(Owner::default())];
     let ready = Barrier::new(3);
     let resume = Barrier::new(3);
+    let mut reader_excess = 0;
     std::thread::scope(|scope| {
         let mut workers = [None, None];
         for (id, query, token) in [(0, &ordered, &cancelled), (1, &distinct, &cancel)] {
@@ -606,6 +739,10 @@ pub(super) fn run(
                     (inline + running) as u64
                 };
                 reader.report(name, nonheap);
+                // The workers are parked at barriers. Defer the bound
+                // failure until they have completed and joined.
+                reader_excess =
+                    reader_excess.max((reader.heap.usable as u64).saturating_sub(reader.charge));
             }
             if phase == 7 {
                 assert_eq!(db.reserved_temp_bytes(), 0);
@@ -617,6 +754,10 @@ pub(super) fn run(
             worker.unwrap().join().unwrap();
         }
     });
+    assert_eq!(
+        reader_excess, 0,
+        "reader usable allocations exceed admission"
+    );
     let before_sync_drop = Live::now();
     drop(ready);
     drop(resume);

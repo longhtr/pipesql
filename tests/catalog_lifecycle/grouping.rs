@@ -84,7 +84,7 @@ fn nullable_count_preserves_presence_through_spill_and_cancellation() {
     let directory = Directory::new();
     // Keys descend within each batch: even input positions have odd keys.
     create_presence_sales(&directory);
-    for memory in [4_000_000, 1_600_000] {
+    for memory in [4_000_000, PRESENCE_SPILL_MEMORY] {
         let db = Database::open(
             &directory.database(),
             Config::new(memory, 8_000_000).unwrap(),
@@ -129,7 +129,7 @@ fn nullable_count_preserves_presence_through_spill_and_cancellation() {
         }
         assert!(finished);
         assert_eq!(groups, 4096);
-        assert_eq!(peak_temp > 0, memory == 1_600_000);
+        assert_eq!(peak_temp > 0, memory == PRESENCE_SPILL_MEMORY);
         drop(result);
         assert_eq!(db.reserved_memory_bytes(), baseline);
         assert_eq!(db.reserved_temp_bytes(), 0);
@@ -159,6 +159,10 @@ fn nullable_count_preserves_presence_through_spill_and_cancellation() {
 
 const PRESENCE_QUERY: &str = "FROM sales |> AGGREGATE COUNT(amount*2) AS numbers,COUNT(note) AS texts,COUNT(day) AS days,COUNT(*) AS n GROUP AND ORDER BY region";
 
+// Admits the rounded region, amount, and day payloads while leaving insufficient
+// hash capacity for 4,096 groups. Both low-memory scenarios must reach real spill.
+const PRESENCE_SPILL_MEMORY: u64 = 1_636_864;
+
 #[test]
 fn nullable_count_releases_owners_when_spill_space_is_refused() {
     let directory = Directory::new();
@@ -183,7 +187,11 @@ fn nullable_count_releases_owners_when_spill_space_is_refused() {
     drop(query);
     db.close().unwrap();
 
-    let db = Database::open(&directory.database(), Config::new(1_600_000, 1).unwrap()).unwrap();
+    let db = Database::open(
+        &directory.database(),
+        Config::new(PRESENCE_SPILL_MEMORY, 1).unwrap(),
+    )
+    .unwrap();
     let query = db.prepare(PRESENCE_QUERY).unwrap();
     let baseline = db.reserved_memory_bytes();
     // Retry with the same prepared query to expose retained execution owners.

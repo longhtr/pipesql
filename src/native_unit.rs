@@ -616,6 +616,11 @@ pub(super) struct ColumnBuffer {
 }
 
 impl ColumnBuffer {
+    #[cfg(test)]
+    pub(super) fn allocated_bytes(&self) -> usize {
+        self.bytes.capacity()
+    }
+
     pub(super) fn new(bytes: Vec<u8>) -> Result<Self, Error> {
         buffer_capacity(bytes.capacity(), MAX_COLUMN_BYTES, "native column capacity")?;
         Ok(Self {
