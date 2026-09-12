@@ -24,6 +24,30 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
+## Current: legacy constant allocation ownership
+
+Qualify the new legacy UTF-8 materialization path with the existing independent
+public allocator caller. Its declared-reader shapes do not establish ownership
+for legacy constant batches; functional and bounded-stack coverage is complete.
+
+1. Derive nonheap terms from batch, scan, result and aggregate admission before
+   sampling. Keep the requested-plus-nonheap-equals-charged equation independent.
+2. Add finite cases for one/64 columns, empty/32-byte constants, full reused
+   batches and global/grouped text extrema. Retain fixed-key/declared controls,
+   exact values, usable-allocation comparisons, release checks and an attribution
+   negative control. Reuse the current caller and runner.
+3. Trace and repair any demonstrated discrepancy without allowance inflation;
+   verify affected refusal, cancellation, cleanup and healthy reuse boundaries.
+4. Run the affected caller/tool checks on macOS and unprivileged native-storage
+   GNU arm64 Linux, document scoped evidence, remove outputs and commit locally.
+
+Initial trace: batch admission charges column records, 256 row spans and 8,192
+text bytes per legacy STRING output when a text constant is present. The scan
+adds its fixed workspace, arena and computation/branch owners. The existing
+`Owner::report` enforces exact attribution and must remain independent; deriving
+its legacy nonheap term is the next step. No allocation discrepancy is yet
+claimed. Arbitrary allocators and whole-process/RSS bounds remain unqualified.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
