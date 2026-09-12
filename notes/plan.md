@@ -215,30 +215,25 @@ sequence, rejected prototype, final measurements, and qualified scope. Owned
 outputs are removed and changes committed locally without publication. Arbitrary
 histories, transient peaks, and process/RSS memory remain separate obligations.
 
-## Current: grouping capacity cost
+## Completed: grouping capacity cost
 
-The allocation repairs preserve correctness and bounded fallback, but their
-possible earlier spill is not yet a measured performance claim. Compare retained
-`495cbdd` with `986b673` using the existing grouping examples and public fixtures.
-The numeric example currently fixes 4,096 evenly distributed groups and has no
-execution timer; the STRING example already separates input construction from
-execution/validation timing and checks complete rows and release.
+Commit `d491101` extends the numeric learning example with the existing
+32-/4,096-group even/skewed distributions and execution/validation timing while
+preserving its default invocation. Both stock libraries, `ca5f59e` before the
+hash repairs and `986b673` after them, use identical caller source and inputs.
+Ten cells, three repetitions and two versions complete on each platform: 120
+verified executions in total, with every result cell and final release checked.
 
-Finite worklist: extend the numeric learning example to retain its existing
-invocation while allowing the existing 32-/4,096-group even/skewed fixtures and
-reporting execution/validation time. Use the same caller source against both
-stock libraries. Measure those four distributions at 1.2 MB and 2 MB, plus the
-existing four-/256-group STRING cases at 8-byte width and 4 MB. Use three
-repetitions per cell on macOS and native-storage GNU arm64 Linux, checking every
-result and sampled temporary peak. Limit initial measurement and triage to
-30 minutes of execution per platform; preserve failures and reassess material
-regressions before extending the profile. No new benchmark runner or framework.
-
-Keep source/input identity, timing scope, and physical-memory exclusions explicit.
-Fix a runtime issue only after attributing it to the measured capacity change;
-otherwise retain the example improvement and concise cost evidence. Verify the
-changed example and documentation, remove owned outputs, and commit locally.
-No measurement process or scratch output is currently active for this milestone.
+No cell changes its spill path or temporary peak. The higher macOS four-group
+STRING sample is recorded, but the small timing shifts do not establish a
+material end-to-end regression attributable to the capacity policy. No runtime
+change is justified by this finite profile. The [cost record](evidence.md#grouping-capacity-cost)
+owns source/artifact identities, commands, complete timing ranges, and limits.
+The walkthrough's three Cargo commands pass on both platforms; invalid-option
+and wrong-result controls pass on macOS. Formatting, Clippy, and documentation
+checks pass. Owned outputs are removed and changes committed locally without
+publication. Do not repeat this profile without a concrete new workload or
+regression that can change the decision.
 
 ## Applying DuckDB lessons
 
