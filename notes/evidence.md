@@ -7,82 +7,103 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-The September 12, 2026 complete gates for `986b673` passed all 24 stages on
+The September 12, 2026 complete gates for `1153e8d` passed all 24 stages on
 macOS and GNU arm64 Linux. Both used Rust 1.98.1, release artifacts, offline
 locked dependencies, and warnings-denied compilation and documentation. macOS
 used arm64 Darwin 25.6.0, Python 3.14.7, and the native Apple toolchain. Linux
-used the unprivileged native-storage environment described below.
+used uid/gid 1000, GNU libc 2.36, and native overlay storage; its source export
+was mounted read-only. The existing verification image and toolchains remain.
 
-The gates covered formatting, maintenance, filesystem ABI, rounding vectors,
-attempt models, Clippy, Rust tests, rustdoc, doctests, stock CLI construction,
-aggregate semantics and composition, public/CLI allocation, native
-initialization/synchronization/byte I/O, catalog interruption, and independent
-graph inspection. Maintenance passed 93 tooling tests, 44 independent codec
-fixtures, and 484 local documentation links. Independent semantics checked 24
-cases; composition checked 298 cases. Both semantic campaigns used the same
-unchanged CLI on each platform. Native callers retained isolated build targets.
+Formatting, maintenance, filesystem ABI, rounding vectors, attempt models,
+Clippy, Rust tests, rustdoc, doctests, stock CLI construction, aggregate semantics
+and composition, public/CLI allocation, native initialization/synchronization/I/O,
+catalog interruption and independent graph inspection all passed. Maintenance
+executed 96 tooling tests, reproduced 44 codec fixtures, and checked 507 local
+links. Independent aggregate semantics checked 24 cases and composition checked
+304 cases against unchanged stock CLI artifacts.
 
-Each platform executed 501 ordinary Rust tests without failures or ignored tests.
-macOS executed 369 library and 21 filesystem tests; Linux executed 371 library
-and 19 filesystem tests. Shared suites executed 15 CLI, 76 catalog, seven
-execution, seven lifecycle, and six load tests. The lease test separately ran its
-normal child and intentionally killed its early-teardown child, then verified
-reopening. The native payload-capacity test and both append admission/growth tests
-execute on each platform. Four example targets compiled without test bodies;
-that compilation is not runtime example evidence.
-All eight public union tests executed on both platforms.
+Each platform executed 506 ordinary Rust tests without failures or ignored tests.
+macOS executed 371 library and 21 filesystem tests; Linux executed 373 library
+and 19 filesystem tests. Shared suites executed 15 CLI, 79 catalog, seven
+execution, seven lifecycle and six load tests. The lease test separately ran its
+normal child and intentionally killed its early-teardown child before verifying
+reopen. All 11 public union tests and the retained bounded-thread scenarios ran
+on both platforms. Four example targets compile without test bodies; their
+compilation is separate from the example execution evidence below.
 
-All 24 stage statuses were zero. The 671 manifested inputs matched before/after
-and across both runs; Linux used a read-only export. The frozen manifest SHA-256
-is `46055588f4fdc21c3c66060e2bc7f0fe463543a6781af13dce03d2773c49cb42`.
-Commit `986b673` retains those exact inputs. That checkpoint finalized only the
-two notes files and verified 487 local documentation links. The later grouping
-example and walkthrough changes are qualified in the
-[grouping cost record](#grouping-capacity-cost) and
-[explicit batch checks](#explicit-string-append-batches); later caller changes add
-[composed ownership checks](#composed-query-allocation-boundaries) and
-[pathname sanitizer qualification](#pathname-sanitizer-qualification). The later
-[composed example measurements](#composed-execution-cost) add observation only. These focused
-checks did not rerun the complete
-gate. Engine source is unchanged. This identifies source, not reproducible binaries.
+The 671 inputs matched before/after and across both gates. The frozen manifest
+SHA-256 is `51bab09aff511f76a420220bb2729dfda88db1bae546b7e04d149b45c30732e9`;
+`1153e8d` retains those exact inputs. Finalization changes only README's capability
+summary and the two notes files. The other 668 manifested inputs retain
+fingerprint `ffaadc7314b6fa9e5260e2a74ebae4116ebd6bb3a56479377339e2b25c8138e9`.
+This identifies source, not reproducible binaries.
 
-The stages took 1,572.247 seconds on macOS and 771.258 seconds on Linux; these
-are verification costs, not query benchmarks. The respective result-receipt
-SHA-256 values are `f5f08a663f4b84eb00301c75aff3c9509ab0d5082c9701bbab052fda357b20e7`
-and `a06d1b1ca3c6a1a40780c58238d3885116af090ce0ed62c85da64ea5dc29d6b3`.
-Finalization reported no errors and removed owned targets and composition
-databases. Successful logs, exports, the verification container, and remaining
-scratch outputs were removed; the user-owned image and toolchains remain.
-Current callers and fixtures reconstruct cases; hashes do not restore removed
-logs.
+Stage times totaled 1,747.002 seconds on macOS and 1,064.727 seconds on Linux.
+The gates overlapped after macOS Rust testing; these are verification costs, not
+query benchmarks. Their result-receipt SHA-256 values are respectively
+`a07b7305d1701b13e97a94b5d82142989063bf76a064b2c3aaef7c70086784d1` and
+`c36613605e127c44412a9aa04ac0833a63e0e4274e7a6d64a125f0896883488e`.
+Both receipts have zero finalization errors. Owned targets, composition databases,
+logs, exports, tutorial databases and verification containers are removed after
+recording the evidence; current source and fixtures reconstruct the checks.
 
-The [finite testing/tooling review](plan.md#completed-testing-and-tooling-cleanup)
-remains complete at `a315e21`; its fixture, oracle, and failure controls are retained.
-The reader repair retains actual payload-capacity admission and 12 typed public
-ORDER BY/DISTINCT allocation checks. The grouped repair adds physical buffer
-capacity admission, an independent encoded-limit regression, the complete grouped
-owner usable-byte check, and a bounded 514-buffer/91-hash-layout allocation census.
-The mixed-layout repair adds 40 sequential public cases, retains real hash-path
-checks, and compares the hash charge with actual physical capacities independently.
-The exhaustive append allocation-size and full-width growth/reuse/publication
-checks remain. Both platforms execute the current 795
-catalog allocation-refusal prefixes plus healthy controls at both pathname lengths,
-76 append interruption cuts, 46 recovery cuts, 249 independent graph checks during
-interruption, and 43 graph cases with their oracle controls. Native I/O exercises
-1,028 cells. Platform exclusions and persistent-byte compatibility remain intact.
+Both platforms pass all 863 catalog allocation-refusal positions and healthy
+controls at short and 384-byte pathnames, 76 append interruption cuts, 46 recovery
+cuts, 249 independent graph checks during interruption, 43 graph cases with
+retained negative controls, and 1,028 native I/O cells. Linux retains the two
+Darwin ACL exclusions. The finite testing/tooling cleanup at `a315e21` and all
+subsequent payload-capacity, append-growth, grouped-buffer and hash-layout
+regressions remain in the gate. Persistent formats and publication algorithms
+are unchanged by this milestone.
 
-The declared-table and union tutorials last ran on both platforms at `98de11f`
-and are unchanged. The union query produced north's total 25 across four rows and
-south's total 20 across one row, then reported `status=queried` and exited
-successfully. The earlier frontend walkthrough produced INT64 result 38 on macOS.
-These are retained tutorial observations, not reruns during the tooling cleanup.
+The initial macOS gate at `c908071` timed out after 900 seconds in public
+allocation, after long-path refusal position 848. It did not run remaining
+recovery allocation cells or later native stages and is not passing evidence.
+`1153e8d` allows 1,200 seconds for that expanded stage while retaining all cells,
+the 20-second cell deadline, failure status and descendant cleanup. Final
+allocation stages completed in 1,033.072 seconds on macOS and 601.897 seconds on
+Linux. Gate timeout controls pass; no engine memory allowance increased.
+
+The declared-table, column-transform and updated union tutorials, three numeric
+grouping cases, eight default STRING cases, two bulk STRING cases and both
+composed budgets execute successfully on both platforms. They use the unchanged
+engine/example inputs from `c908071`; only the gate deadline and plan changed
+before the final freeze. The union example produces north total 15/count 3 and
+south total 20/count 1 with `status=queried`. On macOS its ALL variant produces
+25/count 4 and 20/count 1, and a deliberately wrong expected count 999 is rejected
+against actual count 4 by the stock composition checker.
 
 Run `sh tools/check.sh --output /absolute/new-result-directory` with the
-[documented prerequisites](../docs/testing.md#complete-local-gate). The gate keeps
-stage logs and a JSON receipt, checks before/after source manifests, and removes
-its owned build target and composition databases. Preserve failure context before
-disposing of a run. Windows, broader durability, physical memory bounds, and
-sanitizer/concurrency qualification retain their existing limitations.
+[documented prerequisites](../docs/testing.md#complete-local-gate). Windows,
+broader durability, physical memory bounds and sanitizer/concurrency qualification
+retain their existing limitations. Release gates do not qualify debug small-stack
+execution; an exploratory debug selection aborted and its owned outputs were
+removed.
+
+## Positional UNION DISTINCT
+
+`c908071` normalizes each complete argument list to binary union stages followed
+by one ordinary DISTINCT stage. The extra stage consumes the existing 16-stage
+budget. No alternate frontend, resource account, sorter or scheduler was added.
+The [language contract](../docs/language.md#union-distinct) owns the accepted scope.
+
+Retained and expanded tests check nested ALL/DISTINCT boundaries, the additional
+stage, positional names and types, complete-field demand and original overflow
+spans, NULL/signed-zero/NaN equivalence, original floating representatives, date
+bounds and prepared snapshots across appends. Independent semantic and physical
+mutations reject corrupt mappings and bypassed duplicate removal. Full-width
+small-stack execution, exact admission, cancellation prefixes, sorter corruption,
+short/failed I/O, temporary refusal and observed grouping fallback replay pass.
+Late cancellation may observe an already finished producer; the prefix sweep
+requires complete output in that case and continues through an uncancelled run.
+
+Six new stock CLI cases use the retained independent catalog fixture at an
+explicit 4 MB budget. The original 298 cases retain their 2 MB budget. Fixture
+assembly now has one owner shared with graph verification; its bytes and
+independent inspector are unchanged, and existing directories or links are
+refused before writing. The public allocator sequence adds UNION DISTINCT
+prepare/execute/step refusal and healed results. Its census rose from 795 to 863;
+the 900-allocation campaign ceiling limits work, not engine memory.
 
 ## Positional UNION ALL
 
@@ -112,10 +133,10 @@ cancellation at each scheduled prefix, and partial/full replay retain their
 independent results and release checks. Replay visits only previously initialized
 branches, preserving unvisited aggregates when a LIMIT ends a prefix.
 
-The public allocation caller composes typed union, sorting, and COUNT. Both
-platforms pass all 790 catalog refusal prefixes and the healthy control on short
+At `98de11f`, the public allocation caller composed typed union, sorting, and
+COUNT. Both platforms passed all 790 catalog refusal prefixes and the healthy control on short
 and 384-byte paths, including union preparation, execution, and stepping
-refusals, healed reopen, and retry. The unchanged census bound is 800. This is
+refusals, healed reopen, and retry. That milestone used an 800-allocation census bound. This is
 observed allocation coverage, not a whole-process memory guarantee.
 
 The broad development debug run aborted on a small-stack test; it is not passing

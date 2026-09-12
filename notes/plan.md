@@ -11,8 +11,8 @@ Use the [reading path](../docs/README.md#learn-the-implementation),
 [tool guide](../tools/README.md) to navigate the implementation and its checks.
 Maintained builds, tests, and examples require no historical checkout or archive.
 
-The complete 24-stage gates for `986b673` pass on macOS and GNU arm64 Linux
-on matching frozen inputs. Each platform executes 501 Rust tests and 298
+The complete 24-stage gates for `1153e8d` pass on macOS and GNU arm64 Linux
+on matching frozen inputs. Each platform executes 506 ordinary Rust tests and 304
 composition cases, plus its applicable native and allocation campaigns. Bounded
 thread scenarios and their ordinary-thread counterparts execute on both platforms,
 including full-width union preparation and execution.
@@ -305,63 +305,38 @@ Both Cargo commands and the wrong-sum control pass their expected outcomes;
 formatting, Clippy, and maintenance pass. No engine implementation changed.
 Owned outputs are removed and changes committed locally without publication.
 
-## Current: positional UNION DISTINCT
+## Completed: positional UNION DISTINCT
 
-Add explicit positional `UNION DISTINCT` for declared-table pipelines, using the
-existing union and bounded complete-row DISTINCT owners. Preserve the completed
-UNION ALL profile. Bare UNION, name-based correspondence, INTERSECT, EXCEPT, and
-legacy-format extensions remain outside this milestone.
+Explicit positional UNION DISTINCT uses the existing binary union and bounded
+complete-row DISTINCT owners. Each complete argument list adds one DISTINCT stage
+within the unchanged stage, token, source, column and resource bounds. Independent
+semantic/physical validators, complete-field demand, original spans, snapshots,
+typed representatives, admission, cancellation, sorter faults, replay and cleanup
+remain covered. Bare UNION, correspondence, INTERSECT, EXCEPT and legacy-format
+extensions remain outside the accepted profile.
 
-Matching positional schemas use left-input names and fresh output identities;
-input ranges and ordering do not survive. Deduplication follows the existing
-DISTINCT equality contract and demands every comparison field, including fields
-later projected away. Keep snapshot, span, admission, replay, cancellation, and
-cleanup contracts. Any normalized deduplication stage must consume the existing
-16-stage budget; do not expand token, column, or resource ceilings.
+Implementation `c908071` and the bounded campaign deadline adjustment `1153e8d`
+pass matching complete macOS/GNU arm64 Linux gates: 506 ordinary Rust tests plus
+the separate lease subprocess, 96 tooling tests, 44 codec fixtures, 24 independent
+aggregate cases and 304 composition cases. All 11 public union tests execute on
+both platforms. Each catalog pathname campaign exercises all 863 allocation
+refusal positions and its healthy control. The original 298 CLI composition
+cases retain their 2 MB budget; six new declared-table cases use an explicit 4 MB
+budget and the retained independent catalog fixture.
 
-The parser normalizes each complete DISTINCT argument list to binary unions and
-one ordinary DISTINCT stage. Binding, independent validation, demand, admission,
-and execution reuse existing owners. Focused release checks pass for parser and
-semantic/physical mutations, exact preparation admission, full-width/small-stack
-execution, complete-row and demanded-error semantics, typed representatives and
-snapshots, cancellation prefixes, sorter faults and grouping fallback replay.
-Late cancellation may observe an already finished producer; the prefix sweep now
-requires complete output in that case and continues to an uncancelled completion.
-A prior debug selection aborted on the documented release-only small-stack case;
-its eight abandoned directories were removed. No engine ceiling changed.
+The updated tutorial and retained grouping, STRING and composed examples pass on
+both platforms. The UNION DISTINCT example produces north total 15/count 3 and
+south total 20/count 1; its documented ALL variant also passes on macOS. A wrong
+expected count is rejected by the stock composition checker. The
+[verification checkpoint](evidence.md#full-verification-checkpoint) records the
+failed initial deadline, final matching inputs, exclusions and cleanup.
 
-The stock CLI composition corpus passes 304 cases: the original 298 retain their
-2 MB limit, and six positional union cases use the retained independent catalog
-fixture at an explicit 4 MB limit. Fixture assembly is shared with graph checking;
-it still copies the same checked bytes into fresh destinations. The catalog
-allocation caller now includes UNION DISTINCT prepare/execute/step and healed
-results. Its measured short-path census rose from 795 to 863, exceeding the former
-800 work ceiling; the campaign ceiling is now 900, with every measured prefix
-still required. This ceiling limits campaign work, not engine memory. The full
-short/long refusal sweep passed all 863 refusal positions and healthy controls
-at each pathname length (573.550 seconds on macOS).
-
-The focused maintenance run passed 96 tooling tests, 44 independent codec
-fixtures and 507 local links. Warning-denied all-target Clippy passed. The updated
-UNION tutorial produces north total 15/count 3 and south total 20/count 1; the
-retained column-transform, grouping, STRING and composed examples also complete
-with their full oracles on macOS. Legacy union refusal now names UNION for both
-modes and preserves its operator span.
-
-The first complete macOS gate at `c908071` passed through stock composition but
-its expanded allocation campaign reached the 900-second outer deadline after
-long-path refusal position 848. It did not complete recovery allocation cells or
-later native stages and is not a passing gate. Inputs stayed unchanged and gate
-finalization released its target. Preserve every campaign cell and the 20-second
-per-cell deadline; allow 1,200 seconds for the expanded complete allocation stage.
-The focused short/long campaign already completed in 573.550 seconds, before the
-other required ownership, legacy and recovery cells. Verify the revised complete
-stage without reducing coverage.
-
-Remaining finite work: complete frozen macOS/Linux gates, Linux tutorial results,
-discovery/manifests, concise evidence, owned-output cleanup, and final local
-commits. Current verification is focused and does not establish full or
-cross-platform completion.
+The expanded macOS allocation stage took 1,033.072 seconds, exceeding its former
+900-second deadline. The retained 1,200-second outer deadline preserves every
+cell, the 20-second cell timeout and descendant cleanup. This measured cost makes
+repeated healthy query execution in the catalog healing path a concrete candidate
+for the next bounded tooling improvement; establish its protected contracts
+before removing any repetition.
 
 ## Applying DuckDB lessons
 
