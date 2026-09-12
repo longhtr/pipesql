@@ -215,6 +215,31 @@ sequence, rejected prototype, final measurements, and qualified scope. Owned
 outputs are removed and changes committed locally without publication. Arbitrary
 histories, transient peaks, and process/RSS memory remain separate obligations.
 
+## Current: grouping capacity cost
+
+The allocation repairs preserve correctness and bounded fallback, but their
+possible earlier spill is not yet a measured performance claim. Compare retained
+`495cbdd` with `986b673` using the existing grouping examples and public fixtures.
+The numeric example currently fixes 4,096 evenly distributed groups and has no
+execution timer; the STRING example already separates input construction from
+execution/validation timing and checks complete rows and release.
+
+Finite worklist: extend the numeric learning example to retain its existing
+invocation while allowing the existing 32-/4,096-group even/skewed fixtures and
+reporting execution/validation time. Use the same caller source against both
+stock libraries. Measure those four distributions at 1.2 MB and 2 MB, plus the
+existing four-/256-group STRING cases at 8-byte width and 4 MB. Use three
+repetitions per cell on macOS and native-storage GNU arm64 Linux, checking every
+result and sampled temporary peak. Limit initial measurement and triage to
+30 minutes of execution per platform; preserve failures and reassess material
+regressions before extending the profile. No new benchmark runner or framework.
+
+Keep source/input identity, timing scope, and physical-memory exclusions explicit.
+Fix a runtime issue only after attributing it to the measured capacity change;
+otherwise retain the example improvement and concise cost evidence. Verify the
+changed example and documentation, remove owned outputs, and commit locally.
+No measurement process or scratch output is currently active for this milestone.
+
 ## Applying DuckDB lessons
 
 DuckDB's published designs inform the following work. These are PipeSQL design
