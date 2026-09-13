@@ -40,6 +40,31 @@ Docker CPU quota after warning pressure; host pressure was normal at completion.
 Owned scratch outputs are removed. Publication remains unauthorized, and the
 platform, durability and physical-memory qualifications below remain unfinished.
 
+## Current: numeric NULLIF for sentinel normalization
+
+Add two-argument numeric NULLIF to the existing scalar profile so queries can
+exclude sentinel amounts from aggregates without dropping their complete rows.
+COALESCE already provides numeric conditional demand; NULLIF needs its own pinned
+equality and evaluation contract. The completed multiset and resource milestones
+have no new counterexample and remain closed.
+
+1. Pin arity, numeric common typing, NULLability, NULL/NaN/signed-zero equality,
+   original bits, evaluation order and demanded errors at the existing immutable
+   GoogleSQL revision. Reassess unresolved research after 30 minutes.
+2. Trace the scalar program, binding, independent validators, demand evaluator,
+   row/batch consumers and aggregate arguments. Reuse their bounded owners;
+   preserve COALESCE, spans, admission, replay, failure and cleanup.
+3. Add independent numeric cases, conditional-error controls, malformed-program
+   checks and relevant composed/resource/failure boundaries. Keep SQL and expected
+   results visible and reuse unchanged owner campaigns.
+4. Add a runnable sentinel example, update contracts/maps, run focused checks and
+   matching frozen macOS/GNU/Linux gates, reconcile evidence, remove owned outputs
+   and commit locally. Preserve resource monitoring and comma spacing.
+
+Exclude text/DATE/Boolean-valued NULLIF, new types, general CASE/IF, unrelated
+coercions and persistent-format changes. Research precedes implementation;
+publication and broader qualification restrictions remain unchanged.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
