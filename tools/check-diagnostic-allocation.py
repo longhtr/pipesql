@@ -205,6 +205,10 @@ def check_ownership(work, run, failures):
         print(wide.stdout + wide.stderr, end="", flush=True)
         if "wide set shapes passed: 6 cases; complete rows, step ownership and release" not in wide.stdout:
             failures.append(f"incomplete wide set allocation checks: {label}")
+        joined = run("wide-left-join-shape", f"wide-left-join-{label}", length)
+        print(joined.stdout + joined.stderr, end="", flush=True)
+        if "wide left join passed: 64 columns, 11 pairs; rows, ownership and release" not in joined.stdout:
+            failures.append(f"incomplete wide left join ownership checks: {label}")
         prepared = run("prepared-aggregate-shapes", f"prepared-aggregates-{label}", length)
         print(prepared.stdout + prepared.stderr, end="", flush=True)
         if "prepared aggregate shapes passed: 14 accepted and 54 rejected; attribution, rows and release" not in prepared.stdout:
@@ -290,6 +294,7 @@ def check_ownership(work, run, failures):
         ("prepared-aggregate-attribution-negative", "prepared ownership attribution"),
         ("legacy-constant-attribution-negative", "execution ownership attribution: legacy-text"),
         ("joined-attribution-negative", "joined usable ownership attribution"),
+        ("wide-left-join-attribution-negative", "wide left join usable ownership attribution"),
         ("wide-set-attribution-negative", "wide set usable ownership attribution"),
         ("append-allocation-shapes-negative", "append allocation rounding"),
         ("ownership-negative", "complete-row oracle"),

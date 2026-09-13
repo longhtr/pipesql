@@ -125,7 +125,7 @@ The caller samples requested/usable admission after every step and independently
 reconciles nonheap allowances at admission, first spill, emission and completion.
 Count-only cases require zero temporary consumption; typed input and the second
 stage of the consecutive-count case retain spill coverage. Both pathname lengths
-run all seven cases; a one-byte attribution error must fail.
+run all eleven cases; a one-byte attribution error must fail.
 Composed-reader bound failures are reported after the
 barrier participants join. This selection also checks the complete append
 allocation-size ranges and full-width maximum-column growth, reuse, publication,
@@ -205,6 +205,15 @@ exercise different record and output extents. The caller samples requested and
 usable allocations against prepared/result charges after execute and every step.
 UNION ALL must use no temporary bytes; the sorted forms must use external storage.
 A nonexistent measured owner must fail the usable-byte attribution guard.
+
+`wide_left_join_shape` uses the same caller and both pathname lengths. Three
+left fields and 61 right fields produce 64 columns. Six rows per side include
+unequal duplicate groups, unmatched left keys and NULL keys. A literal 11-pair
+oracle checks every field without assuming equal-key order, including nullable,
+empty, embedded-NUL UTF-8 and 65,536-byte STRING values. The caller requires
+external storage and checks requested/usable charges through execute, every step,
+Finished and release. The existing false-attribution mechanism must reject a
+nonexistent owner after the complete rows and release have been checked.
 
 The same selection runs the nullable self-join, aggregation, and ordering workload
 at 2.2 MB and 12 MB. `joined_shapes` in

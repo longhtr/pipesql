@@ -419,6 +419,14 @@ I/O, and account reconciliation through public steps. A fixture's successful
 configured limit is not a universal minimum for other schemas or producer
 graphs.
 
+The public ownership caller also exercises a 64-column LEFT JOIN with nullable,
+maximum-length STRING payloads, unequal duplicate groups and unmatched rows.
+Both sorted inputs, the null-extension descriptor and the output batch contribute
+to the measured prepared/result ownership. Complete-row checks accompany each
+returned-step sample and final release; the [tool map](../tools/README.md) owns
+invocation and the false-attribution control. These samples do not cover transient
+peaks inside a step or establish a whole-process/RSS bound.
+
 ## Blocking buffer capacity
 
 Declared payloads, sort frames, run bytes, prior keys and hash lookup keys use

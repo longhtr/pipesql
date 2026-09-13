@@ -260,6 +260,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if mode == "wide-set-shapes" || mode == "wide-set-attribution-negative" {
         return ownership::wide_set_shapes(&root, mode == "wide-set-attribution-negative");
     }
+    if mode == "wide-left-join-shape" || mode == "wide-left-join-attribution-negative" {
+        return ownership::wide_left_join_shape(
+            &root,
+            mode == "wide-left-join-attribution-negative",
+        );
+    }
     if mode == "joined-shapes" || mode == "joined-attribution-negative" {
         return ownership::joined_shapes(&root, mode == "joined-attribution-negative");
     }

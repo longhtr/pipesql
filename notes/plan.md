@@ -47,16 +47,22 @@ The retained joined ownership workload reduces a narrow nullable INT64 self-join
 to four aggregate columns. Wide set ownership covers another producer boundary.
 Neither directly measures a wide LEFT JOIN's STRING payloads and null extension.
 
-1. Trace both sorted inputs, null-extension descriptors and wide source/output
-   buffers before implementation. Select one finite workload within 30 minutes:
-   maximum-width joined output, maximum/nullable STRING cells, unequal duplicate
-   keys, unmatched left rows and NULL keys. Keep literal expected multiplicities
-   and field values independent of production layout and admission formulas.
+1. Tracing resolved before implementation within 30 minutes. Null-extension
+   descriptors retain fresh nullable identities; unmatched rows reuse the join
+   output batch while both sorted inputs keep separate buffers and charges.
+   Select three left columns and 61 right columns, six source rows per side,
+   nullable 65,536-byte STRING cells and an explicit 11-pair output oracle. The
+   pairs cover 2-by-3 and 1-by-2 duplicate groups, unmatched keys and NULL keys.
+   Check every output field without relying on equal-key output order.
 2. Extend the existing ownership caller at short and 384-byte paths. Sample
    requested/usable bytes against charges through execute, every step and final
    release; require external storage and the existing wrong-attribution control.
-   Preserve narrow join and wide-set controls. Reproduce and trace any deficit
-   before choosing an owner-specific repair; add no arbitrary allowance.
+   Focused macOS runs pass both paths: 11 pairs, 624 steps, 11,866,809 temporary
+   bytes and minimum sampled usable headroom of 7,608 bytes. The false-attribution
+   control rejects after rows and release. No deficit or admission change is
+   indicated. The complete existing macOS ownership selection also passes,
+   preserving narrow join, wide-set and other owner controls. Maintenance passes
+   96 tooling tests, 44 independent codec fixtures and 639 local links.
 3. Update affected resource/tool maps, run focused controls and matching frozen
    macOS/GNU/Linux full gates, reconcile discovery and manifests, retain concise
    evidence, remove owned outputs and commit locally. Run the gates sequentially

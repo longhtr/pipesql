@@ -1,4 +1,4 @@
-//! Stock public owners sampled only while both reader threads are parked.
+//! Stock public owners sampled at lifecycle checkpoints and parked-thread barriers.
 use super::{DENY, LIVE_REQUESTED, LIVE_USABLE};
 use pipesql::{
     Append, AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
@@ -1123,6 +1123,203 @@ pub(super) fn wide_set_shapes(
     }
     db.close()?;
     println!("wide set shapes passed: 6 cases; complete rows, step ownership and release");
+    Ok(())
+}
+
+pub(super) fn wide_left_join_shape(
+    root: &Path,
+    wrong_attribution: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir(root)?;
+    let path = root.join("database");
+    let cancel = CancellationToken::new();
+    let db = Database::create_empty(&path, Config::new(192_000_000, 256_000_000)?)?;
+    let long = "雪".repeat(21_845) + "x";
+    let short = "a\0雪";
+    let texts = [None, Some(short), Some(long.as_str()), Some("")];
+    let left_text = [
+        Some(long.as_str()),
+        Some(short),
+        None,
+        Some(long.as_str()),
+        Some(""),
+        Some(long.as_str()),
+    ];
+    let left_keys = [None, Some(1), Some(1), Some(2), Some(3), Some(4)];
+    let right_keys = [None, Some(1), Some(1), Some(1), Some(3), Some(3)];
+    // Three left fields and 61 right fields reach the source/output width bound.
+    // All right identities become nullable at the join, including the stored id.
+    for (table, width, keys) in [("left_rows", 3, left_keys), ("right_rows", 61, right_keys)] {
+        let names: Vec<_> = (0..width)
+            .map(|column| match column {
+                0 => "key".to_owned(),
+                1 => "id".to_owned(),
+                _ => format!("text{column}"),
+            })
+            .collect();
+        let declarations: Vec<_> = names
+            .iter()
+            .enumerate()
+            .map(|(column, name)| ColumnDeclaration {
+                name,
+                data_type: if column < 2 {
+                    DataType::Int64
+                } else {
+                    DataType::String
+                },
+                nullable: column != 1,
+            })
+            .collect();
+        db.declare_table(table, &declarations, &cancel)?;
+        let mut append = db.begin_append(
+            table,
+            AppendLimits {
+                batches: 6,
+                encoded_bytes: 32_000_000,
+            },
+            &cancel,
+        )?;
+        for (id, key) in keys.into_iter().enumerate() {
+            let key_value = [key.unwrap_or(999)];
+            let key_valid = [u8::from(key.is_some())];
+            let id_value = [id as i64];
+            let text_values: Vec<_> = (2..width)
+                .map(|column| {
+                    let value = if width == 3 {
+                        left_text[id]
+                    } else {
+                        texts[(id + column - 2) % 4]
+                    };
+                    ([value.unwrap_or("hidden")], [u8::from(value.is_some())])
+                })
+                .collect();
+            let mut inputs = vec![
+                ColumnInput {
+                    values: ColumnValues::Int64(&key_value),
+                    validity: &key_valid,
+                },
+                ColumnInput {
+                    values: ColumnValues::Int64(&id_value),
+                    validity: &[1],
+                },
+            ];
+            inputs.extend(text_values.iter().map(|(values, valid)| ColumnInput {
+                values: ColumnValues::String(values),
+                validity: valid,
+            }));
+            append.write(&inputs, &cancel)?;
+        }
+        append.commit(&cancel)?;
+    }
+    // Literal pairs specify multiplicity independently of the join code. NULL
+    // keys never match, key 2 and key 4 have no right row, and equal-key output
+    // order is not promised.
+    let expected = [
+        (0, None),
+        (1, Some(1)),
+        (1, Some(2)),
+        (1, Some(3)),
+        (2, Some(1)),
+        (2, Some(2)),
+        (2, Some(3)),
+        (3, None),
+        (4, Some(4)),
+        (4, Some(5)),
+        (5, None),
+    ];
+    let check_text = |actual: Option<Value<'_>>, expected: Option<&str>| match (actual, expected) {
+        (Some(Value::Null), None) => (),
+        (Some(Value::String(actual)), Some(expected)) => assert_eq!(actual.as_str(), expected),
+        _ => panic!("wide left join STRING field"),
+    };
+    println!("wide left join: 64 columns, unequal duplicate groups and nullable maximum STRING");
+    let before = Live::now();
+    let memory = db.reserved_memory_bytes();
+    let query = db.prepare("FROM left_rows AS l |> LEFT JOIN right_rows AS r ON l.key=r.key")?;
+    assert_eq!(query.result_column_count(), 64);
+    let mut result = db.execute(&query, &cancel)?;
+    let mut seen = [false; 11];
+    let mut finished = false;
+    let mut steps = 0;
+    let mut peak_temp = 0;
+    let mut minimum_headroom = i128::MAX;
+    loop {
+        let charge = query.accounted_memory_bytes() + result.accounted_memory_bytes();
+        assert_eq!(db.reserved_memory_bytes(), memory + charge);
+        let heap = Heap::now().increase_from(Heap {
+            requested: before.requested,
+            usable: before.usable,
+        });
+        assert!(
+            heap.requested as u64 <= charge,
+            "wide left join requested admission"
+        );
+        let attributed = heap.usable as u128 + u128::from(wrong_attribution) * u128::from(charge);
+        minimum_headroom = minimum_headroom.min(i128::from(charge) - attributed as i128);
+        peak_temp = peak_temp.max(db.reserved_temp_bytes());
+        if finished {
+            break;
+        }
+        steps += 1;
+        assert!(steps < 200_000, "wide left join did not finish");
+        match result.step() {
+            QueryStep::Progress => (),
+            QueryStep::Finished => finished = true,
+            QueryStep::Failed(error) => panic!("wide left join: {error}"),
+            QueryStep::Rows(batch) => {
+                assert_eq!(batch.column_count(), 64);
+                for row in 0..batch.len() {
+                    let Some(Value::Int64(left)) = batch.value(row, 1) else {
+                        panic!("left row id");
+                    };
+                    let right = match batch.value(row, 4) {
+                        Some(Value::Int64(id)) => Some(id),
+                        Some(Value::Null) => None,
+                        _ => panic!("right row id"),
+                    };
+                    let position = expected
+                        .iter()
+                        .position(|pair| *pair == (left, right))
+                        .expect("unexpected joined pair");
+                    assert!(!seen[position], "duplicate joined pair");
+                    seen[position] = true;
+                    assert_eq!(
+                        batch.value(row, 0),
+                        Some(left_keys[left as usize].map_or(Value::Null, Value::Int64))
+                    );
+                    check_text(batch.value(row, 2), left_text[left as usize]);
+                    assert_eq!(
+                        batch.value(row, 3),
+                        Some(
+                            right
+                                .and_then(|id| right_keys[id as usize])
+                                .map_or(Value::Null, Value::Int64)
+                        )
+                    );
+                    for column in 5..64 {
+                        let text = right.and_then(|id| texts[(id as usize + column - 5) % 4]);
+                        check_text(batch.value(row, column), text);
+                    }
+                }
+            }
+        }
+    }
+    assert!(seen.into_iter().all(|seen| seen), "missing joined pair");
+    assert!(peak_temp > 0, "wide left join must use external storage");
+    drop(result);
+    drop(query);
+    assert_eq!(Live::now(), before);
+    assert_eq!(db.reserved_memory_bytes(), memory);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    db.close()?;
+    println!(
+        "wide left join rows=11 steps={steps} minimum-usable-headroom={minimum_headroom} temporary={peak_temp} release=complete"
+    );
+    assert!(
+        minimum_headroom >= 0,
+        "wide left join usable ownership attribution"
+    );
+    println!("wide left join passed: 64 columns, 11 pairs; rows, ownership and release");
     Ok(())
 }
 

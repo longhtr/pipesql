@@ -102,7 +102,8 @@ class AllocationInterpretation(unittest.TestCase):
     def test_ownership_requires_joined_and_allocator_observations(self):
         marker = ("joined shapes passed: 2 budgets; complete rows, step ownership and release\n"
                   "analytic shapes passed: 11 cases; rows, attribution and release\n"
-                  "wide set shapes passed: 6 cases; complete rows, step ownership and release")
+                  "wide set shapes passed: 6 cases; complete rows, step ownership and release\n"
+                  "wide left join passed: 64 columns, 11 pairs; rows, ownership and release")
         for output, missing in [("", True), (marker, False)]:
             failures = []
             run = Mock(return_value=subprocess.CompletedProcess([], 0, output, ""))
@@ -120,6 +121,9 @@ class AllocationInterpretation(unittest.TestCase):
             self.assertIn((("joined-shapes", "joined-shapes"), {}), run.call_args_list)
             self.assertIn((("analytic-shapes", "analytic-path384", 384), {}), run.call_args_list)
             self.assertIn((("wide-set-shapes", "wide-sets-path384", 384), {}), run.call_args_list)
+            self.assertIn((("wide-left-join-shape", "wide-left-join-path384", 384), {}), run.call_args_list)
+            self.assertEqual(sum(message.startswith("incomplete wide left join ownership checks:")
+                                 for message in failures), 2 if missing else 0)
             self.assertEqual(sum(message.startswith("incomplete wide set allocation checks:")
                                  for message in failures), 2 if missing else 0)
             self.assertEqual(sum(message.startswith("incomplete analytic allocation checks:")
