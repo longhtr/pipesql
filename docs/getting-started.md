@@ -203,6 +203,24 @@ operation. Earlier integer expressions still use checked arithmetic. Each lane's
 validity is checked before dividing, so a NULL operand produces NULL and a
 non-NULL zero denominator reports a source-spanned error.
 
+## Group amounts by integer quotient
+
+Run [quotient.sql](../examples/quotient.sql) against the same sales table:
+
+```sh
+target/release/pipesql query --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/quotient.sql" \
+  --memory-limit-bytes 4000000 --temp-limit-bytes 2000000
+```
+
+The decoded rows are NULL/1/NULL, 0/2/15 and 1/1/20 for bucket, n and total.
+Require three rows, `status=queried` and successful process exit. Amounts 5 and
+10 share quotient zero; amount 20 has quotient one. The NULL amount retains its
+own group. DIV computes an exact INT64 quotient in the [numeric evaluator](../src/scalar.rs)
+before the ordinary [grouping owner](../src/execution/aggregation/grouping.rs)
+consumes the column. It truncates toward zero: negative values near zero share
+bucket zero, so signed buckets are not mathematical floor intervals.
+
 ## Group amounts by remainder
 
 Run [remainder.sql](../examples/remainder.sql) against the same sales table:
@@ -254,7 +272,7 @@ This query divides ten by each recorded amount and retains the missing amount.
 The decoded rows are north/NULL/NULL, north/5/2.0, north/10/1.0 and south/20/0.5.
 Require four rows, `status=queried` and successful process exit. A zero denominator
 would also produce NULL. SAFE_DIVIDE converts errors from division itself to NULL;
-an overflowing argument such as `SAFE_DIVIDE(9223372036854775807+1,0)` still fails.
+an overflowing argument such as `SAFE_DIVIDE(9223372036854775807+1, 0)` still fails.
 
 The [numeric evaluator](../src/scalar.rs) records NULL in the lane's existing
 validity bitmap. Later operators retain that distinction: `COUNT(ratio)` excludes

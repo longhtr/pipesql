@@ -47,7 +47,30 @@ semantic and resource repairs remain closed without a new counterexample.
    reconcile discovery and manifests, retain concise evidence, remove owned
    outputs and commit locally under the publication restrictions.
 
-Semantic research and implementation remain. DOUBLE DIV, NUMERIC types and
+The pinned signature, signed fixtures, NULL evaluation and integer primitive
+resolve the semantics before implementation. DIV truncates toward zero, keeps
+INT64 exactness and reports minimum INT64 divided by -1 as overflow. Numeric
+reference anchors are corrected against physical source lines; search-rendered
+line numbers did not identify the intended source locations. Semantic research resolved within the 30-minute checkpoint.
+
+The bounded parser, integer lane and independent validator now support DIV. Four
+new focused tests pass for exact signed/extreme results, integer-only binding,
+15/16-call bounds and public composition. The shared DIV/MOD NULL-lane test,
+retained zero/error spans, cancellation/early drop, exact/short admission and
+forced grouping replay pass. Clippy and maintenance pass. Catalog allocation
+controls remain at 983 on both pathname lengths within the unchanged 1,000
+ceiling; full refusal sweeps remain required. Native I/O retains a literal total
+through composed DIV/MOD. The quotient-grouping example and maps are added.
+
+The quotient example passes on fresh macOS and GNU/Linux sales databases with
+exact schema, three expected groups and successful completion. The first full
+gates were deliberately interrupted to incorporate comma spacing throughout
+maintained code and SQL. They provide no full-gate pass. Comma separators are now spaced in maintained code, embedded SQL, generated
+SQL lists and examples. Quoted data, codec/upstream fixtures and intentional
+lexical cases remain intact. The spacing diff is reconciled, including two
+ordinary trailing commas added by rustfmt. Maintenance and documentation pass;
+fresh full gates remain required. Final discovery/manifests, evidence, cleanup
+and local commits remain. DOUBLE DIV, NUMERIC types and
 other new scalar calls are outside this milestone. No new platform or physical
 memory qualification is claimed. No publication is authorized.
 

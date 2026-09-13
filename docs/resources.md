@@ -159,9 +159,10 @@ same transition and the existing validity bitmap for NULL results. Its two
 argument phases occupy the bounded parser stack, without recursion or a separate
 allocation. A folded NULL keeps its numeric type inline. ABS uses the unary
 stack transition and preserves its input type and validity bitmap. These
-operations add no allocation owner or temporary storage. MOD uses the same
-two-input lane transition with INT64 operands. Its call shares the bounded
-argument-frame representation with SAFE_DIVIDE. Zero-denominator and overflow
+operations add no allocation owner or temporary storage. MOD and DIV use the same
+two-input lane transition with INT64 operands. Their calls share the bounded
+argument-frame representation with SAFE_DIVIDE. DIV uses checked integer
+arithmetic without a floating-point intermediate. Zero-denominator and overflow
 errors retain inline
 source spans and release query ownership through the ordinary failure path.
 

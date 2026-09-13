@@ -124,52 +124,55 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
         ],
     );
     let cancel = CancellationToken::new();
-    for variant in 0..15 {
+    for variant in 0..16 {
         let joined = matches!(variant, 0 | 2 | 6);
         let sql = if joined {
-            "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> AGGREGATE SUM(l.n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY l.k"
+            "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> AGGREGATE SUM(l.n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY l.k"
         } else {
-            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
         };
         let sql = match variant {
             2 => {
-                "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> LIMIT 5 |> LIMIT 5 |> AGGREGATE SUM(l.n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY l.k"
+                "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> LIMIT 5 |> LIMIT 5 |> AGGREGATE SUM(l.n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY l.k"
             }
             3 => {
-                "FROM facts |> ORDER BY n DESC |> LIMIT 3 |> LIMIT 2 |> AGGREGATE SUM(n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
+                "FROM facts |> ORDER BY n DESC |> LIMIT 3 |> LIMIT 2 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
             }
             4 => {
-                "FROM facts |> LIMIT 3 |> LIMIT 3 |> AGGREGATE SUM(n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
+                "FROM facts |> LIMIT 3 |> LIMIT 3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
             }
             5 => {
-                "FROM facts |> SELECT k,n+1 AS shifted |> SELECT k,shifted-1 AS n |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k,total+0 AS total,nrows"
+                "FROM facts |> SELECT k, n+1 AS shifted |> SELECT k, shifted-1 AS n |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k, total+0 AS total, nrows"
             }
             6 => {
-                "FROM facts |> SELECT k,n+0 AS n |> AS l |> JOIN facts AS r ON l.k=r.k |> SELECT l.k AS k,l.n+0 AS n |> AGGREGATE SUM(n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k,total+0 AS total,nrows"
+                "FROM facts |> SELECT k, n+0 AS n |> AS l |> JOIN facts AS r ON l.k=r.k |> SELECT l.k AS k, l.n+0 AS n |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k, total+0 AS total, nrows"
             }
             7 => {
-                "FROM facts |> SELECT k,n+1 AS n |> LIMIT 3 |> SELECT k,n-1 AS n |> LIMIT 3 |> AGGREGATE SUM(n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k,total+0 AS total,nrows"
+                "FROM facts |> SELECT k, n+1 AS n |> LIMIT 3 |> SELECT k, n-1 AS n |> LIMIT 3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k, total+0 AS total, nrows"
             }
             8 => {
-                "FROM facts |> DISTINCT |> LIMIT 3 |> AGGREGATE SUM(n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
+                "FROM facts |> DISTINCT |> LIMIT 3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
             }
             9 => {
-                "FROM facts |> SELECT k |> DISTINCT |> LIMIT 2 |> AGGREGATE SUM(k) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
+                "FROM facts |> SELECT k |> DISTINCT |> LIMIT 2 |> AGGREGATE SUM(k) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
             }
             10 => {
-                "FROM facts |> UNION DISTINCT (FROM facts) |> AGGREGATE SUM(n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
+                "FROM facts |> UNION DISTINCT (FROM facts) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
             }
             11 => {
-                "FROM facts |> EXTEND COUNT(*) OVER () AS partition_rows |> WHERE partition_rows=3 |> AGGREGATE SUM(n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
+                "FROM facts |> EXTEND COUNT(*) OVER () AS partition_rows |> WHERE partition_rows=3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
             }
             12 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total,COUNT(SAFE_DIVIDE(n,k-1)) AS nrows GROUP AND ORDER BY k"
+                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(SAFE_DIVIDE(n, k-1)) AS nrows GROUP AND ORDER BY k"
             }
             13 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(ABS(n-5)) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
+                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(ABS(n-5)) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
             }
             14 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(MOD(n,3)) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
+                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(MOD(n, 3)) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
+            }
+            15 => {
+                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(DIV(n, 3)) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
             }
             _ => sql,
         };
@@ -249,6 +252,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
                 12 => [[1, 7, 0], [2, 7, 1]],
                 13 => [[1, 3, 2], [2, 2, 1]],
                 14 => [[1, 1, 2], [2, 1, 1]],
+                15 => [[1, 2, 2], [2, 2, 1]],
                 _ => unreachable!(),
             }
         );
@@ -276,7 +280,7 @@ fn runtime_replays_retained_output_after_prefix_or_completion() {
         let sql = if mode == 0 {
             "FROM facts |> AGGREGATE SUM(n) AS total"
         } else if mode == 4 {
-            "FROM facts |> AGGREGATE COUNT(SAFE_DIVIDE(n,k-1)) AS present GROUP AND ORDER BY k"
+            "FROM facts |> AGGREGATE COUNT(SAFE_DIVIDE(n, k-1)) AS present GROUP AND ORDER BY k"
         } else if mode == 3 {
             "FROM facts |> SELECT COUNT(*) OVER () AS n"
         } else {
@@ -674,7 +678,7 @@ fn full_length_text_extrema_survive_hash_fallback_and_cancelled_reduction() {
         append.commit(&cancel).unwrap();
     }
     let query = database.prepare(
-        "FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi,COUNT(word) AS n GROUP AND ORDER BY k"
+        "FROM words |> AGGREGATE MIN(word) AS lo, MAX(word) AS hi, COUNT(word) AS n GROUP AND ORDER BY k"
     ).unwrap();
     let baseline = database.reserved_memory_bytes();
     #[derive(Clone, Copy, PartialEq, Eq)]

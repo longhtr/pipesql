@@ -14,7 +14,7 @@ const FIRST: &str = "first 雪";
 // Bounds campaign work, not engine memory. Every measured prefix is exercised.
 pub(super) const ALLOCATION_LIMIT: usize = 1000;
 const SECOND: &str = "next \t\n";
-const QUERY: &str = "FROM facts |> SELECT note,amount";
+const QUERY: &str = "FROM facts |> SELECT note, amount";
 const COLUMNS: [ColumnDeclaration<'static>; 3] = [
     ColumnDeclaration {
         name: "note",
@@ -32,13 +32,13 @@ const COLUMNS: [ColumnDeclaration<'static>; 3] = [
         nullable: true,
     },
 ];
-const AGGREGATE: &str = "FROM facts |> AGGREGATE SUM(amount) AS ignored, AVG(amount) AS ai, SUM(measure) AS total, AVG(measure) AS mean, COUNT(*) AS n |> SELECT total,mean,ai,n";
-const GROUPED: &str = "FROM facts |> EXTEND amount+0 AS adjusted |> SET note=note |> DROP amount |> RENAME adjusted AS amount |> AGGREGATE AVG(amount) AS ai,SUM(measure) AS total,AVG(measure) AS mean,COUNT(*) AS n,MIN(amount) AS amin,MAX(amount) AS amax,MIN(note) AS tmin,MAX(note) AS tmax GROUP AND ORDER BY note |> SELECT note,ai+0.0 AS ai,total+0.0 AS total,mean+0.0 AS mean,n+0 AS n,amin,amax,tmin,tmax";
-const DISTINCT: &str = "FROM facts |> SELECT note,amount |> DISTINCT";
-const UNION: &str = "FROM facts |> SELECT note,amount |> UNION ALL (FROM facts |> SELECT note,amount) |> ORDER BY note,amount |> AGGREGATE COUNT(*) AS n";
-const UNION_DISTINCT: &str = "FROM facts |> SELECT note,amount |> UNION DISTINCT (FROM facts |> SELECT note,amount) |> AGGREGATE COUNT(*) AS n";
-const WINDOW: &str = "FROM facts |> EXTEND COUNT(*) OVER () AS n |> WHERE n=4 |> ORDER BY note,amount |> AGGREGATE SUM(n) AS total";
-const REPEATED: &str = "FROM facts |> AGGREGATE COUNT(*) AS n GROUP BY note |> AGGREGATE SUM(n) AS subtotal GROUP BY n |> AGGREGATE SUM(subtotal) AS total,COUNT(*) AS distinct_sizes";
+const AGGREGATE: &str = "FROM facts |> AGGREGATE SUM(amount) AS ignored, AVG(amount) AS ai, SUM(measure) AS total, AVG(measure) AS mean, COUNT(*) AS n |> SELECT total, mean, ai, n";
+const GROUPED: &str = "FROM facts |> EXTEND amount+0 AS adjusted |> SET note=note |> DROP amount |> RENAME adjusted AS amount |> AGGREGATE AVG(amount) AS ai, SUM(measure) AS total, AVG(measure) AS mean, COUNT(*) AS n, MIN(amount) AS amin, MAX(amount) AS amax, MIN(note) AS tmin, MAX(note) AS tmax GROUP AND ORDER BY note |> SELECT note, ai+0.0 AS ai, total+0.0 AS total, mean+0.0 AS mean, n+0 AS n, amin, amax, tmin, tmax";
+const DISTINCT: &str = "FROM facts |> SELECT note, amount |> DISTINCT";
+const UNION: &str = "FROM facts |> SELECT note, amount |> UNION ALL (FROM facts |> SELECT note, amount) |> ORDER BY note, amount |> AGGREGATE COUNT(*) AS n";
+const UNION_DISTINCT: &str = "FROM facts |> SELECT note, amount |> UNION DISTINCT (FROM facts |> SELECT note, amount) |> AGGREGATE COUNT(*) AS n";
+const WINDOW: &str = "FROM facts |> EXTEND COUNT(*) OVER () AS n |> WHERE n=4 |> ORDER BY note, amount |> AGGREGATE SUM(n) AS total";
+const REPEATED: &str = "FROM facts |> AGGREGATE COUNT(*) AS n GROUP BY note |> AGGREGATE SUM(n) AS subtotal GROUP BY n |> AGGREGATE SUM(subtotal) AS total, COUNT(*) AS distinct_sizes";
 fn consume_repeated(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(), Error> {
     let mut seen = false;
     for _ in 0..4096 {
@@ -248,8 +248,8 @@ fn consume_rows(
 }
 
 const ORDERED: &str =
-    "FROM facts |> ORDER BY note DESC NULLS FIRST |> SELECT note,amount |> LIMIT 4";
-const DERIVED_JOIN: &str = "FROM (FROM facts |> WHERE note IN ('first 雪','absent',NULL) |> EXTEND 'branch 雪' AS tag,DATE '1970-01-02' AS day |> WHERE tag = 'branch 雪' AND day = DATE '1970-01-02' |> SELECT amount) AS a |> JOIN (FROM facts |> SELECT amount) AS b ON a.amount = b.amount |> AGGREGATE COUNT(*) AS n";
+    "FROM facts |> ORDER BY note DESC NULLS FIRST |> SELECT note, amount |> LIMIT 4";
+const DERIVED_JOIN: &str = "FROM (FROM facts |> WHERE note IN ('first 雪', 'absent', NULL) |> EXTEND 'branch 雪' AS tag, DATE '1970-01-02' AS day |> WHERE tag = 'branch 雪' AND day = DATE '1970-01-02' |> SELECT amount) AS a |> JOIN (FROM facts |> SELECT amount) AS b ON a.amount = b.amount |> AGGREGATE COUNT(*) AS n";
 const JOINED_ORDER: &str = "FROM facts AS a |> JOIN facts AS b ON a.amount = b.amount |> ORDER BY a.amount DESC |> LIMIT 8 |> AGGREGATE COUNT(*) AS n";
 fn consume_count(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(), Error> {
     let mut rows = 0;
@@ -490,7 +490,7 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
             consume_count(result, 16)?;
             drop(count);
             phase = "division-prepare";
-            let division = db.prepare("FROM facts |> SELECT ABS(-(measure/2)) AS ratio,MOD(amount,2) AS odd |> WHERE ratio=1.75 AND odd=1 |> EXTEND SAFE_DIVIDE(ratio,0) AS missing |> WHERE missing IS NULL |> AGGREGATE COUNT(*) AS n")?;
+            let division = db.prepare("FROM facts |> SELECT ABS(-(measure/2)) AS ratio, MOD(amount, 2) AS odd, DIV(amount, 1) AS exact |> WHERE ratio=1.75 AND odd=1 AND exact=9007199254740993 |> EXTEND SAFE_DIVIDE(ratio, 0) AS missing |> WHERE missing IS NULL |> AGGREGATE COUNT(*) AS n")?;
             phase = "division-execute";
             let result = db.execute(&division, &cancel)?;
             phase = "division-step";

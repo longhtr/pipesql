@@ -146,11 +146,12 @@ The catalog allocation campaign includes analytic count followed by ordering and
 aggregation, with an independent total of 16 for its four-row input. A separate
 count-only query retains the same total and exercises the counter's allocations. The native
 I/O composition campaign also consumes analytic count after a join; its existing
-result oracle checks the complete aggregate. It also checks a MOD total of
-nine over three count-only rows and an ABS/division aggregate of 4.5. Catalog allocation phases
+result oracle checks the complete aggregate. It also checks a DIV/MOD total of
+three over three count-only rows and an ABS/division aggregate of 4.5. Catalog allocation phases
 separately prepare, execute and consume a nullable division/filter query with
 count two after ABS of the negated ratio and an exact oddness check on INT64
-amounts above 2^53. A demanded SAFE_DIVIDE result must be NULL without losing its row.
+amounts above 2^53. DIV by one must preserve the first amount exactly before
+filtering. A demanded SAFE_DIVIDE result must be NULL without losing its row.
 Native I/O also checks that counting three zero-denominator ratios produces zero.
 Fixed-buffer diagnostic controls render division-by-zero errors and
 captured causes under allocation denial. Both retain refusal, recovery and

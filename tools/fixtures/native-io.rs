@@ -32,15 +32,15 @@ fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
     };
     let queries = std::iter::once((sql, Value::Double(if derived { 120.0 } else { 60.0 })))
         .chain(derived.then_some((
-            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(MOD(n,4)) AS total",
-            Value::Int64(9),
+            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(DIV(MOD(n, 4), 2)) AS total",
+            Value::Int64(3),
         )))
         .chain(derived.then_some((
             "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(ABS(-(n/2))) AS ratio",
             Value::Double(4.5),
         )))
         .chain(derived.then_some((
-            "FROM facts |> SELECT SAFE_DIVIDE(n,0) AS ratio |> AGGREGATE COUNT(ratio) AS present",
+            "FROM facts |> SELECT SAFE_DIVIDE(n, 0) AS ratio |> AGGREGATE COUNT(ratio) AS present",
             Value::Int64(0),
         )));
     for (sql, expected) in queries {

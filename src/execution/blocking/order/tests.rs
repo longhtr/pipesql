@@ -8,11 +8,11 @@ use crate::execution::{QueryResult, QueryStep, State};
 use crate::frontend::DataType;
 use crate::{AppendLimits, ColumnDeclaration, ColumnInput, ColumnValues, Config};
 
-const QUERY: &str = "FROM facts |> ORDER BY k DESC,v ASC |> SELECT v";
-const DISTINCT_QUERY: &str = "FROM facts |> SELECT k,k+0 AS copy |> DISTINCT |> SELECT k";
-const UNION_DISTINCT_QUERY: &str = "FROM facts |> SELECT k,k+0 AS copy |> UNION DISTINCT (FROM facts |> SELECT k,k+0 AS copy) |> SELECT k";
+const QUERY: &str = "FROM facts |> ORDER BY k DESC, v ASC |> SELECT v";
+const DISTINCT_QUERY: &str = "FROM facts |> SELECT k, k+0 AS copy |> DISTINCT |> SELECT k";
+const UNION_DISTINCT_QUERY: &str = "FROM facts |> SELECT k, k+0 AS copy |> UNION DISTINCT (FROM facts |> SELECT k, k+0 AS copy) |> SELECT k";
 const WINDOW_QUERY: &str =
-    "FROM facts |> SELECT v,k,COUNT(*) OVER () AS n |> WHERE n=180 AND k>=0 |> SELECT v";
+    "FROM facts |> SELECT v, k, COUNT(*) OVER () AS n |> WHERE n=180 AND k>=0 |> SELECT v";
 const STEPS: usize = 100_000;
 
 fn database(directory: &Directory) -> Database {
@@ -124,10 +124,11 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
     let db = database(&directory);
     let cancel = CancellationToken::new();
     const DIVISION_QUERY: &str =
-        "FROM facts |> EXTEND v/2 AS ratio |> WHERE ratio>=0 |> ORDER BY k DESC,v ASC |> SELECT v";
-    const SAFE_QUERY: &str = "FROM facts |> EXTEND SAFE_DIVIDE(v,v-v) AS ratio |> WHERE ratio IS NULL |> ORDER BY k DESC,v ASC |> SELECT v";
-    const ABS_QUERY: &str = "FROM facts |> EXTEND ABS(-v) AS magnitude |> WHERE magnitude>=0 |> ORDER BY k DESC,v ASC |> SELECT v";
-    const MOD_QUERY: &str = "FROM facts |> EXTEND MOD(v,3) AS remainder |> WHERE remainder>=0 |> ORDER BY k DESC,v ASC |> SELECT v";
+        "FROM facts |> EXTEND v/2 AS ratio |> WHERE ratio>=0 |> ORDER BY k DESC, v ASC |> SELECT v";
+    const SAFE_QUERY: &str = "FROM facts |> EXTEND SAFE_DIVIDE(v, v-v) AS ratio |> WHERE ratio IS NULL |> ORDER BY k DESC, v ASC |> SELECT v";
+    const ABS_QUERY: &str = "FROM facts |> EXTEND ABS(-v) AS magnitude |> WHERE magnitude>=0 |> ORDER BY k DESC, v ASC |> SELECT v";
+    const MOD_QUERY: &str = "FROM facts |> EXTEND MOD(v, 3) AS remainder |> WHERE remainder>=0 |> ORDER BY k DESC, v ASC |> SELECT v";
+    const QUOTIENT_QUERY: &str = "FROM facts |> EXTEND DIV(v, 3) AS quotient |> WHERE quotient>=0 |> ORDER BY k DESC, v ASC |> SELECT v";
     for sql in [
         QUERY,
         DISTINCT_QUERY,
@@ -137,6 +138,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
         SAFE_QUERY,
         ABS_QUERY,
         MOD_QUERY,
+        QUOTIENT_QUERY,
     ] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
@@ -162,6 +164,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
                     || sql == SAFE_QUERY
                     || sql == ABS_QUERY
                     || sql == MOD_QUERY
+                    || sql == QUOTIENT_QUERY
                 {
                     (0..90)
                         .rev()
@@ -490,7 +493,7 @@ fn large_nonempty_sort_preserves_duplicate_keys_and_utf8_payloads() {
     append.commit(&cancel).unwrap();
     let resident = db.reserved_memory_bytes();
     let query = db
-        .prepare("FROM facts |> ORDER BY k,v |> SELECT k,tag,v")
+        .prepare("FROM facts |> ORDER BY k, v |> SELECT k, tag, v")
         .unwrap();
     let baseline = db.reserved_memory_bytes();
     let mut result = db.execute(&query, &cancel).unwrap();

@@ -145,6 +145,7 @@ pub(crate) enum Op {
     Divide,
     SafeDivide,
     Mod,
+    IntegerDivide,
     Negate,
     Abs,
 }
@@ -205,15 +206,25 @@ impl Expression {
                     }
                     continue;
                 }
-                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide | Op::Mod => {
+                Op::Add
+                | Op::Subtract
+                | Op::Multiply
+                | Op::Divide
+                | Op::SafeDivide
+                | Op::Mod
+                | Op::IntegerDivide => {
                     if depth < 2 {
                         return Err(InferenceFailure::Program("scalar binary stack underflow"));
                     }
                     depth -= 1;
-                    if *op == Op::Mod
+                    if matches!(op, Op::Mod | Op::IntegerDivide)
                         && (types[depth - 1] != DataType::Int64 || types[depth] != DataType::Int64)
                     {
-                        return Err(InferenceFailure::Arguments("MOD requires INT64 arguments"));
+                        return Err(InferenceFailure::Arguments(if *op == Op::Mod {
+                            "MOD requires INT64 arguments"
+                        } else {
+                            "DIV requires INT64 arguments"
+                        }));
                     }
                     types[depth - 1] = if matches!(op, Op::Divide | Op::SafeDivide)
                         || types[depth - 1] == DataType::Double
@@ -257,7 +268,13 @@ impl Expression {
         for op in &self.ops[..usize::from(self.len)] {
             match op {
                 Op::Column(_) | Op::Integer(_) | Op::Double(_) => depth += 1,
-                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide | Op::Mod => {
+                Op::Add
+                | Op::Subtract
+                | Op::Multiply
+                | Op::Divide
+                | Op::SafeDivide
+                | Op::Mod
+                | Op::IntegerDivide => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
                 }
                 Op::Negate | Op::Abs => (),
@@ -385,7 +402,13 @@ impl Expression {
                         _ => unreachable!("validated numeric operand"),
                     }
                 }
-                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide | Op::Mod => {
+                Op::Add
+                | Op::Subtract
+                | Op::Multiply
+                | Op::Divide
+                | Op::SafeDivide
+                | Op::Mod
+                | Op::IntegerDivide => {
                     depth -= 1;
                     let (left, right) = scratch.split_at_mut(depth * rows);
                     let left = &mut left[(depth - 1) * rows..];
@@ -469,6 +492,13 @@ fn integer_binary(op: Op, left: i64, right: i64) -> Result<i64, ArithmeticFailur
         Op::Add => left.checked_add(right).ok_or(ArithmeticFailure::Add),
         Op::Subtract => left.checked_sub(right).ok_or(ArithmeticFailure::Subtract),
         Op::Multiply => left.checked_mul(right).ok_or(ArithmeticFailure::Multiply),
+        Op::IntegerDivide => {
+            if right == 0 {
+                return Err(ArithmeticFailure::DivideByZero);
+            }
+            // Checked integer division preserves exactness and rejects MIN / -1.
+            left.checked_div(right).ok_or(ArithmeticFailure::Divide)
+        }
         Op::Mod => {
             if right == 0 {
                 return Err(ArithmeticFailure::DivideByZero);
@@ -544,6 +574,54 @@ mod tests {
     }
 
     #[test]
+    fn div_preserves_exact_signed_quotients_and_error_boundaries() {
+        let mut expression = Expression::EMPTY;
+        expression.len = 3;
+        expression.data_type = DataType::Int64;
+        for (left, right, expected) in [
+            (5, 3, 1),
+            (-5, 3, -1),
+            (5, -3, -1),
+            (-5, -3, 1),
+            (2, -3, 0),
+            (-2, 3, 0),
+            (9_007_199_254_740_995, 3, 3_002_399_751_580_331),
+            (i64::MIN, 1, i64::MIN),
+            (i64::MIN, 3, -3_074_457_345_618_258_602),
+            (i64::MAX, 3, 3_074_457_345_618_258_602),
+            (i64::MIN, i64::MIN, 1),
+            (i64::MAX, i64::MIN, 0),
+        ] {
+            expression.ops[..3].copy_from_slice(&[
+                Op::Integer(left),
+                Op::Integer(right),
+                Op::IntegerDivide,
+            ]);
+            expression.validate(&[]).unwrap();
+            assert!(
+                matches!(expression.evaluate_constant(), Ok(Number::Integer(value)) if value == expected)
+            );
+            expression.ops[1] = Op::Integer(0);
+            assert!(matches!(
+                expression.evaluate_constant(),
+                Err(ArithmeticFailure::DivideByZero)
+            ));
+        }
+        expression.ops[0] = Op::Integer(i64::MIN);
+        expression.ops[1] = Op::Integer(-1);
+        assert!(matches!(
+            expression.evaluate_constant(),
+            Err(ArithmeticFailure::Divide)
+        ));
+        expression.ops[1] = Op::Double(3.0_f64.to_bits());
+        assert!(matches!(expression.validate(&[]), Err(Error::Corrupt(_))));
+        expression.ops[1] = Op::IntegerDivide;
+        expression.ops[2] = Op::Empty;
+        expression.len = 2;
+        assert!(expression.validate(&[]).is_err());
+    }
+
+    #[test]
     fn mod_preserves_signed_extremes_and_rejects_invalid_types() {
         for (left, right, expected) in [
             (5, 3, 2),
@@ -579,7 +657,7 @@ mod tests {
     }
 
     #[test]
-    fn mod_null_lanes_skip_zero_divisors_across_words_and_reuse() {
+    fn integer_calls_skip_null_zero_divisors_across_words_and_reuse() {
         let left = SemanticColumn::new(51, DataType::Int64, true);
         let right = SemanticColumn::new(52, DataType::Int64, false);
         let values = [-5; 130];
@@ -591,25 +669,32 @@ mod tests {
             Some(NumericInput::new(left, NumericValues::Int64(&values), Some(&valid)).unwrap()),
             Some(NumericInput::new(right, NumericValues::Int64(&divisors), None).unwrap()),
         ];
-        let mut expression = Expression::EMPTY;
-        expression.ops[..3].copy_from_slice(&[Op::Column(left), Op::Column(right), Op::Mod]);
-        expression.len = 3;
-        expression.data_type = DataType::Int64;
-        expression.validate(&[left, right]).unwrap();
-        let mut scratch = [0; MAX_OPS * 130];
-        for range in [0..130, 63..130, 64..66, 129..130, 0..130] {
-            let output = expression
-                .evaluate_batch(&inputs, range.clone(), &mut scratch)
-                .unwrap();
-            for (lane, row) in range.enumerate() {
-                assert_eq!(
-                    output.value(lane).map(integer),
-                    if row == 65 || row == 129 {
-                        Some(-2)
-                    } else {
-                        None
-                    }
-                );
+        for operation in [Op::Mod, Op::IntegerDivide] {
+            let mut expression = Expression::EMPTY;
+            expression.ops[..3].copy_from_slice(&[Op::Column(left), Op::Column(right), operation]);
+            expression.len = 3;
+            expression.data_type = DataType::Int64;
+            expression.validate(&[left, right]).unwrap();
+            let mut scratch = [0; MAX_OPS * 130];
+            for range in [0..130, 63..130, 64..66, 129..130, 0..130] {
+                let output = expression
+                    .evaluate_batch(&inputs, range.clone(), &mut scratch)
+                    .unwrap();
+                for (lane, row) in range.enumerate() {
+                    assert_eq!(
+                        output.value(lane).map(integer),
+                        if row == 65 || row == 129 {
+                            Some(match operation {
+                                Op::Mod => -2,
+                                Op::IntegerDivide if row == 65 => -1,
+                                Op::IntegerDivide => 1,
+                                _ => unreachable!(),
+                            })
+                        } else {
+                            None
+                        }
+                    );
+                }
             }
         }
     }

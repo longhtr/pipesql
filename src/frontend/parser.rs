@@ -108,6 +108,7 @@ pub(super) enum ParsedOp {
     Divide,
     SafeDivide,
     Mod,
+    IntegerDivide,
     Negate,
     Abs,
 }
@@ -143,6 +144,7 @@ impl ParsedExpression {
 enum BinaryCall {
     SafeDivide,
     Mod,
+    IntegerDivide,
 }
 
 impl BinaryCall {
@@ -150,6 +152,7 @@ impl BinaryCall {
         match self {
             Self::SafeDivide => ParsedOp::SafeDivide,
             Self::Mod => ParsedOp::Mod,
+            Self::IntegerDivide => ParsedOp::IntegerDivide,
         }
     }
 }
@@ -581,7 +584,8 @@ impl Parser<'_> {
                     Kind::Identifier
                         if (self.is_word("SAFE_DIVIDE")
                             || self.is_word("ABS")
-                            || self.is_word("MOD"))
+                            || self.is_word("MOD")
+                            || self.is_word("DIV"))
                             && self
                                 .tokens
                                 .values
@@ -596,6 +600,8 @@ impl Parser<'_> {
                         }
                         let call = if self.is_word("ABS") {
                             PendingOp::Abs
+                        } else if self.is_word("DIV") {
+                            PendingOp::FirstArgument(BinaryCall::IntegerDivide)
                         } else if self.is_word("MOD") {
                             PendingOp::FirstArgument(BinaryCall::Mod)
                         } else {
@@ -1367,7 +1373,7 @@ mod tests {
             "FROM a |> UNION ALL,",
             "FROM a |> UNION ALL ()",
             "FROM a |> UNION ALL (FROM b",
-            "FROM a |> UNION ALL (FROM b),,",
+            "FROM a |> UNION ALL (FROM b), ,",
             "FROM a |> UNION ALL (FROM b), (FROM)",
             "FROM a |> UNION ALL b",
             "FROM a |> UNION ALL TABLE b",

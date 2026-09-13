@@ -51,7 +51,7 @@ fn wide_constant_preparation_admits_exact_peak_and_releases_it() {
     for width in [30, 31, 64] {
         let sql = format!(
             "FROM lineitem |> SELECT {}",
-            vec!["'constant'"; width].join(",")
+            vec!["'constant'"; width].join(", ")
         );
         let prepared = db.prepare(&sql).unwrap();
         let retained = prepared.accounted_memory_bytes();
@@ -457,7 +457,7 @@ fn pooled_numeric_programs_preserve_individual_bounds_and_spans() {
     let too_many = source.replacen(&expression, &format!("-{expression}"), 1);
     assert!(matches!(db.prepare(&too_many), Err(Error::Parse { .. })));
 
-    let prefix = "# 雪\nFROM lineitem |> WHERE l_quantity BETWEEN (0+1) AND (3*4) |> AGGREGATE SUM(l_quantity+5) AS s,AVG(l_quantity*6) AS a |> WHERE s > (7-8) |> LIMIT (9+10) OFFSET ";
+    let prefix = "# 雪\nFROM lineitem |> WHERE l_quantity BETWEEN (0+1) AND (3*4) |> AGGREGATE SUM(l_quantity+5) AS s, AVG(l_quantity*6) AS a |> WHERE s > (7-8) |> LIMIT (9+10) OFFSET ";
     let source = format!("{prefix}(9223372036854775807+1)");
     let resident = db.reserved_memory_bytes();
     match db.prepare(&source) {
@@ -514,7 +514,8 @@ fn ordering_facts_preserve_hidden_identity_and_reject_invalid_item_slices() {
             &crate::CancellationToken::new(),
         )
         .unwrap();
-    let sql = "FROM facts |> ORDER BY k DESC NULLS FIRST,v |> SELECT v AS x |> WHERE x > 0 |> AS p";
+    let sql =
+        "FROM facts |> ORDER BY k DESC NULLS FIRST, v |> SELECT v AS x |> WHERE x > 0 |> AS p";
     let query = database.prepare(sql).unwrap();
     let keys = query.plan.order_items(0, 2).unwrap();
     assert_eq!(
@@ -691,7 +692,7 @@ fn join_binding_preserves_occurrences_ranges_and_both_input_edges() {
         "FROM lineitem AS a |> JOIN lineitem AS b ON a.l_quantity = a.l_extendedprice",
         "FROM lineitem AS a |> SELECT l_quantity |> SELECT a.l_quantity",
         "FROM lineitem AS a |> AS b |> SELECT a.l_quantity",
-        "FROM lineitem |> SELECT l_quantity AS q,l_quantity AS q |> AS p |> SELECT p.q",
+        "FROM lineitem |> SELECT l_quantity AS q, l_quantity AS q |> AS p |> SELECT p.q",
         "FROM lineitem AS a |> JOIN lineitem AS b ON a.l_quantity = b.l_quantity |> SELECT l_quantity",
         "FROM lineitem AS a |> JOIN lineitem AS b ON a.l_quantity < b.l_quantity",
     ] {
@@ -708,7 +709,7 @@ fn join_binding_preserves_occurrences_ranges_and_both_input_edges() {
     }
     let query = database
         .prepare(
-            "FROM lineitem |> AGGREGATE SUM(l_quantity) AS s,COUNT(*) AS n |> AS p \
+            "FROM lineitem |> AGGREGATE SUM(l_quantity) AS s, COUNT(*) AS n |> AS p \
          |> JOIN lineitem AS b ON p.s = b.l_quantity |> SELECT b.l_quantity",
         )
         .unwrap();
@@ -726,7 +727,7 @@ fn relation_edges_preserve_every_operator_and_reject_invalid_producers() {
     let (_temp, database) = database(2_000_000);
     for sql in [
         "FROM lineitem |> WHERE l_quantity > 0 |> SELECT l_quantity AS q |> WHERE q < 20",
-        "FROM lineitem |> SELECT l_quantity AS q |> AGGREGATE SUM(q) AS s,COUNT(*) AS n |> WHERE n > 0 |> SELECT s",
+        "FROM lineitem |> SELECT l_quantity AS q |> AGGREGATE SUM(q) AS s, COUNT(*) AS n |> WHERE n > 0 |> SELECT s",
     ] {
         let mut query = database.prepare(sql).unwrap();
         let count = usize::from(query.plan.count);
@@ -858,7 +859,7 @@ fn catalog_binding_preserves_declared_identity_types_and_generation() {
         .unwrap();
     let query = prepare_catalog(
         &db,
-        "FROM FaCtS |> SELECT amount AS n,word AS s |> WHERE n > 0",
+        "FROM FaCtS |> SELECT amount AS n, word AS s |> WHERE n > 0",
     )
     .unwrap();
     assert_eq!(query.plan.table(), Some(table));
@@ -1034,9 +1035,9 @@ fn diagnostics_identify_exact_source_bytes() {
         "SET missing=1",
         "DROP missing",
         "RENAME missing AS renamed",
-        "SET l_quantity=1,L_QUANTITY=2",
-        "DROP l_quantity,L_QUANTITY",
-        "RENAME l_quantity AS a,L_QUANTITY AS b",
+        "SET l_quantity=1, L_QUANTITY=2",
+        "DROP l_quantity, L_QUANTITY",
+        "RENAME l_quantity AS a, L_QUANTITY AS b",
     ] {
         let sql = format!("FROM lineitem |> {suffix}");
         let Err(Error::Bind { span, .. }) = database.prepare(&sql) else {
@@ -1156,7 +1157,7 @@ fn exact_prepared_admission_and_concurrent_owners() {
         Database::open(&temp.database(), crate::Config::new(total - 1, 1).unwrap()).unwrap();
     assert_eq!(refused.reserved_memory_bytes(), resident);
     assert!(
-        matches!(refused.prepare(Q6),Err(Error::Resource { required: value, limit, .. }) if value==total && limit==total-1)
+        matches!(refused.prepare(Q6), Err(Error::Resource { required: value, limit, .. }) if value==total && limit==total-1)
     );
     assert_eq!(refused.reserved_memory_bytes(), resident);
     refused.close().unwrap();
@@ -1208,7 +1209,7 @@ fn exact_prepared_admission_and_concurrent_owners() {
 #[test]
 fn extend_preserves_input_identity_ranges_and_input_only_alias_scope() {
     let (_directory, db) = database(4_000_000);
-    let query = db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity AS q,t.l_quantity+1 n |> EXTEND n+1 AS m |> SELECT t.l_quantity,q,n,m").unwrap();
+    let query = db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity AS q, t.l_quantity+1 n |> EXTEND n+1 AS m |> SELECT t.l_quantity, q, n, m").unwrap();
     assert_eq!(query.result_column_count(), 4);
     assert_eq!(query.plan.outputs[0].id, query.plan.outputs[1].id);
     assert_ne!(query.plan.outputs[1].id, query.plan.outputs[2].id);
@@ -1224,14 +1225,14 @@ fn extend_preserves_input_identity_ranges_and_input_only_alias_scope() {
         db.prepare("FROM lineitem |> EXTEND l_quantity |> SELECT l_quantity")
             .is_err()
     );
-    let sibling = "FROM lineitem |> EXTEND l_quantity+1 AS n,n+1 AS m";
+    let sibling = "FROM lineitem |> EXTEND l_quantity+1 AS n, n+1 AS m";
     let Err(Error::Bind { span, .. }) = db.prepare(sibling) else {
         panic!("a sibling alias cannot enter the input scope");
     };
     assert_eq!(&sibling[span.start()..span.end()], "n");
     db.prepare("FROM lineitem |> SELECT l_quantity AS extend |> EXTEND extend+1 AS n")
         .unwrap();
-    db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS n |> SELECT t.l_quantity,n")
+    db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS n |> SELECT t.l_quantity, n")
         .unwrap();
     assert!(
         db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS n |> SELECT t.n")
@@ -1256,10 +1257,10 @@ fn extend_entries_are_syntax_bounded_and_validated_independently() {
         "inherited columns consume no new projection entries"
     );
     drop(query);
-    let widest = format!("FROM lineitem |> EXTEND {}", vec!["1"; 57].join(","));
+    let widest = format!("FROM lineitem |> EXTEND {}", vec!["1"; 57].join(", "));
     assert_eq!(db.prepare(&widest).unwrap().result_column_count(), 64);
     assert!(matches!(
-        db.prepare(&format!("{widest},1")),
+        db.prepare(&format!("{widest}, 1")),
         Err(Error::Bind { .. })
     ));
     for mutation in 0..3 {
@@ -1359,7 +1360,7 @@ fn check_prepared_admission(sql: &str) {
 #[test]
 fn column_transforms_preserve_original_ranges_and_set_creates_fresh_identity() {
     let (_directory, db) = database(4_000_000);
-    let set = db.prepare("FROM lineitem AS t |> SET l_returnflag=l_linestatus |> SELECT l_returnflag,t.l_returnflag,t.l_linestatus").unwrap();
+    let set = db.prepare("FROM lineitem AS t |> SET l_returnflag=l_linestatus |> SELECT l_returnflag, t.l_returnflag, t.l_linestatus").unwrap();
     assert_eq!(set.result_column_count(), 3);
     assert_ne!(set.plan.outputs[0].id, set.plan.outputs[1].id);
     assert_ne!(set.plan.outputs[0].id, set.plan.outputs[2].id);
@@ -1370,11 +1371,11 @@ fn column_transforms_preserve_original_ranges_and_set_creates_fresh_identity() {
         );
     }
     let dropped = db
-        .prepare("FROM lineitem AS t |> DROP l_quantity |> SELECT t.l_quantity,l_returnflag")
+        .prepare("FROM lineitem AS t |> DROP l_quantity |> SELECT t.l_quantity, l_returnflag")
         .unwrap();
     assert_eq!(dropped.result_column(0).unwrap().name, Some("l_quantity"));
     let renamed = db
-        .prepare("FROM lineitem AS t |> RENAME l_quantity AS q |> SELECT q,t.l_quantity")
+        .prepare("FROM lineitem AS t |> RENAME l_quantity AS q |> SELECT q, t.l_quantity")
         .unwrap();
     assert_eq!(renamed.plan.outputs[0].id, renamed.plan.outputs[1].id);
 }
@@ -1382,9 +1383,9 @@ fn column_transforms_preserve_original_ranges_and_set_creates_fresh_identity() {
 #[test]
 fn column_transform_targets_use_the_complete_input_name_list() {
     let (_directory, db) = database(4_000_000);
-    let prefix = "FROM lineitem |> SELECT l_quantity AS x,l_returnflag AS y";
+    let prefix = "FROM lineitem |> SELECT l_quantity AS x, l_returnflag AS y";
     let renamed = db
-        .prepare(&format!("{prefix} |> RENAME x AS y,y AS x"))
+        .prepare(&format!("{prefix} |> RENAME x AS y, y AS x"))
         .unwrap();
     assert_eq!(renamed.result_column(0).unwrap().name, Some("y"));
     assert_eq!(
@@ -1396,11 +1397,12 @@ fn column_transform_targets_use_the_complete_input_name_list() {
         renamed.result_column(1).unwrap().data_type,
         DataType::String
     );
-    let set = db.prepare(&format!("{prefix} |> SET x=y,y=x")).unwrap();
+    let set = db.prepare(&format!("{prefix} |> SET x=y, y=x")).unwrap();
     assert_eq!(set.result_column(0).unwrap().data_type, DataType::String);
     assert_eq!(set.result_column(1).unwrap().data_type, DataType::Double);
 
-    let duplicate = "FROM lineitem |> SELECT l_quantity AS x,l_discount AS x,l_returnflag AS keep";
+    let duplicate =
+        "FROM lineitem |> SELECT l_quantity AS x, l_discount AS x, l_returnflag AS keep";
     let dropped = db.prepare(&format!("{duplicate} |> DROP x")).unwrap();
     assert_eq!(dropped.result_column_count(), 1);
     assert_eq!(dropped.result_column(0).unwrap().name, Some("keep"));
@@ -1411,11 +1413,11 @@ fn column_transform_targets_use_the_complete_input_name_list() {
         ));
     }
     for sql in [
-        format!("{prefix} |> DROP x,y"),
+        format!("{prefix} |> DROP x, y"),
         format!("{prefix} |> DROP missing"),
-        format!("{prefix} |> DROP x,X"),
-        format!("{prefix} |> SET x=1,X=2"),
-        format!("{prefix} |> RENAME x AS a,X AS b"),
+        format!("{prefix} |> DROP x, X"),
+        format!("{prefix} |> SET x=1, X=2"),
+        format!("{prefix} |> RENAME x AS a, X AS b"),
         format!("{prefix} |> RENAME x AS y |> SELECT y"),
     ] {
         assert!(matches!(db.prepare(&sql), Err(Error::Bind { .. })), "{sql}");
@@ -1426,12 +1428,12 @@ fn column_transform_targets_use_the_complete_input_name_list() {
 fn rename_preserves_identity_and_ranges_without_rebinding_sibling_names() {
     let (_directory, db) = database(4_000_000);
     let query = db
-        .prepare("FROM lineitem AS t |> RENAME l_quantity AS q |> SELECT q,t.l_quantity")
+        .prepare("FROM lineitem AS t |> RENAME l_quantity AS q |> SELECT q, t.l_quantity")
         .unwrap();
     assert_eq!(query.plan.outputs[0].id, query.plan.outputs[1].id);
     let swapped = db
         .prepare(
-            "FROM lineitem |> SELECT l_quantity AS x,l_returnflag AS y |> RENAME x AS y,y AS x",
+            "FROM lineitem |> SELECT l_quantity AS x, l_returnflag AS y |> RENAME x AS y, y AS x",
         )
         .unwrap();
     assert_eq!(swapped.result_column(0).unwrap().name, Some("y"));
@@ -1446,7 +1448,7 @@ fn rename_preserves_identity_and_ranges_without_rebinding_sibling_names() {
     );
     for suffix in [
         "RENAME missing AS x",
-        "RENAME l_quantity AS x,L_QUANTITY AS y",
+        "RENAME l_quantity AS x, L_QUANTITY AS y",
         "RENAME l_quantity AS l_returnflag |> SELECT l_returnflag",
         "AS l_quantity |> RENAME l_quantity AS x",
     ] {
@@ -1490,7 +1492,7 @@ fn table_ranges_take_precedence_over_colliding_scalar_names() {
 #[test]
 fn drop_preserves_survivor_positions_and_removes_duplicate_names() {
     let (_directory, db) = database(4_000_000);
-    let sql = "FROM lineitem |> SELECT l_quantity AS x,l_discount AS x,l_returnflag AS keep |> DROP x |> EXTEND keep AS copy |> RENAME keep AS original";
+    let sql = "FROM lineitem |> SELECT l_quantity AS x, l_discount AS x, l_returnflag AS keep |> DROP x |> EXTEND keep AS copy |> RENAME keep AS original";
     let query = db.prepare(sql).unwrap();
     assert_eq!(query.result_column_count(), 2);
     assert_eq!(query.result_column(0).unwrap().name, Some("original"));
@@ -1498,7 +1500,7 @@ fn drop_preserves_survivor_positions_and_removes_duplicate_names() {
     assert_eq!(query.plan.outputs[0].id, query.plan.outputs[1].id);
     assert_eq!(query.plan.projection_count, 4);
     for sql in [
-        "FROM lineitem |> DROP l_quantity,L_QUANTITY",
+        "FROM lineitem |> DROP l_quantity, L_QUANTITY",
         "FROM lineitem |> DROP absent",
         "FROM lineitem |> SELECT l_quantity |> DROP l_quantity",
     ] {
@@ -1539,7 +1541,7 @@ fn qualified_inputs_survive_drop_but_not_scope_replacement() {
 #[test]
 fn set_assignments_and_typed_copies_are_validated_independently() {
     let (_directory, db) = database(4_000_000);
-    let sql = "FROM lineitem |> SELECT l_quantity AS x,l_returnflag AS y |> SET x=y,y=x";
+    let sql = "FROM lineitem |> SELECT l_quantity AS x, l_returnflag AS y |> SET x=y, y=x";
     for mutation in 0..8 {
         let mut query = db.prepare(sql).unwrap();
         match mutation {
@@ -1593,7 +1595,7 @@ fn constant_definitions_reject_inconsistent_facts_and_provenance() {
 #[test]
 fn analytic_projection_owns_fresh_counts_and_clears_relation_order() {
     let (_directory, db) = database(4_000_000);
-    let sql = "FROM lineitem |> SELECT l_quantity |> EXTEND COUNT(*) OVER () AS n,COUNT(*) OVER () AS m,l_quantity+1 AS next |> SELECT n,m,next";
+    let sql = "FROM lineitem |> SELECT l_quantity |> EXTEND COUNT(*) OVER () AS n, COUNT(*) OVER () AS m, l_quantity+1 AS next |> SELECT n, m, next";
     for mutation in 0..5 {
         let mut query = db.prepare(sql).unwrap();
         assert_eq!(query.plan.computed.len(), 3);
@@ -1655,7 +1657,7 @@ fn division_constant_failures_keep_types_and_spans() {
 #[test]
 fn division_preparation_admits_exact_peak_and_releases_it() {
     check_scope_preparation(
-        "FROM facts |> SELECT k,n/(k+1) AS ratio |> WHERE ratio>1/2 |> AGGREGATE AVG(ratio) AS mean GROUP BY k",
+        "FROM facts |> SELECT k, n/(k+1) AS ratio |> WHERE ratio>1/2 |> AGGREGATE AVG(ratio) AS mean GROUP BY k",
     );
 }
 
@@ -1663,7 +1665,7 @@ fn division_preparation_admits_exact_peak_and_releases_it() {
 fn safe_divide_keeps_nullable_identity_and_bounded_call_programs() {
     let (_temp, db) = database(4_000_000);
     let baseline = db.reserved_memory_bytes();
-    for argument in ["1,2", "l_quantity,0"] {
+    for argument in ["1, 2", "l_quantity, 0"] {
         let mut query = db
             .prepare(&format!(
                 "FROM lineitem |> SELECT SAFE_DIVIDE({argument}) AS ratio"
@@ -1679,7 +1681,7 @@ fn safe_divide_keeps_nullable_identity_and_bounded_call_programs() {
     }
     assert_eq!(db.reserved_memory_bytes(), baseline);
     for depth in [15, 16] {
-        let expression = format!("{}1{}", "SAFE_DIVIDE(".repeat(depth), ",1)".repeat(depth));
+        let expression = format!("{}1{}", "SAFE_DIVIDE(".repeat(depth), ", 1)".repeat(depth));
         let sql = format!("FROM lineitem |> SELECT {expression} AS ratio");
         if depth == 15 {
             assert!(db.prepare(&sql).is_ok());
@@ -1689,7 +1691,7 @@ fn safe_divide_keeps_nullable_identity_and_bounded_call_programs() {
         assert_eq!(db.reserved_memory_bytes(), baseline);
     }
     check_scope_preparation(
-        "FROM facts |> SELECT k,SAFE_DIVIDE(n,k) AS ratio |> WHERE ratio>SAFE_DIVIDE(1,2) |> AGGREGATE AVG(ratio) AS mean GROUP BY k",
+        "FROM facts |> SELECT k, SAFE_DIVIDE(n, k) AS ratio |> WHERE ratio>SAFE_DIVIDE(1, 2) |> AGGREGATE AVG(ratio) AS mean GROUP BY k",
     );
 }
 
@@ -1700,7 +1702,7 @@ fn abs_preserves_type_nullability_and_bounded_program_admission() {
     for (argument, kind, nullable) in [
         ("1", DataType::Int64, false),
         ("-1.0", DataType::Double, false),
-        ("SAFE_DIVIDE(1,0)", DataType::Double, true),
+        ("SAFE_DIVIDE(1, 0)", DataType::Double, true),
     ] {
         let mut query = db
             .prepare(&format!(
@@ -1729,7 +1731,7 @@ fn abs_preserves_type_nullability_and_bounded_program_admission() {
         assert_eq!(db.reserved_memory_bytes(), baseline);
     }
     check_scope_preparation(
-        "FROM facts |> SELECT k,ABS(n-5) AS deviation |> WHERE deviation>ABS(-2) |> AGGREGATE AVG(deviation) AS mean GROUP BY k",
+        "FROM facts |> SELECT k, ABS(n-5) AS deviation |> WHERE deviation>ABS(-2) |> AGGREGATE AVG(deviation) AS mean GROUP BY k",
     );
 }
 
@@ -1738,7 +1740,7 @@ fn mod_keeps_integer_identity_and_bounded_call_admission() {
     let (_temp, db) = database(4_000_000);
     let baseline = db.reserved_memory_bytes();
     let mut query = db
-        .prepare("FROM lineitem |> SELECT MOD(5,3) AS remainder")
+        .prepare("FROM lineitem |> SELECT MOD(5, 3) AS remainder")
         .unwrap();
     let output = query.result_column(0).unwrap();
     assert_eq!(
@@ -1751,7 +1753,7 @@ fn mod_keeps_integer_identity_and_bounded_call_admission() {
     assert!(validate(&query.plan).is_err());
     drop(query);
     for depth in [15, 16] {
-        let expression = format!("{}1{}", "MOD(".repeat(depth), ",3)".repeat(depth));
+        let expression = format!("{}1{}", "MOD(".repeat(depth), ", 3)".repeat(depth));
         let result = db.prepare(&format!(
             "FROM lineitem |> SELECT {expression} AS remainder"
         ));
@@ -1764,6 +1766,39 @@ fn mod_keeps_integer_identity_and_bounded_call_admission() {
         assert_eq!(db.reserved_memory_bytes(), baseline);
     }
     check_scope_preparation(
-        "FROM facts |> SELECT k,MOD(n,3) AS remainder |> WHERE remainder>MOD(3,3) |> AGGREGATE SUM(remainder) AS total GROUP BY k",
+        "FROM facts |> SELECT k, MOD(n, 3) AS remainder |> WHERE remainder>MOD(3, 3) |> AGGREGATE SUM(remainder) AS total GROUP BY k",
+    );
+}
+
+#[test]
+fn div_keeps_integer_identity_and_bounded_call_admission() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    let mut query = db
+        .prepare("FROM lineitem |> SELECT DIV(5, 3) AS quotient")
+        .unwrap();
+    let output = query.result_column(0).unwrap();
+    assert_eq!(
+        (output.data_type, output.nullable),
+        (DataType::Int64, false)
+    );
+    let column = query.plan.computed[0].column;
+    query.plan.computed[0].column =
+        SemanticColumn::new(column.identity().value(), DataType::Double, false);
+    assert!(validate(&query.plan).is_err());
+    drop(query);
+    for depth in [15, 16] {
+        let expression = format!("{}1{}", "DIV(".repeat(depth), ", 3)".repeat(depth));
+        let result = db.prepare(&format!("FROM lineitem |> SELECT {expression} AS quotient"));
+        if depth == 15 {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(Error::Parse { .. })));
+        }
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k, DIV(n, 3) AS quotient |> WHERE quotient>DIV(3, 3) |> AGGREGATE SUM(quotient) AS total GROUP BY k",
     );
 }
