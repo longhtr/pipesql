@@ -41,6 +41,34 @@ pressure; verification retained two Cargo jobs and a two-CPU Docker cap.
 Owned scratch outputs are removed. Publication remains unauthorized, and the
 platform, durability and physical-memory qualifications below remain unfinished.
 
+## Current: null-safe column/literal predicates
+
+Add `name IS [NOT] DISTINCT FROM literal` to the existing WHERE profile.
+Ordinary inequality drops NULL rows through UNKNOWN; a null-safe comparison
+lets a sentinel filter retain them intentionally. The current predicate owner
+already holds one column identity and an owned literal, so this scope does not
+require column-to-column expression comparison or another Boolean framework.
+The completed NULLIF, resource and testing/tooling milestones have no new
+counterexample and remain closed.
+
+1. Pin NULL/NaN/signed-zero truth tables, existing scalar/literal compatibility,
+   numeric coercion and negation at the immutable GoogleSQL revision. Reassess
+   unresolved semantic research after 30 minutes.
+2. Trace Boolean syntax, binding, independent validators, literal ownership,
+   scan/row decisions, computed demand and admission before editing. Reuse their
+   bounded owners and retain ordinary comparison UNKNOWN behavior.
+3. Implement the predicate with independent typed truth tables, malformed-plan
+   controls, demanded/skipped errors, composition and affected resource/failure
+   boundaries. Keep inputs and expected results visible.
+4. Add a runnable NULL-preserving sentinel filter, update contracts/maps, run
+   focused checks and matching frozen macOS/GNU/Linux gates, reconcile evidence,
+   remove owned outputs and commit locally.
+
+Exclude column-to-column predicates, general scalar Boolean expressions, new
+types, collations, unrelated coercions and persistent-format changes. Continue
+resource monitoring and comma spacing. Native Windows, durability and physical
+memory qualifications remain separate obligations; publication is unauthorized.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
