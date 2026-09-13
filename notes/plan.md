@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `a889528` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 567 ordinary Rust tests per platform and 311 composition
+The complete 24-stage gates for `8c28a1f` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 571 ordinary Rust tests per platform and 311 composition
 cases, plus the applicable allocation and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
 controls and limits. Linux retains two Darwin ACL exclusions. The
@@ -24,55 +24,16 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Current: INT64 quotient for analytical grouping
+## Completed: INT64 quotient and comma spacing
 
-MOD is complete at `a889528`; the [remainder record](evidence.md#integer-remainder)
-retains verified behavior, coverage and limitations. Add INT64 DIV to group
-integer values by exact quotient without conversion through DOUBLE. This pairs
-with remainder grouping through the existing bounded numeric program. Completed
-semantic and resource repairs remain closed without a new counterexample.
-
-1. Pin the INT64 signature, truncation direction, NULL, zero-divisor and minimum
-   integer divided by minus-one overflow at the language owner's immutable
-   revision. Reassess unresolved research after 30 minutes; leave disputed forms
-   unsupported.
-2. Extend the existing bounded call parser, binding, independent validation and
-   scalar evaluator. Preserve argument errors, spans, demand, admission and
-   release without another frontend, allocation owner or persistent format.
-3. Cover independent literal results above 2^53, signed extremes, nullable batches,
-   malformed calls/programs and composition. Extend retained admission, replay,
-   cancellation and failure cases where they protect a distinct boundary.
-4. Add a runnable quotient-grouping example and update contract, learning and
-   test/tool maps. Run focused checks and both complete frozen platform gates;
-   reconcile discovery and manifests, retain concise evidence, remove owned
-   outputs and commit locally under the publication restrictions.
-
-The pinned signature, signed fixtures, NULL evaluation and integer primitive
-resolve the semantics before implementation. DIV truncates toward zero, keeps
-INT64 exactness and reports minimum INT64 divided by -1 as overflow. Numeric
-reference anchors are corrected against physical source lines; search-rendered
-line numbers did not identify the intended source locations. Semantic research resolved within the 30-minute checkpoint.
-
-The bounded parser, integer lane and independent validator now support DIV. Four
-new focused tests pass for exact signed/extreme results, integer-only binding,
-15/16-call bounds and public composition. The shared DIV/MOD NULL-lane test,
-retained zero/error spans, cancellation/early drop, exact/short admission and
-forced grouping replay pass. Clippy and maintenance pass. Catalog allocation
-controls remain at 983 on both pathname lengths within the unchanged 1,000
-ceiling; full refusal sweeps remain required. Native I/O retains a literal total
-through composed DIV/MOD. The quotient-grouping example and maps are added.
-
-The quotient example passes on fresh macOS and GNU/Linux sales databases with
-exact schema, three expected groups and successful completion. The first full
-gates were deliberately interrupted to incorporate comma spacing throughout
-maintained code and SQL. They provide no full-gate pass. Comma separators are now spaced in maintained code, embedded SQL, generated
-SQL lists and examples. Quoted data, codec/upstream fixtures and intentional
-lexical cases remain intact. The spacing diff is reconciled, including two
-ordinary trailing commas added by rustfmt. Maintenance and documentation pass;
-fresh full gates remain required. Final discovery/manifests, evidence, cleanup
-and local commits remain. DOUBLE DIV, NUMERIC types and
-other new scalar calls are outside this milestone. No new platform or physical
-memory qualification is claimed. No publication is authorized.
+INT64 DIV is complete at `8c28a1f`; `6d2b7d5` records the separate comma-spacing
+cleanup. The [quotient record](evidence.md#integer-quotient-and-comma-spacing)
+retains pinned semantics, independent results, resource/failure coverage and the
+both-platform example. Both fresh frozen full gates pass with matching manifests.
+No allocation owner, persistent format or admission allowance changes. DOUBLE DIV
+and NUMERIC types remain unsupported. Completed semantic and resource repairs
+remain closed without a new counterexample; no new platform or physical-memory
+qualification is claimed. No publication is authorized.
 
 ## Next engineering priorities
 

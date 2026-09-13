@@ -7,24 +7,24 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 684 frozen inputs retained in `a889528`
+Both complete 24-stage gates verify the 685 frozen inputs retained in `8c28a1f`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with read-only source. Input manifests match before/after and across gates:
-`e2f8eee81509df9e30c324aa39d7b2eb13ad9e8befdad9d20f1fdef198916bc6`.
-Only the two notes files change during finalization. The other 682 inputs retain
-fingerprint `b98d2d1fc079bdd868d326bf84a418c4e44723ecce6100dce30ea0c1ef94560c`;
-all inputs remain tracked. Final documentation verification passes 540 local links.
+`8d4907da9b06132aaaf959c6dce66556b8063c3a1cebcb5777c99742ff53571e`.
+Only the two notes files change during finalization. The other 683 inputs retain
+fingerprint `40857e53d11085714dd0845e9ffdbf18f3e2a381b08236def88b1fb1fd9d3247`;
+all inputs remain tracked. Final documentation verification passes 544 local links.
 
-Each platform executes 567 ordinary Rust tests, including all 107 public catalog
-tests and all five MOD tests, plus the separate lease subprocess.
-No ordinary test is ignored or filtered; the selected lease child reports six
-filtered siblings. Maintenance passes 96 tooling tests, 44 independent codec
-fixtures and 540 local links. Independent aggregate semantics pass 24 cases and
-composition passes 311 cases. Both allocation campaigns retain positions 0–982
-and healthy control 983 at each pathname length; the ordered lists were
-reconciled explicitly. The caller ceiling remains 1,000; no engine allowance
+Each platform executes 571 ordinary Rust tests, including all 109 public catalog
+tests, all four DIV tests and the shared DIV/MOD NULL-lane test, plus the separate
+lease subprocess. No ordinary test is ignored or filtered; the selected lease
+child reports six filtered siblings. Maintenance passes 96 tooling tests,
+44 independent codec fixtures and 543 local links. Independent aggregate semantics
+pass 24 cases and composition passes 311 cases. Both allocation campaigns retain
+positions 0–982 and healthy control 983 at each pathname length; the ordered lists
+were reconciled explicitly. The caller ceiling remains 1,000; no engine allowance
 increased. Native initialization passes 30 macOS and 80 GNU/Linux cells;
 synchronization passes 241 cells and I/O passes 1,196 cells per platform.
 Interruption checks retain 76 append cuts, 46 recovery cuts and 249 independent
@@ -32,14 +32,54 @@ graph checks. All 43 graph cases, two oracle controls, three CLI limits, genesis
 lease contention and independent column order pass. Linux retains the two Darwin
 ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,786.275 seconds
-on macOS and 903.400 seconds on Linux; overlapping verification runs are not
+Both receipts have zero finalization errors. Stage times total 1,855.083 seconds
+on macOS and 1,010.114 seconds on Linux; overlapping verification runs are not
 performance benchmarks. Receipt SHA-256 values are respectively
-`6d21413b2d914828301edcd07efc3c8d17338d1ced9208cb753ecb862b5ac0f2` and
-`ad42e328a2c1ec62a526a682f849d5c9f7d3da93899ad38c8043a5ffbe3ea1ed`.
-Owned gate/control outputs, source exports, logs and containers are removed.
-The existing verification image and toolchains remain. Windows, broader
-durability, physical-memory and sanitizer qualification remain unfinished.
+`a9b501a2356195fd10bd367e358709325d30c5a12284d20be368f76aed2ea85d` and
+`cce5b0ac036453ad1e208f67d227773f826e427c1fc2352099b2daf7066c248e`.
+Earlier gates were deliberately interrupted before the comma-spacing change;
+they provide no complete-gate pass. Owned gate/control outputs, source exports,
+logs and containers are removed. The existing verification image and toolchains
+remain. Windows, broader durability, physical-memory and sanitizer qualification
+remain unfinished.
+
+### Integer quotient and comma spacing
+
+`8c28a1f` adds INT64 DIV through the existing bounded call parser, binder,
+independent validators and scalar evaluator. The quotient truncates toward zero
+without conversion through DOUBLE. Either NULL argument yields NULL; otherwise
+zero raises division-by-zero and minimum INT64 divided by -1 raises division
+overflow. Argument errors remain visible, including inside SAFE_DIVIDE. The
+[language owner](../docs/language.md) pins signatures, signed/extreme fixtures,
+the integer primitive and NULL evaluation at the immutable upstream revision.
+Numeric reference anchors now use actual source lines. No allocation owner,
+persistent format or admission allowance changes.
+
+Four new tests protect literal signed/extreme results, exact values above 2^53,
+integer-only binding, identity mutation, malformed calls/programs, 15/16-call
+bounds, source spans and composition. The retained nullable-lane test now checks
+both DIV and MOD across validity words and buffer reuse with separate literal
+results. Existing failure cases cover zero through SAFE_DIVIDE, repeated terminal
+failure, cancellation, early drop and healthy reuse. Exact/one-byte-short
+preparation and sorted execution admission pass; forced grouping fallback replays
+DIV arguments with independent grouped totals.
+
+The catalog allocation caller requires DIV by one to preserve 9,007,199,254,740,993
+exactly before filtering, while retaining count two and its existing census.
+Native I/O composes DIV with MOD over count-only output and checks literal total
+three without another query or runner. Both complete gates include these callers.
+The formatted quotient example runs on fresh sales databases on both platforms:
+nullable INT64 bucket and total, required INT64 n, rows NULL/1/NULL, 0/2/15 and
+1/1/20. Exact schema, all three rows and successful completion match. DOUBLE DIV,
+NUMERIC types and other new scalar calls remain outside this milestone.
+
+`6d2b7d5` and the expression changes normalize comma separators in maintained
+code, embedded/generated SQL, examples and documentation. Quoted data, codec
+fixtures, upstream source bytes, linker flags and intentional lexical fixtures
+remain intact. The spacing changes were reconciled against the pre-format DIV
+inputs, including two ordinary trailing commas introduced by rustfmt. No runner,
+formatter dependency or permanent formatting framework was added. The fresh gates
+above verify the formatted inputs.
 
 ### Integer remainder
 
