@@ -24,14 +24,31 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: INT64 remainder for analytical grouping
+## Current: INT64 quotient for analytical grouping
 
-INT64 MOD is complete at `a889528`. The [remainder record](evidence.md#integer-remainder)
-retains its pinned semantics, independent results, resource/failure coverage and
-both-platform example. Both frozen full gates pass with matching input manifests.
-The shared bounded call parser adds no allocation owner or persistent format.
-DOUBLE MOD and NUMERIC types remain unsupported. Completed semantic and resource
-repairs remain closed without a new counterexample; no new platform or physical
+MOD is complete at `a889528`; the [remainder record](evidence.md#integer-remainder)
+retains verified behavior, coverage and limitations. Add INT64 DIV to group
+integer values by exact quotient without conversion through DOUBLE. This pairs
+with remainder grouping through the existing bounded numeric program. Completed
+semantic and resource repairs remain closed without a new counterexample.
+
+1. Pin the INT64 signature, truncation direction, NULL, zero-divisor and minimum
+   integer divided by minus-one overflow at the language owner's immutable
+   revision. Reassess unresolved research after 30 minutes; leave disputed forms
+   unsupported.
+2. Extend the existing bounded call parser, binding, independent validation and
+   scalar evaluator. Preserve argument errors, spans, demand, admission and
+   release without another frontend, allocation owner or persistent format.
+3. Cover independent literal results above 2^53, signed extremes, nullable batches,
+   malformed calls/programs and composition. Extend retained admission, replay,
+   cancellation and failure cases where they protect a distinct boundary.
+4. Add a runnable quotient-grouping example and update contract, learning and
+   test/tool maps. Run focused checks and both complete frozen platform gates;
+   reconcile discovery and manifests, retain concise evidence, remove owned
+   outputs and commit locally under the publication restrictions.
+
+Semantic research and implementation remain. DOUBLE DIV, NUMERIC types and
+other new scalar calls are outside this milestone. No new platform or physical
 memory qualification is claimed. No publication is authorized.
 
 ## Next engineering priorities
