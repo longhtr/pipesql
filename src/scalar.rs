@@ -10,20 +10,22 @@ pub(crate) enum ArithmeticFailure {
     Add,
     Subtract,
     Multiply,
+    Divide,
+    DivideByZero,
     Negate,
 }
 
 impl ArithmeticFailure {
     pub(crate) fn into_error(self, span: SourceSpan) -> Error {
-        Error::ArithmeticOverflow {
-            operation: match self {
-                Self::Add => "addition",
-                Self::Subtract => "subtraction",
-                Self::Multiply => "multiplication",
-                Self::Negate => "negation",
-            },
-            span,
-        }
+        let operation = match self {
+            Self::Add => "addition",
+            Self::Subtract => "subtraction",
+            Self::Multiply => "multiplication",
+            Self::Divide => "division",
+            Self::Negate => "negation",
+            Self::DivideByZero => return Error::DivisionByZero { span },
+        };
+        Error::ArithmeticOverflow { operation, span }
     }
 }
 
@@ -135,6 +137,7 @@ pub(crate) enum Op {
     Add,
     Subtract,
     Multiply,
+    Divide,
     Negate,
 }
 
@@ -192,12 +195,13 @@ impl Expression {
                     }
                     continue;
                 }
-                Op::Add | Op::Subtract | Op::Multiply => {
+                Op::Add | Op::Subtract | Op::Multiply | Op::Divide => {
                     if depth < 2 {
                         return Err(Error::Corrupt("scalar binary stack underflow"));
                     }
                     depth -= 1;
-                    types[depth - 1] = if types[depth - 1] == DataType::Double
+                    types[depth - 1] = if *op == Op::Divide
+                        || types[depth - 1] == DataType::Double
                         || types[depth] == DataType::Double
                     {
                         DataType::Double
@@ -231,7 +235,7 @@ impl Expression {
         for op in &self.ops[..usize::from(self.len)] {
             match op {
                 Op::Column(_) | Op::Integer(_) | Op::Double(_) => depth += 1,
-                Op::Add | Op::Subtract | Op::Multiply => {
+                Op::Add | Op::Subtract | Op::Multiply | Op::Divide => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
                 }
                 Op::Negate => (),
@@ -352,7 +356,7 @@ impl Expression {
                         _ => unreachable!("validated numeric operand"),
                     }
                 }
-                Op::Add | Op::Subtract | Op::Multiply => {
+                Op::Add | Op::Subtract | Op::Multiply | Op::Divide => {
                     depth -= 1;
                     let (left, right) = scratch.split_at_mut(depth * rows);
                     let left = &mut left[(depth - 1) * rows..];
@@ -363,15 +367,16 @@ impl Expression {
                     for (left, right) in valid[depth - 1].iter_mut().zip(right_valid) {
                         *left &= right;
                     }
-                    let both_integer =
-                        left_type == DataType::Int64 && right_type == DataType::Int64;
+                    let integer_result = *op != Op::Divide
+                        && left_type == DataType::Int64
+                        && right_type == DataType::Int64;
                     let all_valid = valid[depth - 1] == [u64::MAX; VALID_WORDS];
                     for (row, (left, right)) in left.iter_mut().zip(right).enumerate() {
                         if !all_valid && valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
                             *left = 0;
                             continue;
                         }
-                        if both_integer {
+                        if integer_result {
                             *left =
                                 integer_bits(integer_binary(*op, integer(*left), integer(*right))?);
                         } else {
@@ -389,7 +394,7 @@ impl Expression {
                             *left = double_binary(*op, a, b)?.to_bits();
                         }
                     }
-                    if !both_integer {
+                    if !integer_result {
                         types[depth - 1] = DataType::Double;
                     }
                 }
@@ -432,6 +437,14 @@ fn double_binary(op: Op, left: f64, right: f64) -> Result<f64, ArithmeticFailure
         Op::Add => (left + right, ArithmeticFailure::Add),
         Op::Subtract => (left - right, ArithmeticFailure::Subtract),
         Op::Multiply => (left * right, ArithmeticFailure::Multiply),
+        Op::Divide => {
+            // NULL lanes are removed before this operation. Both signed zeros
+            // are errors even when the numerator is nonfinite.
+            if right == 0.0 {
+                return Err(ArithmeticFailure::DivideByZero);
+            }
+            (left / right, ArithmeticFailure::Divide)
+        }
         _ => unreachable!("binary operation"),
     };
     if left.is_finite() && right.is_finite() && !value.is_finite() {
@@ -480,6 +493,111 @@ mod tests {
             assert_eq!(output.valid, [u64::MAX; VALID_WORDS]);
             Ok(output.values)
         }
+    }
+
+    #[test]
+    fn division_coerces_at_the_operation_and_validates_its_result_type() {
+        for (left, right, expected) in [
+            (Op::Integer(3), Op::Integer(2), 1.5),
+            (Op::Integer(3), Op::Double(2.0_f64.to_bits()), 1.5),
+            (Op::Double(3.0_f64.to_bits()), Op::Integer(2), 1.5),
+            (
+                Op::Integer(i64::MIN),
+                Op::Integer(-1),
+                9223372036854775808.0,
+            ),
+        ] {
+            let mut expression = Expression::EMPTY;
+            expression.ops[..3].copy_from_slice(&[left, right, Op::Divide]);
+            expression.len = 3;
+            expression.validate(&[]).unwrap();
+            assert_eq!(expression.stack_depth(), 2);
+            let Number::Double(actual) = expression.evaluate_constant().unwrap() else {
+                panic!("division must return DOUBLE");
+            };
+            assert_eq!(actual, expected);
+            expression.data_type = DataType::Int64;
+            assert!(expression.validate(&[]).is_err());
+        }
+        let mut expression = Expression::EMPTY;
+        expression.ops[..5].copy_from_slice(&[
+            Op::Integer(i64::MAX),
+            Op::Integer(1),
+            Op::Add,
+            Op::Integer(2),
+            Op::Divide,
+        ]);
+        expression.len = 5;
+        expression.validate(&[]).unwrap();
+        assert!(matches!(
+            expression.evaluate_constant(),
+            Err(ArithmeticFailure::Add)
+        ));
+    }
+
+    #[test]
+    fn division_preserves_null_zero_and_nonfinite_boundaries() {
+        for numerator in [0.0, 1.0, f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            for denominator in [0.0, -0.0] {
+                assert!(matches!(
+                    double_binary(Op::Divide, numerator, denominator),
+                    Err(ArithmeticFailure::DivideByZero)
+                ));
+            }
+        }
+        assert!(matches!(
+            double_binary(Op::Divide, f64::MAX, 0.5),
+            Err(ArithmeticFailure::Divide)
+        ));
+        assert!(
+            double_binary(Op::Divide, f64::INFINITY, f64::INFINITY)
+                .unwrap()
+                .is_nan()
+        );
+        assert_eq!(
+            double_binary(Op::Divide, f64::INFINITY, -1.0).unwrap(),
+            f64::NEG_INFINITY
+        );
+        assert_eq!(
+            double_binary(Op::Divide, 1.0, f64::NEG_INFINITY)
+                .unwrap()
+                .to_bits(),
+            (-0.0_f64).to_bits()
+        );
+        assert_eq!(
+            double_binary(Op::Divide, f64::from_bits(1), 2.0).unwrap(),
+            0.0
+        );
+
+        let column = SemanticColumn::new(41, DataType::Int64, true);
+        let values = [99, 3];
+        let inputs = [Some(
+            NumericInput::new(column, NumericValues::Int64(&values), Some(&[2])).unwrap(),
+        )];
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[Op::Column(column), Op::Integer(0), Op::Divide]);
+        expression.len = 3;
+        expression.validate(&[column]).unwrap();
+        let mut scratch = [0; MAX_OPS];
+        assert_eq!(
+            expression
+                .evaluate_batch(&inputs, 0..1, &mut scratch)
+                .unwrap()
+                .value(0),
+            None
+        );
+        assert!(matches!(
+            expression.evaluate_batch(&inputs, 1..2, &mut scratch),
+            Err(ArithmeticFailure::DivideByZero)
+        ));
+        expression.ops[..3].copy_from_slice(&[Op::Integer(0), Op::Column(column), Op::Divide]);
+        assert_eq!(
+            expression
+                .evaluate_batch(&inputs, 0..1, &mut scratch)
+                .unwrap()
+                .value(0),
+            None
+        );
     }
 
     #[test]

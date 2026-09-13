@@ -41,6 +41,9 @@ pub enum CauseKind {
     UnsupportedGeneration(u64),
     Unsupported(&'static str),
     Cancelled,
+    DivisionByZero {
+        span: SourceSpan,
+    },
     ArithmeticOverflow {
         operation: &'static str,
         span: SourceSpan,
@@ -94,6 +97,7 @@ impl ErrorCause {
             }
             Error::Unsupported(message) => CauseKind::Unsupported(message),
             Error::Cancelled => CauseKind::Cancelled,
+            Error::DivisionByZero { span } => CauseKind::DivisionByZero { span },
             Error::ArithmeticOverflow { operation, span } => {
                 CauseKind::ArithmeticOverflow { operation, span }
             }
@@ -182,6 +186,7 @@ impl fmt::Display for CauseKind {
             }
             Self::Unsupported(message) => write!(formatter, "unsupported operation: {message}"),
             Self::Cancelled => write!(formatter, "operation cancelled"),
+            Self::DivisionByZero { span } => fmt_division_by_zero(*span, formatter),
             Self::ArithmeticOverflow { operation, span } => {
                 fmt_arithmetic(operation, *span, formatter)
             }
@@ -230,6 +235,18 @@ pub(super) fn fmt_arithmetic(
     write!(
         formatter,
         "arithmetic overflow during {operation} at bytes {}..{}",
+        span.start(),
+        span.end()
+    )
+}
+
+pub(super) fn fmt_division_by_zero(
+    span: SourceSpan,
+    formatter: &mut fmt::Formatter<'_>,
+) -> fmt::Result {
+    write!(
+        formatter,
+        "division by zero at bytes {}..{}",
         span.start(),
         span.end()
     )

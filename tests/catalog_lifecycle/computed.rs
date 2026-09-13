@@ -635,3 +635,162 @@ fn set_preserves_demanded_overflow_and_prunes_replaced_definitions() {
         integers(&[1, 1, 1, 1]),
     );
 }
+
+#[test]
+fn public_division_preserves_precedence_types_and_demand() {
+    let (_directory, db) = join_fixture();
+    for (expression, expected) in [
+        ("8/2*2", 8.0_f64),
+        ("8/2/2", 2.0),
+        ("1+3/2", 2.5),
+        ("-(3/2)", -1.5),
+        ("3.0/2", 1.5),
+        ("3/2.0", 1.5),
+    ] {
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT 1 |> SELECT {expression} AS ratio"),
+            vec![vec![Cell::Number(expected.to_bits())]],
+        );
+    }
+    for sql in [
+        "FROM facts |> SELECT v,1/0 AS bad |> SELECT v |> ORDER BY v",
+        "FROM facts |> EXTEND 1/0 AS bad |> DROP bad |> SELECT v |> ORDER BY v",
+    ] {
+        query(&db, sql, integers(&[10, 20, 30, 40]));
+    }
+    query(
+        &db,
+        "FROM facts |> AGGREGATE SUM(v/2) AS total |> EXTEND COUNT(*) OVER () AS n |> SELECT total/n AS ratio",
+        vec![vec![Cell::Number(50.0_f64.to_bits())]],
+    );
+    query(&db, "FROM facts |> SELECT 1/0 AS bad |> LIMIT 0", vec![]);
+    query(
+        &db,
+        "FROM facts |> WHERE k IS NULL |> SELECT k/0 AS ratio",
+        vec![vec![Cell::Null]],
+    );
+    failure(
+        &db,
+        "FROM facts |> SELECT 1e308/0.1 AS ratio",
+        "division",
+        "1e308/0.1",
+    );
+}
+
+#[test]
+fn public_division_zero_failure_releases_owners_and_keeps_source_span() {
+    let (_directory, db) = join_fixture();
+    let baseline = db.reserved_memory_bytes();
+    let sql = "# 雪\nFROM facts |> SELECT v/(k-1) AS ratio";
+    let prepared = db.prepare(sql).unwrap();
+    let cancel = CancellationToken::new();
+    let mut result = db.execute(&prepared, &cancel).unwrap();
+    let mut failed = false;
+    for _ in 0..100_000 {
+        match result.step() {
+            QueryStep::Progress | QueryStep::Rows(_) => (),
+            QueryStep::Failed(pipesql::Error::DivisionByZero { span }) => {
+                assert_eq!(&sql[span.start()..span.end()], "v/(k-1)");
+                failed = true;
+                break;
+            }
+            QueryStep::Failed(error) => panic!("{error}"),
+            QueryStep::Finished => panic!("missing zero-denominator error"),
+        }
+    }
+    assert!(failed);
+    assert!(matches!(
+        result.step(),
+        QueryStep::Failed(pipesql::Error::DivisionByZero { .. })
+    ));
+    drop(result);
+    drop(prepared);
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    query(
+        &db,
+        "FROM facts |> SELECT v/2 AS ratio |> ORDER BY ratio",
+        [5.0_f64, 10.0, 15.0, 20.0]
+            .into_iter()
+            .map(|n| vec![Cell::Number(n.to_bits())])
+            .collect(),
+    );
+}
+
+#[test]
+fn public_division_composes_with_set_union_grouping_and_boolean_demand() {
+    let (_directory, db) = join_fixture();
+    for sql in [
+        "FROM facts |> SET v=v/2 |> SELECT v |> ORDER BY v",
+        "FROM (FROM facts |> SELECT v/2 AS ratio) AS x |> SELECT x.ratio |> ORDER BY ratio",
+        "FROM facts |> SELECT v/2 AS ratio |> UNION DISTINCT (FROM facts |> SELECT v/2 AS ratio) |> ORDER BY ratio",
+    ] {
+        query(
+            &db,
+            sql,
+            [5.0_f64, 10.0, 15.0, 20.0]
+                .into_iter()
+                .map(|n| vec![Cell::Number(n.to_bits())])
+                .collect(),
+        );
+    }
+    query(
+        &db,
+        "FROM facts |> SELECT k,v/(k-1) AS ratio |> WHERE k=1 OR ratio>0 |> SELECT k |> ORDER BY k",
+        integers(&[1, 1, 2]),
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT k,v/(k-1) AS ratio |> WHERE k!=1 AND ratio>0 |> SELECT ratio",
+        vec![vec![Cell::Number(30.0_f64.to_bits())]],
+    );
+    query(
+        &db,
+        "FROM facts |> AGGREGATE SUM(v) AS total,COUNT(*) AS n GROUP AND ORDER BY k |> SELECT k,total/n AS ratio",
+        vec![
+            vec![Cell::Null, Cell::Number(40.0_f64.to_bits())],
+            vec![Cell::Integer(1), Cell::Number(15.0_f64.to_bits())],
+            vec![Cell::Integer(2), Cell::Number(30.0_f64.to_bits())],
+        ],
+    );
+    failure(
+        &db,
+        "FROM facts |> SELECT (9223372036854775807+1)/2 AS ratio",
+        "addition",
+        "(9223372036854775807+1)/2",
+    );
+}
+
+#[test]
+fn public_division_cancellation_and_early_drop_release_owners() {
+    let (_directory, db) = join_fixture();
+    let baseline = db.reserved_memory_bytes();
+    let prepared = db
+        .prepare("FROM facts |> SELECT v/2 AS ratio |> ORDER BY ratio")
+        .unwrap();
+    let admitted = db.reserved_memory_bytes();
+    for after in [0, 1, 3] {
+        for cancel_query in [false, true] {
+            let cancel = CancellationToken::new();
+            let mut result = db.execute(&prepared, &cancel).unwrap();
+            for _ in 0..after {
+                assert!(matches!(result.step(), QueryStep::Progress));
+            }
+            if cancel_query {
+                cancel.cancel();
+                assert!(matches!(result.step(), QueryStep::Failed(Error::Cancelled)));
+            }
+            drop(result);
+            assert_eq!(db.reserved_memory_bytes(), admitted);
+            assert_eq!(db.reserved_temp_bytes(), 0);
+        }
+    }
+    drop(prepared);
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    query(
+        &db,
+        "FROM facts |> AGGREGATE SUM(v/2) AS total",
+        vec![vec![Cell::Number(50.0_f64.to_bits())]],
+    );
+}

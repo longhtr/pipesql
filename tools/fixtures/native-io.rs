@@ -30,12 +30,15 @@ fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
     } else {
         "FROM facts |> AGGREGATE SUM(n) AS total GROUP BY k |> AGGREGATE SUM(total) AS subtotal GROUP BY total |> AGGREGATE AVG(subtotal) AS mean"
     };
-    let queries = std::iter::once((sql, Value::Double(if derived { 120.0 } else { 60.0 }))).chain(
-        derived.then_some((
+    let queries = std::iter::once((sql, Value::Double(if derived { 120.0 } else { 60.0 })))
+        .chain(derived.then_some((
             "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total",
             Value::Int64(9),
-        )),
-    );
+        )))
+        .chain(derived.then_some((
+            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(n/2) AS ratio",
+            Value::Double(4.5),
+        )));
     for (sql, expected) in queries {
         let plan = db.prepare(sql)?;
         let cancel = CancellationToken::new();

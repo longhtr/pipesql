@@ -29,6 +29,7 @@ pub(super) enum Kind {
     LeftParen,
     RightParen,
     Star,
+    Slash,
 }
 
 #[derive(Clone, Copy)]
@@ -176,6 +177,7 @@ pub(super) fn lex(source: &str) -> Result<Tokens, Error> {
             (b'(', _) => (Kind::LeftParen, 1),
             (b')', _) => (Kind::RightParen, 1),
             (b'*', _) => (Kind::Star, 1),
+            (b'/', _) => (Kind::Slash, 1),
             (b',', _) => (Kind::Comma, 1),
             (b'.', _) => (Kind::Dot, 1),
             (b';', _) => (Kind::Semicolon, 1),

@@ -105,6 +105,7 @@ pub(super) enum ParsedOp {
     Add,
     Subtract,
     Multiply,
+    Divide,
     Negate,
 }
 
@@ -146,7 +147,7 @@ impl PendingOp {
     fn precedence(self) -> u8 {
         match self {
             Self::Paren => 0,
-            Self::Binary(Kind::Star) => 2,
+            Self::Binary(Kind::Star | Kind::Slash) => 2,
             Self::Binary(_) => 1,
             Self::Unary => 3,
         }
@@ -158,6 +159,7 @@ impl PendingOp {
             Self::Binary(Kind::Plus) => ParsedOp::Add,
             Self::Binary(Kind::Minus) => ParsedOp::Subtract,
             Self::Binary(Kind::Star) => ParsedOp::Multiply,
+            Self::Binary(Kind::Slash) => ParsedOp::Divide,
             _ => unreachable!("pending scalar operator"),
         }
     }
@@ -599,7 +601,7 @@ impl Parser<'_> {
                 continue;
             }
             match kind {
-                Kind::Plus | Kind::Minus | Kind::Star => {
+                Kind::Plus | Kind::Minus | Kind::Star | Kind::Slash => {
                     let operator = PendingOp::Binary(kind);
                     while depth != 0 && pending[depth - 1].precedence() >= operator.precedence() {
                         depth -= 1;

@@ -489,6 +489,13 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
             phase = "count-only-step";
             consume_count(result, 16)?;
             drop(count);
+            phase = "division-prepare";
+            let division = db.prepare("FROM facts |> SELECT measure/2 AS ratio |> WHERE ratio=1.75 |> AGGREGATE COUNT(*) AS n")?;
+            phase = "division-execute";
+            let result = db.execute(&division, &cancel)?;
+            phase = "division-step";
+            consume_count(result, 2)?;
+            drop(division);
             phase = "distinct-prepare";
             let distinct = db.prepare(DISTINCT)?;
             phase = "distinct-execute";

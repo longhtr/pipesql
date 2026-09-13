@@ -62,6 +62,9 @@ pub enum Error {
     UnsupportedGeneration(u64),
     Unsupported(&'static str),
     Cancelled,
+    DivisionByZero {
+        span: SourceSpan,
+    },
     ArithmeticOverflow {
         operation: &'static str,
         span: SourceSpan,
@@ -130,6 +133,7 @@ impl fmt::Display for Error {
             }
             Self::Unsupported(message) => write!(formatter, "unsupported operation: {message}"),
             Self::Cancelled => write!(formatter, "operation cancelled"),
+            Self::DivisionByZero { span } => error_cause::fmt_division_by_zero(*span, formatter),
             Self::ArithmeticOverflow { operation, span } => {
                 error_cause::fmt_arithmetic(operation, *span, formatter)
             }

@@ -1634,3 +1634,27 @@ fn analytic_projection_owns_fresh_counts_and_clears_relation_order() {
     assert_eq!(query.plan.order_key(RelationId(2), 0).unwrap(), None);
     assert_eq!(query.plan.order_key(RelationId(3), 0).unwrap(), None);
 }
+
+#[test]
+fn division_constant_failures_keep_types_and_spans() {
+    let (_temp, db) = database(2_000_000);
+    let prefix = "# 雪\nFROM lineitem |> WHERE l_quantity > ";
+    let sql = format!("{prefix}1/0");
+    let baseline = db.reserved_memory_bytes();
+    match db.prepare(&sql) {
+        Err(Error::DivisionByZero { span }) => {
+            assert_eq!(span.start(), prefix.len());
+            assert_eq!(span.end(), sql.len());
+        }
+        result => panic!("expected division by zero: {:?}", result.err()),
+    }
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    assert!(db.prepare("FROM lineitem |> LIMIT 4/2").is_err());
+}
+
+#[test]
+fn division_preparation_admits_exact_peak_and_releases_it() {
+    check_scope_preparation(
+        "FROM facts |> SELECT k,n/(k+1) AS ratio |> WHERE ratio>1/2 |> AGGREGATE AVG(ratio) AS mean GROUP BY k",
+    );
+}

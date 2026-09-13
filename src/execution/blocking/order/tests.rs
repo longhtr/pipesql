@@ -123,7 +123,15 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
     let directory = Directory::new();
     let db = database(&directory);
     let cancel = CancellationToken::new();
-    for sql in [QUERY, DISTINCT_QUERY, UNION_DISTINCT_QUERY, WINDOW_QUERY] {
+    const DIVISION_QUERY: &str =
+        "FROM facts |> EXTEND v/2 AS ratio |> WHERE ratio>=0 |> ORDER BY k DESC,v ASC |> SELECT v";
+    for sql in [
+        QUERY,
+        DISTINCT_QUERY,
+        UNION_DISTINCT_QUERY,
+        WINDOW_QUERY,
+        DIVISION_QUERY,
+    ] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         let result = db.execute(&query, &cancel).unwrap();
@@ -143,7 +151,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
                 assert_eq!(effects.count(), 0);
             } else {
                 let mut result = admitted.unwrap();
-                let expected: Vec<_> = if sql == QUERY {
+                let expected: Vec<_> = if sql == QUERY || sql == DIVISION_QUERY {
                     (0..90)
                         .rev()
                         .flat_map(|key| [key * 2, key * 2 + 1])

@@ -426,6 +426,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         assert_eq!(&sql[span.start()..span.end()], "9223372036854775807 + 1");
         drop(sql);
+        let division = db
+            .prepare("FROM lineitem |> WHERE l_quantity > 1/0")
+            .err()
+            .expect("constant division by zero");
+        let Error::DivisionByZero {
+            span: division_span,
+        } = division
+        else {
+            panic!("division error");
+        };
         let wal = database.join("WAL");
         std::fs::set_permissions(&wal, std::fs::Permissions::from_mode(0o400))?;
         let error = db
@@ -443,7 +453,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("entered fixed-buffer I/O diagnostic probe");
         DENY.store(deny, Ordering::Relaxed);
         let cause = pipesql::CauseKind::ArithmeticOverflow { operation, span };
-        let formatted = write!(&mut text, "{error}; {arithmetic}; {cause}");
+        let division_cause = pipesql::CauseKind::DivisionByZero {
+            span: division_span,
+        };
+        let formatted = write!(
+            &mut text,
+            "{error}; {arithmetic}; {cause}; {division}; {division_cause}"
+        );
         DENY.store(false, Ordering::Relaxed);
         formatted.unwrap();
         let text = std::str::from_utf8(&text.bytes[..text.length]).unwrap();
@@ -453,6 +469,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .count(),
             2
         );
+        assert_eq!(text.matches("division by zero at bytes 36..39").count(), 2);
         println!("returned rendered diagnostic: {text}");
         return Ok(());
     }

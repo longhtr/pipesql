@@ -47,12 +47,30 @@ other scalar functions or changing persistent formats.
    frozen platform gates, reconcile discovery/manifests, record concise evidence,
    remove owned outputs and commit locally under the publication restrictions.
 
-Initial navigation locates the operation in `frontend/lexer.rs`,
-`frontend/parser.rs`, `frontend/binding.rs` and `scalar.rs`. The pinned upstream
-[`GetFunctionTestsDivide`](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_math.cc#L939)
-contains explicit zero-denominator and nonfinite cases. Coercion, NULL and error
-mapping still need reconciliation before implementation; division remains
-unsupported in the current public contract.
+The pinned signatures, coercion fixtures, reference NULL handling and arithmetic
+implementation establish DOUBLE results, NULL propagation, zero-denominator
+errors and nonfinite behavior. The lexer, parser, binder and shared numeric stack
+now implement division, with a separate zero-denominator error and captured cause.
+No new allocation owner or persistent representation is introduced.
+
+Eight division tests now cover mixed types, precedence, checked integer children,
+NULL, signed zero, nonfinite values, overflow, Boolean demand, SET, derived inputs,
+UNION DISTINCT, grouped ratios, source spans, terminal failure, cancellation,
+early drop and healthy reuse. Seven focused tests and the separate preparation
+exact/short test pass. The 34-test admission selection passes, including division
+in the sorted-owner exact/short execution test with zero effects on refusal.
+These are filtered checks, not complete-suite evidence.
+
+Maintenance passes, including 44 independent codec fixtures and 529 local links.
+The allocation controls pass with a catalog census of 982 at both pathname lengths;
+the existing ceiling of 1,000 is unchanged. Required division preparation,
+execution and stepping phases retain count two. The native I/O caller retains
+its prior results and adds ratio total 4.5. The macOS ratio example runs on a fresh
+database and produces north/7.5 and south/20.0 with successful completion.
+
+Implementation and test/tool maps are ready for frozen full verification. Both
+complete platform gates, GNU/Linux example execution, discovery/manifests,
+final evidence, cleanup and local commits remain. No publication is authorized.
 
 ## Next engineering priorities
 

@@ -306,7 +306,8 @@ behavior, resource refusal, cancellation, contention, I/O, corruption and
 possibly committed outcomes. Parse, bind and arithmetic diagnostics carry source
 spans. `Error::ArithmeticOverflow { operation, span }` and the matching
 `CauseKind` variant own a static operation name and a required half-open UTF-8
-byte range. The span remains valid as an offset after the query and its source
+byte range. `Error::DivisionByZero { span }` and its matching cause distinguish
+a zero denominator from overflow. The span remains valid as an offset after the query and its source
 text are dropped; the engine does not retain that text. Numeric constant
 failures use the whole expression. Runtime failures use the enclosing aggregate
 call, excluding its alias. Shared argument failures identify a demanded call;

@@ -34,6 +34,7 @@ fn leaf_facts_and_display_survive_inline_conversion() {
         Error::UnsupportedGeneration(u64::MAX),
         Error::Unsupported("operation"),
         Error::Cancelled,
+        Error::DivisionByZero { span },
         Error::ArithmeticOverflow {
             operation: "multiply",
             span,

@@ -182,6 +182,27 @@ comparison demands every input field and uses the existing bounded
 when necessary. See the [union contract](language.md#union-distinct) for scope
 and errors.
 
+## Compute a ratio after grouping
+
+Run [ratio.sql](../examples/ratio.sql) against the same sales table:
+
+```sh
+target/release/pipesql query --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/ratio.sql" \
+  --memory-limit-bytes 4000000 --temp-limit-bytes 2000000
+```
+
+The grouped stage produces a sum and a count of non-NULL amounts. The next
+projection divides them, producing DOUBLE values: north/7.5 and south/20.0.
+Require `status=queried` and successful process exit. `COUNT(amount)` excludes
+the missing north amount; using `COUNT(*)` would include it in the denominator.
+
+Follow [binding](../src/frontend/binding.rs) into the bounded postfix program in
+[scalar.rs](../src/scalar.rs). Division converts its operands to DOUBLE at that
+operation. Earlier integer expressions still use checked arithmetic. Each lane's
+validity is checked before dividing, so a NULL operand produces NULL and a
+non-NULL zero denominator reports a source-spanned error.
+
 ## Count the complete input beside each row
 
 Run [window-count.sql](../examples/window-count.sql) against the same sales table:

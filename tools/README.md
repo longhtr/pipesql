@@ -147,7 +147,10 @@ aggregation, with an independent total of 16 for its four-row input. A separate
 count-only query retains the same total and exercises the counter's allocations. The native
 I/O composition campaign also consumes analytic count after a join; its existing
 result oracle checks the complete aggregate. It also checks a count-only total of
-nine over three rows. Both retain refusal, recovery and
+nine over three rows and a division aggregate of 4.5. Catalog allocation phases
+separately prepare, execute and consume a nullable division/filter query with
+count two. Fixed-buffer diagnostic controls render division-by-zero errors and
+captured causes under allocation denial. Both retain refusal, recovery and
 healthy-reuse checks around the full sequence.
 
 The same selection runs the nullable self-join, aggregation, and ordering workload
