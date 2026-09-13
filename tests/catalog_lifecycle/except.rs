@@ -88,47 +88,6 @@ fn public_except_preserves_left_nullability_and_repeated_positions() {
 }
 
 #[test]
-fn public_except_demands_both_complete_inputs_before_emitting() {
-    let (_directory, db) = join_fixture();
-    let baseline = db.reserved_memory_bytes();
-    for sql in [
-        "FROM facts |> SELECT v, v*9223372036854775807 AS unused |> EXCEPT DISTINCT (FROM facts |> SELECT v, 1 AS unused) |> SELECT v |> LIMIT 1",
-        "FROM facts |> SELECT v, 1 AS unused |> EXCEPT DISTINCT (FROM facts |> SELECT v, v*9223372036854775807 AS unused) |> SELECT v |> LIMIT 1",
-        "FROM facts |> WHERE v<0 |> SELECT v, 1 AS unused |> EXCEPT DISTINCT (FROM facts |> SELECT v, v*9223372036854775807 AS unused) |> SELECT v |> LIMIT 1",
-    ] {
-        let cancel = CancellationToken::new();
-        let prepared = db.prepare(sql).unwrap();
-        let mut result = db.execute(&prepared, &cancel).unwrap();
-        let mut failed = false;
-        for _ in 0..2000 {
-            match result.step() {
-                QueryStep::Progress => (),
-                QueryStep::Rows(_) | QueryStep::Finished => {
-                    panic!("EXCEPT skipped demanded input: {sql}")
-                }
-                QueryStep::Failed(Error::ArithmeticOverflow { span, .. }) => {
-                    assert_eq!(&sql[span.start()..span.end()], "v*9223372036854775807");
-                    failed = true;
-                    break;
-                }
-                QueryStep::Failed(error) => panic!("wrong failure: {error}"),
-            }
-        }
-        assert!(failed, "bounded EXCEPT failure: {sql}");
-        assert!(matches!(
-            result.step(),
-            QueryStep::Failed(Error::ArithmeticOverflow { .. })
-        ));
-        drop(result);
-        drop(prepared);
-        assert_eq!(db.reserved_memory_bytes(), baseline);
-        assert_eq!(db.reserved_temp_bytes(), 0);
-        query(&db, "FROM facts |> AGGREGATE COUNT(*) AS n", integers(&[4]));
-        query(&db, &format!("{sql} |> LIMIT 0"), vec![]);
-    }
-}
-
-#[test]
 fn public_except_preserves_typed_values_and_both_snapshot_inputs() {
     let directory = Directory::new();
     let db = Database::create_empty(

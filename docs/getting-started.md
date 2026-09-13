@@ -517,6 +517,18 @@ It returns nullable INT64 `region` with rows `NULL` and `3`, followed by
 returns each surviving value once. NULL survives here because the dimension
 input contains no NULL identifier.
 
+The [shared-regions query](../examples/shared-regions.sql) finds region values
+present in both inputs:
+
+```sh
+cargo run --release --offline --locked -- query --database "$pipesql_left_join_dir/facts" \
+  --query-file examples/shared-regions.sql --memory-limit-bytes 8000000 --temp-limit-bytes 4000000
+```
+
+It returns required INT64 `region` with rows `1` and `2`, followed by
+`row_count=2` and `status=queried`. INTERSECT DISTINCT emits each shared value
+once. Its output is required because the dimension identifier cannot be NULL.
+
 Remove this example's database when finished:
 
 ```sh

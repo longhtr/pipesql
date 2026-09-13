@@ -20,6 +20,8 @@ mod distinct;
 
 #[path = "catalog_lifecycle/except.rs"]
 mod except;
+#[path = "catalog_lifecycle/intersect.rs"]
+mod intersect;
 
 #[path = "catalog_lifecycle/grouping.rs"]
 mod grouping;

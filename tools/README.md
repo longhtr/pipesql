@@ -164,13 +164,21 @@ Fixed-buffer diagnostic controls render division-by-zero errors and
 captured causes under allocation denial. Both retain refusal, recovery and
 healthy-reuse checks around the full sequence.
 
+INTERSECT uses the same descriptor allocation, two sorted-input constructors,
+scratch files and read/write owners as EXCEPT. The existing allocation-prefix
+and native-I/O campaigns continue to exercise those owners. Both operations run
+the internal exact/short admission, cancellation, reader corruption and replay
+schedules. The independent analytic ownership campaign adds INTERSECT with
+256 shared rows and checks actual heap attribution and release at every step;
+its expected rows do not call production set comparison.
+
 EXCEPT coverage compares complete rows in both native-I/O and allocation
 campaigns. The native input retains only key 2, whose amount is 90. Allocation
 refusal removes the NULL-note amounts and retains one distinct named amount.
 The analytic ownership campaign also consumes a typed EXCEPT result through
 window count, checking all 256 surviving rows and requested/usable charges at
 every returned step. The catalog work ceiling is 1,100 allocation prefixes;
-the EXCEPT healthy census observed 1,056, compared with 985 before this query.
+the EXCEPT healthy census observed 1,056.
 This ceiling bounds campaign work and does not change engine admission.
 
 The same selection runs the nullable self-join, aggregation, and ordering workload

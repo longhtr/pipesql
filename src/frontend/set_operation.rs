@@ -17,6 +17,7 @@ pub(crate) struct SetPlan {
 pub(crate) enum SetKind {
     UnionAll,
     ExceptDistinct,
+    IntersectDistinct,
 }
 
 impl SetPlan {
@@ -47,7 +48,11 @@ impl SetPlan {
         Some(SemanticColumn::new(
             identity,
             left.data_type(),
-            left.nullable() || (self.kind == SetKind::UnionAll && right.nullable()),
+            match self.kind {
+                SetKind::UnionAll => left.nullable() || right.nullable(),
+                SetKind::ExceptDistinct => left.nullable(),
+                SetKind::IntersectDistinct => left.nullable() && right.nullable(),
+            },
         ))
     }
 
@@ -68,6 +73,9 @@ impl SetPlan {
                 match kind {
                     SetKind::UnionAll => "UNION ALL inputs require equal column counts",
                     SetKind::ExceptDistinct => "EXCEPT DISTINCT inputs require equal column counts",
+                    SetKind::IntersectDistinct => {
+                        "INTERSECT DISTINCT inputs require equal column counts"
+                    }
                 },
                 span,
             ));
@@ -97,6 +105,9 @@ impl SetPlan {
                         SetKind::UnionAll => "UNION ALL column coercion is not implemented",
                         SetKind::ExceptDistinct => {
                             "EXCEPT DISTINCT column coercion is not implemented"
+                        }
+                        SetKind::IntersectDistinct => {
+                            "INTERSECT DISTINCT column coercion is not implemented"
                         }
                     },
                     span,
@@ -203,7 +214,12 @@ mod tests {
         )
         .unwrap();
         let baseline = db.reserved_memory_bytes();
-        for mode in ["UNION ALL", "UNION DISTINCT", "EXCEPT DISTINCT"] {
+        for mode in [
+            "UNION ALL",
+            "UNION DISTINCT",
+            "EXCEPT DISTINCT",
+            "INTERSECT DISTINCT",
+        ] {
             let sql = format!("FROM l |> SELECT a AS x, a AS y |> {mode} (FROM r |> SELECT b, c)");
             for mutation in 0..12 {
                 let mut query = db.prepare(&sql).unwrap();
@@ -211,7 +227,7 @@ mod tests {
                 let first = set.output(0).unwrap();
                 let second = set.output(1).unwrap();
                 assert_ne!(first.identity(), second.identity());
-                assert_eq!(first.nullable(), mode != "EXCEPT DISTINCT");
+                assert_eq!(first.nullable(), mode.starts_with("UNION"));
                 assert!(!second.nullable());
                 assert_eq!(set.inputs(0).unwrap()[0], set.inputs(1).unwrap()[0]);
                 assert_ne!(set.inputs(0).unwrap()[1], set.inputs(1).unwrap()[1]);

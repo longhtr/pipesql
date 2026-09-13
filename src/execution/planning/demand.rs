@@ -32,7 +32,7 @@ pub(super) fn demand_masks(plan: &frontend::Plan) -> Result<[ColumnSet; MAX_PIPE
                     let column = set
                         .output(position)
                         .ok_or(Error::Corrupt("set demand output"))?;
-                    if set.kind() == frontend::SetKind::ExceptDistinct
+                    if set.kind() != frontend::SetKind::UnionAll
                         || output.contains(column.identity())
                     {
                         let [left, right_column] = set

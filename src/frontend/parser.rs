@@ -23,6 +23,7 @@ pub(super) enum ParsedStage {
     Derived(SourceSpan),
     UnionAll(SourceSpan),
     ExceptDistinct(SourceSpan),
+    IntersectDistinct(SourceSpan),
     Join {
         kind: JoinKind,
         left: SourceSpan,
@@ -371,6 +372,7 @@ enum SetOperator {
     UnionAll,
     UnionDistinct,
     ExceptDistinct,
+    IntersectDistinct,
 }
 
 struct Parser<'a> {
@@ -945,10 +947,12 @@ impl Parser<'_> {
                         }
                     }
                     ChildCompletion::Set { pipe, operator } => {
-                        let stage = if operator == SetOperator::ExceptDistinct {
-                            ParsedStage::ExceptDistinct(pipe)
-                        } else {
-                            ParsedStage::UnionAll(pipe)
+                        let stage = match operator {
+                            SetOperator::ExceptDistinct => ParsedStage::ExceptDistinct(pipe),
+                            SetOperator::IntersectDistinct => ParsedStage::IntersectDistinct(pipe),
+                            SetOperator::UnionAll | SetOperator::UnionDistinct => {
+                                ParsedStage::UnionAll(pipe)
+                            }
                         };
                         parsed.push_stage(stage, close)?;
                         if self.peek() == Kind::Comma {
@@ -997,6 +1001,18 @@ impl Parser<'_> {
                     self.word("EXCEPT")?;
                     self.take(Kind::Distinct)?;
                     self.set_argument(&mut frames, &mut depth, pipe, SetOperator::ExceptDistinct)?;
+                    need_source = true;
+                    continue;
+                }
+                Kind::Reserved if self.is_word("INTERSECT") => {
+                    self.word("INTERSECT")?;
+                    self.take(Kind::Distinct)?;
+                    self.set_argument(
+                        &mut frames,
+                        &mut depth,
+                        pipe,
+                        SetOperator::IntersectDistinct,
+                    )?;
                     need_source = true;
                     continue;
                 }
@@ -1484,31 +1500,75 @@ mod tests {
     }
 
     #[test]
-    fn except_distinct_keeps_argument_and_normalized_stage_bounds() {
-        for sql in [
-            "FROM a |> EXCEPT (FROM b)",
-            "FROM a |> EXCEPT ALL (FROM b)",
-            "FROM a |> EXCEPT DISTINCT",
-            "FROM a |> EXCEPT DISTINCT ()",
-            "FROM a |> EXCEPT DISTINCT FROM b",
-            "FROM a |> EXCEPT DISTINCT TABLE b",
-            "FROM a |> EXCEPT DISTINCT BY NAME (FROM b)",
-            "FROM a |> EXCEPT DISTINCT (FROM b),,",
-        ] {
-            assert!(
-                matches!(parse_query(sql), Err(Error::Parse { .. })),
-                "{sql}"
-            );
+    fn sorted_set_distinct_keeps_argument_and_normalized_stage_bounds() {
+        for operator in ["EXCEPT", "INTERSECT"] {
+            for sql in [
+                "FROM a |> {operator} (FROM b)",
+                "FROM a |> {operator} ALL (FROM b)",
+                "FROM a |> {operator} DISTINCT",
+                "FROM a |> {operator} DISTINCT ()",
+                "FROM a |> {operator} DISTINCT FROM b",
+                "FROM a |> {operator} DISTINCT TABLE b",
+                "FROM a |> {operator} DISTINCT BY NAME (FROM b)",
+                "FROM a |> {operator} DISTINCT (FROM b),,",
+            ] {
+                let sql = sql.replace("{operator}", operator);
+                assert!(
+                    matches!(parse_query(&sql), Err(Error::Parse { .. })),
+                    "{sql}"
+                );
+            }
+            let arguments = ["(FROM b)"; MAX_STAGES / 2].join(", ");
+            let sql = format!("FROM a |> {operator} DISTINCT {arguments}");
+            assert_eq!(usize::from(parse_query(&sql).unwrap().len), MAX_STAGES);
+            assert!(matches!(
+                parse_query(&format!("{sql}, (FROM b)")),
+                Err(Error::Parse {
+                    message: "normalized stage limit exceeded",
+                    ..
+                })
+            ));
         }
-        let arguments = ["(FROM b)"; MAX_STAGES / 2].join(", ");
-        let sql = format!("FROM a |> EXCEPT DISTINCT {arguments}");
-        assert_eq!(usize::from(parse_query(&sql).unwrap().len), MAX_STAGES);
+    }
+
+    #[test]
+    fn intersect_distinct_preserves_left_association_and_nested_set_modes() {
+        let sql = "FROM a |> INTERSECT DISTINCT (FROM b), (FROM c |> UNION DISTINCT (FROM d)), |> AS remaining";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.source_count, 4);
+        let stages = &parsed.stages[..usize::from(parsed.len)];
         assert!(matches!(
-            parse_query(&format!("{sql}, (FROM b)")),
-            Err(Error::Parse {
-                message: "normalized stage limit exceeded",
-                ..
-            })
+            stages,
+            [
+                ParsedStage::Source(1),
+                ParsedStage::IntersectDistinct(_),
+                ParsedStage::Source(2),
+                ParsedStage::Source(3),
+                ParsedStage::UnionAll(_),
+                ParsedStage::Distinct(_),
+                ParsedStage::IntersectDistinct(_),
+                ParsedStage::Alias(_),
+            ]
+        ));
+        for index in [1, 6] {
+            let ParsedStage::IntersectDistinct(span) = stages[index] else {
+                unreachable!();
+            };
+            assert_eq!(usize::from(span.start), sql.find("|>").unwrap());
+            assert_eq!(text(sql, span), "|>");
+        }
+        let parsed =
+            parse_query("FROM a |> UNION DISTINCT (FROM b |> INTERSECT DISTINCT (FROM c))")
+                .unwrap();
+        assert!(matches!(
+            &parsed.stages[..usize::from(parsed.len)],
+            [
+                ParsedStage::Source(1),
+                ParsedStage::Source(2),
+                ParsedStage::IntersectDistinct(_),
+                ParsedStage::UnionAll(_),
+                ParsedStage::Distinct(_),
+            ]
         ));
     }
 

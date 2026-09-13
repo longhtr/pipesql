@@ -570,6 +570,12 @@ pub(crate) fn prepare<'db>(
             ParsedStage::UnionAll(span) => {
                 return Err(bind_error("UNION requires declared-table storage", *span));
             }
+            ParsedStage::IntersectDistinct(span) => {
+                return Err(bind_error(
+                    "INTERSECT requires declared-table storage",
+                    *span,
+                ));
+            }
             ParsedStage::ExceptDistinct(span) => {
                 return Err(bind_error("EXCEPT requires declared-table storage", *span));
             }
@@ -754,6 +760,9 @@ impl Binder<'_, '_> {
     fn bind_stage(&mut self, index: usize, syntax: ParsedStage) -> Result<Node, Error> {
         let mut input = RelationId(u8::try_from(index).expect("stage capacity"));
         let stage = match syntax {
+            ParsedStage::IntersectDistinct(span) => {
+                self.bind_set_operation(index, span, SetKind::IntersectDistinct, &mut input)?
+            }
             ParsedStage::ExceptDistinct(span) => {
                 self.bind_set_operation(index, span, SetKind::ExceptDistinct, &mut input)?
             }

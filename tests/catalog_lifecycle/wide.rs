@@ -395,12 +395,14 @@ fn check_set_width() {
                 .collect()
         })
         .collect();
-    for (operator, expected) in [
-        ("UNION ALL", expected.as_slice()),
-        ("UNION DISTINCT", expected.as_slice()),
-        ("EXCEPT DISTINCT", &expected[..1]),
+    for (operator, right, expected) in [
+        ("UNION ALL", "right_rows", expected.as_slice()),
+        ("UNION DISTINCT", "right_rows", expected.as_slice()),
+        ("EXCEPT DISTINCT", "right_rows", &expected[..1]),
+        ("INTERSECT DISTINCT", "right_rows", &expected[..0]),
+        ("INTERSECT DISTINCT", "left_rows", &expected[..1]),
     ] {
-        let sql = format!("FROM left_rows |> {operator} (FROM right_rows) |> SELECT {columns}");
+        let sql = format!("FROM left_rows |> {operator} (FROM {right}) |> SELECT {columns}");
         let prepared = db.prepare(&sql).unwrap();
         assert_eq!(prepared.result_column_count(), 64);
         assert_eq!(
@@ -415,6 +417,7 @@ fn check_set_width() {
         "FROM left_rows |> UNION ALL (FROM too_wide)".to_owned(),
         "FROM left_rows |> UNION DISTINCT (FROM too_wide)".to_owned(),
         "FROM left_rows |> EXCEPT DISTINCT (FROM too_wide)".to_owned(),
+        "FROM left_rows |> INTERSECT DISTINCT (FROM too_wide)".to_owned(),
         format!("FROM left_rows |> UNION ALL (FROM right_rows) |> SELECT {columns}, c0"),
     ] {
         assert!(

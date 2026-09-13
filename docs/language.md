@@ -102,6 +102,7 @@ separate from this query manifest.
 | `UNION ALL (pipe_query) [, (pipe_query), ...]` | Combines declared-table pipelines by position, preserving duplicates. Requires matching widths and scalar types. See [UNION ALL](#union-all) for names, demand, and bounds. |
 | `UNION DISTINCT (pipe_query) [, (pipe_query), ...]` | Combines matching positional pipelines and removes duplicate complete rows. See [UNION DISTINCT](#union-distinct) for demand and the additional stage. |
 | `EXCEPT DISTINCT (pipe_query) [, (pipe_query), ...]` | Returns each distinct complete left row absent from every right input. See [EXCEPT DISTINCT](#except-distinct) for comparison and demand. |
+| `INTERSECT DISTINCT (pipe_query) [, (pipe_query), ...]` | Returns each distinct complete row shared by all inputs. See [INTERSECT DISTINCT](#intersect-distinct) for NULLability and demand. |
 | `LIMIT count [OFFSET skip_rows]` | Selects a prefix on legacy or declared tables. Count and offset are non-negative INT64 constant expressions; see [LIMIT](#limit) for demand and error rules. |
 | `GROUP BY key [, key]` | Legacy tables group by up to two distinct visible source STRING identities. Declared-table keys are specified below. Group aliases inherited from earlier projections are valid. |
 | `GROUP AND ORDER BY key [, key]` | Additionally establishes ascending key order, preserved by following projections and filters. Ordinary GROUP BY establishes no semantic order. |
@@ -556,6 +557,28 @@ spans. A downstream LIMIT 0 can leave execution undemanded under the existing
 [LIMIT rules](#limit); a positive LIMIT cannot skip comparison work. The
 [resource contract](resources.md#except-distinct-admission) describes the two
 sorted inputs and retained replay state.
+
+## INTERSECT DISTINCT
+
+`INTERSECT DISTINCT (pipe_query) [, (pipe_query), ...]` returns one complete row
+present in every input. Arguments use the same bounded parenthesized FROM syntax,
+exact positional types, left names, fresh identities and pinned snapshots as
+[EXCEPT DISTINCT](#except-distinct). Multiple arguments combine left to right;
+a trailing comma is accepted by the pinned
+[pipe-set grammar](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/parser/googlesql.tm#L5126).
+Each argument adds one binary stage. ALL,
+name-based matching, TABLE arguments and coercions remain unsupported.
+
+A result column is nullable only when both corresponding input columns are
+nullable. Complete rows use DISTINCT equality, including typed NULLs, NaNs and
+signed zeros. A selected left representative retains its original stored bits;
+neither the representative nor output order is promised. Both complete inputs
+are demanded before output, even when one is empty or a downstream projection
+hides comparison fields. The existing LIMIT 0 exception and diagnostic spans
+are preserved. These evaluation and NULLability rules are PipeSQL contracts.
+The [shared sorted-input admission](resources.md#except-distinct-admission)
+accounts for comparison and replay. The relational behavior follows the pinned
+[INTERSECT specification](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/query-syntax.md#intersect).
 
 ## Relation state
 

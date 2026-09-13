@@ -60,7 +60,7 @@ Unsupported ALL, name matching, coercion and correlated forms remain rejected.
 
 The positional descriptor now serves UNION and EXCEPT with independent semantic
 and physical validators. The
-[controller](../src/execution/blocking/except.rs) consumes both branches through
+[controller](../src/execution/blocking/sorted_set.rs) consumes both branches through
 the existing scheduler, sorts their complete rows, and emits surviving left
 representatives. Each input keeps its own nullable record layout. Inline mappings
 preserve repeated semantic positions even when child payload slots are shared.

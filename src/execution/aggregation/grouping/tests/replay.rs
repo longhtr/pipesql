@@ -124,7 +124,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
         ],
     );
     let cancel = CancellationToken::new();
-    for variant in 0..19 {
+    for variant in 0..20 {
         let joined = matches!(variant, 0 | 2 | 6 | 16 | 17);
         let sql = if joined {
             "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> AGGREGATE SUM(l.n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY l.k"
@@ -183,6 +183,9 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
             18 => {
                 "FROM facts |> EXCEPT DISTINCT (FROM facts |> WHERE n=3) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
             }
+            19 => {
+                "FROM facts |> INTERSECT DISTINCT (FROM facts |> WHERE n>3) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
+            }
             _ => sql,
         };
         let query = database.prepare(sql).unwrap();
@@ -224,8 +227,8 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
             if let State::Running(runtime) = &mut result.state {
                 replay |= if joined {
                     runtime.first_join_mut().was_replayed()
-                } else if variant == 18 {
-                    runtime.first_except_mut().was_replayed()
+                } else if matches!(variant, 18 | 19) {
+                    runtime.first_sorted_set_mut().was_replayed()
                 } else if !matches!(variant, 4 | 7) {
                     runtime.first_order_mut().was_replayed()
                 } else {
@@ -258,7 +261,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
             match variant {
                 0 | 2 | 6 => [[1, 14, 4], [2, 7, 1]],
                 1 | 4 | 5 | 7 | 8 | 10 | 11 => [[1, 7, 2], [2, 7, 1]],
-                3 | 18 => [[1, 4, 1], [2, 7, 1]],
+                3 | 18 | 19 => [[1, 4, 1], [2, 7, 1]],
                 9 => [[1, 1, 1], [2, 2, 1]],
                 12 | 16 => [[1, 7, 0], [2, 7, 1]],
                 13 => [[1, 3, 2], [2, 2, 1]],

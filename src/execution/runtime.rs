@@ -40,8 +40,8 @@ enum Owner<'db> {
         union: union::Union,
         output: OwnedBatch<'db>,
     },
-    Except {
-        except: Vec<blocking::except::Except<'db>>,
+    SortedSet {
+        sorted_set: Vec<blocking::sorted_set::SortedSet<'db>>,
         output: OwnedBatch<'db>,
     },
     Aggregate(OwnedBatch<'db>),
@@ -84,7 +84,7 @@ impl<'db> Owner<'db> {
             | Self::Count { output, .. }
             | Self::Limit { output, .. }
             | Self::Union { output, .. }
-            | Self::Except { output, .. }
+            | Self::SortedSet { output, .. }
             | Self::Aggregate(output) => output,
             Self::Pending(_) | Self::Vacant => {
                 unreachable!("runtime construction must finish before execution")
@@ -100,7 +100,7 @@ impl<'db> Owner<'db> {
             | Self::Count { output, .. }
             | Self::Limit { output, .. }
             | Self::Union { output, .. }
-            | Self::Except { output, .. }
+            | Self::SortedSet { output, .. }
             | Self::Aggregate(output) => output,
             Self::Pending(_) | Self::Vacant => {
                 unreachable!("runtime construction must finish before execution")
@@ -113,7 +113,7 @@ impl<'db> Owner<'db> {
             + match self {
                 Self::Scan { cursor, .. } => cursor.memory_bytes(),
                 Self::Join { join, .. } => join[0].memory_bytes(),
-                Self::Except { except, .. } => except[0].memory_bytes(),
+                Self::SortedSet { sorted_set, .. } => sorted_set[0].memory_bytes(),
                 Self::Order { order, .. } => order[0].memory_bytes(),
                 Self::Aggregate(_)
                 | Self::Count { .. }
@@ -129,7 +129,7 @@ impl<'db> Owner<'db> {
             Self::Count { count, .. } => count.replay(cancel),
             Self::Limit { limit, .. } => limit.replay(),
             Self::Union { union, .. } => union.replay(),
-            Self::Except { except, .. } => except[0].replay(cancel),
+            Self::SortedSet { sorted_set, .. } => sorted_set[0].replay(cancel),
             Self::Join { join, .. } => join[0].replay(cancel),
             Self::Order { order, .. } => order[0].replay(cancel),
             _ => Err(Error::Corrupt("invalid replay producer")),
@@ -399,8 +399,11 @@ impl<'db> Runtime<'db> {
                                 union: union::Union::new(bound, inputs),
                                 output,
                             },
-                            frontend::SetKind::ExceptDistinct => Owner::Except {
-                                except: blocking::except::Except::new(database, bound, inputs)?,
+                            frontend::SetKind::ExceptDistinct
+                            | frontend::SetKind::IntersectDistinct => Owner::SortedSet {
+                                sorted_set: blocking::sorted_set::SortedSet::new(
+                                    database, bound, inputs,
+                                )?,
                                 output,
                             },
                         }
@@ -597,14 +600,14 @@ impl<'db> Runtime<'db> {
     }
 
     #[cfg(test)]
-    pub(super) fn first_except_mut(&mut self) -> &mut blocking::except::Except<'db> {
+    pub(super) fn first_sorted_set_mut(&mut self) -> &mut blocking::sorted_set::SortedSet<'db> {
         self.nodes
             .iter_mut()
             .find_map(|node| match &mut node.owner {
-                Owner::Except { except, .. } => Some(&mut except[0]),
+                Owner::SortedSet { sorted_set, .. } => Some(&mut sorted_set[0]),
                 _ => None,
             })
-            .expect("test query has an EXCEPT producer")
+            .expect("test query has a sorted-set producer")
     }
 
     #[cfg(test)]
@@ -773,8 +776,8 @@ impl<'db> Runtime<'db> {
                     Owner::Union { union, output } => {
                         union.step(supplied, output, pipeline, cancel)?
                     }
-                    Owner::Except { except, output } => {
-                        except[0].step(supplied, output, pipeline, cancel, effects)?
+                    Owner::SortedSet { sorted_set, output } => {
+                        sorted_set[0].step(supplied, output, pipeline, cancel, effects)?
                     }
                     _ => return Err(Error::Corrupt("set operation owner absent")),
                 };

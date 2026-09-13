@@ -108,6 +108,9 @@ fn set_scope_preparation_admits_exact_peak_and_releases_it() {
     check_scope_preparation(
         "FROM facts |> EXCEPT DISTINCT (FROM facts |> EXCEPT DISTINCT (FROM facts)), (FROM facts)",
     );
+    check_scope_preparation(
+        "FROM facts |> INTERSECT DISTINCT (FROM facts |> INTERSECT DISTINCT (FROM facts)), (FROM facts)",
+    );
 }
 
 #[test]
@@ -118,6 +121,10 @@ fn legacy_set_operations_refuse_before_execution_with_their_operator_span() {
         ("UNION ALL", "UNION requires declared-table storage"),
         ("UNION DISTINCT", "UNION requires declared-table storage"),
         ("EXCEPT DISTINCT", "EXCEPT requires declared-table storage"),
+        (
+            "INTERSECT DISTINCT",
+            "INTERSECT requires declared-table storage",
+        ),
     ] {
         let sql = format!("FROM lineitem |> {operator} (FROM lineitem)");
         let Err(Error::Bind {

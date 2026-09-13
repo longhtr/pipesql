@@ -48,7 +48,7 @@ concerns still share one source file.
 | [blocking/io.rs](../src/execution/blocking/io.rs) | Bounded read/write caches and one borrowed scratch-file effect authority per call. Cache state stays private. |
 | [grouping.rs](../src/execution/aggregation/grouping.rs), [hash.rs](../src/execution/aggregation/grouping/hash.rs), [reduction.rs](../src/execution/aggregation/grouping/reduction.rs) | General grouping control and checked result spooling, optional hash ownership, and sorted reduction into one reusable aggregate cell. |
 | [join.rs](../src/execution/blocking/join.rs), [order.rs](../src/execution/blocking/order.rs), [limit.rs](../src/execution/limit.rs), [count.rs](../src/execution/count.rs) | Equality matching, checked ORDER BY/DISTINCT/analytic output, prefix limits and zero-field analytic counters. |
-| [except.rs](../src/execution/blocking/except.rs) | Complete-row merge difference over two admitted sorted inputs, left-only representatives, and retained replay. |
+| [sorted_set.rs](../src/execution/blocking/sorted_set.rs) | Complete-row difference and intersection over two admitted sorted inputs, left-only representatives, and retained replay. |
 | [union.rs](../src/execution/union.rs) | Streaming positional branch consumption and demand-driven replay. |
 | [value.rs](../src/value.rs) | Scalar cells and borrowed UTF-8 values shared by kernels, batches, and the public API. |
 | [batch.rs](../src/batch.rs) | Typed reusable batches, validity, text capacity, and complete-row publication. |

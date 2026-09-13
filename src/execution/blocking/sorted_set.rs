@@ -1,6 +1,6 @@
-//! Complete-row set difference over two admitted, checked sorted inputs.
-//! Both branches finish before comparison. Only left representatives can emit;
-//! equal right rows exclude the entire left equivalence class.
+//! Complete-row difference and intersection over two admitted sorted inputs.
+//! Both branches finish before comparison. The operation chooses which left
+//! equivalence classes emit; sorting, replay, and failure ownership are shared.
 use super::{RowLayout, SortPhase, SortedInput, append_bytes, compare_values, read_value};
 use crate::batch::Batch;
 use crate::effects::Effects;
@@ -28,25 +28,26 @@ enum Phase {
     Failed,
 }
 
-pub(in crate::execution) struct Except<'db> {
+pub(in crate::execution) struct SortedSet<'db> {
     sides: [SortedInput<'db>; 2],
     // Semantic positions may repeat a physical payload slot. Sorted records
     // preserve every position, independently of child projection compaction.
     positions: [[u8; MAX_COLUMNS]; 2],
+    kind: SetKind,
     phase: Phase,
     replayed: bool,
     reservation: Reservation<'db>,
 }
 
-impl<'db> Except<'db> {
+impl<'db> SortedSet<'db> {
     pub(in crate::execution) fn new(
         database: &'db Database,
         bound: &SetPlan,
         inputs: [&Pipeline<'_>; 2],
     ) -> Result<Vec<Self>, Error> {
         let width = bound.width();
-        if bound.kind() != SetKind::ExceptDistinct || width == 0 || width > MAX_COLUMNS {
-            return Err(Error::Corrupt("EXCEPT descriptor shape"));
+        if bound.kind() == SetKind::UnionAll || width == 0 || width > MAX_COLUMNS {
+            return Err(Error::Corrupt("sorted set descriptor shape"));
         }
         let mut positions = [[0; MAX_COLUMNS]; 2];
         for side in 0..2 {
@@ -55,9 +56,9 @@ impl<'db> Except<'db> {
                 *slot = u8::try_from(
                     inputs[side]
                         .position(column.identity())
-                        .ok_or(Error::Corrupt("EXCEPT comparison input absent"))?,
+                        .ok_or(Error::Corrupt("sorted set comparison input absent"))?,
                 )
-                .map_err(|_| Error::Corrupt("EXCEPT comparison input position"))?;
+                .map_err(|_| Error::Corrupt("sorted set comparison input position"))?;
             }
         }
         let keys: [OrderColumn; MAX_COLUMNS] = std::array::from_fn(|column| OrderColumn {
@@ -74,7 +75,7 @@ impl<'db> Except<'db> {
         };
         let reservation = database.reserve_memory(
             (size_of::<Self>() - 2 * size_of::<SortedInput<'_>>()) as u64,
-            "EXCEPT controller",
+            "sorted set controller",
         )?;
         let sides = [
             SortedInput::new(database, layout(0)?)?,
@@ -83,12 +84,13 @@ impl<'db> Except<'db> {
         let mut owner = allocate(
             1,
             1,
-            "EXCEPT owner",
+            "sorted set owner",
             reservation.bytes() + sides.iter().map(SortedInput::memory_bytes).sum::<u64>(),
         )?;
         owner.push(Self {
             sides,
             positions,
+            kind: bound.kind(),
             phase: Phase::Create(0),
             replayed: false,
             reservation,
@@ -123,7 +125,7 @@ impl<'db> Except<'db> {
         cancel.check()?;
         if self.replayed || !matches!(self.phase, Phase::Seek | Phase::Emit | Phase::Done) {
             return Err(Error::Corrupt(
-                "EXCEPT replay requires completed sorted inputs",
+                "sorted set replay requires completed sorted inputs",
             ));
         }
         self.begin_read();
@@ -172,7 +174,7 @@ impl<'db> Except<'db> {
         };
         let order = input.layout.compare(rows.previous_key, record.key())?;
         if order.then(previous.cmp(&record.ordinal())) != Ordering::Less {
-            return Err(Error::Corrupt("EXCEPT input is not monotonic"));
+            return Err(Error::Corrupt("sorted set input is not monotonic"));
         }
         Ok(order == Ordering::Equal)
     }
@@ -197,7 +199,7 @@ impl<'db> Except<'db> {
         output.clear();
         let phase = std::mem::replace(&mut self.phase, Phase::Failed);
         match phase {
-            Phase::Failed => return Err(Error::Corrupt("EXCEPT has failed")),
+            Phase::Failed => return Err(Error::Corrupt("sorted set has failed")),
             Phase::Done => {
                 self.phase = Phase::Done;
                 return Ok(SetStep::Finished);
@@ -218,12 +220,12 @@ impl<'db> Except<'db> {
             Phase::Await(side) => {
                 if inputs[side].finished {
                     if !inputs[side].batch.is_empty() {
-                        return Err(Error::Corrupt("finished EXCEPT input contains rows"));
+                        return Err(Error::Corrupt("finished sorted set input contains rows"));
                     }
                     self.sides[side].sort.finish()?;
                     Phase::Sort(side)
                 } else if inputs[side].batch.is_empty() {
-                    return Err(Error::Corrupt("EXCEPT input was not supplied"));
+                    return Err(Error::Corrupt("sorted set input was not supplied"));
                 } else {
                     Phase::Capture(side, 0)
                 }
@@ -249,7 +251,7 @@ impl<'db> Except<'db> {
                     input.ordinal = input
                         .ordinal
                         .checked_add(1)
-                        .ok_or(Error::Corrupt("EXCEPT input ordinal overflow"))?;
+                        .ok_or(Error::Corrupt("sorted set input ordinal overflow"))?;
                     Phase::Capture(side, row + 1)
                 } else {
                     Phase::Spill(side, row)
@@ -285,12 +287,17 @@ impl<'db> Except<'db> {
                     self.consume(0)?;
                     phase
                 } else if self.sides[1].finished() {
-                    Phase::Emit
+                    if self.kind == SetKind::IntersectDistinct {
+                        Phase::Done
+                    } else {
+                        Phase::Emit
+                    }
                 } else {
                     self.duplicate(1)?;
                     match self.compare()? {
-                        Ordering::Less => Phase::Emit,
-                        Ordering::Equal => {
+                        Ordering::Less if self.kind == SetKind::ExceptDistinct => Phase::Emit,
+                        Ordering::Equal if self.kind == SetKind::IntersectDistinct => Phase::Emit,
+                        Ordering::Less | Ordering::Equal => {
                             self.consume(0)?;
                             phase
                         }
@@ -307,7 +314,7 @@ impl<'db> Except<'db> {
                     values[..self.sides[0].layout.count]
                         .get(usize::from(position))
                         .copied()
-                        .ok_or(Error::Corrupt("EXCEPT output position"))
+                        .ok_or(Error::Corrupt("sorted set output position"))
                 });
                 if evaluated.retains()? {
                     for (position, column) in plan.columns[..plan.column_count].iter().enumerate() {

@@ -1329,7 +1329,7 @@ impl Plan {
                     let set = &self.set_operations[usize::from(descriptor)];
                     for position in 0..usize::from(node.columns) {
                         let output = set.output(position).expect("validated set output");
-                        if set.kind() == SetKind::ExceptDistinct
+                        if set.kind() != SetKind::UnionAll
                             || needed[output.identity().value() as usize]
                         {
                             for input in set.inputs(position).expect("validated set inputs") {

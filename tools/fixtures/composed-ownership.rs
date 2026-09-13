@@ -114,6 +114,7 @@ pub(super) fn analytic_shapes(
         "FROM facts |> SELECT COUNT(*) OVER () AS n |> EXTEND COUNT(*) OVER () AS second",
         "FROM facts |> EXTEND COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total GROUP BY v |> AGGREGATE SUM(total) AS total",
         "FROM facts |> EXCEPT DISTINCT (FROM facts |> WHERE v<256) |> SELECT COUNT(*) OVER () AS n",
+        "FROM facts |> INTERSECT DISTINCT (FROM facts |> WHERE v<256) |> SELECT COUNT(*) OVER () AS n",
     ];
     println!("entered analytic ownership shapes");
     let path_bytes = std::fs::canonicalize(&path)?.as_os_str().len() + "/units".len();
@@ -122,7 +123,7 @@ pub(super) fn analytic_shapes(
         let before = Live::now();
         let descriptors = match case {
             6 => 5,
-            7 => 3,
+            7 | 8 => 3,
             _ => 2,
         };
         let query = prepare_observed(&db, sql, "analytic", descriptors, false)?;
@@ -207,7 +208,7 @@ pub(super) fn analytic_shapes(
                                     }
                                 }
                                 (6, _) => Value::Int64(262_144),
-                                (7, _) => Value::Int64(256),
+                                (7 | 8, _) => Value::Int64(256),
                                 _ => Value::Int64(512),
                             };
                             assert_eq!(batch.value(row, column), Some(expected));
@@ -230,7 +231,7 @@ pub(super) fn analytic_shapes(
             match case {
                 0 => 0,
                 6 => 1,
-                7 => 256,
+                7 | 8 => 256,
                 _ => 512,
             }
         );
@@ -259,7 +260,7 @@ pub(super) fn analytic_shapes(
         );
     }
     db.close()?;
-    println!("analytic shapes passed: 8 cases; rows, attribution and release");
+    println!("analytic shapes passed: 9 cases; rows, attribution and release");
     Ok(())
 }
 

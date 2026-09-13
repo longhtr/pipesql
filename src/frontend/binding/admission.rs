@@ -95,7 +95,9 @@ impl BindingBudget {
             .filter(|stage| {
                 matches!(
                     stage,
-                    ParsedStage::UnionAll(_) | ParsedStage::ExceptDistinct(_)
+                    ParsedStage::UnionAll(_)
+                        | ParsedStage::ExceptDistinct(_)
+                        | ParsedStage::IntersectDistinct(_)
                 )
             })
             .count();

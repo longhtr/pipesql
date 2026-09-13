@@ -57,7 +57,8 @@ those operations are outside the original stack contract.
 | `computed.rs`, `constant_projection.rs`, `boolean.rs`, `membership.rs`, `text_filter.rs`, `null_predicate.rs` | SELECT/EXTEND expression demand and scalar/predicate semantics; COALESCE covers nullable defaults and skipped/demanded dependency errors; DIV/MOD cover exact signed quotients/remainders, integer extremes, NULLs and integer-only binding; ABS covers type preservation, minimum-integer overflow, nesting and deviations; division and SAFE_DIVIDE cover coercion, precedence, NULL/zero/overflow, argument errors, typed NULL constants, Boolean demand, grouped ratios, cancellation and cleanup; typed constants cover source lifetime, malformed unused values, full widths and composition; membership has an independent nullable-set model. |
 | `window_count.rs` | Full-partition cardinality, zero-temp counter selection, original scope, demanded errors, producer composition and typed snapshot retention. |
 | `order.rs`, `distinct.rs`, `limit.rs` | Materialization, complete-row equality, ordering, and prefix boundaries. |
-| `except.rs` | Complete positional difference, left NULLability, repeated physical slots, nested composition, typed equality, prepared snapshots, and demanded errors from both inputs. |
+| `except.rs` | Complete positional difference, left NULLability, repeated physical slots, nested composition, typed equality, and prepared snapshots. |
+| `intersect.rs` | Complete-row intersection against an independent set oracle, typed NULL/DOUBLE equality and original bits, pinned snapshots, positional names, input NULLability, and shared EXCEPT/INTERSECT demanded-error controls. |
 | `union.rs` | Positional ALL/DISTINCT composition, complete-row equality and original typed representatives, snapshot retention, demanded errors, spill/refusal, and cancellation prefixes. |
 | `wide.rs` | Positional set-operation source-pool and 64-column output limits, including the bounded-thread variant. Full-width schemas, late columns, repeated outputs, and scan admission. |
 
@@ -130,9 +131,9 @@ check key equivalence, ordering, hashing, and raw value preservation.
 [Sorting tests](../src/execution/blocking/sorting_tests.rs) check wide payloads,
 row/byte caps, merge passes, cancellation, corruption, and terminal failure
 without importing aggregate evaluation.
-[EXCEPT owner tests](../src/execution/blocking/except/tests.rs) reconcile actual
+[Sorted-set owner tests](../src/execution/blocking/sorted_set/tests.rs) reconcile actual
 allocation capacities, exact/short admission, both sorted readers, replay and
-cancellation phases. They share only the two-column database fixture with join
+cancellation phases for EXCEPT and INTERSECT. They share only the two-column database fixture with join
 checks; complete-row expectations remain local. Padding checks distinguish allocated
 capacity from encoded-frame, run-byte, and run-row limits, including a valid
 checksummed frame beyond the reader's admitted encoded limit.

@@ -336,18 +336,21 @@ later projection removes it. The DISTINCT producer can retain a sorted run and
 replay it for downstream grouping without reopening either branch. No new
 scheduler state or resource account is introduced.
 
-EXCEPT DISTINCT uses the shared positional semantic descriptor with a distinct
-operation kind. Binding assigns left names and NULLability; independent semantic
-and physical validation check both positional mappings. Demand analysis retains
+EXCEPT DISTINCT and INTERSECT DISTINCT use the shared positional descriptor
+with distinct operation kinds. Binding assigns left names; EXCEPT preserves left
+NULLability, while INTERSECT requires both inputs to allow NULL. Independent
+semantic and physical validation check both positional mappings. Demand analysis retains
 all comparison fields in both children, including repeated logical positions
 that share a physical payload slot.
 
-The [EXCEPT controller](../src/execution/blocking/except.rs) collects both
+The [sorted-set controller](../src/execution/blocking/sorted_set.rs) collects both
 children through the scheduler and sorts their complete rows using two existing
 sorted-input owners. Each record is decoded with its own input layout because
 left and right NULLability can differ. The merge skips duplicate left rows and
 advances the right cursor until it reaches or passes the current left row.
-Equality suppresses that left row; a smaller left row survives. The controller
+EXCEPT suppresses an equal left row and retains a smaller left row. INTERSECT
+retains an equal left row and consumes a smaller left row. Once the right input
+ends, INTERSECT finishes; EXCEPT retains the remaining distinct left rows. The controller
 emits at most one surviving row per step and checks cancellation between bounded
 phases. Replay rewinds the checked sorted inputs instead of reexecuting branches.
 

@@ -316,7 +316,8 @@ new resource account, spool implementation, or replay authority.
 
 ## EXCEPT DISTINCT admission
 
-Each binary EXCEPT shares the positional descriptor owner above and admits two
+Each binary EXCEPT or INTERSECT shares the positional descriptor owner above and
+admits two
 [sorted inputs](#join-ordering-and-distinct-admission) plus one output batch.
 Each input retains its own nullable row layout. The controller stores two inline
 64-byte mappings from logical comparison positions to child payload slots;

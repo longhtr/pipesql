@@ -144,7 +144,7 @@ pub(in crate::execution) fn validate_physical(
                     let output = bound
                         .output(position)
                         .ok_or(Error::Corrupt("physical set output"))?;
-                    if bound.kind() == frontend::SetKind::ExceptDistinct
+                    if bound.kind() != frontend::SetKind::UnionAll
                         || masks[usize::from(pipeline.relation.0)].contains(output.identity())
                     {
                         let columns = bound
