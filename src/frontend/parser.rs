@@ -108,6 +108,7 @@ pub(super) enum ParsedOp {
     Multiply,
     Divide,
     SafeDivide,
+    Coalesce,
     Mod,
     IntegerDivide,
     Negate,
@@ -144,6 +145,7 @@ impl ParsedExpression {
 #[derive(Clone, Copy)]
 enum BinaryCall {
     SafeDivide,
+    Coalesce,
     Mod,
     IntegerDivide,
 }
@@ -152,6 +154,7 @@ impl BinaryCall {
     fn parsed(self) -> ParsedOp {
         match self {
             Self::SafeDivide => ParsedOp::SafeDivide,
+            Self::Coalesce => ParsedOp::Coalesce,
             Self::Mod => ParsedOp::Mod,
             Self::IntegerDivide => ParsedOp::IntegerDivide,
         }
@@ -588,7 +591,8 @@ impl Parser<'_> {
                         operand = false;
                     }
                     Kind::Identifier
-                        if (self.is_word("SAFE_DIVIDE")
+                        if (self.is_word("COALESCE")
+                            || self.is_word("SAFE_DIVIDE")
                             || self.is_word("ABS")
                             || self.is_word("MOD")
                             || self.is_word("DIV"))
@@ -604,7 +608,9 @@ impl Parser<'_> {
                                 span: at,
                             });
                         }
-                        let call = if self.is_word("ABS") {
+                        let call = if self.is_word("COALESCE") {
+                            PendingOp::FirstArgument(BinaryCall::Coalesce)
+                        } else if self.is_word("ABS") {
                             PendingOp::Abs
                         } else if self.is_word("DIV") {
                             PendingOp::FirstArgument(BinaryCall::IntegerDivide)
@@ -1268,6 +1274,68 @@ pub(super) fn parse_query(source: &str) -> Result<Parsed, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn coalesce_preserves_nested_argument_order_and_expression_span() {
+        let sql = "FROM facts |> SELECT COALESCE(a+1, COALESCE(b, 8/2))*3 AS value, a";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.projection_count, 2);
+        let expression = parsed.expression(parsed.projections[0].expression).unwrap();
+        assert_eq!(
+            text(sql, expression.span),
+            "COALESCE(a+1, COALESCE(b, 8/2))*3"
+        );
+        let [
+            ParsedOp::Column(a),
+            ParsedOp::Number(one),
+            ParsedOp::Add,
+            ParsedOp::Column(b),
+            ParsedOp::Number(eight),
+            ParsedOp::Number(two),
+            ParsedOp::Divide,
+            ParsedOp::Coalesce,
+            ParsedOp::Coalesce,
+            ParsedOp::Number(three),
+            ParsedOp::Multiply,
+        ] = &expression.ops[..usize::from(expression.len)]
+        else {
+            panic!("nested fallback must remain a distinct right subtree");
+        };
+        assert_eq!(
+            [a, one, b, eight, two, three].map(|span| text(sql, *span)),
+            ["a", "1", "b", "8", "2", "3"]
+        );
+    }
+
+    #[test]
+    fn coalesce_uses_existing_arity_and_operation_bounds() {
+        for expression in [
+            "COALESCE()",
+            "COALESCE(a)",
+            "COALESCE(a, )",
+            "COALESCE(, a)",
+            "COALESCE(a, b, 0)",
+            "COALESCE(a, (b, 0))",
+            "COALESCE(a, COALESCE(b))",
+            "COALESCE(a, b",
+        ] {
+            let sql = format!("FROM facts |> SELECT {expression}");
+            assert!(parse_query(&sql).is_err(), "{sql}");
+        }
+        let mut expression = "a".to_owned();
+        for _ in 0..15 {
+            expression = format!("COALESCE(a, {expression})");
+        }
+        let parsed = parse_query(&format!("FROM facts |> SELECT -{expression}")).unwrap();
+        assert_eq!(parsed.projections[0].expression.len, 32);
+        assert!(matches!(
+            parse_query(&format!("FROM facts |> SELECT COALESCE(a, {expression})")),
+            Err(Error::Parse {
+                message: "scalar operation limit exceeded",
+                ..
+            })
+        ));
+    }
 
     #[test]
     fn full_partition_count_has_one_bounded_projection_operation() {

@@ -56,13 +56,35 @@ Completed repairs remain closed without a concrete new counterexample.
    checks and both complete matching frozen platform gates; reconcile discovery
    and manifests, retain concise evidence, remove owned outputs and commit locally.
 
-Initial research uses the pinned
-[conditional-expression contract](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/conditional_expressions.md#coalesce):
-select the first non-NULL argument, skip the remainder and use a common supertype.
-Numeric coercion and result NULLability still need to be reconciled with the
-current implementation. The parser's binary-call frames and scalar program are
-the starting owners; short-circuiting requires more than another eager binary
-opcode. No COALESCE implementation or passing feature verification is claimed.
+The pinned
+[conditional-expression contract](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/conditional_expressions.md#coalesce)
+requires first-non-NULL selection, left-to-right evaluation and skipping later
+arguments. The pinned
+[numeric supertype rules](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/conversion_rules.md#supertypes)
+keep two INT64 arguments INT64 and make an INT64/DOUBLE pair DOUBLE. Result
+NULLability follows selection: it can be NULL only when both arguments can be
+NULL. Binding still validates both arguments; an error evaluating the first
+argument is not a NULL value. Existing unsupported NULL literal syntax remains
+outside the numeric profile; nullable columns and SAFE_DIVIDE supply NULL values.
+Research resolved these semantics within the timebox.
+
+The parser now retains a COALESCE operation after its two ordered argument
+subtrees, using the existing binary-call frames and shared operation arena.
+Focused tests cover nested ordering, complete expression spans, malformed arity
+and the 32-operation boundary. All 11 parser tests and the existing binding rejection selection pass in macOS
+release mode; Clippy passes for all workspace targets with warnings denied.
+Public binding remains fail-closed until execution is implemented; no passing
+COALESCE feature verification is claimed.
+
+The trace found two eager boundaries to repair: `scalar::Expression::evaluate_batch`
+evaluates postfix operations, and `execution::computed` gathers dependencies
+before evaluation. Aggregate input capture calls the same scalar kernel, while
+aggregate finalization is accessed through the row-value resolver. The retained
+semantic and physical demand walks conservatively admit all potential inputs;
+runtime demand must skip unused fallbacks within a producer without moving
+materialization boundaries. Choose the bounded branch representation together
+with row and batch dependency scheduling before enabling binding. Preserve the
+existing scalar operation and stack limits and account for any added scratch.
 Preserve spaced comma separators, existing platform/resource limits and the
 publication restrictions below.
 

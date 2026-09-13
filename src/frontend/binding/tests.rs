@@ -1254,7 +1254,13 @@ fn extend_preserves_input_identity_ranges_and_input_only_alias_scope() {
         db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS n |> SELECT t.n")
             .is_err()
     );
-    for unsupported in ["*", "SUM(l_quantity)", "1 OVER ()", "'text'+1"] {
+    for unsupported in [
+        "*",
+        "SUM(l_quantity)",
+        "1 OVER ()",
+        "'text'+1",
+        "COALESCE(l_quantity, 0)",
+    ] {
         assert!(
             db.prepare(&format!("FROM lineitem |> EXTEND {unsupported}"))
                 .is_err()

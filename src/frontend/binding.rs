@@ -433,6 +433,12 @@ fn bind_expression(
             ParsedOp::Multiply => Op::Multiply,
             ParsedOp::Divide => Op::Divide,
             ParsedOp::SafeDivide => Op::SafeDivide,
+            ParsedOp::Coalesce => {
+                return Err(bind_error(
+                    "COALESCE execution is not supported",
+                    parsed.span,
+                ));
+            }
             ParsedOp::Mod => Op::Mod,
             ParsedOp::IntegerDivide => Op::IntegerDivide,
             ParsedOp::Negate => Op::Negate,
