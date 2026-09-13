@@ -41,6 +41,28 @@ retain that distinction. Prior language, testing/tooling and resource milestones
 remain complete unless a concrete counterexample or new workload changes their
 scope. Publication and broader qualification restrictions remain unresolved.
 
+## Active: wide LEFT JOIN allocation ownership
+
+The retained joined ownership workload reduces a narrow nullable INT64 self-join
+to four aggregate columns. Wide set ownership covers another producer boundary.
+Neither directly measures a wide LEFT JOIN's STRING payloads and null extension.
+
+1. Trace both sorted inputs, null-extension descriptors and wide source/output
+   buffers before implementation. Select one finite workload within 30 minutes:
+   maximum-width joined output, maximum/nullable STRING cells, unequal duplicate
+   keys, unmatched left rows and NULL keys. Keep literal expected multiplicities
+   and field values independent of production layout and admission formulas.
+2. Extend the existing ownership caller at short and 384-byte paths. Sample
+   requested/usable bytes against charges through execute, every step and final
+   release; require external storage and the existing wrong-attribution control.
+   Preserve narrow join and wide-set controls. Reproduce and trace any deficit
+   before choosing an owner-specific repair; add no arbitrary allowance.
+3. Update affected resource/tool maps, run focused controls and matching frozen
+   macOS/GNU/Linux full gates, reconcile discovery and manifests, retain concise
+   evidence, remove owned outputs and commit locally. Run the gates sequentially
+   after the observed overlapping-run timeout, with resource monitoring and the
+   existing build limits. Broader qualifications remain unresolved.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
