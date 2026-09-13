@@ -42,6 +42,27 @@ warning pressure; pressure was normal at final verification. Example compilation
 followed both platforms' Rust tests. Owned outputs are removed. Publication and
 the broader qualifications below remain unresolved.
 
+## Active: numeric sign classification
+
+Add `SIGN(value)` for INT64 and DOUBLE expressions so queries can classify and
+group negative, zero and positive measurements. The current scalar manifest does
+not admit SIGN; the existing unary numeric program is the candidate owner.
+
+1. Pin result types, NULL, signed zero, NaN, infinities and integer extremes at
+   the existing GoogleSQL revision. Timebox uncertain semantic research to 30
+   minutes; preserve unsupported forms if a rule remains disputed.
+2. Extend the existing parser, typed scalar program and independent validators.
+   Preserve demand, spans, numeric exactness and resource/stack bounds. Add
+   independent scalar/public outcomes, rejected forms, composition and
+   exact/short admission checks; use existing failure and replay owners.
+3. Add a runnable classification example and update current contracts/navigation.
+   Run focused checks and matching frozen macOS/GNU/Linux full gates, reconcile
+   coverage and inputs, retain concise evidence, clean owned outputs and commit.
+
+Monitor resources with at most two Cargo jobs. Compile examples after platform
+Rust builds and reduce Docker concurrency when memory pressure warrants it.
+Publication restrictions and broader qualification limits remain unchanged.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
