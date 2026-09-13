@@ -57,9 +57,9 @@ fn membership_literals_and_decisions_match_the_semantic_plan() {
 }
 
 #[test]
-fn union_branch_positions_and_demands_are_validated_independently() {
+fn set_branch_positions_and_demands_are_validated_independently() {
     let directory = Directory(
-        std::env::temp_dir().join(format!("pipesql-physical-union-{}", std::process::id())),
+        std::env::temp_dir().join(format!("pipesql-physical-set-{}", std::process::id())),
     );
     let db = Database::create_empty(
         &directory.0,
@@ -76,53 +76,55 @@ fn union_branch_positions_and_demands_are_validated_independently() {
         &CancellationToken::new(),
     )
     .unwrap();
-    let query = db.prepare("FROM facts |> SELECT a AS x, a AS y |> UNION ALL (FROM facts |> SELECT b, a) |> SELECT y |> WHERE y>0").unwrap();
-    for mutation in 0..9 {
-        let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
-        assert_eq!(plan.pipelines.len(), 3);
-        assert_eq!(plan.pipelines[0].column_count, 1);
-        assert_eq!(plan.pipelines[1].column_count, 1);
-        assert_eq!(plan.pipelines[2].columns[0], 1);
-        match mutation {
-            0 => (),
-            1 => {
-                plan.pipelines[2].producer = Producer::UnionAll {
-                    left: PipelineId(1),
-                    right: PipelineId(0),
-                    descriptor: 0,
+    for (operator, right_columns) in [("UNION ALL", 1), ("EXCEPT DISTINCT", 2)] {
+        let query = db.prepare(&format!("FROM facts |> SELECT a AS x, a AS y |> {operator} (FROM facts |> SELECT b, a) |> SELECT y |> WHERE y>0")).unwrap();
+        for mutation in 0..9 {
+            let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
+            assert_eq!(plan.pipelines.len(), 3);
+            assert_eq!(plan.pipelines[0].column_count, 1);
+            assert_eq!(plan.pipelines[1].column_count, right_columns);
+            assert_eq!(plan.pipelines[2].columns[0], 1);
+            match mutation {
+                0 => (),
+                1 => {
+                    plan.pipelines[2].producer = Producer::SetOperation {
+                        left: PipelineId(1),
+                        right: PipelineId(0),
+                        descriptor: 0,
+                    }
                 }
-            }
-            2 => {
-                plan.pipelines[2].producer = Producer::UnionAll {
-                    left: PipelineId(0),
-                    right: PipelineId(0),
-                    descriptor: 0,
+                2 => {
+                    plan.pipelines[2].producer = Producer::SetOperation {
+                        left: PipelineId(0),
+                        right: PipelineId(0),
+                        descriptor: 0,
+                    }
                 }
-            }
-            3 => {
-                plan.pipelines[2].producer = Producer::UnionAll {
-                    left: PipelineId(0),
-                    right: PipelineId(1),
-                    descriptor: 255,
+                3 => {
+                    plan.pipelines[2].producer = Producer::SetOperation {
+                        left: PipelineId(0),
+                        right: PipelineId(1),
+                        descriptor: 255,
+                    }
                 }
+                4 => plan.pipelines[1].column_count = 0,
+                5 => plan.pipelines[2].columns[0] = 0,
+                6 => plan.pipelines[2].filters[0].column = 0,
+                7 => plan.pipelines[2].identities[0] = plan.pipelines[0].identities[0],
+                8 => {
+                    let id = plan.pipelines[2].identities[0];
+                    plan.pipelines[2].slots[id.value() as usize] = 0;
+                }
+                _ => unreachable!(),
             }
-            4 => plan.pipelines[1].column_count = 0,
-            5 => plan.pipelines[2].columns[0] = 0,
-            6 => plan.pipelines[2].filters[0].column = 0,
-            7 => plan.pipelines[2].identities[0] = plan.pipelines[0].identities[0],
-            8 => {
-                let id = plan.pipelines[2].identities[0];
-                plan.pipelines[2].slots[id.value() as usize] = 0;
-            }
-            _ => unreachable!(),
+            assert_eq!(
+                validate_physical(&plan, &query, &db, RootState::Empty, 0).is_ok(),
+                mutation == 0,
+                "{operator}: mutation {mutation}"
+            );
         }
-        assert_eq!(
-            validate_physical(&plan, &query, &db, RootState::Empty, 0).is_ok(),
-            mutation == 0,
-            "mutation {mutation}"
-        );
+        drop(query);
     }
-    drop(query);
     // UNION DISTINCT must retain both comparison fields even when its final
     // projection needs only x. Its DISTINCT producer cannot bypass the union.
     let query = db.prepare("FROM facts |> SELECT a AS x, b AS y |> UNION DISTINCT (FROM facts |> SELECT b, a) |> SELECT x").unwrap();
@@ -142,7 +144,7 @@ fn union_branch_positions_and_demands_are_validated_independently() {
                 }
             }
             3 => {
-                plan.pipelines[3].producer = Producer::UnionAll {
+                plan.pipelines[3].producer = Producer::SetOperation {
                     left: PipelineId(0),
                     right: PipelineId(1),
                     descriptor: 0,

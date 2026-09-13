@@ -72,7 +72,7 @@ terminal pipe operator; it does not embed a traditional query block.
 
 Queries start with a named table or a parenthesized pipe query. Legacy databases
 expose `lineitem`; declared-table queries may add sources through equality
-JOIN and UNION ALL. Every declared source comes from the prepared query’s pinned
+JOIN and positional set operations. Every declared source comes from the prepared query’s pinned
 catalog.
 
 Legacy `lineitem` has seven required stored columns: DOUBLE quantity, extended
@@ -85,7 +85,7 @@ separate from this query manifest.
 
 | Construct | Accepted public behavior |
 |---|---|
-| `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN or UNION ALL. Comma-separated FROM inputs remain unsupported. |
+| `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN or positional set operations. Comma-separated FROM inputs remain unsupported. |
 | `FROM (pipe_query) [AS alias]` | Uses the child query’s ordinary outputs as an independent input. A JOIN may also use this form. See [table subqueries](#table-subqueries) for scope and ordering. |
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
 | `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts numeric `ABS`, INT64 `DIV`/`MOD` and two-argument `SAFE_DIVIDE` and `COALESCE`, bounded STRING and DATE constants and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
@@ -101,6 +101,7 @@ separate from this query manifest.
 | `DISTINCT` | Removes duplicate complete rows on declared tables. Preserves output names and shared identities through fresh replacements; clears order. See [equality](#values-null-and-equality). |
 | `UNION ALL (pipe_query) [, (pipe_query), ...]` | Combines declared-table pipelines by position, preserving duplicates. Requires matching widths and scalar types. See [UNION ALL](#union-all) for names, demand, and bounds. |
 | `UNION DISTINCT (pipe_query) [, (pipe_query), ...]` | Combines matching positional pipelines and removes duplicate complete rows. See [UNION DISTINCT](#union-distinct) for demand and the additional stage. |
+| `EXCEPT DISTINCT (pipe_query) [, (pipe_query), ...]` | Returns each distinct complete left row absent from every right input. See [EXCEPT DISTINCT](#except-distinct) for comparison and demand. |
 | `LIMIT count [OFFSET skip_rows]` | Selects a prefix on legacy or declared tables. Count and offset are non-negative INT64 constant expressions; see [LIMIT](#limit) for demand and error rules. |
 | `GROUP BY key [, key]` | Legacy tables group by up to two distinct visible source STRING identities. Declared-table keys are specified below. Group aliases inherited from earlier projections are valid. |
 | `GROUP AND ORDER BY key [, key]` | Additionally establishes ascending key order, preserved by following projections and filters. Ordinary GROUP BY establishes no semantic order. |
@@ -467,7 +468,7 @@ scope, demand, stack, and admission checks.
 Each argument is a parenthesized, independent FROM-based pipe query. At least one
 argument is required; a trailing comma is allowed. Arguments can contain joins,
 derived inputs, and nested unions. TABLE arguments, hints, name-based
-correspondence, bare UNION, INTERSECT, and EXCEPT remain unsupported.
+correspondence, bare UNION, INTERSECT, and EXCEPT ALL remain unsupported.
 
 Inputs must have equal ordinary column counts and identical scalar types at
 each position. No numeric widening or untyped NULL coercion occurs. Output names
@@ -522,6 +523,39 @@ later projected away. A downstream LIMIT requesting rows cannot skip a later
 branch's demanded error before deduplication finishes. Original expression spans
 remain attached to those errors. The existing bounded DISTINCT sorter supplies
 admission, temporary storage, replay, and result cleanup.
+
+## EXCEPT DISTINCT
+
+Each argument is an independent parenthesized FROM-based pipe query, with the
+same positional width and identical-type requirements as UNION ALL. Output names
+come from the left input; each position receives a fresh identity. Output
+NULLability follows only the left column because every result is a left value.
+Input ranges are cleared, and a following AS names the result. All branches use
+the prepared query's pinned catalog snapshot.
+
+A complete left row appears once when no equivalent row occurs in the right
+input. NULLs compare equal, all NaNs compare equal, and signed zeros compare equal
+under the [DISTINCT equality contract](#values-null-and-equality). Output order
+and the selected left representative remain unspecified; the selected value's
+stored bits are preserved. A following ORDER BY establishes result order.
+
+Multiple arguments combine from left to right; nested queries retain their own
+scope. At least one argument is required, and a trailing comma is accepted.
+These forms follow the pinned
+[pipe EXCEPT syntax](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/pipe-syntax.md#except_pipe_operator)
+and [set difference rules](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/query-syntax.md#except).
+EXCEPT ALL, name-based matching, TABLE arguments, and type coercions remain
+unsupported. Each argument introduces one binary EXCEPT stage in addition to
+its input stages; no separate DISTINCT stage is added. Existing query, token,
+source, column, and stage limits are unchanged.
+
+A requested result consumes both complete inputs before emitting rows, including
+when the left input is empty. Every comparison field remains demanded even if a
+later projection removes it. Demanded errors retain their original expression
+spans. A downstream LIMIT 0 can leave execution undemanded under the existing
+[LIMIT rules](#limit); a positive LIMIT cannot skip comparison work. The
+[resource contract](resources.md#except-distinct-admission) describes the two
+sorted inputs and retained replay state.
 
 ## Relation state
 

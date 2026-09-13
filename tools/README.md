@@ -164,6 +164,15 @@ Fixed-buffer diagnostic controls render division-by-zero errors and
 captured causes under allocation denial. Both retain refusal, recovery and
 healthy-reuse checks around the full sequence.
 
+EXCEPT coverage compares complete rows in both native-I/O and allocation
+campaigns. The native input retains only key 2, whose amount is 90. Allocation
+refusal removes the NULL-note amounts and retains one distinct named amount.
+The analytic ownership campaign also consumes a typed EXCEPT result through
+window count, checking all 256 surviving rows and requested/usable charges at
+every returned step. The catalog work ceiling is 1,100 allocation prefixes;
+the EXCEPT healthy census observed 1,056, compared with 985 before this query.
+This ceiling bounds campaign work and does not change engine admission.
+
 The same selection runs the nullable self-join, aggregation, and ordering workload
 at 2.2 MB and 12 MB. `joined_shapes` in
 [`composed-ownership.rs`](fixtures/composed-ownership.rs) checks all 4,096 descending

@@ -213,6 +213,7 @@ impl<'db> Join<'db> {
                         inputs[side].batch,
                         row,
                         input.ordinal,
+                        None,
                     )?;
                     Phase::Push(side, row)
                 }

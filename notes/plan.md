@@ -84,8 +84,8 @@ within the 30-minute timebox.
 
 Implementation worklist:
 1. Extend the existing child-continuation parser for EXCEPT DISTINCT, preserving
-   UNION ALL/DISTINCT grouping and the shared argument/stage limits. Binding
-   remains fail-closed until the semantic and execution path is complete.
+   UNION ALL/DISTINCT grouping and the shared argument/stage limits. The semantic
+   and execution path now binds EXCEPT DISTINCT through the shared descriptor.
    The parser checkpoint passes all 13 focused release tests, including nested
    set modes, source spans, trailing commas and the exact stage boundary. All-target
    release Clippy also passes with warnings denied; build concurrency was two
@@ -93,13 +93,38 @@ Implementation worklist:
 2. Add positional semantic mapping and independent physical validation/demand.
    Trace all existing union consumers before sharing the mapping owner. Output
    values come only from the left, while comparison demands cover both inputs.
+   The shared semantic, physical and preparation selection passes all seven tests,
+   retaining existing UNION controls and checking complete EXCEPT input demand.
 3. Implement a bounded merge difference over two existing sorted-input owners.
    Retain each side's own nullable layout when decoding/comparing rows. Deduplicate
    left rows without join cross products or another heap index; reuse checked
    runs, merge buffers and replay. Cover the complete result/failure/admission
-   cases above with independent literal and reference results.
+   cases above with independent literal and reference results. Six public tests
+   pass, including a 50-case standard-library set oracle, NULLs in all four scalar
+   positions, NaN/signed-zero exclusion, exact INT64 values, pinned inputs and
+   complete-row demanded errors. The 64-column output/source-pool scenario now
+   lives with wide tests and covers UNION ALL/DISTINCT and EXCEPT; both ordinary
+   and bounded-thread variants pass without changing their stack limits.
+   Four owner tests pass: actual-capacity reconciliation and exact/short admission,
+   replay, all 17 cancellation phases, corruption/truncation/read failure in both
+   inputs, temporary refusal and healthy reuse. The fixture uses 180 left and
+   176 right rows to cross the independently traced 174-record first-run boundary.
+   Seven retained join-owner tests pass after sharing only their database fixture.
+   Forced grouping fallback confirms EXCEPT replay without reopening sources.
+   Catalog healthy controls count 1,056 allocations at both pathname lengths;
+   the campaign work ceiling is 1,100 and all EXCEPT phases are required outcomes.
+   Full refusal sweeps remain part of the complete gates. Public ownership checks
+   pass eight analytic shapes, including 256 typed EXCEPT survivors with minimum
+   observed usable-byte headroom of 11,600 bytes and complete release. Retained
+   attribution and row-oracle negative controls fail as intended.
 4. Finish the example, contracts/maps, focused and complete platform verification,
    manifest/discovery audit, concise evidence, cleanup and clean local commits.
+   The fresh macOS missing-regions example returns NULL and 3 as documented;
+   documentation verification passes 566 local links. Complete matching platform
+   gates have not run for this implementation. The focused native-I/O campaign
+   passes all 490 derived-query cells with EXCEPT and retained earlier queries.
+   All-target release Clippy and 96 tooling tests plus 44 independent codec
+   fixtures pass. Freeze this checkpoint for matching complete platform gates.
 
 ## Next engineering priorities
 

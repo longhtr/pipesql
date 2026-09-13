@@ -1,7 +1,7 @@
 //! Prepared-plan capacity calculation and fallible descriptor allocation.
 use super::{
     AggregateEntry, AggregatePlan, Computed, DistinctPlan, Error, JoinKind, NullExtension,
-    PREPARED_ALLOCATION_ALLOWANCE, Parsed, ParsedOp, ParsedStage, Plan, PreparedQuery, UnionPlan,
+    PREPARED_ALLOCATION_ALLOWANCE, Parsed, ParsedOp, ParsedStage, Plan, PreparedQuery, SetPlan,
 };
 use std::mem::size_of;
 
@@ -10,11 +10,11 @@ pub(super) struct BindingBudget {
     aggregate_count: usize,
     computed_capacity: usize,
     distinct_count: usize,
-    union_count: usize,
+    set_count: usize,
     null_count: usize,
     computed_bytes: usize,
     distinct_bytes: usize,
-    union_bytes: usize,
+    set_bytes: usize,
     null_bytes: usize,
 }
 
@@ -22,7 +22,7 @@ pub(super) struct BindingBudget {
 pub(super) struct Descriptors {
     pub(super) computed: Vec<Computed>,
     pub(super) distinct: Vec<DistinctPlan>,
-    pub(super) unions: Vec<UnionPlan>,
+    pub(super) set_operations: Vec<SetPlan>,
     pub(super) null_extensions: Vec<NullExtension>,
     pub(super) aggregates: Vec<AggregatePlan>,
 }
@@ -90,14 +90,19 @@ impl BindingBudget {
         } else {
             distinct_count * size_of::<DistinctPlan>() + PREPARED_ALLOCATION_ALLOWANCE
         };
-        let union_count = parsed.stages[..usize::from(parsed.len)]
+        let set_count = parsed.stages[..usize::from(parsed.len)]
             .iter()
-            .filter(|stage| matches!(stage, ParsedStage::UnionAll(_)))
+            .filter(|stage| {
+                matches!(
+                    stage,
+                    ParsedStage::UnionAll(_) | ParsedStage::ExceptDistinct(_)
+                )
+            })
             .count();
-        let union_bytes = if union_count == 0 {
+        let set_bytes = if set_count == 0 {
             0
         } else {
-            union_count * size_of::<UnionPlan>() + PREPARED_ALLOCATION_ALLOWANCE
+            set_count * size_of::<SetPlan>() + PREPARED_ALLOCATION_ALLOWANCE
         };
         let null_count = parsed.stages[..usize::from(parsed.len)]
             .iter()
@@ -122,7 +127,7 @@ impl BindingBudget {
             .and_then(|bytes| bytes.checked_add(aggregate_bytes))
             .and_then(|bytes| bytes.checked_add(computed_bytes))
             .and_then(|bytes| bytes.checked_add(distinct_bytes))
-            .and_then(|bytes| bytes.checked_add(union_bytes))
+            .and_then(|bytes| bytes.checked_add(set_bytes))
             .and_then(|bytes| bytes.checked_add(null_bytes))
             .and_then(|bytes| u64::try_from(bytes).ok())
             .ok_or(Error::Corrupt("prepared plan size overflow"))?;
@@ -131,11 +136,11 @@ impl BindingBudget {
             aggregate_count,
             computed_capacity,
             distinct_count,
-            union_count,
+            set_count,
             null_count,
             computed_bytes,
             distinct_bytes,
-            union_bytes,
+            set_bytes,
             null_bytes,
         })
     }
@@ -146,11 +151,11 @@ impl BindingBudget {
             aggregate_count,
             computed_capacity,
             distinct_count,
-            union_count,
+            set_count,
             null_count,
             computed_bytes,
             distinct_bytes,
-            union_bytes,
+            set_bytes,
             null_bytes,
         } = *self;
         let mut aggregates = Vec::new();
@@ -183,19 +188,19 @@ impl BindingBudget {
                 limit: distinct_bytes as u64,
             });
         }
-        let mut unions = Vec::new();
-        unions
-            .try_reserve_exact(union_count)
+        let mut set_operations = Vec::new();
+        set_operations
+            .try_reserve_exact(set_count)
             .map_err(|_| Error::Resource {
-                owner: "prepared union descriptors",
-                required: union_bytes as u64,
+                owner: "prepared set descriptors",
+                required: set_bytes as u64,
                 limit: bytes,
             })?;
-        if unions.capacity() != union_count {
+        if set_operations.capacity() != set_count {
             return Err(Error::Resource {
-                owner: "prepared union capacity",
-                required: (unions.capacity() * size_of::<UnionPlan>()) as u64,
-                limit: union_bytes as u64,
+                owner: "prepared set capacity",
+                required: (set_operations.capacity() * size_of::<SetPlan>()) as u64,
+                limit: set_bytes as u64,
             });
         }
         let mut null_extensions = Vec::new();
@@ -231,7 +236,7 @@ impl BindingBudget {
         Ok(Descriptors {
             computed,
             distinct,
-            unions,
+            set_operations,
             null_extensions,
             aggregates,
         })

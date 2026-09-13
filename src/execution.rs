@@ -192,6 +192,14 @@ enum Advance {
     Finished,
 }
 
+enum SetStep {
+    Input(usize),
+    Replay(usize),
+    Progress,
+    Rows,
+    Finished,
+}
+
 enum ConsumerStep {
     Input,
     Replay,

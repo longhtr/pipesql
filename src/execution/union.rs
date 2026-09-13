@@ -2,9 +2,9 @@
 //! cursors; the scheduler services input and replay requests between steps.
 use super::computed::RowValues;
 use super::planning::Pipeline;
-use super::{BATCH_ROWS, ConsumerInput};
+use super::{BATCH_ROWS, ConsumerInput, SetStep};
 use crate::batch::Batch;
-use crate::frontend::{MAX_COLUMNS, UnionPlan};
+use crate::frontend::{MAX_COLUMNS, SetPlan};
 use crate::{CancellationToken, Error};
 
 #[derive(Clone, Copy)]
@@ -13,14 +13,6 @@ enum Phase {
     Await,
     Done,
     Failed,
-}
-
-pub(super) enum Step {
-    Input(usize),
-    Replay(usize),
-    Progress,
-    Rows,
-    Finished,
 }
 
 pub(super) struct Union {
@@ -34,7 +26,7 @@ pub(super) struct Union {
 }
 
 impl Union {
-    pub(super) fn new(bound: &UnionPlan, inputs: [&Pipeline<'_>; 2]) -> Self {
+    pub(super) fn new(bound: &SetPlan, inputs: [&Pipeline<'_>; 2]) -> Self {
         let mut columns = [[u8::MAX; MAX_COLUMNS]; 2];
         for (side, (slots, input)) in columns.iter_mut().zip(inputs).enumerate() {
             for (position, slot) in slots.iter_mut().enumerate() {
@@ -71,7 +63,7 @@ impl Union {
         output: &mut Batch,
         pipeline: &Pipeline,
         cancel: &CancellationToken,
-    ) -> Result<Step, Error> {
+    ) -> Result<SetStep, Error> {
         output.clear();
         let phase = std::mem::replace(&mut self.phase, Phase::Failed);
         cancel.check()?;
@@ -79,7 +71,7 @@ impl Union {
             Phase::Failed => Err(Error::Corrupt("union has failed")),
             Phase::Done => {
                 self.phase = Phase::Done;
-                Ok(Step::Finished)
+                Ok(SetStep::Finished)
             }
             Phase::Read => {
                 let bit = 1 << self.side;
@@ -88,11 +80,11 @@ impl Union {
                     // finish before another branch initializes its aggregate.
                     self.replay_pending &= !bit;
                     self.phase = Phase::Read;
-                    return Ok(Step::Replay(self.side));
+                    return Ok(SetStep::Replay(self.side));
                 }
                 self.visited |= bit;
                 self.phase = Phase::Await;
-                Ok(Step::Input(self.side))
+                Ok(SetStep::Input(self.side))
             }
             Phase::Await => {
                 let input = &inputs[self.side];
@@ -103,10 +95,10 @@ impl Union {
                     if self.side == 0 {
                         self.side = 1;
                         self.phase = Phase::Read;
-                        return Ok(Step::Progress);
+                        return Ok(SetStep::Progress);
                     }
                     self.phase = Phase::Done;
-                    return Ok(Step::Finished);
+                    return Ok(SetStep::Finished);
                 }
                 if input.batch.is_empty() || input.batch.len() > BATCH_ROWS {
                     return Err(Error::Corrupt("union input batch outside capacity"));
@@ -135,9 +127,9 @@ impl Union {
                 output.publish_rows(retained);
                 self.phase = Phase::Read;
                 Ok(if retained == 0 {
-                    Step::Progress
+                    SetStep::Progress
                 } else {
-                    Step::Rows
+                    SetStep::Rows
                 })
             }
         }

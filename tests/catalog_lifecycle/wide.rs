@@ -314,3 +314,118 @@ fn ordering_retains_original_values_beyond_visible_row_width() {
     );
     order::query(&db, &sql, order::integers(&[1, 2]));
 }
+
+#[test]
+fn public_set_operations_check_source_pool_and_preserves_full_width_outputs() {
+    check_set_width();
+}
+
+#[test]
+fn public_set_operations_full_width_preparation_and_execution_fit_the_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(pipesql_filesystem::TEST_SMALL_STACK_REQUEST_BYTES)
+        .spawn(|| {
+            pipesql_filesystem::test_assert_small_stack();
+            check_set_width();
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn check_set_width() {
+    let directory = Directory::new();
+    let db = Database::create_empty(
+        &directory.database(),
+        Config::new(64_000_000, 16_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    let names: Vec<_> = (0..33).map(|i| format!("c{i}")).collect();
+    for (table, width, base) in [
+        ("left_rows", 32, 0),
+        ("right_rows", 32, 100),
+        ("too_wide", 33, 200),
+    ] {
+        let schema: Vec<_> = names[..width]
+            .iter()
+            .map(|name| ColumnDeclaration {
+                name,
+                data_type: DataType::Int64,
+                nullable: false,
+            })
+            .collect();
+        db.declare_table(table, &schema, &cancel).unwrap();
+        let values: Vec<_> = (0..width).map(|i| [base + i as i64]).collect();
+        let input: Vec<_> = values
+            .iter()
+            .map(|values| ColumnInput {
+                values: ColumnValues::Int64(values),
+                validity: &[1],
+            })
+            .collect();
+        let mut writer = db
+            .begin_append(
+                table,
+                AppendLimits {
+                    batches: 1,
+                    encoded_bytes: 2_000_000,
+                },
+                &cancel,
+            )
+            .unwrap();
+        writer.write(&input, &cancel).unwrap();
+        writer.commit(&cancel).unwrap();
+    }
+    let baseline = db.reserved_memory_bytes();
+    let columns = names[..32]
+        .iter()
+        .cycle()
+        .take(64)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let expected: Vec<Vec<Cell>> = [0, 100]
+        .into_iter()
+        .map(|base| {
+            (0..32)
+                .cycle()
+                .take(64)
+                .map(|i| Cell::Integer(base + i))
+                .collect()
+        })
+        .collect();
+    for (operator, expected) in [
+        ("UNION ALL", expected.as_slice()),
+        ("UNION DISTINCT", expected.as_slice()),
+        ("EXCEPT DISTINCT", &expected[..1]),
+    ] {
+        let sql = format!("FROM left_rows |> {operator} (FROM right_rows) |> SELECT {columns}");
+        let prepared = db.prepare(&sql).unwrap();
+        assert_eq!(prepared.result_column_count(), 64);
+        assert_eq!(
+            collect(&mut db.execute(&prepared, &cancel).unwrap()),
+            expected
+        );
+        drop(prepared);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+    for sql in [
+        "FROM left_rows |> UNION ALL (FROM too_wide)".to_owned(),
+        "FROM left_rows |> UNION DISTINCT (FROM too_wide)".to_owned(),
+        "FROM left_rows |> EXCEPT DISTINCT (FROM too_wide)".to_owned(),
+        format!("FROM left_rows |> UNION ALL (FROM right_rows) |> SELECT {columns}, c0"),
+    ] {
+        assert!(
+            matches!(
+                db.prepare(&sql),
+                Err(Error::Bind { .. } | Error::Parse { .. })
+            ),
+            "{sql}"
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    db.close().unwrap();
+}

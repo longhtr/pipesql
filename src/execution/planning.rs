@@ -63,7 +63,7 @@ pub(super) enum Producer {
     WindowCount {
         input: PipelineId,
     },
-    UnionAll {
+    SetOperation {
         left: PipelineId,
         right: PipelineId,
         descriptor: u8,
@@ -173,7 +173,7 @@ impl<'db> PhysicalPlan<'db> {
                             | Stage::Aggregate(_)
                             | Stage::Distinct(_)
                             | Stage::Join { .. }
-                            | Stage::UnionAll { .. }
+                            | Stage::SetOperation { .. }
                             | Stage::Order { .. }
                             | Stage::Limit(_)
                     )

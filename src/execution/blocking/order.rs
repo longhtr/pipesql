@@ -178,6 +178,7 @@ impl<'db> Order<'db> {
                         input.batch,
                         row,
                         self.input.ordinal,
+                        None,
                     )?;
                     Phase::Push(row)
                 }

@@ -101,7 +101,7 @@ class GroupExpectations(unittest.TestCase):
 class AllocationInterpretation(unittest.TestCase):
     def test_ownership_requires_joined_and_allocator_observations(self):
         marker = ("joined shapes passed: 2 budgets; complete rows, step ownership and release\n"
-                  "analytic shapes passed: 7 cases; rows, attribution and release")
+                  "analytic shapes passed: 8 cases; rows, attribution and release")
         for output, missing in [("", True), (marker, False)]:
             failures = []
             run = Mock(return_value=subprocess.CompletedProcess([], 0, output, ""))

@@ -465,6 +465,7 @@ impl SortRecord {
         source: &Batch,
         row: usize,
         ordinal: u64,
+        positions: Option<&[u8]>,
     ) -> Result<(), Error> {
         let required = ordinal
             .checked_add(1)
@@ -478,7 +479,19 @@ impl SortRecord {
         }
         self.bytes.clear();
         append_bytes(&mut self.bytes, &[0; RECORD_HEADER])?;
-        layout.append_row(source, row, &mut self.bytes)?;
+        if let Some(positions) = positions {
+            for column in &layout.columns[..layout.count] {
+                let position = *positions
+                    .get(column.input)
+                    .ok_or(Error::Corrupt("sorted positional input absent"))?;
+                let value = source
+                    .value(row, usize::from(position))
+                    .ok_or(Error::Corrupt("sorted positional row absent"))?;
+                append_value(&mut self.bytes, value, column.kind, column.nullable)?;
+            }
+        } else {
+            layout.append_row(source, row, &mut self.bytes)?;
+        }
         let length = self.bytes.len() - RECORD_HEADER;
         let arguments = ArgumentShape {
             count: 0,

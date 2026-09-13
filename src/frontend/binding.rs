@@ -11,8 +11,8 @@ use super::{
     Error, Expression, Filter, FilterLiteral, Group, JoinKind, LimitBounds, MAX_AGGREGATE_COLUMNS,
     MAX_COLUMNS, MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_QUERY_COLUMNS, MAX_STAGES, Name, Node,
     NullExtension, Op, OrderKey, Output, OwnedPlan, PREPARED_ALLOCATION_ALLOWANCE, Plan, Predicate,
-    PreparedQuery, RelationId, SemanticColumn, SetAssignment, SourceColumn, SourceOccurrence,
-    SourceSpan, Stage, UnionPlan, bind_error, initial_outputs, text,
+    PreparedQuery, RelationId, SemanticColumn, SetAssignment, SetKind, SetPlan, SourceColumn,
+    SourceOccurrence, SourceSpan, Stage, bind_error, initial_outputs, text,
 };
 use crate::date::DatePart;
 use std::mem::size_of;
@@ -534,7 +534,7 @@ fn bind_literal(
                     aggregates: &[],
                     computed: &[],
                     distinct: &[],
-                    unions: &[],
+                    set_operations: &[],
                     null_extensions: &[],
                 },
                 &Ranges::empty(),
@@ -565,11 +565,16 @@ pub(crate) fn prepare<'db>(
     source: &str,
 ) -> Result<PreparedQuery<'db>, Error> {
     let parsed = parse_query(source)?;
-    if let Some(ParsedStage::UnionAll(span)) = parsed.stages[..usize::from(parsed.len)]
-        .iter()
-        .find(|stage| matches!(stage, ParsedStage::UnionAll(_)))
-    {
-        return Err(bind_error("UNION requires declared-table storage", *span));
+    for stage in &parsed.stages[..usize::from(parsed.len)] {
+        match stage {
+            ParsedStage::UnionAll(span) => {
+                return Err(bind_error("UNION requires declared-table storage", *span));
+            }
+            ParsedStage::ExceptDistinct(span) => {
+                return Err(bind_error("EXCEPT requires declared-table storage", *span));
+            }
+            _ => (),
+        }
     }
     if parsed.source_count != 1 {
         return Err(bind_error(
@@ -678,7 +683,7 @@ fn bind_plan<'db>(
     plan.aggregates = descriptors.aggregates;
     plan.computed = descriptors.computed;
     plan.distinct = descriptors.distinct;
-    plan.unions = descriptors.unions;
+    plan.set_operations = descriptors.set_operations;
     plan.null_extensions = descriptors.null_extensions;
     validate(plan)?;
     Ok(PreparedQuery {
@@ -724,7 +729,7 @@ fn allocate_plan(
         aggregates: Vec::new(),
         computed: Vec::new(),
         distinct: Vec::new(),
-        unions: Vec::new(),
+        set_operations: Vec::new(),
         null_extensions: Vec::new(),
     };
     OwnedPlan::new(plan, database.config().memory_limit_bytes())
@@ -750,9 +755,11 @@ impl Binder<'_, '_> {
         let mut input = RelationId(u8::try_from(index).expect("stage capacity"));
         let stage = match syntax {
             ParsedStage::ExceptDistinct(span) => {
-                return Err(bind_error("EXCEPT DISTINCT is not implemented", span));
+                self.bind_set_operation(index, span, SetKind::ExceptDistinct, &mut input)?
             }
-            ParsedStage::UnionAll(span) => self.bind_union(index, span, &mut input)?,
+            ParsedStage::UnionAll(span) => {
+                self.bind_set_operation(index, span, SetKind::UnionAll, &mut input)?
+            }
             ParsedStage::Distinct(span) => self.bind_distinct(span)?,
             ParsedStage::Derived(alias) => {
                 self.ranges.clear();
@@ -837,7 +844,7 @@ impl Binder<'_, '_> {
             aggregates: &self.descriptors.aggregates,
             computed: &self.descriptors.computed,
             distinct: &self.descriptors.distinct,
-            unions: &self.descriptors.unions,
+            set_operations: &self.descriptors.set_operations,
             null_extensions: &self.descriptors.null_extensions,
         }
     }
@@ -879,28 +886,30 @@ impl Binder<'_, '_> {
         })
     }
 
-    fn bind_union(
+    fn bind_set_operation(
         &mut self,
         index: usize,
         span: SourceSpan,
+        kind: SetKind,
         input: &mut RelationId,
     ) -> Result<Stage, Error> {
         let scopes = self
             .scopes
             .as_ref()
-            .ok_or(Error::Corrupt("union scope owner absent"))?;
+            .ok_or(Error::Corrupt("set scope owner absent"))?;
         let depth = scopes
             .depth
             .checked_sub(1)
-            .ok_or(Error::Corrupt("union left scope absent"))?;
+            .ok_or(Error::Corrupt("set left scope absent"))?;
         let frame = scopes.frames[depth];
         let left = &scopes.values[frame.values_start..frame.values_start + frame.output_count];
-        let bound = UnionPlan::bind(
+        let bound = SetPlan::bind(
             left,
             &self.plan.outputs[..usize::from(self.plan.output_count)],
             &self.facts(),
             self.next_identity,
             span,
+            kind,
         )?;
         self.plan.outputs.fill(Output::EMPTY);
         self.plan.outputs[..left.len()].copy_from_slice(left);
@@ -908,7 +917,7 @@ impl Binder<'_, '_> {
         for (position, output) in self.plan.outputs[..left.len()].iter_mut().enumerate() {
             output.id = bound
                 .output(position)
-                .ok_or(Error::Corrupt("union output identity"))?
+                .ok_or(Error::Corrupt("set output identity"))?
                 .identity();
         }
         self.next_identity += u32::from(self.plan.output_count);
@@ -916,14 +925,14 @@ impl Binder<'_, '_> {
         let scopes = self
             .scopes
             .as_mut()
-            .ok_or(Error::Corrupt("union scope owner absent"))?;
+            .ok_or(Error::Corrupt("set scope owner absent"))?;
         scopes.values.truncate(frame.values_start);
         scopes.ranges.truncate(frame.ranges_start);
         scopes.depth = depth;
         *input = frame.input;
-        let descriptor = self.descriptors.unions.len() as u8;
-        self.descriptors.unions.push(bound);
-        Ok(Stage::UnionAll {
+        let descriptor = self.descriptors.set_operations.len() as u8;
+        self.descriptors.set_operations.push(bound);
+        Ok(Stage::SetOperation {
             right: RelationId(index as u8),
             descriptor,
         })
@@ -940,7 +949,7 @@ impl Binder<'_, '_> {
                 aggregates: &self.descriptors.aggregates,
                 computed: &self.descriptors.computed,
                 distinct: &self.descriptors.distinct,
-                unions: &self.descriptors.unions,
+                set_operations: &self.descriptors.set_operations,
                 null_extensions: &self.descriptors.null_extensions,
             },
             &mut self.next_identity,

@@ -18,6 +18,9 @@ mod constant_projection;
 #[path = "catalog_lifecycle/distinct.rs"]
 mod distinct;
 
+#[path = "catalog_lifecycle/except.rs"]
+mod except;
+
 #[path = "catalog_lifecycle/grouping.rs"]
 mod grouping;
 

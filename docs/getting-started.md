@@ -504,6 +504,19 @@ INT64 `n`. Its rows are `(0, 90, 2)`, `(1, 30, 2)` and `(2, 30, 1)`, followed by
 `row_count=3` and `status=queried`. COALESCE evaluates its fallback only when the
 first value is NULL; the default is part of the SQL result.
 
+The [missing-regions query](../examples/missing-regions.sql) compares complete
+region values with the dimension identifiers:
+
+```sh
+cargo run --release --offline --locked -- query --database "$pipesql_left_join_dir/facts" \
+  --query-file examples/missing-regions.sql --memory-limit-bytes 8000000 --temp-limit-bytes 4000000
+```
+
+It returns nullable INT64 `region` with rows `NULL` and `3`, followed by
+`row_count=2` and `status=queried`. EXCEPT DISTINCT removes matching values and
+returns each surviving value once. NULL survives here because the dimension
+input contains no NULL identifier.
+
 Remove this example's database when finished:
 
 ```sh

@@ -502,7 +502,9 @@ fn wide_rows_sort_by_key_without_losing_nonkey_payloads() {
             batch.set(0, column, value(row, column)).unwrap();
         }
         batch.publish_rows(1);
-        record.encode_row(&layout, &batch, 0, row as u64).unwrap();
+        record
+            .encode_row(&layout, &batch, 0, row as u64, None)
+            .unwrap();
         let mut pushed = false;
         for _ in 0..4096 {
             if sort.phase == SortPhase::Collect && sort.push(&record).unwrap() {

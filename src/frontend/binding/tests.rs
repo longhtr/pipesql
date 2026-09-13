@@ -98,25 +98,36 @@ fn wide_constant_preparation_admits_exact_peak_and_releases_it() {
 }
 
 #[test]
-fn union_scope_preparation_admits_exact_peak_and_releases_it() {
+fn set_scope_preparation_admits_exact_peak_and_releases_it() {
     check_scope_preparation(
         "FROM facts |> UNION ALL (FROM facts |> UNION ALL (FROM facts)), (FROM facts)",
     );
     check_scope_preparation(
         "FROM facts |> UNION DISTINCT (FROM facts |> UNION DISTINCT (FROM facts)), (FROM facts)",
     );
+    check_scope_preparation(
+        "FROM facts |> EXCEPT DISTINCT (FROM facts |> EXCEPT DISTINCT (FROM facts)), (FROM facts)",
+    );
 }
 
 #[test]
-fn legacy_union_refuses_before_execution_with_its_operator_span() {
+fn legacy_set_operations_refuse_before_execution_with_their_operator_span() {
     let (_temp, db) = database(4_000_000);
     let baseline = db.reserved_memory_bytes();
-    for mode in ["ALL", "DISTINCT"] {
-        let sql = format!("FROM lineitem |> UNION {mode} (FROM lineitem)");
-        let Err(Error::Bind { message, span }) = db.prepare(&sql) else {
-            panic!("legacy union must refuse during preparation");
+    for (operator, message) in [
+        ("UNION ALL", "UNION requires declared-table storage"),
+        ("UNION DISTINCT", "UNION requires declared-table storage"),
+        ("EXCEPT DISTINCT", "EXCEPT requires declared-table storage"),
+    ] {
+        let sql = format!("FROM lineitem |> {operator} (FROM lineitem)");
+        let Err(Error::Bind {
+            message: observed,
+            span,
+        }) = db.prepare(&sql)
+        else {
+            panic!("legacy set operation must refuse during preparation");
         };
-        assert_eq!(message, "UNION requires declared-table storage");
+        assert_eq!(observed, message);
         assert_eq!(text(&sql, span), "|>");
         assert_eq!(db.reserved_memory_bytes(), baseline);
     }

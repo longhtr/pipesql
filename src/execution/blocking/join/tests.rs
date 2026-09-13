@@ -1,7 +1,7 @@
 use super::*;
 use crate::effects::Effect;
 use crate::effects::Faults;
-use crate::execution::blocking::test_support::Directory;
+use crate::execution::blocking::test_support::{Directory, two_column_database};
 use crate::execution::blocking::{Files, RECORD_HEADER};
 use crate::execution::{QueryResult, QueryStep, State};
 use crate::frontend::DataType;
@@ -13,60 +13,6 @@ const LEFT_QUERY: &str = "FROM facts AS l |> LEFT JOIN \
 const DEFAULT_QUERY: &str = "FROM facts AS l |> LEFT JOIN \
     (FROM facts |> WHERE k >= 1 |> WHERE k <= 88) AS r ON l.k = r.k |> SELECT l.v, COALESCE(r.v, -1)";
 const STEPS: usize = 100_000;
-
-fn database(directory: &Directory) -> Database {
-    let db = Database::create_empty(
-        &directory.0.join("db"),
-        Config::new(8_000_000, 8_000_000).unwrap(),
-    )
-    .unwrap();
-    let cancel = CancellationToken::new();
-    db.declare_table(
-        "facts",
-        &["k", "v"].map(|name| ColumnDeclaration {
-            name,
-            data_type: DataType::Int64,
-            nullable: false,
-        }),
-        &cancel,
-    )
-    .unwrap();
-    // 180 rows exceed the join's byte-limited first run. Adjacent equal keys
-    // cross run boundaries; reverse input order cannot masquerade as a merge.
-    for start in [0, 90] {
-        let values: Vec<i64> = (start..start + 90).rev().collect();
-        let keys: Vec<_> = values.iter().map(|v| v / 2).collect();
-        let mut valid = [255; 12];
-        valid[11] = 3;
-        let mut append = db
-            .begin_append(
-                "facts",
-                AppendLimits {
-                    batches: 1,
-                    encoded_bytes: 10_000,
-                },
-                &cancel,
-            )
-            .unwrap();
-        append
-            .write(
-                &[
-                    ColumnInput {
-                        values: ColumnValues::Int64(&keys),
-                        validity: &valid,
-                    },
-                    ColumnInput {
-                        values: ColumnValues::Int64(&values),
-                        validity: &valid,
-                    },
-                ],
-                &cancel,
-            )
-            .unwrap();
-        append.commit(&cancel).unwrap();
-    }
-    db
-}
 
 fn join<'a, 'db>(result: &'a mut QueryResult<'db, '_>) -> &'a mut Join<'db> {
     let State::Running(runtime) = &mut result.state else {
@@ -145,7 +91,7 @@ fn expect_failure(result: &mut QueryResult<'_, '_>, effects: &mut Effects, fault
 #[test]
 fn join_exact_admission_precedes_io_and_reconciles_each_transition() {
     let directory = Directory::new();
-    let db = database(&directory);
+    let db = two_column_database(&directory);
     let cancel = CancellationToken::new();
     for (sql, left_join, defaults) in [
         (QUERY, false, false),
@@ -231,7 +177,7 @@ fn join_exact_admission_precedes_io_and_reconciles_each_transition() {
 #[test]
 fn cancellation_covers_both_inputs_sort_matching_and_duplicate_rewind() {
     let directory = Directory::new();
-    let db = database(&directory);
+    let db = two_column_database(&directory);
     for (sql, phases) in [(QUERY, 19), (LEFT_QUERY, 20), (DEFAULT_QUERY, 20)] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
@@ -281,7 +227,7 @@ fn cancellation_covers_both_inputs_sort_matching_and_duplicate_rewind() {
 #[test]
 fn sorted_input_corruption_truncation_read_failure_and_temp_refusal_are_terminal() {
     let directory = Directory::new();
-    let db = database(&directory);
+    let db = two_column_database(&directory);
     let query = db.prepare(QUERY).unwrap();
     let baseline = db.reserved_memory_bytes();
     let cancel = CancellationToken::new();
@@ -357,7 +303,7 @@ fn sorted_input_corruption_truncation_read_failure_and_temp_refusal_are_terminal
 #[test]
 fn second_input_bootstrap_contention_releases_the_retained_first_input() {
     let directory = Directory::new();
-    let db = database(&directory);
+    let db = two_column_database(&directory);
     let cancel = CancellationToken::new();
     let query = db.prepare(QUERY).unwrap();
     let baseline = db.reserved_memory_bytes();
@@ -410,7 +356,7 @@ fn second_input_bootstrap_contention_releases_the_retained_first_input() {
 #[test]
 fn short_matching_reads_and_second_input_writes_are_terminal() {
     let directory = Directory::new();
-    let db = database(&directory);
+    let db = two_column_database(&directory);
     let cancel = CancellationToken::new();
     let query = db.prepare(QUERY).unwrap();
     let baseline = db.reserved_memory_bytes();
@@ -479,7 +425,7 @@ fn short_matching_reads_and_second_input_writes_are_terminal() {
 fn second_input_namespace_failures_retain_honest_debt_and_heal() {
     use std::{cell::RefCell, rc::Rc};
     let directory = Directory::new();
-    let db = database(&directory);
+    let db = two_column_database(&directory);
     let cancel = CancellationToken::new();
     let query = db.prepare(QUERY).unwrap();
     let mut result = db.execute(&query, &cancel).unwrap();
@@ -527,7 +473,7 @@ fn second_input_namespace_failures_retain_honest_debt_and_heal() {
     db.close().unwrap();
     for cut in cuts {
         let directory = Directory::new();
-        let db = database(&directory);
+        let db = two_column_database(&directory);
         let query = db.prepare(QUERY).unwrap();
         let baseline = db.reserved_memory_bytes();
         let mut result = db.execute(&query, &cancel).unwrap();

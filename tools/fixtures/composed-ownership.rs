@@ -113,13 +113,19 @@ pub(super) fn analytic_shapes(
         &wide,
         "FROM facts |> SELECT COUNT(*) OVER () AS n |> EXTEND COUNT(*) OVER () AS second",
         "FROM facts |> EXTEND COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total GROUP BY v |> AGGREGATE SUM(total) AS total",
+        "FROM facts |> EXCEPT DISTINCT (FROM facts |> WHERE v<256) |> SELECT COUNT(*) OVER () AS n",
     ];
     println!("entered analytic ownership shapes");
     let path_bytes = std::fs::canonicalize(&path)?.as_os_str().len() + "/units".len();
     let resident = db.reserved_memory_bytes();
     for (case, sql) in queries.into_iter().enumerate() {
         let before = Live::now();
-        let query = prepare_observed(&db, sql, "analytic", if case == 6 { 5 } else { 2 }, false)?;
+        let descriptors = match case {
+            6 => 5,
+            7 => 3,
+            _ => 2,
+        };
+        let query = prepare_observed(&db, sql, "analytic", descriptors, false)?;
         let prepared_heap = Heap::now();
         let mut result = db.execute(&query, &cancel)?;
         let inline = std::mem::size_of::<QueryResult<'_, '_>>();
@@ -201,6 +207,7 @@ pub(super) fn analytic_shapes(
                                     }
                                 }
                                 (6, _) => Value::Int64(262_144),
+                                (7, _) => Value::Int64(256),
                                 _ => Value::Int64(512),
                             };
                             assert_eq!(batch.value(row, column), Some(expected));
@@ -223,6 +230,7 @@ pub(super) fn analytic_shapes(
             match case {
                 0 => 0,
                 6 => 1,
+                7 => 256,
                 _ => 512,
             }
         );
@@ -251,7 +259,7 @@ pub(super) fn analytic_shapes(
         );
     }
     db.close()?;
-    println!("analytic shapes passed: 7 cases; rows, attribution and release");
+    println!("analytic shapes passed: 8 cases; rows, attribution and release");
     Ok(())
 }
 

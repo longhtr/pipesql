@@ -1,6 +1,9 @@
 //! Shared sorter fixtures; platform-specific tests own their own target guards.
 use super::{KeyColumn, RowLayout};
 use crate::frontend::{DataType, Direction, MAX_ROW_VALUES, NullPlacement};
+use crate::{
+    AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config, Database,
+};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -57,4 +60,58 @@ pub(in crate::execution) fn schema(specs: &[(DataType, bool)]) -> RowLayout {
         key_max_bytes: max_bytes,
         layout: 0x44a7_3201,
     }
+}
+
+pub(in crate::execution) fn two_column_database(directory: &Directory) -> Database {
+    let db = Database::create_empty(
+        &directory.0.join("db"),
+        Config::new(8_000_000, 8_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "facts",
+        &["k", "v"].map(|name| ColumnDeclaration {
+            name,
+            data_type: DataType::Int64,
+            nullable: false,
+        }),
+        &cancel,
+    )
+    .unwrap();
+    // 180 rows exceed the sorter's byte-limited first run. Adjacent equal keys
+    // cross run boundaries; reverse input order cannot masquerade as a merge.
+    for start in [0, 90] {
+        let values: Vec<i64> = (start..start + 90).rev().collect();
+        let keys: Vec<_> = values.iter().map(|v| v / 2).collect();
+        let mut valid = [255; 12];
+        valid[11] = 3;
+        let mut append = db
+            .begin_append(
+                "facts",
+                AppendLimits {
+                    batches: 1,
+                    encoded_bytes: 10_000,
+                },
+                &cancel,
+            )
+            .unwrap();
+        append
+            .write(
+                &[
+                    ColumnInput {
+                        values: ColumnValues::Int64(&keys),
+                        validity: &valid,
+                    },
+                    ColumnInput {
+                        values: ColumnValues::Int64(&values),
+                        validity: &valid,
+                    },
+                ],
+                &cancel,
+            )
+            .unwrap();
+        append.commit(&cancel).unwrap();
+    }
+    db
 }

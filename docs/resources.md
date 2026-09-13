@@ -289,8 +289,8 @@ account or spool.
 
 ## UNION ALL admission
 
-Each binary union retains one positional descriptor in the prepared plan. Its
-vector capacity is admitted from the parsed union count, with one allocation
+Each binary set operation retains one positional descriptor in the prepared plan.
+Its vector capacity is admitted from the parsed set-operation count, with one allocation
 allowance for the vector. Output identities belong to positions; mapping the same
 left identity twice does not merge distinct right-input values.
 
@@ -313,6 +313,24 @@ admits its descriptor, sorted input, and output through the existing equations
 below. It can require temporary storage even when UNION ALL would stream. All
 comparison fields remain demanded regardless of later projection. It adds no
 new resource account, spool implementation, or replay authority.
+
+## EXCEPT DISTINCT admission
+
+Each binary EXCEPT shares the positional descriptor owner above and admits two
+[sorted inputs](#join-ordering-and-distinct-admission) plus one output batch.
+Each input retains its own nullable row layout. The controller stores two inline
+64-byte mappings from logical comparison positions to child payload slots;
+repeated logical columns can use one child slot while retaining distinct record
+positions. Controller storage is charged separately from the two sorted-input
+owners, which retain their existing record, run, merge, I/O, and scratch charges.
+
+Both inputs are consumed and sorted before output. Merge comparison retains the
+current row and previous key in the existing sorted-input buffers. It introduces
+no hash index or join duplicate-product buffer. Output copies only surviving left
+values. Replay resets the retained sorted cursors once without reopening either
+source. Completion, refusal, cancellation, and abandonment release these owners
+through the ordinary query lifecycle. These logical ownership bounds do not
+establish a whole-process or RSS cap.
 
 ## Analytic count admission
 

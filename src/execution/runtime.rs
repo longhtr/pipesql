@@ -4,7 +4,9 @@ use crate::effects::Effects;
 use crate::execution::aggregation::Aggregation;
 use crate::execution::planning::{MAX_PIPELINES, PhysicalPlan, Pipeline, Producer};
 use crate::execution::scan::{AdmittedScan, ScanCursor, declared};
-use crate::execution::{Advance, ConsumerInput, ConsumerStep, blocking, count, limit, union};
+use crate::execution::{
+    Advance, ConsumerInput, ConsumerStep, SetStep, blocking, count, limit, union,
+};
 use crate::frontend::{self, DataType, MAX_AGGREGATE_COLUMNS, MAX_ROW_VALUES, PreparedQuery};
 use crate::resources::{Reservation, allocate};
 use crate::{CancellationToken, Database, Error};
@@ -36,6 +38,10 @@ enum Owner<'db> {
     },
     Union {
         union: union::Union,
+        output: OwnedBatch<'db>,
+    },
+    Except {
+        except: Vec<blocking::except::Except<'db>>,
         output: OwnedBatch<'db>,
     },
     Aggregate(OwnedBatch<'db>),
@@ -78,6 +84,7 @@ impl<'db> Owner<'db> {
             | Self::Count { output, .. }
             | Self::Limit { output, .. }
             | Self::Union { output, .. }
+            | Self::Except { output, .. }
             | Self::Aggregate(output) => output,
             Self::Pending(_) | Self::Vacant => {
                 unreachable!("runtime construction must finish before execution")
@@ -93,6 +100,7 @@ impl<'db> Owner<'db> {
             | Self::Count { output, .. }
             | Self::Limit { output, .. }
             | Self::Union { output, .. }
+            | Self::Except { output, .. }
             | Self::Aggregate(output) => output,
             Self::Pending(_) | Self::Vacant => {
                 unreachable!("runtime construction must finish before execution")
@@ -105,6 +113,7 @@ impl<'db> Owner<'db> {
             + match self {
                 Self::Scan { cursor, .. } => cursor.memory_bytes(),
                 Self::Join { join, .. } => join[0].memory_bytes(),
+                Self::Except { except, .. } => except[0].memory_bytes(),
                 Self::Order { order, .. } => order[0].memory_bytes(),
                 Self::Aggregate(_)
                 | Self::Count { .. }
@@ -120,6 +129,7 @@ impl<'db> Owner<'db> {
             Self::Count { count, .. } => count.replay(cancel),
             Self::Limit { limit, .. } => limit.replay(),
             Self::Union { union, .. } => union.replay(),
+            Self::Except { except, .. } => except[0].replay(cancel),
             Self::Join { join, .. } => join[0].replay(cancel),
             Self::Order { order, .. } => order[0].replay(cancel),
             _ => Err(Error::Corrupt("invalid replay producer")),
@@ -207,7 +217,7 @@ impl<'db> Runtime<'db> {
                 | Producer::Order { input, .. }
                 | Producer::Distinct { input, .. }
                 | Producer::Limit { input, .. } => [Some(input), None],
-                Producer::Join { left, right, .. } | Producer::UnionAll { left, right, .. } => {
+                Producer::Join { left, right, .. } | Producer::SetOperation { left, right, .. } => {
                     [Some(left), Some(right)]
                 }
             };
@@ -336,7 +346,7 @@ impl<'db> Runtime<'db> {
                 }
                 Producer::Aggregate { .. }
                 | Producer::Join { .. }
-                | Producer::UnionAll { .. }
+                | Producer::SetOperation { .. }
                 | Producer::WindowCount { .. }
                 | Producer::Order { .. }
                 | Producer::Distinct { .. }
@@ -373,21 +383,26 @@ impl<'db> Runtime<'db> {
                             plan.pipelines()[input.index()].output_columns(&query.plan),
                         )?;
                         Owner::Order { order, output }
-                    } else if let Producer::UnionAll {
+                    } else if let Producer::SetOperation {
                         left,
                         right,
                         descriptor,
                     } = pipeline.producer
                     {
-                        Owner::Union {
-                            union: union::Union::new(
-                                &query.plan.unions[usize::from(descriptor)],
-                                [
-                                    &plan.pipelines()[left.index()],
-                                    &plan.pipelines()[right.index()],
-                                ],
-                            ),
-                            output,
+                        let bound = &query.plan.set_operations[usize::from(descriptor)];
+                        let inputs = [
+                            &plan.pipelines()[left.index()],
+                            &plan.pipelines()[right.index()],
+                        ];
+                        match bound.kind() {
+                            frontend::SetKind::UnionAll => Owner::Union {
+                                union: union::Union::new(bound, inputs),
+                                output,
+                            },
+                            frontend::SetKind::ExceptDistinct => Owner::Except {
+                                except: blocking::except::Except::new(database, bound, inputs)?,
+                                output,
+                            },
                         }
                     } else if let Producer::Limit { bounds, .. } = pipeline.producer {
                         Owner::Limit {
@@ -582,6 +597,17 @@ impl<'db> Runtime<'db> {
     }
 
     #[cfg(test)]
+    pub(super) fn first_except_mut(&mut self) -> &mut blocking::except::Except<'db> {
+        self.nodes
+            .iter_mut()
+            .find_map(|node| match &mut node.owner {
+                Owner::Except { except, .. } => Some(&mut except[0]),
+                _ => None,
+            })
+            .expect("test query has an EXCEPT producer")
+    }
+
+    #[cfg(test)]
     pub(super) fn first_order_mut(&mut self) -> &mut blocking::order::Order<'db> {
         self.nodes
             .iter_mut()
@@ -731,11 +757,11 @@ impl<'db> Runtime<'db> {
                     ConsumerStep::Finished => Advance::Finished,
                 }
             }
-            Producer::UnionAll { left, right, .. } => {
+            Producer::SetOperation { left, right, .. } => {
                 let children = [left.index(), right.index()];
                 if children[0] >= index || children[1] >= index || left == right {
                     return Err(Error::Corrupt(
-                        "union inputs must be distinct earlier producers",
+                        "set inputs must be distinct earlier producers",
                     ));
                 }
                 let (earlier, consumers) = self.nodes.split_at_mut(index);
@@ -743,27 +769,33 @@ impl<'db> Runtime<'db> {
                     batch: earlier[child].owner.output(),
                     finished: earlier[child].state == OutputState::Finished,
                 });
-                let Owner::Union { union, output } = &mut consumers[0].owner else {
-                    return Err(Error::Corrupt("union owner absent"));
+                let step = match &mut consumers[0].owner {
+                    Owner::Union { union, output } => {
+                        union.step(supplied, output, pipeline, cancel)?
+                    }
+                    Owner::Except { except, output } => {
+                        except[0].step(supplied, output, pipeline, cancel, effects)?
+                    }
+                    _ => return Err(Error::Corrupt("set operation owner absent")),
                 };
-                match union.step(supplied, output, pipeline, cancel)? {
-                    union::Step::Input(side) => {
+                match step {
+                    SetStep::Input(side) => {
                         let child = children[side];
                         let input = &mut earlier[child];
                         if input.state == OutputState::Finished {
-                            return Err(Error::Corrupt("union requested finished input"));
+                            return Err(Error::Corrupt("set operation requested finished input"));
                         }
                         input.owner.output_mut().clear();
                         input.state = OutputState::Ready;
                         self.active = child;
                         return Ok((Advance::Progress, Phase::Run));
                     }
-                    union::Step::Replay(side) => {
+                    SetStep::Replay(side) => {
                         return Ok((Advance::Progress, Phase::Replay(children[side])));
                     }
-                    union::Step::Progress => Advance::Progress,
-                    union::Step::Rows => Advance::Rows,
-                    union::Step::Finished => Advance::Finished,
+                    SetStep::Progress => Advance::Progress,
+                    SetStep::Rows => Advance::Rows,
+                    SetStep::Finished => Advance::Finished,
                 }
             }
             Producer::Join { left, right, .. } => {

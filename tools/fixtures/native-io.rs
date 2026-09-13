@@ -44,6 +44,10 @@ fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
         .chain(derived.then_some((
             "FROM facts |> SELECT SAFE_DIVIDE(n, 0) AS ratio |> EXTEND COALESCE(ratio, 0) AS filled |> WHERE filled=0 |> AGGREGATE COUNT(ratio) AS present |> SELECT COALESCE(present, DIV(1, 0)) AS present",
             Value::Int64(0),
+        )))
+        .chain(derived.then_some((
+            "FROM facts |> SELECT k, n |> EXCEPT DISTINCT (FROM facts |> WHERE k=1 |> SELECT k, n) |> AGGREGATE SUM(n) AS total",
+            Value::Int64(90),
         )));
     for (sql, expected) in queries {
         let plan = db.prepare(sql)?;

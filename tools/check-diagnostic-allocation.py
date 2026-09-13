@@ -199,7 +199,7 @@ def check_ownership(work, run, failures):
     for label, length in [("short", None), ("path384", 384)]:
         analytic = run("analytic-shapes", f"analytic-{label}", length)
         print(analytic.stdout + analytic.stderr, end="", flush=True)
-        if "analytic shapes passed: 7 cases; rows, attribution and release" not in analytic.stdout:
+        if "analytic shapes passed: 8 cases; rows, attribution and release" not in analytic.stdout:
             failures.append(f"incomplete analytic allocation checks: {label}")
         prepared = run("prepared-aggregate-shapes", f"prepared-aggregates-{label}", length)
         print(prepared.stdout + prepared.stderr, end="", flush=True)
@@ -401,6 +401,9 @@ def required_outcomes(operation):
             "catalog phase=union-distinct-prepare",
             "catalog phase=union-distinct-execute",
             "catalog phase=union-distinct-step",
+            "catalog phase=except-prepare",
+            "catalog phase=except-execute",
+            "catalog phase=except-step",
             "catalog phase=count-only-prepare",
             "catalog phase=count-only-execute",
             "catalog phase=count-only-step",

@@ -224,7 +224,7 @@ fn select_producer(
             | Stage::Where(_) => {
                 return Ok(None);
             }
-            Stage::UnionAll { right, descriptor } => Producer::UnionAll {
+            Stage::SetOperation { right, descriptor } => Producer::SetOperation {
                 left: lookup(node.input)?,
                 right: lookup(right)?,
                 descriptor,
@@ -247,7 +247,7 @@ fn base_position(
     // physical value until the producer materializes its output.
     for _ in 0..=semantic.computed.len() {
         let position = match producer {
-            Producer::UnionAll { .. } => semantic
+            Producer::SetOperation { .. } => semantic
                 .relation_columns(relation)?
                 .iter()
                 .position(|column| column == id),

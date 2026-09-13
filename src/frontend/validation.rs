@@ -87,9 +87,11 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
     {
         return Err(Error::Corrupt("null extension descriptor capacity"));
     }
-    let mut union_cursor = 0;
-    if plan.unions.len() > MAX_STAGES || plan.unions.capacity() != plan.unions.len() {
-        return Err(Error::Corrupt("union descriptor capacity"));
+    let mut set_cursor = 0;
+    if plan.set_operations.len() > MAX_STAGES
+        || plan.set_operations.capacity() != plan.set_operations.len()
+    {
+        return Err(Error::Corrupt("set descriptor capacity"));
     }
     let mut distinct_cursor = 0;
     if plan.distinct.len() > MAX_STAGES || plan.distinct.capacity() != plan.distinct.len() {
@@ -182,7 +184,7 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
             | Stage::Order { .. }
             | Stage::Limit(_)
             | Stage::Distinct(_)
-            | Stage::UnionAll { .. } => input.len(),
+            | Stage::SetOperation { .. } => input.len(),
             Stage::Drop { keep } => keep.count_ones() as usize,
             Stage::Select { len, .. } => usize::from(*len),
             Stage::Extend { len, .. } => input.len() + usize::from(*len),
@@ -212,17 +214,17 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                 next_identity = bound.validate(plan, *right, next_identity)?;
                 null_cursor += 1;
             }
-            Stage::UnionAll { right, descriptor } => {
-                if !catalog || usize::from(*descriptor) != union_cursor {
-                    return Err(Error::Corrupt("union descriptor ownership"));
+            Stage::SetOperation { right, descriptor } => {
+                if !catalog || usize::from(*descriptor) != set_cursor {
+                    return Err(Error::Corrupt("set descriptor ownership"));
                 }
-                let union = plan
-                    .unions
-                    .get(union_cursor)
-                    .ok_or(Error::Corrupt("union descriptor absent"))?;
+                let set = plan
+                    .set_operations
+                    .get(set_cursor)
+                    .ok_or(Error::Corrupt("set descriptor absent"))?;
                 next_identity =
-                    union.validate(plan, input, plan.relation_columns(*right)?, next_identity)?;
-                union_cursor += 1;
+                    set.validate(plan, input, plan.relation_columns(*right)?, next_identity)?;
+                set_cursor += 1;
             }
             Stage::Distinct(descriptor) => {
                 if !catalog || usize::from(*descriptor) != distinct_cursor {
@@ -457,7 +459,7 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
         }
     }
     if null_cursor != plan.null_extensions.len()
-        || union_cursor != plan.unions.len()
+        || set_cursor != plan.set_operations.len()
         || distinct_cursor != plan.distinct.len()
         || computed_cursor != plan.computed.len()
         || next_identity > MAX_QUERY_COLUMNS as u32 + 1
@@ -519,7 +521,7 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
             }
             reached |= 1 << node.input.0;
         }
-        if let Stage::Join { right, .. } | Stage::UnionAll { right, .. } = node.stage {
+        if let Stage::Join { right, .. } | Stage::SetOperation { right, .. } = node.stage {
             if reached & (1 << right.0) != 0 {
                 return Err(Error::Corrupt("relation producer has multiple consumers"));
             }
@@ -563,7 +565,7 @@ fn validate_range_scope(plan: &Plan, index: usize, node: &Node) -> Result<(), Er
             }
             return Err(Error::Corrupt("range exposes an input outside its row"));
         }
-        Stage::Select { .. } | Stage::Aggregate(_) | Stage::UnionAll { .. } => ColumnSet::EMPTY,
+        Stage::Select { .. } | Stage::Aggregate(_) | Stage::SetOperation { .. } => ColumnSet::EMPTY,
         Stage::Join { right, nulls, .. } => {
             let right = plan.range_columns[usize::from(right.0)];
             if let Some(descriptor) = nulls {

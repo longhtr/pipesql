@@ -17,6 +17,7 @@ pub(super) use record::{
     ArgumentShape, KeyColumn, RowLayout, SortRecord, append_bytes, append_value, read_value,
 };
 
+pub(super) mod except;
 pub(super) mod join;
 pub(super) mod order;
 
