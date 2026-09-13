@@ -16,6 +16,19 @@ fn boolean_filters_preserve_null_nan_precedence_and_producer_composition() {
         ("(id=0 OR id=1) AND s IS NOT NULL", vec![0]),
         ("NOT (s IS NULL OR s='')", vec![0, 3]),
         ("NOT s BETWEEN '' AND 'present'", vec![3]),
+        ("s NOT BETWEEN '' AND 'present'", vec![3]),
+        ("NOT s NOT BETWEEN '' AND 'present'", vec![0, 2]),
+        ("n NOT BETWEEN -1 AND 1", vec![2, 3]),
+        ("n NOT BETWEEN SAFE_DIVIDE(1, 0) AND 0", vec![2, 3]),
+        ("NOT n NOT BETWEEN -1 AND 1", vec![1]),
+        ("i NOT BETWEEN 7 AND 9", vec![0]),
+        ("i NOT BETWEEN 9 AND 7", vec![0, 1, 3]),
+        (
+            "d NOT BETWEEN DATE '1970-01-02' AND DATE '1970-01-03'",
+            vec![0, 1, 2],
+        ),
+        ("id NOT BETWEEN 1 AND 2 AND id=0 OR id=2", vec![0, 2]),
+        ("id=1 OR id NOT BETWEEN 0 AND 2 AND id=3", vec![1, 3]),
         ("NOT d < DATE '1970-01-01'", vec![0, 1, 2]),
         ("NOT (i > 0 AND id > 1)", vec![0, 1]),
     ] {
@@ -45,6 +58,11 @@ fn boolean_filters_preserve_null_nan_precedence_and_producer_composition() {
     );
     for predicate in [
         "NOT",
+        "id NOT BETWEEN 0",
+        "id NOT BETWEEN 0 OR 1",
+        "id NOT BETWEEN NULL AND 1",
+        "id NOT BETWEEN 0 AND id",
+        "id=0 OR s NOT BETWEEN 0 AND 1",
         "()",
         "(id=0",
         "id=0 OR",
@@ -69,11 +87,15 @@ fn boolean_filters_preserve_conditional_computed_demand() {
     let (_directory, db) = super::null_predicate::fixture().unwrap();
     for predicate in [
         "n<0 AND bad>0",
+        "id NOT BETWEEN 0 AND 3 AND bad>0",
+        "id NOT IN (0, 1, 2, 3) AND bad>0",
         "NOT (n>=0 OR n IS NULL OR NOT n<0) AND bad>0",
     ] {
         query(
             &db,
-            &format!("FROM facts |> SELECT n, id*9223372036854775807 AS bad |> WHERE {predicate}"),
+            &format!(
+                "FROM facts |> SELECT id, n, id*9223372036854775807 AS bad |> WHERE {predicate}"
+            ),
             vec![],
         );
     }
@@ -93,7 +115,7 @@ fn boolean_filters_preserve_conditional_computed_demand() {
         integers(&[4]),
     );
     let baseline = db.reserved_memory_bytes();
-    let failures = ["bad>0 AND n<0", "n<0 OR bad>0", "NOT (i>0 AND bad>0)"].map(|predicate| format!("FROM facts |> SELECT id, n, i, id*9223372036854775807 AS bad |> WHERE id=2 |> WHERE {predicate} |> SELECT id"));
+    let failures = ["bad>0 AND n<0", "n<0 OR bad>0", "NOT (i>0 AND bad>0)", "bad NOT BETWEEN 0 AND 1", "i NOT BETWEEN 0 AND 9 OR bad>0"].map(|predicate| format!("FROM facts |> SELECT id, n, i, id*9223372036854775807 AS bad |> WHERE id=2 |> WHERE {predicate} |> SELECT id"));
     for sql in failures.iter().map(String::as_str).chain(["FROM facts |> AGGREGATE SUM(9223372036854775807) AS s, COUNT(*) AS n |> WHERE n<0 OR s>0 |> SELECT n"]) {
         let prepared = db.prepare(sql).unwrap();
         let cancel = CancellationToken::new();

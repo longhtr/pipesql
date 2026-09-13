@@ -133,6 +133,20 @@ NULL yields UNKNOWN, which WHERE excludes. Negating this membership test returns
 no rows because NOT preserves UNKNOWN. Require successful exit and
 `status=queried` before accepting the result.
 
+To exclude a list and a range, run
+[examples/negated-membership.sql](../examples/negated-membership.sql):
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/negated-membership.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+The result is south with amount 20. `NOT IN (5)` excludes 5, and
+`NOT BETWEEN 0 AND 10` excludes the inclusive range. The NULL amount remains
+UNKNOWN and is excluded. Require successful exit and `status=queried`.
+
 Follow `boolean_leaf` in the [Boolean parser](../src/frontend/parser/boolean.rs)
 to see each candidate become an equality decision joined by OR. The
 [row predicate](../src/execution/predicate.rs) preserves UNKNOWN under negation;

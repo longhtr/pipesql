@@ -26,7 +26,7 @@ fn consume(mut rows: QueryResult<'_, '_>) -> Result<(), Error> {
 }
 fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
     let sql = if derived {
-        "FROM (FROM facts |> WHERE category IS NULL OR category >= 'A' |> AGGREGATE SUM(n) AS total GROUP BY k) AS a |> LEFT JOIN (FROM facts |> WHERE k=1 |> AGGREGATE SUM(n) AS total GROUP BY k) AS b ON a.k = b.k |> EXTEND COUNT(*) OVER () AS partition_rows |> WHERE partition_rows=2 |> AGGREGATE AVG(a.total+b.total) AS mean"
+        "FROM (FROM facts |> WHERE category IS NULL OR category >= 'A' |> AGGREGATE SUM(n) AS total GROUP BY k) AS a |> LEFT JOIN (FROM facts |> WHERE k NOT BETWEEN 2 AND 3 |> AGGREGATE SUM(n) AS total GROUP BY k) AS b ON a.k = b.k |> EXTEND COUNT(*) OVER () AS partition_rows |> WHERE partition_rows=2 |> AGGREGATE AVG(a.total+b.total) AS mean"
     } else {
         "FROM facts |> AGGREGATE SUM(n) AS total GROUP BY k |> AGGREGATE SUM(total) AS subtotal GROUP BY total |> AGGREGATE AVG(subtotal) AS mean"
     };

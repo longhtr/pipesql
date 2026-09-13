@@ -240,6 +240,18 @@ impl Parser<'_> {
     ) -> Result<(), Error> {
         let column = self.column()?;
         let first = parsed.len;
+        if self.is_word("NOT") {
+            self.word("NOT")?;
+            if !self.is_word("IN") && !self.is_word("BETWEEN") {
+                return Err(Error::Parse {
+                    message: "IN or BETWEEN required after NOT",
+                    span: column,
+                });
+            }
+            // Negate the complete membership OR or range AND, just as prefix
+            // NOT does. Reversing each comparison would change NULL/NaN results.
+            syntax.operator(Operator::Not)?;
+        }
         if self.is_word("IS") {
             self.word("IS")?;
             let negated = self.is_word("NOT");

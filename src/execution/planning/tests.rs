@@ -35,6 +35,8 @@ fn literal_predicates_and_decisions_match_the_semantic_plan() {
     .unwrap();
     for sql in [
         "FROM facts |> WHERE NOT a IN (1, NULL, 3)",
+        "FROM facts |> WHERE a NOT IN (1, NULL, 3)",
+        "FROM facts |> WHERE a NOT BETWEEN 1 AND 3 AND a NOT IN (2)",
         "FROM facts |> WHERE NOT (a IS DISTINCT FROM 1 OR a IS NOT DISTINCT FROM NULL OR a IS DISTINCT FROM 3)",
     ] {
         let query = db.prepare(sql).unwrap();

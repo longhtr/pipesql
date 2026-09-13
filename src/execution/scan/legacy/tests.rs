@@ -379,12 +379,20 @@ fn stored_blocks_ownership_and_effect_cuts() {
 }
 
 #[test]
-fn null_safe_legacy_filters_preserve_counts_and_payloads() {
+fn literal_legacy_filters_preserve_counts_and_payloads() {
     let (_fixture, database) = loaded(130);
     // Four complete cycles of quantities 0..30, followed by 0..5, sum to 1875.
     // Zero occurs five times. Stored flags are A and dates are 1994-01-01.
     for (predicate, expected) in [
         ("l_quantity IS NOT DISTINCT FROM 0.0", (5, 0)),
+        ("l_quantity NOT IN (0, 1)", (120, 1870)),
+        ("l_quantity NOT BETWEEN 0 AND 1", (120, 1870)),
+        ("l_returnflag NOT IN ('B', NULL)", (0, 0)),
+        ("l_returnflag NOT BETWEEN 'B' AND 'Z'", (130, 1875)),
+        (
+            "l_shipdate NOT BETWEEN DATE '1994-01-02' AND DATE '1994-01-03'",
+            (130, 1875),
+        ),
         ("l_quantity IS DISTINCT FROM 0.0", (125, 1875)),
         ("l_quantity IS DISTINCT FROM NULL", (130, 1875)),
         ("l_quantity IS NOT DISTINCT FROM NULL", (0, 0)),

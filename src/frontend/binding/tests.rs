@@ -452,6 +452,26 @@ fn boolean_controls_preserve_scope_bounds_and_finite_paths() {
 }
 
 #[test]
+fn infix_negation_preserves_stage_bounds_and_preparation_admission() {
+    let (_temp, db) = database(2_000_000);
+    let at_limit = format!(
+        "FROM lineitem{}",
+        " |> WHERE l_quantity NOT BETWEEN 0 AND 1".repeat(MAX_STAGES / 2)
+    );
+    db.prepare(&at_limit).unwrap();
+    assert!(matches!(
+        db.prepare(&(at_limit + " |> WHERE l_quantity NOT IN (0)")),
+        Err(Error::Parse { .. })
+    ));
+    check_scope_preparation(
+        "FROM facts |> SELECT k, n |> WHERE n NOT IN (0, NULL, 3) |> AGGREGATE SUM(n) AS total GROUP BY k",
+    );
+    check_scope_preparation(
+        "FROM facts |> SELECT k, n |> WHERE n NOT BETWEEN 0 AND 3 OR k NOT IN (1)",
+    );
+}
+
+#[test]
 fn null_safe_predicates_preserve_types_validation_and_admission() {
     let (_temp, db) = database(2_000_000);
     for keyword in ["IS DISTINCT FROM", "IS NOT DISTINCT FROM"] {

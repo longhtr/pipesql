@@ -51,15 +51,23 @@ bounded column/literal profile. The parser currently accepts only prefix Boolean
 NOT for these operations; its membership OR and range AND already use the shared
 forward decisions. Conventional spellings make exclusion filters easier to read.
 
-1. Pin semantics at the existing GoogleSQL revision, including NULL, NaN,
-   precedence and demanded errors. Check independent prefix-NOT outcomes before
-   changing normalization; reassess if the spellings need another runtime owner.
-2. Extend the existing parser with local negation. Preserve literal typing,
-   source spans, normalized stage limits and independent plan validation. Add
-   explicit public results, malformed forms and exact/short boundary controls.
-3. Update the language contract and relevant learning/test navigation. Run focused
-   checks and matching frozen full macOS/GNU/Linux gates, reconcile discovery and
-   inputs, retain concise evidence, remove owned outputs and commit locally.
+1. Semantics pinned at GoogleSQL `0e7d7073ed0360be587a5efa0fa78abeee00f17b`,
+   operators: comparison precedence, inclusive range comparisons and NOT IN as
+   negated membership. NULL stays UNKNOWN; NaN does not equal numeric candidates
+   or satisfy either range comparison. PipeSQL keeps its documented ordered
+   demand. Existing prefix-NOT literal results and independent nullable-set model
+   remain controls. No new runtime owner is needed.
+2. Implemented local negation in the existing parser. Focused membership,
+   Boolean demand/model, legacy scan, forced replay, physical mutation and
+   exact/one-byte-short preparation checks pass. The old NOT IN rejection is
+   replaced by positive results and retained malformed/unsupported controls.
+   Warnings-denied all-target Clippy and maintenance pass. One new demand test
+   initially omitted its referenced id from SELECT; its corrected projection
+   passes. No runtime representation or allocation owner changed.
+3. Language and test/tool navigation are updated, including a runnable exclusion
+   example. Matching frozen full macOS/GNU/Linux gates and fresh tutorial runs
+   remain pending, followed by input/discovery reconciliation, concise evidence,
+   owned-output cleanup and the final local checkpoint.
 
 Monitor resources with at most two Cargo jobs. Compile examples after platform
 Rust builds; reduce Docker CPU quota if host memory pressure warrants it.

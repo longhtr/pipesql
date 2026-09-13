@@ -8,6 +8,11 @@ fn literal_membership_preserves_duplicates_null_and_negation() {
         ("id IN (1, 3, 1)", vec![1, 3]),
         ("id IN (NULL, 1, 3, NULL)", vec![1, 3]),
         ("NOT id IN (1, 3)", vec![0, 2]),
+        ("id NOT IN (1, 3, 1)", vec![0, 2]),
+        ("NOT id NOT IN (1, 3)", vec![1, 3]),
+        ("id NOT IN (1, NULL, 3)", vec![]),
+        ("NOT id NOT IN (1, NULL, 3)", vec![1, 3]),
+        ("id NOT IN (1, 3) AND id=2 OR id=1", vec![1, 2]),
         ("NOT id IN (1, NULL, 3)", vec![]),
         ("id IN (NULL)", vec![]),
         ("NOT id IN (NULL)", vec![]),
@@ -30,6 +35,11 @@ fn membership_checks_types_and_composes_with_producers() {
         ("NOT i IN (7)", vec![0, 3]),
         ("n IN (0, -0.0)", vec![1]),
         ("NOT n IN (0)", vec![2, 3]),
+        ("n NOT IN (0, -0.0)", vec![2, 3]),
+        ("n NOT IN (0, NULL)", vec![]),
+        ("i NOT IN (7)", vec![0, 3]),
+        ("s NOT IN ('')", vec![0, 3]),
+        ("d NOT IN (DATE '1970-01-02')", vec![0, 1, 2]),
         ("NOT n IN (0, NULL)", vec![]),
         ("s IN ('é', '', 'é')", vec![2, 3]),
         ("NOT s IN ('')", vec![0, 3]),
@@ -63,7 +73,15 @@ fn membership_checks_types_and_composes_with_producers() {
         "id IN (1 2)",
         "id IN (1",
         "id IN (1))",
-        "id NOT IN (1)",
+        "id NOT NOT IN (1)",
+        "id NOT = 1",
+        "id NOT IS NULL",
+        "id NOT",
+        "id NOT IN ()",
+        "id NOT IN (1, )",
+        "id NOT IN (i)",
+        "id NOT IN (FROM facts |> SELECT id)",
+        "id >= 0 OR s NOT IN (1)",
         "id IN UNNEST (1)",
         "id IN (FROM facts |> SELECT id)",
         "id IN (i)",
@@ -158,7 +176,7 @@ fn membership_matches_independent_nullable_set_model() {
         ("0, 7", vec![Some(0), Some(7)]),
         ("NULL", vec![None]),
     ] {
-        for form in 0..6 {
+        for form in 0..8 {
             let left = format!("a IN ({list})");
             let expression = match form {
                 0 => left,
@@ -167,6 +185,8 @@ fn membership_matches_independent_nullable_set_model() {
                 3 => format!("{left} OR b IN (7)"),
                 4 => format!("NOT ({left} AND b IN (7))"),
                 5 => format!("NOT ({left} OR b IN (7))"),
+                6 => format!("a NOT IN ({list})"),
+                7 => format!("NOT a NOT IN ({list})"),
                 _ => unreachable!(),
             };
             let expected: Vec<_> = (0..9)
@@ -175,7 +195,8 @@ fn membership_matches_independent_nullable_set_model() {
                     let b = member(values[row % 3], &[Some(7)]);
                     let truth = match form {
                         0 => a,
-                        1 => a.map(|v| !v),
+                        1 | 6 => a.map(|v| !v),
+                        7 => a,
                         2 => and(a, b),
                         3 => or(a, b),
                         4 => and(a, b).map(|v| !v),
@@ -220,6 +241,8 @@ fn membership_preserves_conditional_demand_and_release() {
     }
     for predicate in [
         "bad IN (0) OR id IN (2)",
+        "bad NOT IN (0) OR id IN (2)",
+        "i NOT IN (0, NULL) OR bad NOT IN (0)",
         "NOT (i IN (0, NULL) AND bad IN (0))",
     ] {
         let sql = format!(
@@ -252,6 +275,18 @@ fn membership_preserves_conditional_demand_and_release() {
 #[test]
 fn membership_retains_stage_bounds_cancellation_and_early_drop() {
     let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let negated_limit = format!(
+        "FROM facts |> SELECT id |> WHERE id NOT IN ({})",
+        ["0"; 15].join(", ")
+    );
+    query(&db, &negated_limit, integers(&[1, 2, 3]));
+    assert!(matches!(
+        db.prepare(&format!(
+            "FROM facts |> SELECT id |> WHERE id NOT IN ({})",
+            ["0"; 16].join(", ")
+        )),
+        Err(Error::Parse { .. })
+    ));
     let at_limit = format!(
         "FROM facts |> SELECT id |> WHERE id IN ({})",
         ["0"; 15].join(", ")
@@ -264,7 +299,7 @@ fn membership_retains_stage_bounds_cancellation_and_early_drop() {
     assert!(matches!(db.prepare(&over_limit), Err(Error::Parse { .. })));
     let baseline = db.reserved_memory_bytes();
     let prepared = db
-        .prepare("FROM facts |> WHERE id IN (NULL, 1, 3) |> ORDER BY id |> SELECT id")
+        .prepare("FROM facts |> WHERE id NOT IN (0, 2) |> ORDER BY id |> SELECT id")
         .unwrap();
     let parked = db.reserved_memory_bytes();
     for cancel_after in [0, 1] {
