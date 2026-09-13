@@ -44,6 +44,27 @@ example compilation with both platforms' Rust builds in future qualification.
 Owned outputs are removed. Publication and the broader qualifications below
 remain unresolved.
 
+## Active: infix negated membership and ranges
+
+Add `name NOT IN (...)` and `name NOT BETWEEN lower AND upper` to the existing
+bounded column/literal profile. The parser currently accepts only prefix Boolean
+NOT for these operations; its membership OR and range AND already use the shared
+forward decisions. Conventional spellings make exclusion filters easier to read.
+
+1. Pin semantics at the existing GoogleSQL revision, including NULL, NaN,
+   precedence and demanded errors. Check independent prefix-NOT outcomes before
+   changing normalization; reassess if the spellings need another runtime owner.
+2. Extend the existing parser with local negation. Preserve literal typing,
+   source spans, normalized stage limits and independent plan validation. Add
+   explicit public results, malformed forms and exact/short boundary controls.
+3. Update the language contract and relevant learning/test navigation. Run focused
+   checks and matching frozen full macOS/GNU/Linux gates, reconcile discovery and
+   inputs, retain concise evidence, remove owned outputs and commit locally.
+
+Monitor resources with at most two Cargo jobs. Compile examples after platform
+Rust builds; reduce Docker CPU quota if host memory pressure warrants it.
+Publication restrictions and broader qualification limits remain unchanged.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
