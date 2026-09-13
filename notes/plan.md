@@ -25,6 +25,28 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
+## Active: natural logarithms for analytical scales
+
+Add one-argument LN through the existing numeric parser, binder, validators,
+batch scratch and demand cursor. This supports log transforms of positive
+measurements without a new expression representation, allocation owner or format.
+Semantic research and owner tracing have a 30-minute budget; reassess if the
+pinned cases cannot establish the exceptional-value or precision contract.
+
+The cheapest falsifiers are finite zero/negative domain cases, negative infinity,
+NULL payloads, and independently rounded high-precision logarithms near one and
+at binary64 extremes. The pinned compliance cases and kernel specify NaN for
+negative infinity, resolving the reference prose's broader nonpositive-error
+wording. Preserve input NaN bits explicitly; finite results use the native
+logarithm with no cross-platform bit-identity or correct-rounding promise.
+
+Complete public composition and demanded-error spans, exact/short admission,
+cancellation, forced replay, allocation/native campaigns and a runnable sales
+log-transform tutorial. Run complete sequential frozen macOS and GNU arm64 Linux
+gates, then sequential fresh examples. Reconcile manifests and discovery, record
+scoped evidence, clean owned outputs and commit locally. Broader qualifications
+and publication restrictions remain unchanged.
+
 ## Completed: numeric rounding for analytical buckets
 
 `2096d2f` adds FLOOR, CEIL and CEILING through the existing unary scalar path.
