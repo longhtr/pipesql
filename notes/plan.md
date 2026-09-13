@@ -54,6 +54,25 @@ Matching frozen 24-stage full gates pass sequentially, preserving the narrow joi
 wide-set and other semantic, allocation and native controls. Input manifests and
 discovery agree; owned outputs are removed. Broader qualifications remain unresolved.
 
+## Active: nearest-integer rounding for analytical buckets
+
+Add one-argument numeric ROUND through the existing scalar path so queries can
+choose nearest-integer buckets as well as the current floor/ceiling buckets.
+ROUND is currently absent from the parser and accepted language manifest.
+
+1. Bound initial semantic research and tracing to 30 minutes. Check the pinned
+   GoogleSQL signatures and kernels for result type, integer conversion order,
+   halfway values, NULL, signed zero and nonfinite inputs before implementation.
+   Decimal-position and rounding-mode arguments remain outside this milestone.
+2. Extend existing parser, validation and demand evaluation with literal boundary
+   oracles. Preserve stored-value composition, spans, cancellation/replay, admission
+   and cleanup through existing tests and campaigns. Avoid a new expression layer.
+3. Update the language contract and a runnable learning example. Run focused
+   checks and matching frozen macOS/GNU/Linux full gates sequentially with resource
+   monitoring, then fresh example runs after both Rust stages. Reconcile inputs
+   and discovery, retain concise evidence, remove owned outputs and commit locally.
+   Publication and broader qualification restrictions remain unchanged.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
