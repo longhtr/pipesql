@@ -24,15 +24,37 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: numeric division for analytical ratios
+## Current: SAFE_DIVIDE for nullable analytical ratios
 
-`2263930` adds numeric division with DOUBLE results, explicit zero-denominator
-errors and the existing bounded expression stack. Both complete 24-stage gates
-pass on identical frozen macOS and GNU arm64 Linux inputs, and the ratio example
-runs on fresh databases on both platforms. The
-[division record](evidence.md#numeric-division) identifies preserved semantics,
-resource and failure coverage. Owned outputs are removed and changes are
-committed locally. Publication remains unresolved.
+Numeric division is complete at `2263930`; the
+[division record](evidence.md#numeric-division) identifies verified semantics,
+resources and failure coverage. Add SAFE_DIVIDE so a ratio can retain its row and
+produce NULL when division itself encounters zero or finite overflow. Argument
+errors must remain visible. Other scalar functions, integer DIV, NUMERIC types
+and generic safe-error modes remain outside this milestone.
+
+1. Pin signatures, NULL, zero, overflow, nonfinite results and argument-error
+   handling at the language owner's upstream revision. Reassess after 45 minutes
+   if authoritative evidence cannot resolve a case; leave disputed forms unsupported.
+2. Extend the existing bounded expression parser and numeric program for two
+   arguments. Track nullable DOUBLE results through validation and demand without
+   adding an allocation owner. Preserve argument evaluation and source spans.
+3. Cover nesting, mixed types, malformed arity/types/programs, NULL, signed zero,
+   underflow, nonfinite values, composition, exact/short admission, cancellation,
+   replay and cleanup with independent results and negative controls. Extend
+   existing public failure callers where consequential.
+4. Add a runnable ratio example with missing denominators and update contract,
+   learning and test/tool maps. Run focused checks and both complete frozen gates,
+   reconcile discovery/manifests/receipts, record evidence, remove owned outputs
+   and commit locally under the publication restrictions.
+
+Initial navigation identifies the bounded pending-operator stack in
+`frontend/parser.rs` and the nullability/evaluation owners in `scalar.rs`.
+Pinned upstream
+[safe division fixtures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_math.cc)
+convert division's out-of-range outcomes to NULL. Signature and argument-error
+handling still need reconciliation before implementation. SAFE_DIVIDE remains
+unsupported in the current public language contract.
 
 ## Next engineering priorities
 
