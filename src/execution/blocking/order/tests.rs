@@ -127,6 +127,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
         "FROM facts |> EXTEND v/2 AS ratio |> WHERE ratio>=0 |> ORDER BY k DESC,v ASC |> SELECT v";
     const SAFE_QUERY: &str = "FROM facts |> EXTEND SAFE_DIVIDE(v,v-v) AS ratio |> WHERE ratio IS NULL |> ORDER BY k DESC,v ASC |> SELECT v";
     const ABS_QUERY: &str = "FROM facts |> EXTEND ABS(-v) AS magnitude |> WHERE magnitude>=0 |> ORDER BY k DESC,v ASC |> SELECT v";
+    const MOD_QUERY: &str = "FROM facts |> EXTEND MOD(v,3) AS remainder |> WHERE remainder>=0 |> ORDER BY k DESC,v ASC |> SELECT v";
     for sql in [
         QUERY,
         DISTINCT_QUERY,
@@ -135,6 +136,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
         DIVISION_QUERY,
         SAFE_QUERY,
         ABS_QUERY,
+        MOD_QUERY,
     ] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
@@ -159,6 +161,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
                     || sql == DIVISION_QUERY
                     || sql == SAFE_QUERY
                     || sql == ABS_QUERY
+                    || sql == MOD_QUERY
                 {
                     (0..90)
                         .rev()

@@ -107,6 +107,7 @@ pub(super) enum ParsedOp {
     Multiply,
     Divide,
     SafeDivide,
+    Mod,
     Negate,
     Abs,
 }
@@ -139,12 +140,27 @@ impl ParsedExpression {
 }
 
 #[derive(Clone, Copy)]
+enum BinaryCall {
+    SafeDivide,
+    Mod,
+}
+
+impl BinaryCall {
+    fn parsed(self) -> ParsedOp {
+        match self {
+            Self::SafeDivide => ParsedOp::SafeDivide,
+            Self::Mod => ParsedOp::Mod,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 enum PendingOp {
     Paren,
     // Call boundaries keep argument commas inside this frame. Closing the
     // second argument emits one binary instruction without recursive parsing.
-    SafeDivideFirst,
-    SafeDivideSecond,
+    FirstArgument(BinaryCall),
+    SecondArgument(BinaryCall),
     Abs,
     Unary,
     Binary(Kind),
@@ -153,7 +169,7 @@ enum PendingOp {
 impl PendingOp {
     fn precedence(self) -> u8 {
         match self {
-            Self::Paren | Self::SafeDivideFirst | Self::SafeDivideSecond | Self::Abs => 0,
+            Self::Paren | Self::FirstArgument(_) | Self::SecondArgument(_) | Self::Abs => 0,
             Self::Binary(Kind::Star | Kind::Slash) => 2,
             Self::Binary(_) => 1,
             Self::Unary => 3,
@@ -563,7 +579,9 @@ impl Parser<'_> {
                         operand = false;
                     }
                     Kind::Identifier
-                        if (self.is_word("SAFE_DIVIDE") || self.is_word("ABS"))
+                        if (self.is_word("SAFE_DIVIDE")
+                            || self.is_word("ABS")
+                            || self.is_word("MOD"))
                             && self
                                 .tokens
                                 .values
@@ -578,8 +596,10 @@ impl Parser<'_> {
                         }
                         let call = if self.is_word("ABS") {
                             PendingOp::Abs
+                        } else if self.is_word("MOD") {
+                            PendingOp::FirstArgument(BinaryCall::Mod)
                         } else {
-                            PendingOp::SafeDivideFirst
+                            PendingOp::FirstArgument(BinaryCall::SafeDivide)
                         };
                         self.take(Kind::Identifier)?;
                         self.take(Kind::LeftParen)?;
@@ -655,13 +675,15 @@ impl Parser<'_> {
                         depth -= 1;
                         expression.push(pending[depth].parsed(), at)?;
                     }
-                    if depth == 0 || !matches!(pending[depth - 1], PendingOp::SafeDivideFirst) {
+                    let Some(PendingOp::FirstArgument(call)) =
+                        depth.checked_sub(1).map(|index| pending[index])
+                    else {
                         return Err(Error::Parse {
                             message: "unexpected comma in scalar expression",
                             span: at,
                         });
-                    }
-                    pending[depth - 1] = PendingOp::SafeDivideSecond;
+                    };
+                    pending[depth - 1] = PendingOp::SecondArgument(call);
                     self.take(Kind::Comma)?;
                     operand = true;
                 }
@@ -673,13 +695,13 @@ impl Parser<'_> {
                     assert!(depth != 0);
                     depth -= 1;
                     match pending[depth] {
-                        PendingOp::SafeDivideFirst => {
+                        PendingOp::FirstArgument(_) => {
                             return Err(Error::Parse {
-                                message: "SAFE_DIVIDE requires two arguments",
+                                message: "binary scalar call requires two arguments",
                                 span: at,
                             });
                         }
-                        PendingOp::SafeDivideSecond => expression.push(ParsedOp::SafeDivide, at)?,
+                        PendingOp::SecondArgument(call) => expression.push(call.parsed(), at)?,
                         PendingOp::Abs => expression.push(ParsedOp::Abs, at)?,
                         PendingOp::Paren => (),
                         _ => unreachable!("scalar parenthesis boundary"),

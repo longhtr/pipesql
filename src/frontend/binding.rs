@@ -433,6 +433,7 @@ fn bind_expression(
             ParsedOp::Multiply => Op::Multiply,
             ParsedOp::Divide => Op::Divide,
             ParsedOp::SafeDivide => Op::SafeDivide,
+            ParsedOp::Mod => Op::Mod,
             ParsedOp::Negate => Op::Negate,
             ParsedOp::Abs => Op::Abs,
             ParsedOp::Empty
@@ -455,7 +456,12 @@ fn bind_expression(
             count += 1;
         }
     }
-    expression.data_type = expression.infer(&inputs[..count])?;
+    expression.data_type = expression
+        .infer(&inputs[..count])
+        .map_err(|failure| match failure {
+            crate::scalar::InferenceFailure::Program(message) => Error::Corrupt(message),
+            crate::scalar::InferenceFailure::Arguments(message) => bind_error(message, parsed.span),
+        })?;
     Ok(expression)
 }
 

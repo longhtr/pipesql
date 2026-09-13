@@ -682,32 +682,34 @@ fn public_division_preserves_precedence_types_and_demand() {
 fn public_division_zero_failure_releases_owners_and_keeps_source_span() {
     let (_directory, db) = join_fixture();
     let baseline = db.reserved_memory_bytes();
-    let sql = "# 雪\nFROM facts |> SELECT v/(k-1) AS ratio";
-    let prepared = db.prepare(sql).unwrap();
-    let cancel = CancellationToken::new();
-    let mut result = db.execute(&prepared, &cancel).unwrap();
-    let mut failed = false;
-    for _ in 0..100_000 {
-        match result.step() {
-            QueryStep::Progress | QueryStep::Rows(_) => (),
-            QueryStep::Failed(pipesql::Error::DivisionByZero { span }) => {
-                assert_eq!(&sql[span.start()..span.end()], "v/(k-1)");
-                failed = true;
-                break;
+    for expression in ["v/(k-1)", "MOD(v,k-1)", "SAFE_DIVIDE(MOD(v,k-1),0)"] {
+        let sql = format!("# 雪\nFROM facts |> SELECT {expression} AS ratio");
+        let prepared = db.prepare(&sql).unwrap();
+        let cancel = CancellationToken::new();
+        let mut result = db.execute(&prepared, &cancel).unwrap();
+        let mut failed = false;
+        for _ in 0..100_000 {
+            match result.step() {
+                QueryStep::Progress | QueryStep::Rows(_) => (),
+                QueryStep::Failed(pipesql::Error::DivisionByZero { span }) => {
+                    assert_eq!(&sql[span.start()..span.end()], expression);
+                    failed = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("{error}"),
+                QueryStep::Finished => panic!("missing zero-denominator error"),
             }
-            QueryStep::Failed(error) => panic!("{error}"),
-            QueryStep::Finished => panic!("missing zero-denominator error"),
         }
+        assert!(failed);
+        assert!(matches!(
+            result.step(),
+            QueryStep::Failed(pipesql::Error::DivisionByZero { .. })
+        ));
+        drop(result);
+        drop(prepared);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
     }
-    assert!(failed);
-    assert!(matches!(
-        result.step(),
-        QueryStep::Failed(pipesql::Error::DivisionByZero { .. })
-    ));
-    drop(result);
-    drop(prepared);
-    assert_eq!(db.reserved_memory_bytes(), baseline);
-    assert_eq!(db.reserved_temp_bytes(), 0);
     query(
         &db,
         "FROM facts |> SELECT v/2 AS ratio |> ORDER BY ratio",
@@ -770,6 +772,7 @@ fn public_division_cancellation_and_early_drop_release_owners() {
         "FROM facts |> SELECT v/2 AS ratio |> ORDER BY ratio",
         "FROM facts |> SELECT SAFE_DIVIDE(v,k-1) AS ratio |> ORDER BY ratio",
         "FROM facts |> SELECT ABS(v-25) AS deviation |> ORDER BY deviation",
+        "FROM facts |> SELECT MOD(v,3) AS remainder |> ORDER BY remainder",
     ] {
         let prepared = db.prepare(sql).unwrap();
         let admitted = db.reserved_memory_bytes();
@@ -1052,4 +1055,141 @@ fn public_abs_composes_without_demanding_unused_failures() {
             vec![Cell::Integer(15), Cell::Integer(4)],
         ],
     );
+}
+
+#[test]
+fn public_mod_preserves_signed_results_nulls_and_binding_errors() {
+    let (_directory, db) = join_fixture();
+    for (expression, expected) in [
+        ("MOD(5,3)", 2),
+        ("MOD(-5,3)", -2),
+        ("MOD(5,-3)", 2),
+        ("MOD(-5,-3)", -2),
+        ("MOD(-9223372036854775808,-1)", 0),
+        ("MOD(-9223372036854775808,3)", -2),
+        ("MOD(9223372036854775807,3)", 1),
+        ("MOD(ABS(-17),MOD(9,5))", 1),
+        ("1+MOD(8,3)*2", 5),
+    ] {
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT 1 |> SELECT {expression} AS remainder"),
+            integers(&[expected]),
+        );
+    }
+    query(
+        &db,
+        "FROM facts |> WHERE k IS NULL |> SELECT MOD(k,0) AS remainder",
+        vec![vec![Cell::Null]],
+    );
+    query(
+        &db,
+        "FROM facts |> WHERE k IS NULL |> SELECT MOD(1,k) AS remainder",
+        vec![vec![Cell::Null]],
+    );
+    let baseline = db.reserved_memory_bytes();
+    for expression in [
+        "MOD()",
+        "MOD(1)",
+        "MOD(1,2,3)",
+        "MOD(,2)",
+        "MOD(1,)",
+        "MOD((1,2),3)",
+        "MOD('x',2)",
+        "MOD(DATE '1970-01-01',2)",
+    ] {
+        assert!(
+            db.prepare(&format!("FROM facts |> SELECT {expression} AS remainder"))
+                .is_err(),
+            "{expression}"
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    for expression in [
+        "MOD(1.0,2)",
+        "MOD(1,2.0)",
+        "MOD(1/2,2)",
+        "MOD(SAFE_DIVIDE(1,0),2)",
+    ] {
+        let sql = format!("FROM facts |> SELECT {expression} AS remainder");
+        let Err(Error::Bind { span, .. }) = db.prepare(&sql) else {
+            panic!("expected binding error: {sql}")
+        };
+        assert_eq!(&sql[span.start()..span.end()], expression);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+}
+
+#[test]
+fn public_mod_composes_and_preserves_argument_demand() {
+    let (_directory, db) = join_fixture();
+    for sql in [
+        "FROM facts |> SELECT v AS MOD |> SELECT MOD |> ORDER BY MOD",
+        "FROM facts |> EXTEND MOD(v,0) AS unused |> DROP unused |> SELECT v |> ORDER BY v",
+        "FROM facts |> SELECT v,MOD(v,0) AS unused |> SELECT v |> ORDER BY v",
+    ] {
+        query(&db, sql, integers(&[10, 20, 30, 40]));
+    }
+    query(
+        &db,
+        "FROM facts |> SELECT MOD(v,0) AS unused |> LIMIT 0",
+        vec![],
+    );
+    query(
+        &db,
+        "FROM facts |> EXTEND MOD(v,k-1) AS remainder |> WHERE k=1 OR remainder=0 |> SELECT k |> ORDER BY k",
+        integers(&[1, 1, 2]),
+    );
+    query(
+        &db,
+        "FROM facts |> WHERE v>MOD(35,20) |> SELECT v |> ORDER BY v |> LIMIT MOD(5,3)",
+        integers(&[20, 30]),
+    );
+    for sql in [
+        "FROM facts |> SET v=MOD(v,3) |> SELECT v |> ORDER BY v",
+        "FROM (FROM facts |> SELECT MOD(v,3) AS v) AS input |> SELECT v |> ORDER BY v",
+    ] {
+        query(&db, sql, integers(&[0, 1, 1, 2]));
+    }
+    query(
+        &db,
+        "FROM facts |> SELECT MOD(v,3) AS v |> UNION DISTINCT (FROM facts |> SELECT MOD(v,3) AS v) |> ORDER BY v",
+        integers(&[0, 1, 2]),
+    );
+    query(
+        &db,
+        "FROM facts |> AGGREGATE SUM(MOD(v,3)) AS total,COUNT(MOD(k,2)) AS present",
+        vec![vec![Cell::Integer(4), Cell::Integer(3)]],
+    );
+    query(
+        &db,
+        "FROM facts |> EXTEND MOD(v,3) AS remainder |> AGGREGATE COUNT(*) AS n GROUP AND ORDER BY remainder",
+        vec![
+            vec![Cell::Integer(0), Cell::Integer(1)],
+            vec![Cell::Integer(1), Cell::Integer(2)],
+            vec![Cell::Integer(2), Cell::Integer(1)],
+        ],
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT MOD(v,3) AS remainder,COUNT(*) OVER () AS n |> ORDER BY remainder",
+        vec![
+            vec![Cell::Integer(0), Cell::Integer(4)],
+            vec![Cell::Integer(1), Cell::Integer(4)],
+            vec![Cell::Integer(1), Cell::Integer(4)],
+            vec![Cell::Integer(2), Cell::Integer(4)],
+        ],
+    );
+    failure(
+        &db,
+        "FROM facts |> SELECT MOD(9223372036854775807+1,0) AS remainder",
+        "addition",
+        "MOD(9223372036854775807+1,0)",
+    );
+    let prepared = db
+        .prepare("FROM facts |> SELECT MOD(k,3) AS remainder")
+        .unwrap();
+    let output = prepared.result_column(0).unwrap();
+    assert_eq!(output.data_type, DataType::Int64);
+    assert!(output.nullable);
 }

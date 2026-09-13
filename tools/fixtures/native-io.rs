@@ -32,7 +32,7 @@ fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
     };
     let queries = std::iter::once((sql, Value::Double(if derived { 120.0 } else { 60.0 })))
         .chain(derived.then_some((
-            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total",
+            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(MOD(n,4)) AS total",
             Value::Int64(9),
         )))
         .chain(derived.then_some((

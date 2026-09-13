@@ -203,6 +203,26 @@ operation. Earlier integer expressions still use checked arithmetic. Each lane's
 validity is checked before dividing, so a NULL operand produces NULL and a
 non-NULL zero denominator reports a source-spanned error.
 
+## Group amounts by remainder
+
+Run [remainder.sql](../examples/remainder.sql) against the same sales table:
+
+```sh
+target/release/pipesql query --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/remainder.sql" \
+  --memory-limit-bytes 4000000 --temp-limit-bytes 2000000
+```
+
+The decoded rows are NULL/1/NULL, 0/2/30 and 5/1/5 for remainder, n and total.
+Require three rows, `status=queried` and successful process exit. The amounts
+10 and 20 share remainder zero; amount 5 has remainder five. A missing amount
+retains its own NULL group. `COUNT(*)` counts that row while SUM remains NULL.
+
+The [numeric evaluator](../src/scalar.rs) computes the remainder in the existing
+INT64 lane. The [grouping owner](../src/execution/aggregation/grouping.rs) then
+consumes that ordinary computed column. MOD keeps a negative dividend's sign;
+it does not turn negative inputs into positive bucket numbers.
+
 ## Measure deviations from a reference amount
 
 Run [deviation.sql](../examples/deviation.sql) against the same sales table:

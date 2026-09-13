@@ -47,14 +47,29 @@ platform or physical-memory qualification claim.
    discovery and manifests, record concise evidence, remove owned outputs and
    commit locally under the publication restrictions.
 
-DOUBLE MOD, NUMERIC types and other new scalar calls remain outside this
-milestone. The pinned
-[signature](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/common/builtin_function_internal_3.cc#L2430)
-accepts two INT64 arguments and returns INT64. The
-[primitive](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/arithmetics.h#L369)
-rejects zero and returns zero for divisor minus one before the native remainder
-operation, avoiding the minimum-integer trap. Compliance fixtures and NULL
-handling still need review before implementation; no MOD source change is retained.
+The [language owner](../docs/language.md) now pins the INT64 signature, signed
+and extreme fixtures, zero/minimum-integer handling and NULL evaluation at the
+existing immutable GoogleSQL revision. MOD shares bounded two-argument parser
+frames with SAFE_DIVIDE and uses the existing INT64 lane. Inference distinguishes
+user argument-type failures from malformed internal programs; binding retains
+source spans while independent validation rejects both invalid forms.
+
+Five focused MOD tests pass, covering signed extremes, NULL validity words and
+reuse, malformed programs/calls, integer-only binding, identity mutations,
+15/16-call bounds and public composition. Retained zero-divisor/argument-error
+spans, terminal failure, cancellation/early drop, exact/short admission and forced
+grouping replay pass. All-target Clippy and maintenance pass. Catalog allocation
+controls retain count two while demanding exact oddness above 2^53; their census
+is 983 at both pathname lengths, below the unchanged 1,000 ceiling. Full refusal
+sweeps remain required. Native I/O retains total nine while evaluating MOD.
+
+The documented remainder example passes on a fresh macOS sales database with
+three expected groups, NULLs, schema and successful completion. Its initial
+reserved alias was corrected to `n`. The implementation and maps are ready for
+frozen verification. Both full gates, GNU/Linux example execution, final discovery,
+manifests/receipts, evidence, cleanup and local commits remain. DOUBLE MOD, NUMERIC
+types and other new scalar calls remain outside this milestone. No publication
+is authorized.
 
 ## Next engineering priorities
 

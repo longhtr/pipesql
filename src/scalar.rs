@@ -31,6 +31,14 @@ impl ArithmeticFailure {
     }
 }
 
+// Binding reports an unsupported argument type at the expression's source span.
+// Independent validation treats either failure as a malformed internal program.
+#[derive(Debug)]
+pub(crate) enum InferenceFailure {
+    Program(&'static str),
+    Arguments(&'static str),
+}
+
 // Numeric kernels borrow one bounded batch. Identities travel with payloads;
 // storage ordinals and the order of these inputs are not expression identities.
 pub(crate) const MAX_ROWS: usize = 256;
@@ -136,6 +144,7 @@ pub(crate) enum Op {
     Multiply,
     Divide,
     SafeDivide,
+    Mod,
     Negate,
     Abs,
 }
@@ -160,14 +169,14 @@ impl Expression {
         })
     }
 
-    pub(crate) fn infer(&self, visible: &[SemanticColumn]) -> Result<DataType, Error> {
+    pub(crate) fn infer(&self, visible: &[SemanticColumn]) -> Result<DataType, InferenceFailure> {
         if self.len == 0
             || usize::from(self.len) > MAX_OPS
             || self.ops[usize::from(self.len)..]
                 .iter()
                 .any(|op| *op != Op::Empty)
         {
-            return Err(Error::Corrupt("invalid scalar program extent"));
+            return Err(InferenceFailure::Program("invalid scalar program extent"));
         }
         let mut types = [DataType::Int64; MAX_OPS];
         let mut depth = 0;
@@ -177,28 +186,35 @@ impl Expression {
                     if !matches!(column.data_type(), DataType::Int64 | DataType::Double)
                         || !visible.contains(&column)
                     {
-                        return Err(Error::Corrupt("invalid scalar input identity or type"));
+                        return Err(InferenceFailure::Program(
+                            "invalid scalar input identity or type",
+                        ));
                     }
                     column.data_type()
                 }
                 Op::Integer(_) => DataType::Int64,
                 Op::Double(bits) => {
                     if !f64::from_bits(bits).is_finite() {
-                        return Err(Error::Corrupt("nonfinite scalar literal"));
+                        return Err(InferenceFailure::Program("nonfinite scalar literal"));
                     }
                     DataType::Double
                 }
                 Op::Negate | Op::Abs => {
                     if depth == 0 {
-                        return Err(Error::Corrupt("scalar unary stack underflow"));
+                        return Err(InferenceFailure::Program("scalar unary stack underflow"));
                     }
                     continue;
                 }
-                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide => {
+                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide | Op::Mod => {
                     if depth < 2 {
-                        return Err(Error::Corrupt("scalar binary stack underflow"));
+                        return Err(InferenceFailure::Program("scalar binary stack underflow"));
                     }
                     depth -= 1;
+                    if *op == Op::Mod
+                        && (types[depth - 1] != DataType::Int64 || types[depth] != DataType::Int64)
+                    {
+                        return Err(InferenceFailure::Arguments("MOD requires INT64 arguments"));
+                    }
                     types[depth - 1] = if matches!(op, Op::Divide | Op::SafeDivide)
                         || types[depth - 1] == DataType::Double
                         || types[depth] == DataType::Double
@@ -209,19 +225,26 @@ impl Expression {
                     };
                     continue;
                 }
-                Op::Empty => return Err(Error::Corrupt("empty scalar operation")),
+                Op::Empty => return Err(InferenceFailure::Program("empty scalar operation")),
             };
             types[depth] = ty;
             depth += 1;
         }
         if depth != 1 {
-            return Err(Error::Corrupt("scalar program does not produce one value"));
+            return Err(InferenceFailure::Program(
+                "scalar program does not produce one value",
+            ));
         }
         Ok(types[0])
     }
 
     pub(crate) fn validate(&self, visible: &[SemanticColumn]) -> Result<(), Error> {
-        if self.infer(visible)? != self.data_type {
+        let inferred = self.infer(visible).map_err(|failure| match failure {
+            InferenceFailure::Program(message) | InferenceFailure::Arguments(message) => {
+                Error::Corrupt(message)
+            }
+        })?;
+        if inferred != self.data_type {
             return Err(Error::Corrupt("scalar result type disagrees"));
         }
         Ok(())
@@ -234,7 +257,7 @@ impl Expression {
         for op in &self.ops[..usize::from(self.len)] {
             match op {
                 Op::Column(_) | Op::Integer(_) | Op::Double(_) => depth += 1,
-                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide => {
+                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide | Op::Mod => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
                 }
                 Op::Negate | Op::Abs => (),
@@ -362,7 +385,7 @@ impl Expression {
                         _ => unreachable!("validated numeric operand"),
                     }
                 }
-                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide => {
+                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide | Op::Mod => {
                     depth -= 1;
                     let (left, right) = scratch.split_at_mut(depth * rows);
                     let left = &mut left[(depth - 1) * rows..];
@@ -446,6 +469,13 @@ fn integer_binary(op: Op, left: i64, right: i64) -> Result<i64, ArithmeticFailur
         Op::Add => left.checked_add(right).ok_or(ArithmeticFailure::Add),
         Op::Subtract => left.checked_sub(right).ok_or(ArithmeticFailure::Subtract),
         Op::Multiply => left.checked_mul(right).ok_or(ArithmeticFailure::Multiply),
+        Op::Mod => {
+            if right == 0 {
+                return Err(ArithmeticFailure::DivideByZero);
+            }
+            // INT64::MIN % -1 traps in native arithmetic, but its remainder is zero.
+            Ok(if right == -1 { 0 } else { left % right })
+        }
         _ => unreachable!("binary operation"),
     }
 }
@@ -510,6 +540,77 @@ mod tests {
             let output = self.evaluate_batch(&inputs, 0..rows, scratch)?;
             assert_eq!(output.valid, [u64::MAX; VALID_WORDS]);
             Ok(output.values)
+        }
+    }
+
+    #[test]
+    fn mod_preserves_signed_extremes_and_rejects_invalid_types() {
+        for (left, right, expected) in [
+            (5, 3, 2),
+            (-5, 3, -2),
+            (5, -3, 2),
+            (-5, -3, -2),
+            (i64::MIN, -1, 0),
+            (i64::MIN, 3, -2),
+            (i64::MAX, 3, 1),
+            (i64::MIN, i64::MIN, 0),
+            (i64::MAX, i64::MIN, i64::MAX),
+        ] {
+            let mut expression = Expression::EMPTY;
+            expression.ops[..3].copy_from_slice(&[Op::Integer(left), Op::Integer(right), Op::Mod]);
+            expression.len = 3;
+            expression.data_type = DataType::Int64;
+            expression.validate(&[]).unwrap();
+            assert!(
+                matches!(expression.evaluate_constant(), Ok(Number::Integer(value)) if value == expected)
+            );
+            expression.ops[1] = Op::Integer(0);
+            assert!(matches!(
+                expression.evaluate_constant(),
+                Err(ArithmeticFailure::DivideByZero)
+            ));
+            expression.ops[1] = Op::Double(3.0_f64.to_bits());
+            assert!(matches!(expression.validate(&[]), Err(Error::Corrupt(_))));
+            expression.ops[1] = Op::Mod;
+            expression.ops[2] = Op::Empty;
+            expression.len = 2;
+            assert!(expression.validate(&[]).is_err());
+        }
+    }
+
+    #[test]
+    fn mod_null_lanes_skip_zero_divisors_across_words_and_reuse() {
+        let left = SemanticColumn::new(51, DataType::Int64, true);
+        let right = SemanticColumn::new(52, DataType::Int64, false);
+        let values = [-5; 130];
+        let mut divisors = [0; 130];
+        divisors[65] = 3;
+        divisors[129] = -3;
+        let valid = [0, 2, 2];
+        let inputs = [
+            Some(NumericInput::new(left, NumericValues::Int64(&values), Some(&valid)).unwrap()),
+            Some(NumericInput::new(right, NumericValues::Int64(&divisors), None).unwrap()),
+        ];
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[Op::Column(left), Op::Column(right), Op::Mod]);
+        expression.len = 3;
+        expression.data_type = DataType::Int64;
+        expression.validate(&[left, right]).unwrap();
+        let mut scratch = [0; MAX_OPS * 130];
+        for range in [0..130, 63..130, 64..66, 129..130, 0..130] {
+            let output = expression
+                .evaluate_batch(&inputs, range.clone(), &mut scratch)
+                .unwrap();
+            for (lane, row) in range.enumerate() {
+                assert_eq!(
+                    output.value(lane).map(integer),
+                    if row == 65 || row == 129 {
+                        Some(-2)
+                    } else {
+                        None
+                    }
+                );
+            }
         }
     }
 

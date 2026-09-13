@@ -124,7 +124,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
         ],
     );
     let cancel = CancellationToken::new();
-    for variant in 0..14 {
+    for variant in 0..15 {
         let joined = matches!(variant, 0 | 2 | 6);
         let sql = if joined {
             "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> AGGREGATE SUM(l.n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY l.k"
@@ -167,6 +167,9 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
             }
             13 => {
                 "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(ABS(n-5)) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
+            }
+            14 => {
+                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(MOD(n,3)) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
             }
             _ => sql,
         };
@@ -245,6 +248,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
                 9 => [[1, 1, 1], [2, 2, 1]],
                 12 => [[1, 7, 0], [2, 7, 1]],
                 13 => [[1, 3, 2], [2, 2, 1]],
+                14 => [[1, 1, 2], [2, 1, 1]],
                 _ => unreachable!(),
             }
         );

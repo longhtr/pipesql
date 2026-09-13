@@ -1732,3 +1732,38 @@ fn abs_preserves_type_nullability_and_bounded_program_admission() {
         "FROM facts |> SELECT k,ABS(n-5) AS deviation |> WHERE deviation>ABS(-2) |> AGGREGATE AVG(deviation) AS mean GROUP BY k",
     );
 }
+
+#[test]
+fn mod_keeps_integer_identity_and_bounded_call_admission() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    let mut query = db
+        .prepare("FROM lineitem |> SELECT MOD(5,3) AS remainder")
+        .unwrap();
+    let output = query.result_column(0).unwrap();
+    assert_eq!(
+        (output.data_type, output.nullable),
+        (DataType::Int64, false)
+    );
+    let column = query.plan.computed[0].column;
+    query.plan.computed[0].column =
+        SemanticColumn::new(column.identity().value(), DataType::Double, false);
+    assert!(validate(&query.plan).is_err());
+    drop(query);
+    for depth in [15, 16] {
+        let expression = format!("{}1{}", "MOD(".repeat(depth), ",3)".repeat(depth));
+        let result = db.prepare(&format!(
+            "FROM lineitem |> SELECT {expression} AS remainder"
+        ));
+        if depth == 15 {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(Error::Parse { .. })));
+        }
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k,MOD(n,3) AS remainder |> WHERE remainder>MOD(3,3) |> AGGREGATE SUM(remainder) AS total GROUP BY k",
+    );
+}
