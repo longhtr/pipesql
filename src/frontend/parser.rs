@@ -118,6 +118,7 @@ pub(super) enum ParsedOp {
     IntegerDivide,
     Negate,
     Abs,
+    Sign,
 }
 
 #[derive(Clone, Copy)]
@@ -176,6 +177,7 @@ enum PendingOp {
     FirstArgument(BinaryCall),
     SecondArgument(BinaryCall),
     Abs,
+    Sign,
     Unary,
     Binary(Kind),
 }
@@ -183,7 +185,11 @@ enum PendingOp {
 impl PendingOp {
     fn precedence(self) -> u8 {
         match self {
-            Self::Paren | Self::FirstArgument(_) | Self::SecondArgument(_) | Self::Abs => 0,
+            Self::Paren
+            | Self::FirstArgument(_)
+            | Self::SecondArgument(_)
+            | Self::Abs
+            | Self::Sign => 0,
             Self::Binary(Kind::Star | Kind::Slash) => 2,
             Self::Binary(_) => 1,
             Self::Unary => 3,
@@ -612,6 +618,7 @@ impl Parser<'_> {
                             || self.is_word("NULLIF")
                             || self.is_word("SAFE_DIVIDE")
                             || self.is_word("ABS")
+                            || self.is_word("SIGN")
                             || self.is_word("MOD")
                             || self.is_word("DIV"))
                             && self
@@ -632,6 +639,8 @@ impl Parser<'_> {
                             PendingOp::FirstArgument(BinaryCall::NullIf)
                         } else if self.is_word("ABS") {
                             PendingOp::Abs
+                        } else if self.is_word("SIGN") {
+                            PendingOp::Sign
                         } else if self.is_word("DIV") {
                             PendingOp::FirstArgument(BinaryCall::IntegerDivide)
                         } else if self.is_word("MOD") {
@@ -741,6 +750,7 @@ impl Parser<'_> {
                         }
                         PendingOp::SecondArgument(call) => expression.push(call.parsed(), at)?,
                         PendingOp::Abs => expression.push(ParsedOp::Abs, at)?,
+                        PendingOp::Sign => expression.push(ParsedOp::Sign, at)?,
                         PendingOp::Paren => (),
                         _ => unreachable!("scalar parenthesis boundary"),
                     }

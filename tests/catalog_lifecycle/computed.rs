@@ -1464,3 +1464,75 @@ fn public_coalesce_selects_defaults_and_skips_unused_dependencies() {
     }
     query(&db, "FROM facts |> AGGREGATE COUNT(*) AS n", integers(&[4]));
 }
+
+#[test]
+fn public_sign_preserves_types_classification_and_demand() {
+    let (_directory, db) = join_fixture();
+    for (expression, expected) in [
+        ("SIGN(-9223372036854775808)", Cell::Integer(-1)),
+        ("SIGN(9223372036854775807)", Cell::Integer(1)),
+        ("SIGN(-9007199254740993)", Cell::Integer(-1)),
+        ("SIGN(0)", Cell::Integer(0)),
+        ("SIGN(-0.0)", Cell::Number(0.0_f64.to_bits())),
+        ("SIGN(-0.25)", Cell::Number((-1.0_f64).to_bits())),
+        ("SIGN(0.25)", Cell::Number(1.0_f64.to_bits())),
+        ("SIGN(SAFE_DIVIDE(1, 0))", Cell::Null),
+        (
+            "SIGN(COALESCE(1, ABS(-9223372036854775808)))",
+            Cell::Integer(1),
+        ),
+        (
+            "COALESCE(1, SIGN(ABS(-9223372036854775808)))",
+            Cell::Integer(1),
+        ),
+        ("SIGN(-SIGN(-3))+2", Cell::Integer(3)),
+    ] {
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT SIGN(1) |> SELECT {expression} AS direction"),
+            vec![vec![expected]],
+        );
+    }
+    query(
+        &db,
+        "FROM facts |> EXTEND SIGN(v-25) AS direction |> AGGREGATE SUM(v) AS total, COUNT(*) AS n GROUP AND ORDER BY direction",
+        vec![
+            vec![Cell::Integer(-1), Cell::Integer(30), Cell::Integer(2)],
+            vec![Cell::Integer(1), Cell::Integer(70), Cell::Integer(2)],
+        ],
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT SIGN(k-1) AS direction |> ORDER BY direction",
+        vec![
+            vec![Cell::Null],
+            vec![Cell::Integer(0)],
+            vec![Cell::Integer(0)],
+            vec![Cell::Integer(1)],
+        ],
+    );
+    failure(
+        &db,
+        "FROM facts |> SELECT SIGN(ABS(-9223372036854775808)) AS direction",
+        "absolute value",
+        "SIGN(ABS(-9223372036854775808))",
+    );
+    let baseline = db.reserved_memory_bytes();
+    for expression in [
+        "SIGN()",
+        "SIGN(1, 2)",
+        "SIGN(, 1)",
+        "SIGN(1, )",
+        "SIGN('x')",
+        "SIGN(DATE '1970-01-01')",
+        "SIGN(NULL)",
+        "SIGN(missing)",
+    ] {
+        assert!(
+            db.prepare(&format!("FROM facts |> SELECT {expression} AS direction"))
+                .is_err(),
+            "{expression}"
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+}

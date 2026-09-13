@@ -49,7 +49,7 @@ impl<'a> Evaluation<'a> {
                     };
                     depth += 1;
                 }
-                Op::Abs | Op::Negate => (),
+                Op::Abs | Op::Negate | Op::Sign => (),
                 Op::Empty => unreachable!("validated scalar extent"),
                 _ => {
                     depth -= 1;
@@ -81,17 +81,21 @@ impl<'a> Evaluation<'a> {
                 Op::Column(column) => return Ok(Some(column)),
                 Op::Integer(value) => self.push(Number::Integer(value)),
                 Op::Double(bits) => self.push(Number::Double(f64::from_bits(bits))),
-                Op::Abs | Op::Negate => {
+                Op::Abs | Op::Negate | Op::Sign => {
                     self.values[self.depth - 1] = match self.values[self.depth - 1] {
                         Number::Null => Number::Null,
-                        Number::Integer(value) => Number::Integer(if op == Op::Abs {
-                            value.checked_abs().ok_or(ArithmeticFailure::Abs)?
-                        } else {
-                            value.checked_neg().ok_or(ArithmeticFailure::Negate)?
+                        Number::Integer(value) => Number::Integer(match op {
+                            Op::Abs => value.checked_abs().ok_or(ArithmeticFailure::Abs)?,
+                            Op::Negate => value.checked_neg().ok_or(ArithmeticFailure::Negate)?,
+                            Op::Sign => value.signum(),
+                            _ => unreachable!("unary numeric operation"),
                         }),
-                        Number::Double(value) => {
-                            Number::Double(if op == Op::Abs { value.abs() } else { -value })
-                        }
+                        Number::Double(value) => Number::Double(match op {
+                            Op::Abs => value.abs(),
+                            Op::Negate => -value,
+                            Op::Sign => sign_double(value),
+                            _ => unreachable!("unary numeric operation"),
+                        }),
                     };
                 }
                 Op::Empty => unreachable!("validated scalar extent"),

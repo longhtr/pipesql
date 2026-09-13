@@ -153,6 +153,19 @@ pub(crate) enum Op {
     IntegerDivide,
     Negate,
     Abs,
+    Sign,
+}
+
+// SIGN classifies both zeros as positive zero. Preserve a NaN's payload rather
+// than interpreting its sign bit as a negative or positive measurement.
+fn sign_double(value: f64) -> f64 {
+    if value == 0.0 {
+        0.0
+    } else if value.is_nan() {
+        value
+    } else {
+        value.signum()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -187,7 +200,7 @@ impl Expression {
                     nullable[depth] = false;
                     depth += 1;
                 }
-                Op::Negate | Op::Abs => {
+                Op::Negate | Op::Abs | Op::Sign => {
                     if depth == 0 {
                         return true;
                     }
@@ -245,7 +258,7 @@ impl Expression {
                     }
                     DataType::Double
                 }
-                Op::Negate | Op::Abs => {
+                Op::Negate | Op::Abs | Op::Sign => {
                     if depth == 0 {
                         return Err(InferenceFailure::Program("scalar unary stack underflow"));
                     }
@@ -326,7 +339,7 @@ impl Expression {
                 | Op::IntegerDivide => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
                 }
-                Op::Negate | Op::Abs => (),
+                Op::Negate | Op::Abs | Op::Sign => (),
                 Op::Empty => unreachable!("validated scalar program"),
             }
             peak = peak.max(depth);
@@ -424,7 +437,7 @@ impl Expression {
                     valid[depth] = [u64::MAX; VALID_WORDS];
                     depth += 1;
                 }
-                Op::Negate | Op::Abs => {
+                Op::Negate | Op::Abs | Op::Sign => {
                     let values = &mut scratch[(depth - 1) * rows..depth * rows];
                     match types[depth - 1] {
                         DataType::Int64 => {
@@ -433,10 +446,13 @@ impl Expression {
                                     continue;
                                 }
                                 let input = integer(*value);
-                                let output = if *op == Op::Abs {
-                                    input.checked_abs().ok_or(ArithmeticFailure::Abs)?
-                                } else {
-                                    input.checked_neg().ok_or(ArithmeticFailure::Negate)?
+                                let output = match *op {
+                                    Op::Abs => input.checked_abs().ok_or(ArithmeticFailure::Abs)?,
+                                    Op::Negate => {
+                                        input.checked_neg().ok_or(ArithmeticFailure::Negate)?
+                                    }
+                                    Op::Sign => input.signum(),
+                                    _ => unreachable!("unary numeric operation"),
                                 };
                                 *value = integer_bits(output);
                             }
@@ -447,8 +463,13 @@ impl Expression {
                                     continue;
                                 }
                                 let input = f64::from_bits(*value);
-                                *value =
-                                    if *op == Op::Abs { input.abs() } else { -input }.to_bits();
+                                *value = match *op {
+                                    Op::Abs => input.abs(),
+                                    Op::Negate => -input,
+                                    Op::Sign => sign_double(input),
+                                    _ => unreachable!("unary numeric operation"),
+                                }
+                                .to_bits();
                             }
                         }
                         _ => unreachable!("validated numeric operand"),
@@ -586,6 +607,112 @@ fn double_binary(op: Op, left: f64, right: f64) -> Result<f64, ArithmeticFailure
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn sign_preserves_numeric_types_nulls_and_exceptional_values() {
+        let integers = [
+            i64::MIN,
+            -9_007_199_254_740_993,
+            -1,
+            0,
+            1,
+            i64::MAX,
+            i64::MIN,
+        ];
+        let doubles = [
+            f64::NEG_INFINITY,
+            -f64::MAX,
+            -f64::from_bits(1),
+            -0.0,
+            0.0,
+            f64::from_bits(1),
+            f64::MAX,
+            f64::INFINITY,
+            f64::from_bits(0xfff8_0000_0000_0042),
+            1.0,
+        ];
+        let integer_expected = [
+            Some(-1_i64),
+            Some(-1),
+            Some(-1),
+            Some(0),
+            Some(1),
+            Some(1),
+            None,
+        ]
+        .map(|v| v.map(integer_bits));
+        let double_expected = [
+            Some(-1.0_f64),
+            Some(-1.0),
+            Some(-1.0),
+            Some(0.0),
+            Some(0.0),
+            Some(1.0),
+            Some(1.0),
+            Some(1.0),
+            Some(f64::from_bits(0xfff8_0000_0000_0042)),
+            None,
+        ]
+        .map(|v| v.map(f64::to_bits));
+        for (kind, values, validity, expected) in [
+            (
+                DataType::Int64,
+                NumericValues::Int64(&integers),
+                63_u64,
+                integer_expected.as_slice(),
+            ),
+            (
+                DataType::Double,
+                NumericValues::Double(&doubles),
+                511_u64,
+                double_expected.as_slice(),
+            ),
+        ] {
+            let column = SemanticColumn::new(42, kind, true);
+            let mut expression = Expression::EMPTY;
+            expression.ops[..2].copy_from_slice(&[Op::Column(column), Op::Sign]);
+            expression.len = 2;
+            expression.data_type = kind;
+            expression.validate(&[column]).unwrap();
+            assert!(expression.nullable());
+            let validity = [validity];
+            let inputs = [Some(
+                NumericInput::new(column, values, Some(&validity)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 10];
+            for range in [0..expected.len(), 3..expected.len(), 0..expected.len()] {
+                let output = expression
+                    .evaluate_batch(&inputs, range.clone(), &mut scratch)
+                    .unwrap();
+                for (lane, row) in range.enumerate() {
+                    assert_eq!(output.value(lane), expected[row]);
+                }
+            }
+            for (row, expected) in expected.iter().enumerate() {
+                let mut cursor = Evaluation::new(&expression);
+                assert_eq!(cursor.next_column().unwrap(), Some(column));
+                let input = if validity[0] & (1 << row) == 0 {
+                    Number::Null
+                } else if kind == DataType::Int64 {
+                    Number::Integer(integers[row])
+                } else {
+                    Number::Double(doubles[row])
+                };
+                cursor.supply(input).unwrap();
+                assert_eq!(cursor.next_column().unwrap(), None);
+                let actual = match cursor.value() {
+                    Number::Null => None,
+                    Number::Integer(value) => Some(integer_bits(value)),
+                    Number::Double(value) => Some(value.to_bits()),
+                };
+                assert_eq!(actual, *expected);
+            }
+            expression.ops[0] = Op::Sign;
+            expression.ops[1] = Op::Empty;
+            expression.len = 1;
+            assert!(expression.validate(&[]).is_err());
+        }
+    }
     use super::*;
 
     impl Expression {

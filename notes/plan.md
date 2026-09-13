@@ -48,13 +48,17 @@ Add `SIGN(value)` for INT64 and DOUBLE expressions so queries can classify and
 group negative, zero and positive measurements. The current scalar manifest does
 not admit SIGN; the existing unary numeric program is the candidate owner.
 
-1. Pin result types, NULL, signed zero, NaN, infinities and integer extremes at
-   the existing GoogleSQL revision. Timebox uncertain semantic research to 30
-   minutes; preserve unsupported forms if a rule remains disputed.
-2. Extend the existing parser, typed scalar program and independent validators.
-   Preserve demand, spans, numeric exactness and resource/stack bounds. Add
-   independent scalar/public outcomes, rejected forms, composition and
-   exact/short admission checks; use existing failure and replay owners.
+1. Semantics pinned before implementation at GoogleSQL
+   `0e7d7073ed0360be587a5efa0fa78abeee00f17b`: mathematical_functions.md SIGN
+   preserves the numeric type and NULL; math.h Sign maps either zero to positive
+   zero, returns NaN unchanged, and maps nonzero values (including infinities and
+   integer extremes) to signed one. Research resolved within 30 minutes.
+2. The parser, typed scalar program and row/batch evaluators now implement SIGN.
+   Independent scalar bit expectations and a public classification/demand test
+   pass, as does warnings-denied all-target Clippy. No buffer or allocation owner
+   was added. Complete stored-value public coverage, type/NULLability mutation,
+   operation/stack and exact/short admission checks, then affected shared
+   cancellation, failure and replay cases.
 3. Add a runnable classification example and update current contracts/navigation.
    Run focused checks and matching frozen macOS/GNU/Linux full gates, reconcile
    coverage and inputs, retain concise evidence, clean owned outputs and commit.
