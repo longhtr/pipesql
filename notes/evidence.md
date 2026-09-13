@@ -7,43 +7,93 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 690 frozen inputs retained in `2d41739`
+Both complete 24-stage gates verify the 694 frozen inputs retained in `5146e72`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
-with read-only source. Input manifests match before/after and across gates:
-`5ed9054ba12166782a615e93c2d88a2fe6191e965e7d6d24534027ae1a9220c6`.
-Only the two notes files change during finalization. The other 688 inputs retain
-fingerprint `963a85a7d3a4d6e4eb855428296717a95856bc9cd3da805c365c0b67370b93bc`;
-all inputs remain tracked. Final documentation verification passes 557 local links.
+with an exact Git source export. Input manifests match before/after and across
+gates: `29259d9fd0105a5371c9c4b73888cb07fb04b8d7044b70bdb2c41d93a962187e`.
+Only the two notes files change during finalization. The other 692 inputs retain
+fingerprint `3d7807d693a7a00355611560e5f8787f23571146f618faadf2725cb8f18c7f86`;
+all inputs remain tracked. Final documentation verification passes 569 local links.
 
-Each platform executes 583 ordinary Rust tests, including all 113 public catalog
-tests and all six new COALESCE tests, plus the separate lease subprocess.
-No ordinary test is ignored or filtered; the selected lease child reports six
-filtered siblings. Maintenance passes 96 tooling tests, 44 independent codec
-fixtures and 554 local links. Independent aggregate semantics pass 24 cases and
-composition passes 311 cases. The Rust join corpus separately checks 648 cases.
-Both allocation campaigns retain positions 0–984 and healthy control 985 at each
-pathname length; the ordered lists were reconciled explicitly. The caller ceiling
-remains 1,000. Native initialization passes 30 macOS and 80 GNU/Linux cells;
-synchronization passes 241 cells and I/O passes 1,196 cells per platform.
-Interruption checks retain 76 append cuts, 46 recovery cuts and 249 independent
-graph checks. All 43 graph cases, two oracle controls, three CLI limits, genesis,
-lease contention and independent column order pass. Linux retains the two Darwin
-ACL exclusions.
+Each platform executes 595 ordinary Rust tests, including all 119 public catalog
+tests and all six EXCEPT tests, plus the separate lease subprocess. No ordinary
+test is ignored or filtered; the selected lease child reports six filtered
+siblings. Maintenance passes 96 tooling tests, 44 independent codec fixtures and 566
+local links.
+Independent aggregate semantics pass 24 cases and composition passes 311 cases.
+Both allocation campaigns retain positions 0–1055 and healthy control 1056 at
+each pathname length; all four ordered lists and EXCEPT phase outcomes were
+reconciled explicitly. The caller's work ceiling is 1,100. Native initialization
+passes 30 macOS and 80 GNU/Linux cells; synchronization passes 241 cells and I/O
+passes 1,346 cells per platform. Interruption retains 76 append cuts, 46 recovery
+cuts and 249 independent graph checks. All 43 graph cases, two oracle controls,
+three CLI limits, genesis, lease contention and independent column order pass.
+Linux retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,967.956 seconds
-on macOS and 1,339.058 seconds on Linux. Receipt SHA-256 values are respectively
-`3eab12523340abcfeacb40649576c88a31f04c3819c7e505bb849edcc477c282` and
-`776593688463c0186df4e95f2481798dae78ed2a69e36e823b8fb228cf08ffbc`.
-Overlapping verification runs are not performance benchmarks. Resource sampling
-observed normal/warning host memory pressure and 1,650–2,093 MiB of swap use.
-A compiler burst used about nine container CPU cores and 1.76 GiB; the container
-was subsequently capped at two CPUs. Container network traffic remained about
-2 kB. These host observations do not qualify engine physical-memory bounds.
-Owned gate/control outputs, source exports, logs, example databases and containers
-are removed. The existing verification image and toolchains remain. Windows,
-broader durability, physical-memory and sanitizer qualification remain unfinished.
+Both receipts have zero finalization errors. Stage times total 1,877.347 seconds
+on macOS and 1,033.884 seconds on Linux. Receipt SHA-256 values are respectively
+`cf30969d611eb4cc953f8efd078b7754d1c2518067bc03f8a4398ba6c65319d5` and
+`84fa41c08b6e56a9da8db1603733beedd632d8b27bf61881523513671d0a553e`.
+Overlapping verification runs are not performance benchmarks. Ninety-seven
+resource samples observed normal/warning host memory pressure and 1,374.75–1,914.94
+MiB of swap use; pressure was normal at completion. Cargo used two build jobs.
+Docker was capped at two CPUs, then one after warning pressure; its sampled
+memory peaked at about 1.342 GiB and network traffic remained below 2 kB.
+Sampled free disk space stayed above 185 GiB.
+These host observations do not qualify engine physical-memory bounds. Owned
+gate/control outputs, source exports, logs, example databases, monitors and the
+verification container are removed. The existing verification image and toolchains
+remain. Windows, broader durability, physical-memory and sanitizer qualification
+remain unfinished.
+
+### Positional EXCEPT DISTINCT
+
+`950b5fe` and `5146e72` add bounded positional EXCEPT DISTINCT. The
+[language contract](../docs/language.md#except-distinct) pins syntax, positional
+typing, NULL/NaN/signed-zero equivalence, left association and complete-input
+error demand at the existing immutable GoogleSQL revision. Research resolved
+these choices within the 30-minute bound. Left-only output NULLability follows
+from set difference; representative choice and output order remain unspecified.
+Unsupported ALL, name matching, coercion and correlated forms remain rejected.
+
+The positional descriptor now serves UNION and EXCEPT with independent semantic
+and physical validators. The
+[controller](../src/execution/blocking/except.rs) consumes both branches through
+the existing scheduler, sorts their complete rows, and emits surviving left
+representatives. Each input keeps its own nullable record layout. Inline mappings
+preserve repeated semantic positions even when child payload slots are shared.
+The existing checked runs and cursors supply bounded spill and replay; there is
+no second frontend, hash index or persistent-format change.
+
+Six public tests include 50 independently materialized standard-library set
+comparisons, complete rows, empty and nested inputs, NULLs in every scalar type,
+exact INT64 values, floating-point bits, pinned snapshots and demanded errors
+with original spans. Seven selected preparation/validator tests retain mutation
+controls and exact/one-byte-short admission. Four owner tests reconcile actual
+allocation capacities, execution admission, replay, both readers' corruption and
+I/O failures, all 17 cancellation phases, temporary refusal and healthy reuse.
+The 180/176-row fixture crosses the independently traced 174-record first-run
+boundary on both sides; missing a spill phase fails the test. The shared fixture
+retains all seven join-owner checks. Grouping fallback proves retained EXCEPT
+replay, and ordinary/bounded-thread width scenarios preserve UNION coverage while
+adding EXCEPT without enlarging stack limits.
+
+The allocation sequence adds 71 observed allocations, changing its healthy
+census from 985 to 1,056; its work ceiling increases to 1,100 without changing
+engine admission allowances. Native I/O retains a literal result of 90 after
+excluding matching complete rows. Public ownership checks also consume 256 typed
+EXCEPT survivors through window count. At returned steps their minimum observed
+usable-byte headroom is 11,600 bytes on macOS and 12,984 bytes on GNU/Linux;
+complete rows, release and the existing attribution/row negative controls pass.
+These observations do not bound unobserved transient allocations or RSS.
+
+The [missing-regions query](../examples/missing-regions.sql) and its
+[tutorial](../docs/getting-started.md) run from fresh native databases on both
+platforms. Both return nullable INT64 `region`, rows NULL and 3, `row_count=2`
+and successful completion. The NULL survives because the dimension has no NULL
+identifier. The earlier dedicated COALESCE full checkpoint remains in `424edd1`.
 
 ### Numeric COALESCE defaults
 
@@ -78,8 +128,8 @@ The first two gates were deliberately interrupted for the input repair. A later
 GNU gate rejected the stale ownership equation; its matching macOS run was
 stopped before changing inputs. One subsequent GNU run ended when Docker was
 accidentally stopped, with exit 137 and OOMKilled=false. None of these incomplete
-runs supplies complete-gate evidence; the matching full passes above supersede
-them. An initial native fixture used a function on WHERE's unsupported left side;
+runs supplies complete-gate evidence; the dedicated matching full passes in
+`424edd1` supersede them. An initial native fixture used a function on WHERE's unsupported left side;
 explicit projection repaired the fixture without widening the language profile.
 
 The [default-region query](../examples/default-region.sql) and its
@@ -426,7 +476,8 @@ a relative path and an existing database path reject on macOS; the existing-path
 control also runs on GNU/Linux. The macOS existing database's file hashes remain
 unchanged after rejection. Linux executes the documented directory cleanup.
 
-Maintenance passes 96 tooling tests and 44 independent codec fixtures. Final
+Maintenance passes 96 tooling tests, 44 independent codec fixtures and 566
+local links. Final
 formatting and documentation checks pass, including 509 local links. Engine
 sources are unchanged; full engine gates were not repeated for this example and
 walkthrough. The source example matches the file executed on both platforms;
