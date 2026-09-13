@@ -7,37 +7,69 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 680 frozen inputs retained in `b1a9570`
+Both complete 24-stage gates verify the 681 frozen inputs retained in `2263930`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with read-only source. Input manifests match before/after and across gates:
-`d2f0a3849cb99a040dbfcc03a1421cad0f213de88f0a7dfaebb8132d869c251a`.
-Only the two notes files change during finalization. The other 678 inputs retain
-fingerprint `6d1d5510e873c9416b269744a23c4ecf6c98d5468ecaec6efeba4b020fb734ba`;
-all inputs remain tracked. Final documentation verification passes 526 local links.
+`9d5a5804375af9269f4b50312fff89f091622a84c7600a03678a45bc741c7c05`.
+Only the two notes files change during finalization. The other 679 inputs retain
+fingerprint `281c50320febeea53e27dad3fa0af34705054fb18b039dfb96830e1c70cf2f96`;
+all inputs remain tracked. Final documentation verification passes 530 local links.
 
-Each platform executes 544 ordinary Rust tests, including all 97 public catalog
-tests and all five analytic-count cases, plus the separate lease subprocess.
+Each platform executes 552 ordinary Rust tests, including all 101 public catalog
+tests, all five analytic-count cases and all eight division cases, plus the separate lease subprocess.
 No ordinary test is ignored or filtered; the selected lease child reports six
 filtered siblings. Maintenance passes 96 tooling tests, 44 independent codec
-fixtures and 526 local links. Independent aggregate semantics pass 24 cases and
-composition passes 311 cases. Both allocation campaigns retain positions 0–954
-and healthy control 955 at each pathname length; the ordered lists were
+fixtures and 529 local links. Independent aggregate semantics pass 24 cases and
+composition passes 311 cases. Both allocation campaigns retain positions 0–981
+and healthy control 982 at each pathname length; the ordered lists were
 reconciled explicitly. The caller ceiling remains 1,000; no engine allowance increased. Native initialization passes 30 macOS
-and 80 GNU/Linux cells; synchronization passes 241 cells and I/O passes 1,094
+and 80 GNU/Linux cells; synchronization passes 241 cells and I/O passes 1,142
 cells per platform. Interruption checks retain 76 append cuts, 46 recovery cuts
 and 249 independent graph checks. All 43 graph cases and their negative controls
 pass. Linux retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,734.762 seconds
-on macOS and 843.931 seconds on Linux; overlapping verification runs are not
+Both receipts have zero finalization errors. Stage times total 1,756.750 seconds
+on macOS and 853.096 seconds on Linux; overlapping verification runs are not
 performance benchmarks. Receipt SHA-256 values are respectively
-`bab5ea2f4f2a0c8c9dcd6632dccec8744a00cf6b5c144abf16a3c2706cd06980` and
-`9fa49c3fd64fcf443ac8aeaf99a20a6abd7597bbaab42a21c8fba9be34a28ad7`.
+`4f88dbf35f6256ade7814594b5e6fd2a25e853e337c3d69c02af3e5fd890cfdf` and
+`c9eb9b5d37f41d6017af2969928966366724a8367e92f9cc0778c142edcdd89b`.
 Owned gate/control outputs, source exports, logs and containers are removed.
 The existing verification image and toolchains remain. Windows, broader
 durability, physical-memory and sanitizer qualification remain unfinished.
+
+### Numeric division
+
+`2263930` adds division through the existing lexer, precedence parser, binding,
+validated numeric program and lane evaluator. Division returns DOUBLE, including
+for two INT64 inputs; checked integer children run before coercion. NULL lanes
+skip the operation. Both signed-zero denominators raise `DivisionByZero`, even
+with a nonfinite numerator. Finite overflow retains `ArithmeticOverflow`; other
+nonfinite results and underflow follow the pinned arithmetic rules. The
+[language owner](../docs/language.md) links the immutable signatures, coercion
+fixtures, NULL evaluation and implementation used to resolve these decisions.
+No persistent codec or allocation owner changes. Error causes preserve the new
+category and source span without retaining source text or allocating a message.
+
+Eight new tests protect mixed types, precedence, integer-child overflow, NULL,
+signed zero, nonfinite values, underflow, result-type mutation, source spans,
+demand suppression, Boolean short-circuiting, SET, derived inputs, UNION DISTINCT,
+grouped ratios, cancellation, early drop, terminal failure and healthy reuse.
+Preparation and sorted execution exercise exact/one-byte-short admission; refused
+execution performs zero effects. Existing semantic and physical validators,
+independent codec fixtures and allocation attribution remain unchanged.
+
+The catalog refusal caller requires division preparation, execution and stepping;
+its nullable ratio/filter query independently expects count two. Native I/O adds
+a complete division aggregate with literal result 4.5 while retaining previous
+controls. Fixed-buffer diagnostic control and denial modes render both the new
+error and its captured cause. Both complete frozen gates above include these
+checks. The documented ratio example runs against fresh declared sales databases
+on both platforms: required region, nullable DOUBLE mean_amount, north/7.5 and
+south/20.0, exact DOUBLE bits, two rows and successful final status. Division in
+LIMIT still fails its INT64 type requirement; analytic count remains a complete
+projection expression and composes with division through a subsequent stage.
 
 ### Full-partition analytic count
 
