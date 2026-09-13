@@ -7,23 +7,22 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 702 frozen inputs retained in `4d77e98`
+Both complete 24-stage gates verify the 703 frozen inputs retained in `7b03e84`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `01790b2ce1b6c121d3b74c4b9e6101bfc12b072b1ed51ea638ed46533ea47429`.
-Only the two notes files change during finalization. The other 700 inputs retain
-fingerprint `84adb3385a19c640773fb4b81695319cfcf94aa8cdad7af56edecb18e79a98e8`;
+gates: `f2d2eefb927bc9b79ead68023c9f523c3e9aac2349c99976e2ea162681a1bfa8`.
+Only the two notes files change during finalization. The other 701 inputs retain
+fingerprint `86e48df742c406d6910248c8983c24aee5796c145a666b2a9143d5fb6a3579b7`;
 all inputs remain tracked. Final documentation verification passes.
 
-Each platform executes 617 ordinary Rust tests, including all 132 public catalog
-tests, plus the separate lease subprocess. All three public null-safe predicate
-tests, primitive truth tables, semantic and physical mutations, legacy scan
-payloads, forced grouping replay, cancellation and both width/small-stack checks
+Each platform executes 618 ordinary Rust tests, including all 132 public catalog
+tests, plus the separate lease subprocess. The affected membership, Boolean,
+admission, independent physical mutation, legacy scan and forced replay checks
 execute on both platforms. No ordinary test is ignored or filtered; the selected
 lease child reports six filtered siblings. Maintenance passes 96 tooling tests,
-44 independent codec fixtures and 599 local links. Independent aggregate semantics
+44 independent codec fixtures and 606 local links. Independent aggregate semantics
 pass 24 cases and composition passes 311 scenarios. Expected results agree across
 platforms after excluding ambient database paths and stdout digests; these
 digests are not portable semantic hashes.
@@ -37,23 +36,55 @@ independent graph checks. All 43 graph cases, two oracle controls, three CLI
 limits, genesis, lease contention and independent column order pass. Linux
 retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,954.356 seconds
-on macOS and 1,134.421 seconds on Linux. Receipt SHA-256 values are respectively
-`ca032486ad8bd11d109376cca6e625ecfc7e4ae241bd14ea74af3d52d9d2207d` and
-`11bf48e30a1e7bb7be7141db6a99d481b6cbb5ee58851b895c980917c220f3fc`.
-Overlapping verification runs are not performance benchmarks. Sixty-eight
+Both receipts have zero finalization errors. Stage times total 1,929.168 seconds
+on macOS and 1,219.963 seconds on Linux. Receipt SHA-256 values are respectively
+`df19e9b62f0acbb2bc457abdd3b398c2b2f767b95a6896f49badee4cd412fe86` and
+`e2fbedbf774707103836a383417fd27576acc5c280c8925550d3a392bb3f6473`.
+Overlapping verification runs are not performance benchmarks. Sixty-five
 resource samples observed normal/warning host memory pressure on an 8 GiB host,
-with 1,517.25–2,236.62 MiB of swap use. Pressure remained at warning level after
-verification. Cargo used two build jobs; the separate GNU example used one.
-Docker's CPU quota was reduced from two CPUs to one after warning pressure;
-sampled CPU peaked at 203.01% and container memory at 1.974 GiB. Network traffic
-was 1.75 kB received/126 bytes sent. Sampled free disk stayed above 185 GiB.
-Future qualification should avoid overlapping example compilation with both
-platforms' Rust builds. These observations do not qualify engine physical-memory
-bounds. Owned gate and control outputs, source exports, logs, example databases,
-monitors and the verification container are removed. The existing image and
-toolchains remain. Windows, broader durability, physical-memory and sanitizer
-qualification remain unfinished.
+with 1,440.12–2,501.88 MiB of swap use. Pressure was normal at final verification.
+Cargo used at most two build jobs; examples used one job and ran after both
+platform Rust test stages. Docker's CPU quota was reduced from two CPUs to one
+after warning pressure; sampled CPU peaked at 198.29% and container memory at
+1.566 GiB. The container had networking disabled and zero network traffic.
+Sampled free disk stayed above 185 GiB. These observations do not qualify engine
+physical-memory bounds. Owned gate outputs, source exports, logs, example
+databases, monitors and the verification container are removed. The existing
+image and toolchains remain. Windows, broader durability, physical-memory and
+sanitizer qualification remain unfinished.
+
+### Infix negated membership and ranges
+
+`7b03e84` adds `name NOT IN (...)` and `name NOT BETWEEN lower AND upper` with
+one local change in the [Boolean parser](../src/frontend/parser/boolean.rs).
+The [pinned GoogleSQL operators](https://github.com/google/zetasql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/operators.md)
+define their comparison precedence and negation semantics. The parser adds the
+existing NOT syntax node around the complete membership OR or range AND.
+Runtime predicates, forward decisions, literal ownership, validators, admission
+and persistent formats are unchanged. The [language contract](../docs/language.md#literal-list-membership)
+keeps the bounded column/literal profile and PipeSQL's ordered demand guarantees.
+
+The [membership tests](../tests/catalog_lifecycle/membership.rs) retain independent
+nullable-set expectations and add infix and enclosing negation. Literal row-id
+oracles cover all four types, duplicates, NULL candidates, NaN, zero, precedence
+and composed producers. [Range tests](../tests/catalog_lifecycle/boolean.rs) cover
+inclusive and reversed bounds, typed NULL bounds, NaN, enclosing NOT and skipped
+or demanded overflow. The obsolete NOT IN rejection becomes positive coverage;
+empty lists, malformed NOT, column/subquery candidates and incompatible literals
+remain rejected. A new demand test initially omitted id from its SELECT; the
+corrected input projection passes.
+
+Exact and one-byte-short preparation admission, stage limits, physical mutation
+controls, cancellation, early drop, legacy count/payload expectations and forced
+sorted-producer replay pass. Existing allocation and I/O queries exercise nested
+NOT IN and NOT BETWEEN while retaining their independent row/count outcomes and
+failure schedules. No extra runner or runtime representation was introduced.
+
+The fresh [exclusion example](../examples/negated-membership.sql) and
+[tutorial](../docs/getting-started.md#filter-by-membership) return only `south, 20`
+on both platforms. Setup output, query schema, row, count, successful process
+exit and terminal `status=queried` match; the NULL amount is excluded. Example
+builds and databases were removed after these checks.
 
 ### Null-safe column and literal predicates
 

@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `4d77e98` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 617 ordinary Rust tests per platform, 24 independent aggregate
+The complete 24-stage gates for `7b03e84` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 618 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
@@ -25,53 +25,22 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: null-safe column and literal predicates
+## Completed: infix negated membership and ranges
 
-`IS [NOT] DISTINCT FROM` is implemented in `4d77e98` and verified by matching
-complete macOS/GNU/Linux gates. The
-[predicate record](evidence.md#null-safe-column-and-literal-predicates) retains
-pinned semantics, independent typed outcomes, numeric boundaries, snapshots,
-Boolean demand and error spans, validators, admission, legacy scans, width/stack,
-replay and failure campaigns. The fresh example returns `(110, 4)`; ordinary
-inequality returns `(60, 3)` on both platforms. All 617 ordinary Rust tests per
-platform and the retained campaigns pass.
+`NOT IN` and `NOT BETWEEN` are implemented in `7b03e84` through the existing
+Boolean parser and verified by matching complete macOS/GNU/Linux gates. The
+[predicate record](evidence.md#infix-negated-membership-and-ranges) retains pinned
+semantics, independent typed/model outcomes, demand and error checks, validators,
+admission, stage limits, legacy scans, replay and failure campaigns. All 618
+ordinary Rust tests per platform and the retained campaigns pass. The fresh
+tutorial returns only `south, 20` on both platforms.
 
-The prior scalar, set, join, testing/tooling and resource milestones remain
-complete unless a concrete counterexample reopens their affected boundary.
+The prior null-safe, scalar, set, join, testing/tooling and resource milestones
+remain complete unless a concrete counterexample reopens their affected boundary.
 Comma spacing is preserved. Resource monitoring reduced Docker's CPU quota after
-warning pressure; pressure still warned at final verification. Avoid overlapping
-example compilation with both platforms' Rust builds in future qualification.
-Owned outputs are removed. Publication and the broader qualifications below
-remain unresolved.
-
-## Active: infix negated membership and ranges
-
-Add `name NOT IN (...)` and `name NOT BETWEEN lower AND upper` to the existing
-bounded column/literal profile. The parser currently accepts only prefix Boolean
-NOT for these operations; its membership OR and range AND already use the shared
-forward decisions. Conventional spellings make exclusion filters easier to read.
-
-1. Semantics pinned at GoogleSQL `0e7d7073ed0360be587a5efa0fa78abeee00f17b`,
-   operators: comparison precedence, inclusive range comparisons and NOT IN as
-   negated membership. NULL stays UNKNOWN; NaN does not equal numeric candidates
-   or satisfy either range comparison. PipeSQL keeps its documented ordered
-   demand. Existing prefix-NOT literal results and independent nullable-set model
-   remain controls. No new runtime owner is needed.
-2. Implemented local negation in the existing parser. Focused membership,
-   Boolean demand/model, legacy scan, forced replay, physical mutation and
-   exact/one-byte-short preparation checks pass. The old NOT IN rejection is
-   replaced by positive results and retained malformed/unsupported controls.
-   Warnings-denied all-target Clippy and maintenance pass. One new demand test
-   initially omitted its referenced id from SELECT; its corrected projection
-   passes. No runtime representation or allocation owner changed.
-3. Language and test/tool navigation are updated, including a runnable exclusion
-   example. Matching frozen full macOS/GNU/Linux gates and fresh tutorial runs
-   remain pending, followed by input/discovery reconciliation, concise evidence,
-   owned-output cleanup and the final local checkpoint.
-
-Monitor resources with at most two Cargo jobs. Compile examples after platform
-Rust builds; reduce Docker CPU quota if host memory pressure warrants it.
-Publication restrictions and broader qualification limits remain unchanged.
+warning pressure; pressure was normal at final verification. Example compilation
+followed both platforms' Rust tests. Owned outputs are removed. Publication and
+the broader qualifications below remain unresolved.
 
 ## Next engineering priorities
 
