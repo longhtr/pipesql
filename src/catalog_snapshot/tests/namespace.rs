@@ -420,9 +420,15 @@ fn database_open_resolves_catalog_history_and_owns_its_lease() {
         database.resolve_commit(token(6)),
         Err(Error::NotFound)
     ));
+    // Opening and resolving fit this exact budget. Preparation additionally
+    // admits two read paths before allocating catalog scratch or binding names.
     assert!(matches!(
         database.prepare("FROM absent"),
-        Err(Error::Bind { .. })
+        Err(Error::Resource {
+            owner: "query catalog binding",
+            required,
+            ..
+        }) if required == config.memory_limit_bytes() + 8_192
     ));
     assert!(matches!(
         Database::open(&fixture.0, config),
@@ -432,6 +438,13 @@ fn database_open_resolves_catalog_history_and_owns_its_lease() {
     let reopened = Database::open(&fixture.0, config).unwrap();
     assert_eq!(reopened.generation(), 2);
     reopened.close().unwrap();
+    let query_config = crate::Config::new(config.memory_limit_bytes() + 8_192, 1_000_000).unwrap();
+    let database = Database::open(&fixture.0, query_config).unwrap();
+    assert!(matches!(
+        database.prepare("FROM absent"),
+        Err(Error::Bind { .. })
+    ));
+    database.close().unwrap();
     assert_eq!(fixture.selected(), (second, None));
 }
 

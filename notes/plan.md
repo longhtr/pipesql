@@ -41,6 +41,10 @@ two paths overlap the fully allocated scratch buffer. Reserve their existing
 4,096-byte bounds before I/O and release them before binding. Extend the exact
 preparation peak and refusal checks independently; retain the new lifecycle
 observer as the physical counterexample regression.
+The full Rust suite also exposed an opening-budget fixture that expected binding
+to fit the smaller open/resolve minimum. Preserve that independent minimum and
+check preparation refusal there, then require the original unknown-table error
+after reopening with both read paths admitted.
 
 Complete focused checks, matching frozen sequential macOS/GNU arm64 Linux gates,
 discovery and evidence reconciliation, then fresh relevant examples sequentially.
