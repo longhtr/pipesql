@@ -203,6 +203,23 @@ operation. Earlier integer expressions still use checked arithmetic. Each lane's
 validity is checked before dividing, so a NULL operand produces NULL and a
 non-NULL zero denominator reports a source-spanned error.
 
+## Measure deviations from a reference amount
+
+Run [deviation.sql](../examples/deviation.sql) against the same sales table:
+
+```sh
+target/release/pipesql query --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/deviation.sql" \
+  --memory-limit-bytes 4000000 --temp-limit-bytes 2000000
+```
+
+The decoded rows are north/NULL/NULL, north/5/5, north/10/0 and south/20/10.
+Require four rows, `status=queried` and successful process exit. ABS preserves
+the INT64 type of `amount-10`; a missing amount retains a missing deviation.
+The [numeric evaluator](../src/scalar.rs) evaluates subtraction first, then
+changes the same lane in place. An overflowing subtraction still fails before
+ABS, and the absolute value of minimum INT64 also fails because it cannot fit.
+
 ## Keep a ratio when its denominator is missing
 
 Run [safe-ratio.sql](../examples/safe-ratio.sql) against the same sales table:

@@ -13,6 +13,7 @@ pub(crate) enum ArithmeticFailure {
     Divide,
     DivideByZero,
     Negate,
+    Abs,
 }
 
 impl ArithmeticFailure {
@@ -23,6 +24,7 @@ impl ArithmeticFailure {
             Self::Multiply => "multiplication",
             Self::Divide => "division",
             Self::Negate => "negation",
+            Self::Abs => "absolute value",
             Self::DivideByZero => return Error::DivisionByZero { span },
         };
         Error::ArithmeticOverflow { operation, span }
@@ -135,6 +137,7 @@ pub(crate) enum Op {
     Divide,
     SafeDivide,
     Negate,
+    Abs,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -185,7 +188,7 @@ impl Expression {
                     }
                     DataType::Double
                 }
-                Op::Negate => {
+                Op::Negate | Op::Abs => {
                     if depth == 0 {
                         return Err(Error::Corrupt("scalar unary stack underflow"));
                     }
@@ -234,7 +237,7 @@ impl Expression {
                 Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
                 }
-                Op::Negate => (),
+                Op::Negate | Op::Abs => (),
                 Op::Empty => unreachable!("validated scalar program"),
             }
             peak = peak.max(depth);
@@ -329,7 +332,7 @@ impl Expression {
                     valid[depth] = [u64::MAX; VALID_WORDS];
                     depth += 1;
                 }
-                Op::Negate => {
+                Op::Negate | Op::Abs => {
                     let values = &mut scratch[(depth - 1) * rows..depth * rows];
                     match types[depth - 1] {
                         DataType::Int64 => {
@@ -337,11 +340,13 @@ impl Expression {
                                 if valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
                                     continue;
                                 }
-                                *value = integer_bits(
-                                    integer(*value)
-                                        .checked_neg()
-                                        .ok_or(ArithmeticFailure::Negate)?,
-                                );
+                                let input = integer(*value);
+                                let output = if *op == Op::Abs {
+                                    input.checked_abs().ok_or(ArithmeticFailure::Abs)?
+                                } else {
+                                    input.checked_neg().ok_or(ArithmeticFailure::Negate)?
+                                };
+                                *value = integer_bits(output);
                             }
                         }
                         DataType::Double => {
@@ -349,7 +354,9 @@ impl Expression {
                                 if valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
                                     continue;
                                 }
-                                *value = (-f64::from_bits(*value)).to_bits();
+                                let input = f64::from_bits(*value);
+                                *value =
+                                    if *op == Op::Abs { input.abs() } else { -input }.to_bits();
                             }
                         }
                         _ => unreachable!("validated numeric operand"),
@@ -504,6 +511,77 @@ mod tests {
             assert_eq!(output.valid, [u64::MAX; VALID_WORDS]);
             Ok(output.values)
         }
+    }
+
+    #[test]
+    fn abs_preserves_nullable_lanes_and_nonfinite_values() {
+        let id = SemanticColumn::new(41, DataType::Int64, true);
+        let mut values = [i64::MIN; 130];
+        values[65] = -7;
+        values[129] = 9;
+        let valid = [0, 2, 2];
+        let inputs = [Some(
+            NumericInput::new(id, NumericValues::Int64(&values), Some(&valid)).unwrap(),
+        )];
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(id), Op::Abs]);
+        expression.len = 2;
+        expression.data_type = DataType::Int64;
+        expression.validate(&[id]).unwrap();
+        let mut scratch = [0; MAX_OPS * 130];
+        for range in [0..130, 63..130, 64..66, 129..130, 0..130] {
+            let output = expression
+                .evaluate_batch(&inputs, range.clone(), &mut scratch)
+                .unwrap();
+            for (lane, row) in range.enumerate() {
+                assert_eq!(
+                    output.value(lane).map(integer),
+                    match row {
+                        65 => Some(7),
+                        129 => Some(9),
+                        _ => None,
+                    }
+                );
+            }
+        }
+        expression.data_type = DataType::Double;
+        assert!(expression.validate(&[id]).is_err());
+        let id = SemanticColumn::new(42, DataType::Double, false);
+        expression.ops[0] = Op::Column(id);
+        expression.validate(&[id]).unwrap();
+        let values = [
+            -0.0,
+            0.0,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            -f64::MAX,
+            -f64::from_bits(1),
+            f64::NAN,
+        ];
+        let inputs = [Some(
+            NumericInput::new(id, NumericValues::Double(&values), None).unwrap(),
+        )];
+        let output = expression
+            .evaluate_batch(&inputs, 0..7, &mut scratch)
+            .unwrap();
+        for (row, expected) in [
+            0.0,
+            0.0,
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::MAX,
+            f64::from_bits(1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(output.value(row), Some(expected.to_bits()));
+        }
+        assert!(f64::from_bits(output.value(6).unwrap()).is_nan());
+        expression.ops[0] = Op::Abs;
+        expression.ops[1] = Op::Empty;
+        expression.len = 1;
+        assert!(expression.validate(&[]).is_err());
     }
 
     #[test]

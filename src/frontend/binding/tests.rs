@@ -1692,3 +1692,43 @@ fn safe_divide_keeps_nullable_identity_and_bounded_call_programs() {
         "FROM facts |> SELECT k,SAFE_DIVIDE(n,k) AS ratio |> WHERE ratio>SAFE_DIVIDE(1,2) |> AGGREGATE AVG(ratio) AS mean GROUP BY k",
     );
 }
+
+#[test]
+fn abs_preserves_type_nullability_and_bounded_program_admission() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    for (argument, kind, nullable) in [
+        ("1", DataType::Int64, false),
+        ("-1.0", DataType::Double, false),
+        ("SAFE_DIVIDE(1,0)", DataType::Double, true),
+    ] {
+        let mut query = db
+            .prepare(&format!(
+                "FROM lineitem |> SELECT ABS({argument}) AS magnitude"
+            ))
+            .unwrap();
+        let output = query.result_column(0).unwrap();
+        assert_eq!((output.data_type, output.nullable), (kind, nullable));
+        let column = query.plan.computed[0].column;
+        query.plan.computed[0].column =
+            SemanticColumn::new(column.identity().value(), kind, !nullable);
+        assert!(validate(&query.plan).is_err());
+    }
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    for depth in [31, 32] {
+        let expression = format!("{}1{}", "ABS(".repeat(depth), ")".repeat(depth));
+        let result = db.prepare(&format!(
+            "FROM lineitem |> SELECT {expression} AS magnitude"
+        ));
+        if depth == 31 {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(Error::Parse { .. })));
+        }
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k,ABS(n-5) AS deviation |> WHERE deviation>ABS(-2) |> AGGREGATE AVG(deviation) AS mean GROUP BY k",
+    );
+}

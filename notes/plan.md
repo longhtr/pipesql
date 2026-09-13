@@ -48,11 +48,25 @@ this language milestone makes no new platform qualification claim.
    manifests and receipts, record concise evidence, remove owned outputs and
    commit locally under the publication restrictions.
 
-The pinned [ABS implementation](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/math.h#L154)
-uses checked negation for negative integer inputs and `fabs` for DOUBLE.
-The existing unary evaluator is the candidate owner. Signature and compliance
-fixture review remain before implementation; no ABS source change is retained.
-Other scalar calls and NUMERIC types remain outside this milestone.
+The [language owner](../docs/language.md) now pins signatures, minimum-integer
+fixtures, DOUBLE absolute value and NULL evaluation at the existing immutable
+GoogleSQL revision. ABS uses one parser call boundary and one unary instruction,
+preserving type and validity. Its integer overflow reports absolute value;
+argument failures still propagate, including inside SAFE_DIVIDE.
+
+Four focused ABS tests pass, covering scalar lanes and nonfinite inputs,
+binding/type/nullability mutations and program bounds, and public values,
+malformed calls, spans, demand and composition. Retained exact/short sorted
+admission, forced grouping replay and cancellation/early-drop tests pass.
+All-target Clippy and maintenance pass. The documented deviation example runs
+against a fresh macOS sales database with the expected schema, four rows, NULLs
+and successful completion. Catalog allocation controls retain the existing
+census and result; the full refusal sweep is still required.
+
+The implementation and maps are ready for frozen verification. Both complete
+platform gates, GNU/Linux example execution, discovery/manifests/receipts,
+final evidence, cleanup and local commits remain. Other scalar calls and NUMERIC
+types remain outside this milestone. No publication is authorized.
 
 ## Next engineering priorities
 

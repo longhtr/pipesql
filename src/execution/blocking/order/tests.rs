@@ -126,6 +126,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
     const DIVISION_QUERY: &str =
         "FROM facts |> EXTEND v/2 AS ratio |> WHERE ratio>=0 |> ORDER BY k DESC,v ASC |> SELECT v";
     const SAFE_QUERY: &str = "FROM facts |> EXTEND SAFE_DIVIDE(v,v-v) AS ratio |> WHERE ratio IS NULL |> ORDER BY k DESC,v ASC |> SELECT v";
+    const ABS_QUERY: &str = "FROM facts |> EXTEND ABS(-v) AS magnitude |> WHERE magnitude>=0 |> ORDER BY k DESC,v ASC |> SELECT v";
     for sql in [
         QUERY,
         DISTINCT_QUERY,
@@ -133,6 +134,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
         WINDOW_QUERY,
         DIVISION_QUERY,
         SAFE_QUERY,
+        ABS_QUERY,
     ] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
@@ -153,7 +155,10 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
                 assert_eq!(effects.count(), 0);
             } else {
                 let mut result = admitted.unwrap();
-                let expected: Vec<_> = if sql == QUERY || sql == DIVISION_QUERY || sql == SAFE_QUERY
+                let expected: Vec<_> = if sql == QUERY
+                    || sql == DIVISION_QUERY
+                    || sql == SAFE_QUERY
+                    || sql == ABS_QUERY
                 {
                     (0..90)
                         .rev()

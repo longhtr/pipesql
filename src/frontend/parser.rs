@@ -108,6 +108,7 @@ pub(super) enum ParsedOp {
     Divide,
     SafeDivide,
     Negate,
+    Abs,
 }
 
 #[derive(Clone, Copy)]
@@ -144,6 +145,7 @@ enum PendingOp {
     // second argument emits one binary instruction without recursive parsing.
     SafeDivideFirst,
     SafeDivideSecond,
+    Abs,
     Unary,
     Binary(Kind),
 }
@@ -151,7 +153,7 @@ enum PendingOp {
 impl PendingOp {
     fn precedence(self) -> u8 {
         match self {
-            Self::Paren | Self::SafeDivideFirst | Self::SafeDivideSecond => 0,
+            Self::Paren | Self::SafeDivideFirst | Self::SafeDivideSecond | Self::Abs => 0,
             Self::Binary(Kind::Star | Kind::Slash) => 2,
             Self::Binary(_) => 1,
             Self::Unary => 3,
@@ -561,7 +563,7 @@ impl Parser<'_> {
                         operand = false;
                     }
                     Kind::Identifier
-                        if self.is_word("SAFE_DIVIDE")
+                        if (self.is_word("SAFE_DIVIDE") || self.is_word("ABS"))
                             && self
                                 .tokens
                                 .values
@@ -574,9 +576,14 @@ impl Parser<'_> {
                                 span: at,
                             });
                         }
+                        let call = if self.is_word("ABS") {
+                            PendingOp::Abs
+                        } else {
+                            PendingOp::SafeDivideFirst
+                        };
                         self.take(Kind::Identifier)?;
                         self.take(Kind::LeftParen)?;
-                        pending[depth] = PendingOp::SafeDivideFirst;
+                        pending[depth] = call;
                         depth += 1;
                         parentheses += 1;
                     }
@@ -650,7 +657,7 @@ impl Parser<'_> {
                     }
                     if depth == 0 || !matches!(pending[depth - 1], PendingOp::SafeDivideFirst) {
                         return Err(Error::Parse {
-                            message: "SAFE_DIVIDE requires two arguments",
+                            message: "unexpected comma in scalar expression",
                             span: at,
                         });
                     }
@@ -673,6 +680,7 @@ impl Parser<'_> {
                             });
                         }
                         PendingOp::SafeDivideSecond => expression.push(ParsedOp::SafeDivide, at)?,
+                        PendingOp::Abs => expression.push(ParsedOp::Abs, at)?,
                         PendingOp::Paren => (),
                         _ => unreachable!("scalar parenthesis boundary"),
                     }

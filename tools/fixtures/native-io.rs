@@ -36,7 +36,7 @@ fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
             Value::Int64(9),
         )))
         .chain(derived.then_some((
-            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(n/2) AS ratio",
+            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(ABS(-(n/2))) AS ratio",
             Value::Double(4.5),
         )))
         .chain(derived.then_some((

@@ -157,8 +157,9 @@ existing scratch payload. Division uses the same two-input stack transition as
 multiplication and returns DOUBLE in the existing lane. SAFE_DIVIDE uses that
 same transition and the existing validity bitmap for NULL results. Its two
 argument phases occupy the bounded parser stack, without recursion or a separate
-allocation. A folded NULL keeps its numeric type inline. Neither adds an allocation
-owner or temporary storage. Zero-denominator and overflow errors retain inline
+allocation. A folded NULL keeps its numeric type inline. ABS uses the unary
+stack transition and preserves its input type and validity bitmap. These
+operations add no allocation owner or temporary storage. Zero-denominator and overflow errors retain inline
 source spans and release query ownership through the ordinary failure path.
 
 ## Runtime and result admission

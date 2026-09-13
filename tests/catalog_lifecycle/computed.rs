@@ -769,6 +769,7 @@ fn public_division_cancellation_and_early_drop_release_owners() {
     for sql in [
         "FROM facts |> SELECT v/2 AS ratio |> ORDER BY ratio",
         "FROM facts |> SELECT SAFE_DIVIDE(v,k-1) AS ratio |> ORDER BY ratio",
+        "FROM facts |> SELECT ABS(v-25) AS deviation |> ORDER BY deviation",
     ] {
         let prepared = db.prepare(sql).unwrap();
         let admitted = db.reserved_memory_bytes();
@@ -930,6 +931,125 @@ fn public_safe_divide_composes_and_preserves_demand() {
             vec![Cell::Null, Cell::Integer(4)],
             vec![Cell::Null, Cell::Integer(4)],
             vec![Cell::Number(30.0_f64.to_bits()), Cell::Integer(4)],
+        ],
+    );
+}
+
+#[test]
+fn public_abs_preserves_numeric_types_values_and_argument_failures() {
+    let (_directory, db) = join_fixture();
+    for (expression, expected) in [
+        ("ABS(-3)", Cell::Integer(3)),
+        ("ABS(0)", Cell::Integer(0)),
+        ("ABS(-9223372036854775807)", Cell::Integer(i64::MAX)),
+        ("ABS(-3.5)", Cell::Number(3.5_f64.to_bits())),
+        ("ABS(-0.0)", Cell::Number(0.0_f64.to_bits())),
+        ("ABS(-ABS(-3))+2", Cell::Integer(5)),
+        ("ABS(SAFE_DIVIDE(1,0))", Cell::Null),
+        ("SAFE_DIVIDE(ABS(-3),2)", Cell::Number(1.5_f64.to_bits())),
+    ] {
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT 1 |> SELECT {expression} AS magnitude"),
+            vec![vec![expected]],
+        );
+    }
+    query(
+        &db,
+        "FROM facts |> ORDER BY v |> SELECT ABS(k-2) AS distance",
+        vec![
+            vec![Cell::Integer(1)],
+            vec![Cell::Integer(1)],
+            vec![Cell::Integer(0)],
+            vec![Cell::Null],
+        ],
+    );
+    failure(
+        &db,
+        "FROM facts |> SELECT ABS(-9223372036854775808) AS magnitude",
+        "absolute value",
+        "ABS(-9223372036854775808)",
+    );
+    failure(
+        &db,
+        "FROM facts |> SELECT ABS(9223372036854775807+1) AS magnitude",
+        "addition",
+        "ABS(9223372036854775807+1)",
+    );
+    failure(
+        &db,
+        "FROM facts |> SELECT SAFE_DIVIDE(ABS(-9223372036854775808),0) AS magnitude",
+        "absolute value",
+        "SAFE_DIVIDE(ABS(-9223372036854775808),0)",
+    );
+    let baseline = db.reserved_memory_bytes();
+    for expression in [
+        "ABS()",
+        "ABS(1,2)",
+        "ABS(,1)",
+        "ABS(1,)",
+        "ABS('x')",
+        "ABS(DATE '1970-01-01')",
+        "ABS((1,2))",
+    ] {
+        assert!(
+            db.prepare(&format!("FROM facts |> SELECT {expression} AS magnitude"))
+                .is_err(),
+            "{expression}"
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+}
+
+#[test]
+fn public_abs_composes_without_demanding_unused_failures() {
+    let (_directory, db) = join_fixture();
+    for sql in [
+        "FROM facts |> SELECT v AS ABS |> SELECT ABS |> ORDER BY ABS",
+        "FROM facts |> EXTEND ABS(-9223372036854775808) AS unused |> DROP unused |> SELECT v |> ORDER BY v",
+        "FROM facts |> SELECT v,ABS(-9223372036854775808) AS unused |> SELECT v |> ORDER BY v",
+    ] {
+        query(&db, sql, integers(&[10, 20, 30, 40]));
+    }
+    query(
+        &db,
+        "FROM facts |> SELECT ABS(-9223372036854775808) AS unused |> LIMIT 0",
+        vec![],
+    );
+    query(
+        &db,
+        "FROM facts |> EXTEND ABS(v/(k-1)) AS magnitude |> WHERE k=1 OR magnitude>0 |> SELECT k |> ORDER BY k",
+        integers(&[1, 1, 2]),
+    );
+    query(
+        &db,
+        "FROM facts |> WHERE v>ABS(-15) |> SELECT v |> ORDER BY v |> LIMIT ABS(-2)",
+        integers(&[20, 30]),
+    );
+    for sql in [
+        "FROM facts |> SET v=ABS(v-25) |> SELECT v |> ORDER BY v",
+        "FROM (FROM facts |> SELECT ABS(v-25) AS v) AS input |> SELECT v |> ORDER BY v",
+    ] {
+        query(&db, sql, integers(&[5, 5, 15, 15]));
+    }
+    query(
+        &db,
+        "FROM facts |> SELECT ABS(v-25) AS v |> UNION DISTINCT (FROM facts |> SELECT ABS(v-25) AS v) |> ORDER BY v",
+        integers(&[5, 15]),
+    );
+    query(
+        &db,
+        "FROM facts |> AGGREGATE SUM(ABS(v-25)) AS total,COUNT(ABS(k-2)) AS present",
+        vec![vec![Cell::Integer(40), Cell::Integer(3)]],
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT ABS(v-25) AS deviation,COUNT(*) OVER () AS n |> ORDER BY deviation",
+        vec![
+            vec![Cell::Integer(5), Cell::Integer(4)],
+            vec![Cell::Integer(5), Cell::Integer(4)],
+            vec![Cell::Integer(15), Cell::Integer(4)],
+            vec![Cell::Integer(15), Cell::Integer(4)],
         ],
     );
 }

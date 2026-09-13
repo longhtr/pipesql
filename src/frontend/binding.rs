@@ -434,6 +434,7 @@ fn bind_expression(
             ParsedOp::Divide => Op::Divide,
             ParsedOp::SafeDivide => Op::SafeDivide,
             ParsedOp::Negate => Op::Negate,
+            ParsedOp::Abs => Op::Abs,
             ParsedOp::Empty
             | ParsedOp::WindowCount
             | ParsedOp::String(_)
