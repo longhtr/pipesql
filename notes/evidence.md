@@ -7,20 +7,20 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 706 frozen inputs retained in `7c56cf8`
+Both complete 24-stage gates verify the 707 frozen inputs retained in `849f38e`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `c447f873c921a6127aec64840f8625999cee3e8c6c8a399be0e936640b4f56a6`.
-Finalization changes only the two notes files. The other 704 inputs retain
-fingerprint `c5e1d97a6f70d21be62a0de418db04067c1c7b4755e0599d0eea2fa6396dc11e`;
+gates: `a980ddca3932fd69d942aaa045466e61e8532c522ac9962b7bfff8ab306cf2e8`.
+Finalization changes only the two notes files. The other 705 inputs retain
+fingerprint `382eac141ab8e3fc9d19e40f0927ddea884b085abd08dbf00b0091dd8f866412`;
 all manifested inputs are tracked. Final local-link verification passes.
 
-Each platform executes 624 ordinary Rust tests, including all 135 public catalog
+Each platform executes 626 ordinary Rust tests, including all 136 public catalog
 tests, plus the separate lease subprocess. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 642 local links.
+passes 96 tooling tests, 44 independent codec fixtures and 647 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311
 scenarios. Their complete records agree across platforms after excluding ambient
 database paths and composition stdout digests. Those digests are not portable
@@ -36,26 +36,66 @@ limits, genesis, lease contention and independent column order pass. Linux
 retains the two Darwin ACL exclusions.
 
 Both receipts have zero finalization errors. The full gates run sequentially;
-stage times total 1,727.050 seconds on macOS and 500.553 seconds on Linux. Receipt
+stage times total 1,723.410 seconds on macOS and 502.177 seconds on Linux. Receipt
 SHA-256 values are respectively
-`8153e5bdd017a93805521e54e7a14d82669e190c381d67e221cbc3f5658e068d` and
-`790456eabb9a7b5a718369d462e1e86d230db55ccb31ad63930424518a95c27e`.
+`27b7b13b067d2d5e6b53280ab0dd878d8987c34d7ba9e315fbd537154a577102` and
+`e5b12c36c1e983119aaaa810aa4e642ad87da66d57aa674506c179e31fbcc06b`.
 These runs are verification observations, not performance benchmarks.
 
-Eighty resource samples observed normal/warning memory pressure on an 8 GiB
-host and 2,003.38–3,188.75 MiB of swap use. The last sample remained at warning
-pressure with 3,068.69 MiB of swap. macOS used at most two Cargo jobs. Docker used
-one CPU, one build job and a 2 GiB container limit; sampled CPU peaked at 100.67%
-and memory at 1.250 GiB. Networking was disabled and sampled network traffic was
-zero. Sampled free disk stayed above 184.3 GiB. These observations do not qualify
-engine physical-memory bounds.
+Eighty-one resource samples observed normal/warning memory pressure on an 8 GiB
+host and 2,373.69–4,133.69 MiB of swap use. The last sample remained at warning
+pressure with 2,795.88 MiB of swap. macOS used at most two Cargo jobs. Docker used
+one CPU, one build job and a 2 GiB container limit; sampled CPU peaked at 100.35%
+and memory at 1.262 GiB. Networking was disabled and sampled network traffic was
+zero. Sampled free disk stayed above 183.28 GiB. No container OOM kill occurred.
+These observations do not qualify engine physical-memory bounds.
 
-The fresh nearest-rounding tutorial runs sequentially on both platforms after
-both complete gates. Its output matches the documented complete typed rows,
-including NULL and exact DOUBLE bits. Owned gate outputs, source exports, logs,
-monitors, databases, build outputs and the verification container are removed. The existing image and toolchains remain.
-Windows, broader durability, physical-memory and sanitizer qualification remain
-unfinished.
+The fresh square-root tutorial runs sequentially on both platforms after both
+complete gates. Its output matches the documented complete typed row and exact
+DOUBLE bits. Owned gate outputs, source exports, logs, monitors, databases,
+build outputs and the verification container are removed. The existing image
+and toolchains remain. Windows, broader durability, physical-memory and sanitizer
+qualification remain unfinished.
+
+### Square roots for analytical magnitudes
+
+`849f38e` adds one-argument SQRT through the existing parser, binder, independent
+scalar validation, batch scratch and demand cursor. Research and tracing resolved
+within 30 minutes against the language guide's pinned GoogleSQL revision. INT64
+converts to DOUBLE before square root. NULL propagates; positive infinity remains
+unchanged; PipeSQL explicitly preserves signed-zero and NaN input bits.
+Negative inputs, including negative infinity, produce the inline
+`ArithmeticDomain` error/cause with operation `square root` and an owned span.
+Constant predicate arguments can fail during preparation; projected expressions
+retain runtime demand, including skipped COALESCE and Boolean branches.
+
+Literal IEEE answers cover exact powers of two, the square root of two,
+subnormals, minimum normal and maximum finite values, exceptional bits and
+integer conversion near 2^53 and the INT64 maximum. The promotion and RMS answers
+were checked separately with 100-digit Decimal square roots of explicit numeric
+inputs. No expected answer calls the production square-root primitive.
+Public checks cover source-text release, argument errors through SAFE_DIVIDE,
+minimum-INT64 domain failure, invalid types/arity, INT64-only consumers, NULLs,
+stored bits through multiple producers and reopen, cancellation and early drop.
+Existing binder checks retain exact/short admission, nullability mutation
+rejection and the 31/32-call boundary. All 30 forced-grouping-replay variants pass,
+including SQRT inside NULLIF with independent integer counts and complete release.
+
+The catalog allocation query retains its exact 1.75 ratio, large-integer result
+and count of two after SQRT of the existing oddness expression. Native I/O retains
+the expected total of nine after SQRT(n*n) recovers each count of three; the
+original division and rounding checks remain. Fixed-buffer controls construct
+and render the domain error and cause under allocation denial. Both full campaigns
+retain every refusal/I/O position. No allocation owner, expression framework,
+persistent format or admission allowance changed.
+
+The [square-root example](../examples/square_root.sql) and
+[tutorial](../docs/getting-started.md#compute-a-root-mean-square-amount) use the
+ordinary sales database. Squares 25, 100 and 400 have mean 175; SQRT returns one
+nullable DOUBLE row with value 13.228756555322953 and bits `402a751f9447b724`.
+Fresh native-storage runs verify table creation, complete schema/row output and
+`status=queried` on both platforms. Required inputs are tracked and owned outputs
+are removed.
 
 ### Nearest-integer rounding
 

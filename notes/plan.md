@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `7c56cf8` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 624 ordinary Rust tests per platform, 24 independent aggregate
+The complete 24-stage gates for `849f38e` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 626 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
@@ -68,27 +68,19 @@ Discovery and manifests are reconciled; owned outputs are removed. Decimal-posit
 and rounding-mode arguments remain unsupported. Publication and broader platform,
 durability, sanitizer and physical-memory qualifications remain unresolved.
 
-## Active: square roots for analytical magnitudes
+## Completed: square roots for analytical magnitudes
 
-SQRT is absent from the accepted profile. Add one numeric argument through the
-existing scalar owners to support magnitude and root-mean-square calculations.
+`849f38e` implements one-argument SQRT through the existing scalar owners with
+DOUBLE promotion, NULL demand and inline typed domain errors. The
+[square-root record](evidence.md#square-roots-for-analytical-magnitudes) retains
+pinned semantics, independent boundary answers, preparation/runtime error spans,
+stored-value, admission, cancellation, replay and allocation/native coverage.
 
-1. Research and tracing resolved within 30 minutes. Pinned GoogleSQL promotes
-   INT64 to DOUBLE and rejects negative inputs, including negative infinity.
-   NULL follows existing demand; signed-zero/NaN bits retain an explicit PipeSQL
-   policy. Add a typed domain error rather than misreporting a negative argument
-   as overflow; its static operation and source span remain owned inline.
-2. Implementation adds SQRT through the existing scalar owners and inline domain
-   error/cause variants. Focused batch/cursor boundaries, public demand/spans,
-   INT64 promotion and RMS answers, stored exceptional bits/reopen and forced
-   grouping replay pass. Existing cancellation, binding, allocation and native
-   campaigns now include SQRT; their complete verification remains pending.
-   Fixed expression bounds, scratch and admission allowances are unchanged.
-3. Update the language contract and a runnable example. Verify focused checks,
-   matching frozen sequential macOS/GNU/Linux full gates and fresh examples after
-   both Rust stages. Monitor resources, reconcile discovery/manifests, retain
-   concise evidence, remove owned outputs and commit locally. Publication and
-   broader qualification restrictions remain unchanged.
+Matching frozen 24-stage macOS/GNU/Linux gates pass sequentially, with 626 ordinary
+Rust tests per platform. Fresh RMS example outputs agree after both complete
+gates. Discovery, manifests and retained controls are reconciled; owned outputs
+are removed. No allocation owner, persistent format or admission allowance
+changed. Publication and broader qualification restrictions remain unresolved.
 
 ## Next engineering priorities
 
