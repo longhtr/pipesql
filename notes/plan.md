@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `667983f` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 623 ordinary Rust tests per platform, 24 independent aggregate
+The complete 24-stage gates for `7c56cf8` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 624 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
@@ -54,30 +54,19 @@ Matching frozen 24-stage full gates pass sequentially, preserving the narrow joi
 wide-set and other semantic, allocation and native controls. Input manifests and
 discovery agree; owned outputs are removed. Broader qualifications remain unresolved.
 
-## Active: nearest-integer rounding for analytical buckets
+## Completed: nearest-integer rounding for analytical buckets
 
-Add one-argument numeric ROUND through the existing scalar path so queries can
-choose nearest-integer buckets as well as the current floor/ceiling buckets.
-ROUND is currently absent from the parser and accepted language manifest.
+`7c56cf8` implements one-argument ROUND through the existing scalar owners.
+The [rounding record](evidence.md#nearest-integer-rounding) retains pinned semantics,
+independent boundary oracles, composition/failure coverage and the learning path.
+Both complete matching 24-stage macOS/GNU/Linux gates pass, with 624 ordinary
+Rust tests per platform and all retained allocation/native campaigns. Fresh
+nearest-rounding tutorial outputs agree after both full gates finish.
 
-1. Initial research and tracing resolved within 30 minutes. The pinned GoogleSQL
-   signatures promote INT64 to DOUBLE before nearest-integer rounding; halfway
-   values round away from zero. The existing integral-rounding owner preserves
-   NULL, signed-zero and NaN bits and needs no new allocation or error variant.
-   Decimal-position and rounding-mode arguments remain outside this milestone.
-2. ROUND now uses the existing parser, validation, scratch and demand owners.
-   Focused checks pass literal halfway/conversion/exceptional-bit oracles, public
-   promotion and demanded spans, stored values and reopen, cancellation/release,
-   bounded nested calls and all 29 forced-replay variants. Maintenance passes
-   96 tooling tests, 44 independent codec fixtures and 642 local links. Healthy
-   catalog controls retain a 1,056-allocation census at both pathname lengths;
-   the modified native-I/O caller passes its eight census controls. These controls
-   do not establish refusal coverage. No admission allowance changed.
-3. The language contract and nearest-rounding learning example are updated. Run
-   matching frozen macOS/GNU/Linux full gates sequentially with resource monitoring,
-   then fresh example runs after both Rust stages. Reconcile inputs and discovery,
-   retain concise evidence, remove owned outputs and commit locally. Publication
-   and broader qualification restrictions remain unchanged.
+No expression framework, allocation owner, format or admission allowance changed.
+Discovery and manifests are reconciled; owned outputs are removed. Decimal-position
+and rounding-mode arguments remain unsupported. Publication and broader platform,
+durability, sanitizer and physical-memory qualifications remain unresolved.
 
 ## Next engineering priorities
 

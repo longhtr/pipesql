@@ -7,20 +7,20 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 705 frozen inputs retained in `667983f`
+Both complete 24-stage gates verify the 706 frozen inputs retained in `7c56cf8`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `86b09d1f90f5dece9627bf60a342c72e9b82e29d0812d85b53bd8c0df1d8d3ce`.
-Finalization changes only the two notes files. The other 703 inputs retain
-fingerprint `a1ce3f97defba9d22d114465b2fe8c01f3695cc66743340fd7d97e64c05c645b`;
+gates: `c447f873c921a6127aec64840f8625999cee3e8c6c8a399be0e936640b4f56a6`.
+Finalization changes only the two notes files. The other 704 inputs retain
+fingerprint `c5e1d97a6f70d21be62a0de418db04067c1c7b4755e0599d0eea2fa6396dc11e`;
 all manifested inputs are tracked. Final local-link verification passes.
 
-Each platform executes 623 ordinary Rust tests, including all 135 public catalog
+Each platform executes 624 ordinary Rust tests, including all 135 public catalog
 tests, plus the separate lease subprocess. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 639 local links.
+passes 96 tooling tests, 44 independent codec fixtures and 642 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311
 scenarios. Their complete records agree across platforms after excluding ambient
 database paths and composition stdout digests. Those digests are not portable
@@ -36,26 +36,58 @@ limits, genesis, lease contention and independent column order pass. Linux
 retains the two Darwin ACL exclusions.
 
 Both receipts have zero finalization errors. The full gates run sequentially;
-stage times total 1,639.261 seconds on macOS and 477.497 seconds on Linux. Receipt
+stage times total 1,727.050 seconds on macOS and 500.553 seconds on Linux. Receipt
 SHA-256 values are respectively
-`62ce33165ad46f70080642f4a6fb240084e6cfc9fe90d35cde35c0d0f87309b4` and
-`0211fa45f15201201109100077805f9ec8e4394d44f3d531db00c509cdef4f95`.
+`8153e5bdd017a93805521e54e7a14d82669e190c381d67e221cbc3f5658e068d` and
+`790456eabb9a7b5a718369d462e1e86d230db55ccb31ad63930424518a95c27e`.
 These runs are verification observations, not performance benchmarks.
 
-Seventy-two resource samples observed normal/warning memory pressure on an 8 GiB
-host and 1,587.94–2,528.56 MiB of swap use. The last sample remained at warning
-pressure with 2,499.88 MiB of swap. macOS used at most two Cargo jobs. Docker used
-one CPU, one build job and a 2 GiB container limit; sampled CPU peaked at 100.34%
-and memory at 1.238 GiB. Networking was disabled and sampled network traffic was
-zero. Sampled free disk stayed above 185.3 GiB. These observations do not qualify
+Eighty resource samples observed normal/warning memory pressure on an 8 GiB
+host and 2,003.38–3,188.75 MiB of swap use. The last sample remained at warning
+pressure with 3,068.69 MiB of swap. macOS used at most two Cargo jobs. Docker used
+one CPU, one build job and a 2 GiB container limit; sampled CPU peaked at 100.67%
+and memory at 1.250 GiB. Networking was disabled and sampled network traffic was
+zero. Sampled free disk stayed above 184.3 GiB. These observations do not qualify
 engine physical-memory bounds.
 
-No example or production API changed in this ownership milestone. The preceding
-rounding tutorial remains qualified by its fresh runs on both platforms. Owned
-gate outputs, source exports, logs, monitors, databases, build outputs and the
-verification container are removed. The existing image and toolchains remain.
+The fresh nearest-rounding tutorial runs sequentially on both platforms after
+both complete gates. Its output matches the documented complete typed rows,
+including NULL and exact DOUBLE bits. Owned gate outputs, source exports, logs,
+monitors, databases, build outputs and the verification container are removed. The existing image and toolchains remain.
 Windows, broader durability, physical-memory and sanitizer qualification remain
 unfinished.
+
+### Nearest-integer rounding
+
+`7c56cf8` implements one-argument ROUND through the existing parser, binder,
+independent scalar validation, batch scratch and demand cursor. Semantic research
+and tracing resolved within 30 minutes against the language guide's pinned
+GoogleSQL revision. INT64 converts to DOUBLE before nearest-integer rounding;
+halfway values round away from zero. NULL propagates, infinities remain unchanged,
+and PipeSQL explicitly preserves signed-zero and NaN input bits. Decimal-position
+and rounding-mode arguments remain unsupported.
+
+Literal expected answers cover both sides of halfway boundaries, adjacent binary64
+values, subnormals, maximum finite values, integer conversion near 2^53 and the
+INT64 extrema. Existing shared tests verify result-type mutation rejection,
+unary underflow, stored bits through multiple producers and reopen, demanded
+error spans, skipped COALESCE branches, invalid types/arity, exact/short admission,
+31/32-call bounds, cancellation, early drop and all 29 forced-replay variants.
+The full-width stack scenario includes ROUND without changing its allowance.
+
+The catalog allocation query retains its exact 1.75 ratio, large-integer result
+and complete row count while adding ROUND to the existing unary expression.
+Native I/O keeps the independently expected rounding total of nine, now exercising
+ROUND before CEIL; FLOOR and the original 4.5 ratio remain. Both full campaigns
+retain every allocation/I/O position. No new allocation owner, expression framework,
+persistent format or admission allowance was introduced.
+
+The [nearest-rounding example](../examples/nearest_rounding.sql) and
+[tutorial](../docs/getting-started.md#group-measurements-into-buckets) use the ordinary
+sales database and return three groups: NULL with a NULL total and count one,
+zero with total five and count one, and one with total 30 and count two. Fresh native-storage runs on both platforms
+verify successful creation, schema, exact DOUBLE bits, complete rows and
+`status=queried`. Required inputs are tracked; owned outputs are removed.
 
 ### Wide LEFT JOIN allocation ownership
 
