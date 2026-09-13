@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `99c8755` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 621 ordinary Rust tests per platform, 24 independent aggregate
+The complete 24-stage gates for `2096d2f` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 623 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
@@ -25,54 +25,21 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: wide positional set allocation ownership
+## Completed: numeric rounding for analytical buckets
 
-`99c8755` adds six cases to the existing ownership caller, combining compact
-STRING source demand with repeated logical positions and separately stored wide
-columns. Both pathname lengths pass on macOS and GNU/Linux, including complete
-rows, external storage, requested/usable charges, negative controls and final
-release. No allocation deficit was found; production admission remains unchanged.
-The [ownership record](evidence.md#wide-positional-set-allocation-ownership)
-retains the workload, exact observations and qualification limits.
+`2096d2f` adds FLOOR, CEIL and CEILING through the existing unary scalar path.
+The [rounding record](evidence.md#numeric-rounding-for-analytical-buckets) retains
+semantic provenance, independent boundary coverage and the runnable learning path.
+Matching complete 24-stage macOS/GNU/Linux gates pass, with 623 ordinary Rust
+tests per platform and the retained semantic, allocation and native campaigns.
+Fresh tutorial outputs agree after both Rust stages complete. No allocation owner,
+format or admission allowance changed. Owned outputs are removed.
 
-Matching complete 24-stage gates pass all 621 ordinary Rust tests per platform
-and the retained semantic, allocation and native campaigns. Finalization moves
-one existing comment back to its owner without changing executable code. Owned
-outputs are removed. Prior language, testing/tooling and resource milestones
-remain complete unless a concrete counterexample reopens their affected boundary.
-Comma spacing is preserved. Verification used at most two Cargo jobs and one
-Docker CPU/build job; resource monitoring observed normal/warning pressure.
-Publication and the broader qualifications below remain unresolved.
-
-## Active: numeric rounding for analytical buckets
-
-FLOOR and CEIL let queries round measurements into analytical buckets using the
-existing scalar program. CEILING is confirmed as a CEIL alias.
-
-1. Confirmed before implementation at GoogleSQL
-   `0e7d7073ed0360be587a5efa0fa78abeee00f17b`: mathematical_functions.md
-   CEIL/FLOOR return DOUBLE for INT64 or DOUBLE; CEILING aliases CEIL. The
-   registered DOUBLE signatures coerce integer arguments before the std::ceil/
-   std::floor reference kernels. Preserve NULL; infinities remain unchanged.
-   PipeSQL will preserve signed-zero and NaN input bits explicitly, and use
-   nearest/ties-to-even INT64 conversion before rounding. This is not exact
-   integer bucketing above DOUBLE precision. Research resolved within 30 minutes.
-2. Implemented through existing unary parser, validation and row/batch execution.
-   Focused scalar, admission, 21 public numeric and 28 forced-replay variants
-   pass. Stored exceptional bits/reopen and cancellation reuse existing fixtures.
-   Allocation healthy controls retain 1,056 allocations at both pathname lengths;
-   native I/O healthy controls include a rounding total of nine. These controls
-   do not establish failure-sweep coverage. No allocation owner or framework was
-   added. All six wide-schema tests pass, including both small-stack scenarios.
-3. Added the rounding example, tutorial and affected language/test/tool maps.
-   Maintenance and warnings-denied Clippy pass. Still required: matching frozen
-   macOS/GNU/Linux full gates, fresh example execution after both Rust test stages,
-   discovery/input reconciliation, concise evidence, output cleanup and local
-   finalization commits.
-
-Monitor resources with at most two Cargo jobs and one Docker CPU/build job.
-Compile examples after both platform Rust test stages. Publication and broader
-qualification restrictions remain unchanged.
+The initial overlapping macOS Rust stage timed out; the standalone two-job retry
+passes with unchanged inputs and deadlines. Resource monitoring and the checkpoint
+retain that distinction. Prior language, testing/tooling and resource milestones
+remain complete unless a concrete counterexample or new workload changes their
+scope. Publication and broader qualification restrictions remain unresolved.
 
 ## Next engineering priorities
 

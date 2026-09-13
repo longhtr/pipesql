@@ -7,54 +7,94 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 704 frozen inputs retained in `99c8755`
+Both complete 24-stage gates verify the 705 frozen inputs retained in `2096d2f`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `ac3505b98baaefcc5737dfc2ea50dc98c224151993a68ecb227fe2fabb804b7e`.
-Finalization updates the two notes files and moves an existing two-line comment
-back beside `joined_shapes` in the ownership fixture. Removing that exact comment
-from the before/after fixture gives identical bytes. No executable code changes.
-The other 701 inputs retain fingerprint
-`ccf2888b175a5b1aa59347465f4db91cc10b7aca91817179a0012e2f9228410b`;
-all inputs remain tracked. Final documentation verification passes 628 local links.
+gates: `2252a7a1add4d4a22467a9d7cb0e062abcc1771fa66fddc6e71a8c8c7119472a`.
+Finalization changes only the two notes files. The other 703 inputs retain
+fingerprint `2e9e9c7e3e1b5644def2279ca3eccf8f61db601935492fb6d3bedfa5456bfb0c`;
+all manifested inputs are tracked. Final local-link verification passes.
 
-Each platform executes 621 ordinary Rust tests, including all 134 public catalog
-tests, plus the separate lease subprocess. Existing independent validators,
-set semantics, demand, cancellation, replay and cleanup checks remain unchanged.
-No ordinary test is ignored or filtered; the selected lease child reports six
-filtered siblings. Maintenance passes 96 tooling tests,
-44 independent codec fixtures and 625 local links. Independent aggregate semantics
-pass 24 cases and composition passes 311 scenarios. Expected results agree across
-platforms after excluding ambient database paths and stdout digests; these
-digests are not portable semantic hashes.
+Each platform executes 623 ordinary Rust tests, including all 135 public catalog
+tests, plus the separate lease subprocess. No ordinary test is ignored or
+filtered; the selected lease child reports six filtered siblings. Maintenance
+passes 96 tooling tests, 44 independent codec fixtures and 632 local links.
+Independent aggregate semantics pass 24 cases and composition passes 311
+scenarios. Their complete records agree across platforms after excluding ambient
+database paths and composition stdout digests. Those digests are not portable
+semantic hashes; expected nonzero semantic-case exits remain part of the comparison.
 
 Both allocation campaigns retain positions 0–1055 and healthy control 1056 at
 each pathname length; all four ordered lists were reconciled explicitly. The
 caller's work ceiling remains 1,100. Native initialization passes 30 macOS and
-80 GNU/Linux cells; synchronization passes 241 cells and I/O passes 1,346 cells
+80 GNU/Linux cells; synchronization passes 241 cells and I/O passes 1,394 cells
 per platform. Interruption retains 76 append cuts, 46 recovery cuts and 249
 independent graph checks. All 43 graph cases, two oracle controls, three CLI
 limits, genesis, lease contention and independent column order pass. Linux
 retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 2,085.724 seconds
-on macOS and 1,322.522 seconds on Linux. Receipt SHA-256 values are respectively
-`4ed0931ea133eb9a8733fb370cc193e2b47bd76093cfdaa978aed5ed1ad01776` and
-`a7de7b9b737b3a41cc6049f1ddd7eb2fca93eec7b446f1901b5e7637cc3d40f3`.
-Overlapping verification runs are not performance benchmarks. Sixty-eight
-resource samples observed normal/warning host memory pressure on an 8 GiB host,
-with 1,734.38–2,590.00 MiB of swap use. The last sample remained at warning
-pressure with 2,550.00 MiB of swap. macOS Cargo used at most two build jobs;
-Docker used one CPU and one build job throughout. No example changed or required
-another run. Sampled container CPU peaked at 101.85% and memory at 1.223 GiB.
-The container had networking disabled and zero network traffic. Sampled free
-disk stayed above 184.9 GiB. These observations do not qualify engine
-physical-memory bounds. Owned gate outputs, source exports, logs, monitors and
-the verification container are removed. The existing image and toolchains remain.
-Windows, broader durability, physical-memory and sanitizer qualification remain
-unfinished.
+Both receipts have zero finalization errors. Stage times total 1,741.161 seconds
+on macOS and 857.614 seconds on Linux. Receipt SHA-256 values are respectively
+`ec2f38a2e2f8bff5cdd69b5f9fd2155f20c29909465008aad0942ee283b2b005` and
+`30f1708b21cd4cfbbd3c2b555f08d017b01c4df085085913c791e20ac1d34041`.
+An earlier overlapping macOS run with one Cargo job timed out at the unchanged
+600-second Rust-stage deadline; it is not a complete passing gate. Its inputs
+remained unchanged and cleanup succeeded. After Linux completed, a standalone
+macOS retry with two jobs compiled tests in 59.42 seconds instead of 124 seconds
+and completed the Rust stage in 416.345 seconds. No deadline or test was weakened.
+These runs are verification observations, not performance benchmarks.
+
+Ninety-four resource samples observed normal/warning memory pressure on an 8 GiB
+host and 2,374.00–4,155.12 MiB of swap use. The last sample remained at warning
+pressure with 2,452.50 MiB of swap. Docker used one CPU, one build job and a 2 GiB
+container limit; sampled CPU peaked at 101.82% and memory at 1.204 GiB. Networking
+was disabled and sampled network traffic was zero. Sampled free disk stayed above
+183.4 GiB. These observations do not qualify engine physical-memory bounds.
+
+The fresh rounding tutorial runs sequentially on both platforms after both Rust
+test stages. Its complete typed output agrees, including NULL and exact DOUBLE
+bits. Owned gate outputs, source exports, logs, monitors, tutorial databases,
+build outputs and the verification container are removed. The existing image and
+toolchains remain. Windows, broader durability, physical-memory and sanitizer
+qualification remain unfinished.
+
+### Numeric rounding for analytical buckets
+
+`2096d2f` implements FLOOR, CEIL and the CEILING alias. The
+[language contract](../docs/language.md#current-public-query-manifest) pins the
+GoogleSQL result types and conversion-before-rounding rule. Research resolved
+before implementation within 30 minutes. Both numeric input types return DOUBLE;
+large-integer conversion is deliberately observable, not exact integer bucketing.
+PipeSQL explicitly preserves signed-zero and NaN input bits.
+
+The existing [parser](../src/frontend/parser.rs),
+[scalar program](../src/scalar.rs) and [demand cursor](../src/scalar/evaluation.rs)
+carry two unary operations. Validation promotes their result type; row and batch
+evaluation reuse the existing stack and scratch slots. There is no new allocation
+owner, expression framework, type or persistent format.
+
+Independent literal answers cover signed fractional values, subnormals, infinities,
+NaN payloads, signed zeros, NULLs and INT64 conversion around 2^53 and both integer
+extremes. Mutations reject an INT64 result descriptor and unary underflow.
+Public queries check invalid arguments/arity, source spans, skipped/demanded
+errors, COALESCE promotion, NULLIF and grouped buckets. Existing stored-value
+fixtures now check rounding through multiple producers and reopen. Shared
+cancellation, 28 forced-replay variants, exact/short admission and full-width
+small-stack cases retain their original controls.
+
+The catalog allocation query keeps its exact 1.75 ratio and large-integer checks,
+then exercises CEIL and FLOOR through the existing SELECT/EXTEND path. Native I/O
+retains its original 4.5 ratio and adds an independently expected rounding total
+of nine. All allocation prefixes and observed I/O failure positions execute;
+healthy controls alone were not treated as failure coverage.
+
+The [rounding example](../examples/rounding.sql) and
+[tutorial](../docs/getting-started.md#group-measurements-into-buckets) return three
+groups: NULL with count one, bucket zero with total 15/count two, and bucket one
+with total 20/count one. Both platforms verify schema, exact DOUBLE bits, complete
+rows, successful exit and `status=queried` on fresh databases.
 
 ### Wide positional set allocation ownership
 
