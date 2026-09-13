@@ -7,21 +7,22 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 696 frozen inputs retained in `f832a21`
+Both complete 24-stage gates verify the 698 frozen inputs retained in `4ae3a67`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `c30222999126a1c13ae83c67d5975c553737ff0f34db2c85b7dc568a6c839e19`.
-Only the two notes files change during finalization. The other 694 inputs retain
-fingerprint `e17868f3b61c9b14efec314422c772c1670dc4cf730f9f576a4ef89bc506ec3a`;
-all inputs remain tracked. Final documentation verification passes 578 local links.
+gates: `a8c6c7a783586835e96f5a577e6c79930f1b51cb2e4d7e35df7151f24e892fdc`.
+Only the two notes files change during finalization. The other 696 inputs retain
+fingerprint `501533279f060a627d6466af4c00217e615047c1c971cdbdc26d40a50ba7105f`;
+all inputs remain tracked. Final documentation verification passes 588 local links.
 
-Each platform executes 600 ordinary Rust tests, including all 123 public catalog
-tests and the five INTERSECT/shared-demand checks, plus the separate lease
-subprocess. No ordinary test is ignored or filtered; the selected lease child
-reports six filtered siblings. Maintenance passes 96 tooling tests,
-44 independent codec fixtures and 573 local links. Independent aggregate
+Each platform executes 604 ordinary Rust tests, including all 126 public catalog
+tests, plus the separate lease subprocess. The three multiset tests, nested ALL
+parser test, shared demanded-error test and both width/small-stack tests execute
+on both platforms. No ordinary test is ignored or filtered; the selected lease
+child reports six filtered siblings. Maintenance passes 96 tooling tests,
+44 independent codec fixtures and 584 local links. Independent aggregate
 semantics pass 24 cases and composition passes 311 scenarios. Composition
 scenario descriptors and outcomes agree across platforms; stdout digests include
 database paths and are not portable semantic hashes.
@@ -35,15 +36,15 @@ independent graph checks. All 43 graph cases, two oracle controls, three CLI
 limits, genesis, lease contention and independent column order pass. Linux
 retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,848.666 seconds
-on macOS and 1,035.392 seconds on Linux. Receipt SHA-256 values are respectively
-`a55a8bc22e721f5041a36dc77d4b91d11fc736fe4f20254560661ea9048ec22c` and
-`b7f0a1c4d5f00fd068cf3a766a4700a6d5783e54c75e9cb2b6b89d4cd01ba68d`.
-Overlapping verification runs are not performance benchmarks. Sixty-three
-resource samples observed normal/warning host memory pressure and 1,563.56–2,024.75
+Both receipts have zero finalization errors. Stage times total 1,894.357 seconds
+on macOS and 1,097.950 seconds on Linux. Receipt SHA-256 values are respectively
+`2a1f2081a190a89c9df7bf4a94c96a4c890e95d3a8084cb3b10acf310adb76d0` and
+`a7d0ab745a49e795232eba1baa00a4a0388ebe176f6a58118415ee418c42a4e2`.
+Overlapping verification runs are not performance benchmarks. Sixty-five
+resource samples observed normal/warning host memory pressure and 1,427.31–2,192.94
 MiB of swap use; pressure was normal at completion. Cargo used two build jobs;
 the separate GNU example used one. Docker was capped at two CPUs, then one after
-warning pressure; sampled container memory peaked at 1.549 GiB and network
+warning pressure; sampled container memory peaked at 1.298 GiB and network
 traffic remained below 2 kB. Sampled free disk space stayed above 185 GiB.
 These observations do not qualify engine physical-memory bounds. Owned gate and
 control outputs, source exports, logs, example databases, monitors and the
@@ -51,9 +52,52 @@ verification container are removed. The existing verification image and toolchai
 remain. Windows, broader durability, physical-memory and sanitizer qualification
 remain unfinished.
 
+### Positional EXCEPT ALL and INTERSECT ALL
+
+`4ae3a67` adds duplicate reconciliation through the existing positional descriptor,
+independent validators, complete-row demand, sorted-input owners and scheduler.
+The [language contract](../docs/language.md#except-all-and-intersect-all) pins
+multiplicities and grouping equivalence at the existing GoogleSQL revision.
+Research resolved within its 30-minute bound. EXCEPT ALL emits `max(m - n, 0)`
+left occurrences and INTERSECT ALL emits `min(m, n)`; arguments combine left to
+right. Exact types, left names, fresh identities, pinned inputs, operator-specific
+NULLability and the existing demanded-error/LIMIT 0 rules remain explicit.
+
+The merge pairs equal occurrences by advancing both checked cursors. It adds no
+buffer, duplicate index, group counter, frontend, persistent format or allowance.
+Monotonic record checks remain active while ALL retains duplicate left rows.
+The existing four sorted-set schedules run both quantifiers: exact/short
+admission, spill on both sides, prefix replay, all cancellation phases, corrupt
+and truncated readers, I/O refusal, temporary refusal and healthy reuse. Grouping
+fallback observes replay and checks literal duplicate-sensitive aggregate results.
+
+Three [public tests](../tests/catalog_lifecycle/multiset.rs) include 100 independent
+complete-row count cases, unequal multiplicities, empty/nested/multiple arguments,
+joins and aggregation, names/types/NULLability, all scalar types and typed NULLs,
+exact INT64 and DATE boundaries, NaN/signed-zero classes and pinned snapshots.
+Original-bit checks require both distinct left NaN payloads and zero signs when
+both occurrences survive. Shared tests retain hidden demanded errors and original
+spans, independent malformed-plan mutations, full width and small stacks.
+
+The unchanged constructors and file owners remain covered by public allocation
+and native-I/O sweeps. Independent per-step ownership adds two ALL cases at both
+pathname lengths; each emits 768 rows and releases completely. EXCEPT uses
+21,611 steps and 231,664 temporary bytes, with minimum usable-allocation headroom
+11,352 bytes on macOS and 12,976 on GNU/Linux. INTERSECT uses 29,337 steps and
+289,520 temporary bytes, with headroom 11,360 and 12,984 bytes respectively.
+All 11 analytic shapes and existing result/attribution negative controls pass.
+
+The fresh [repeated-regions example](../examples/repeated-regions.sql) and its
+[tutorial](../docs/getting-started.md#reconcile-repeated-facts) produce nullable
+INT64 region rows NULL, 1 and 3, `row_count=3`, successful exit and `status=queried`
+on both platforms. The complete gates above reconcile discovery and retained
+failure coverage. No skipped or filtered check is counted as broader runtime
+qualification.
+
 ### Positional INTERSECT DISTINCT
 
-`f832a21` adds complete-row intersection using the existing bounded parser,
+`f832a21` adds complete-row intersection; its dedicated full-gate checkpoint is
+retained in `255bff6`. It uses the existing bounded parser,
 positional descriptor, independent semantic/physical validators and scheduler.
 The [language contract](../docs/language.md#intersect-distinct) pins the accepted
 GoogleSQL profile. Research resolved the profile within its 30-minute bound.
@@ -61,7 +105,7 @@ Each output has the left name and a fresh identity; NULLability requires both
 input columns to be nullable. That inference and eager complete-input error
 demand are explicit PipeSQL contracts. Original left representative bits survive;
 selection among equivalent representatives and incidental output order remain
-unspecified. ALL, name matching, coercions and correlated inputs stay unsupported.
+unspecified. That checkpoint excluded ALL, name matching, coercions and correlated inputs.
 
 The [sorted-set owner](../src/execution/blocking/sorted_set.rs) now handles EXCEPT
 and INTERSECT through the same two sorted inputs, inline position maps, checked
