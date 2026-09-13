@@ -442,6 +442,7 @@ fn bind_expression(
             ParsedOp::Sign => Op::Sign,
             ParsedOp::Floor => Op::Floor,
             ParsedOp::Ceil => Op::Ceil,
+            ParsedOp::Round => Op::Round,
             ParsedOp::Empty
             | ParsedOp::WindowCount
             | ParsedOp::String(_)

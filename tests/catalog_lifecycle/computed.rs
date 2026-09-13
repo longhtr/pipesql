@@ -785,6 +785,7 @@ fn public_numeric_cancellation_and_early_drop_release_owners() {
         "FROM facts |> SELECT SIGN(v-25) AS direction |> ORDER BY direction",
         "FROM facts |> SELECT FLOOR(v/15) AS bucket |> ORDER BY bucket",
         "FROM facts |> SELECT CEILING(v/15) AS bucket |> ORDER BY bucket",
+        "FROM facts |> SELECT ROUND(v/15) AS bucket |> ORDER BY bucket",
         "FROM facts |> SELECT MOD(v, 3) AS remainder |> ORDER BY remainder",
         "FROM facts |> SELECT DIV(v, 15) AS quotient |> ORDER BY quotient",
         "FROM facts |> SELECT COALESCE(k, v) AS chosen |> ORDER BY chosen",
@@ -1661,6 +1662,19 @@ fn public_unary_numeric_preserves_stored_double_bits_across_producers_and_reopen
                     ],
                 ),
                 (
+                    "ROUND",
+                    [
+                        -0.0,
+                        0.0,
+                        -0.0,
+                        0.0,
+                        f64::NEG_INFINITY,
+                        f64::INFINITY,
+                        f64::from_bits(0xfff8_0000_0000_0042),
+                        -7.0,
+                    ],
+                ),
+                (
                     "CEILING",
                     [
                         -0.0,
@@ -1692,7 +1706,7 @@ fn public_unary_numeric_preserves_stored_double_bits_across_producers_and_reopen
 #[test]
 fn public_integral_rounding_preserves_promotion_and_demand() {
     let (_directory, db) = join_fixture();
-    for function in ["FLOOR", "CEIL", "CEILING"] {
+    for function in ["FLOOR", "CEIL", "CEILING", "ROUND"] {
         for (argument, expected) in [
             ("-9223372036854775808", -9_223_372_036_854_775_808.0_f64),
             ("9223372036854775807", 9_223_372_036_854_775_808.0),
@@ -1770,6 +1784,13 @@ fn public_integral_rounding_preserves_promotion_and_demand() {
         ("CEIL(-0.25)", -0.0),
         ("FLOOR(0.25)", 0.0),
         ("FLOOR(CEIL(2.25)/2)", 1.0),
+        ("ROUND(2.5)", 3.0),
+        ("ROUND(-2.5)", -3.0),
+        ("ROUND(0.49999999999999994)", 0.0),
+        ("ROUND(-0.49999999999999994)", -0.0),
+        ("ROUND(0.5)", 1.0),
+        ("ROUND(-0.5)", -1.0),
+        ("ROUND(CEIL(2.25)/2)", 2.0),
     ] {
         query(
             &db,
@@ -1798,6 +1819,37 @@ fn public_integral_rounding_preserves_promotion_and_demand() {
             ],
         ],
     );
+    query(
+        &db,
+        "FROM facts |> EXTEND ROUND(v/15) AS bucket |> AGGREGATE SUM(v) AS total, COUNT(*) AS n GROUP AND ORDER BY bucket",
+        vec![
+            vec![
+                Cell::Number(1.0_f64.to_bits()),
+                Cell::Integer(30),
+                Cell::Integer(2),
+            ],
+            vec![
+                Cell::Number(2.0_f64.to_bits()),
+                Cell::Integer(30),
+                Cell::Integer(1),
+            ],
+            vec![
+                Cell::Number(3.0_f64.to_bits()),
+                Cell::Integer(40),
+                Cell::Integer(1),
+            ],
+        ],
+    );
+    for expression in [
+        "ROUND(1, 0)",
+        "ROUND(1, 0, 'ROUND_HALF_EVEN')",
+        "MOD(ROUND(1), 1)",
+    ] {
+        assert!(
+            db.prepare(&format!("FROM facts |> SELECT {expression}"))
+                .is_err()
+        );
+    }
     query(
         &db,
         "FROM facts |> ORDER BY v |> SELECT NULLIF(FLOOR(v/15), 1) AS bucket",

@@ -210,6 +210,30 @@ evaluation reuses the argument's scratch slot. The
 requests the value. The [language contract](language.md#current-public-query-manifest)
 explains conversion precision and exceptional values.
 
+To assign each amount to the nearest multiple of 15, run
+[examples/nearest_rounding.sql](../examples/nearest_rounding.sql) on the same database:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/nearest_rounding.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+ROUND assigns 5 to bucket zero, and 10 and 20 to bucket one. Require successful
+exit and `status=queried`, with these complete rows:
+
+| bucket | total | n |
+| ---: | ---: | ---: |
+| NULL | NULL | 1 |
+| 0 | 5 | 1 |
+| 1 | 30 | 2 |
+
+Halfway values round away from zero: an amount of 7.5 would enter bucket one,
+and -7.5 would enter bucket minus one. `Op::Round` uses the same scalar and demand
+owners as FLOOR and CEIL, with a different rounding primitive. Decimal-position
+and rounding-mode arguments are outside the accepted profile.
+
 ## Combine pipeline results
 
 Run [examples/union.sql](../examples/union.sql) against the same database:

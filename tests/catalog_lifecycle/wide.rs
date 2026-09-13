@@ -171,7 +171,7 @@ fn check_complete_declared_schema(small_stack: bool) {
             }
             order::query(
                 &db,
-                "FROM wide |> WHERE c60 IS DISTINCT FROM FLOOR(6000+SIGN(1))",
+                "FROM wide |> WHERE c60 IS DISTINCT FROM ROUND(FLOOR(6000+SIGN(1)))",
                 vec![expected[0].clone(), expected[2].clone()],
             );
             let q = db

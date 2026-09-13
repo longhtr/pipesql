@@ -1817,6 +1817,7 @@ fn unary_numeric_calls_preserve_type_nullability_and_bounded_admission() {
         ("FLOOR", DataType::Double),
         ("CEIL", DataType::Double),
         ("CEILING", DataType::Double),
+        ("ROUND", DataType::Double),
     ] {
         for (argument, kind, nullable) in [
             ("1", integer_output, false),

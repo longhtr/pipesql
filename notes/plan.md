@@ -60,18 +60,24 @@ Add one-argument numeric ROUND through the existing scalar path so queries can
 choose nearest-integer buckets as well as the current floor/ceiling buckets.
 ROUND is currently absent from the parser and accepted language manifest.
 
-1. Bound initial semantic research and tracing to 30 minutes. Check the pinned
-   GoogleSQL signatures and kernels for result type, integer conversion order,
-   halfway values, NULL, signed zero and nonfinite inputs before implementation.
+1. Initial research and tracing resolved within 30 minutes. The pinned GoogleSQL
+   signatures promote INT64 to DOUBLE before nearest-integer rounding; halfway
+   values round away from zero. The existing integral-rounding owner preserves
+   NULL, signed-zero and NaN bits and needs no new allocation or error variant.
    Decimal-position and rounding-mode arguments remain outside this milestone.
-2. Extend existing parser, validation and demand evaluation with literal boundary
-   oracles. Preserve stored-value composition, spans, cancellation/replay, admission
-   and cleanup through existing tests and campaigns. Avoid a new expression layer.
-3. Update the language contract and a runnable learning example. Run focused
-   checks and matching frozen macOS/GNU/Linux full gates sequentially with resource
-   monitoring, then fresh example runs after both Rust stages. Reconcile inputs
-   and discovery, retain concise evidence, remove owned outputs and commit locally.
-   Publication and broader qualification restrictions remain unchanged.
+2. ROUND now uses the existing parser, validation, scratch and demand owners.
+   Focused checks pass literal halfway/conversion/exceptional-bit oracles, public
+   promotion and demanded spans, stored values and reopen, cancellation/release,
+   bounded nested calls and all 29 forced-replay variants. Maintenance passes
+   96 tooling tests, 44 independent codec fixtures and 642 local links. Healthy
+   catalog controls retain a 1,056-allocation census at both pathname lengths;
+   the modified native-I/O caller passes its eight census controls. These controls
+   do not establish refusal coverage. No admission allowance changed.
+3. The language contract and nearest-rounding learning example are updated. Run
+   matching frozen macOS/GNU/Linux full gates sequentially with resource monitoring,
+   then fresh example runs after both Rust stages. Reconcile inputs and discovery,
+   retain concise evidence, remove owned outputs and commit locally. Publication
+   and broader qualification restrictions remain unchanged.
 
 ## Next engineering priorities
 

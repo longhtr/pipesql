@@ -124,7 +124,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
         ],
     );
     let cancel = CancellationToken::new();
-    for variant in 0..28 {
+    for variant in 0..29 {
         let joined = matches!(variant, 0 | 2 | 6 | 16 | 17);
         let sql = if joined {
             "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> AGGREGATE SUM(l.n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY l.k"
@@ -210,6 +210,9 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
             27 => {
                 "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(CEILING(n/3), 1)) AS nrows GROUP AND ORDER BY k"
             }
+            28 => {
+                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(ROUND(n/2), 2)) AS nrows GROUP AND ORDER BY k"
+            }
             _ => sql,
         };
         let query = database.prepare(sql).unwrap();
@@ -287,7 +290,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
                 1 | 4 | 5 | 7 | 8 | 10 | 11 | 23 => [[1, 7, 2], [2, 7, 1]],
                 3 | 18 | 19 | 22 | 24 => [[1, 4, 1], [2, 7, 1]],
                 9 => [[1, 1, 1], [2, 2, 1]],
-                12 | 16 | 26 => [[1, 7, 0], [2, 7, 1]],
+                12 | 16 | 26 | 28 => [[1, 7, 0], [2, 7, 1]],
                 27 => [[1, 7, 1], [2, 7, 1]],
                 13 => [[1, 3, 2], [2, 2, 1]],
                 25 => [[1, -2, 2], [2, 1, 1]],

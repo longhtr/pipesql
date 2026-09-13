@@ -156,6 +156,7 @@ pub(crate) enum Op {
     Sign,
     Floor,
     Ceil,
+    Round,
 }
 
 // SIGN classifies both zeros as positive zero. Preserve a NaN's payload rather
@@ -179,6 +180,7 @@ fn round_integral(op: Op, value: f64) -> f64 {
     match op {
         Op::Floor => value.floor(),
         Op::Ceil => value.ceil(),
+        Op::Round => value.round(),
         _ => unreachable!("integral rounding operation"),
     }
 }
@@ -215,7 +217,7 @@ impl Expression {
                     nullable[depth] = false;
                     depth += 1;
                 }
-                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil => {
+                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round => {
                     if depth == 0 {
                         return true;
                     }
@@ -273,11 +275,11 @@ impl Expression {
                     }
                     DataType::Double
                 }
-                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil => {
+                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round => {
                     if depth == 0 {
                         return Err(InferenceFailure::Program("scalar unary stack underflow"));
                     }
-                    if matches!(op, Op::Floor | Op::Ceil) {
+                    if matches!(op, Op::Floor | Op::Ceil | Op::Round) {
                         types[depth - 1] = DataType::Double;
                     }
                     continue;
@@ -357,7 +359,7 @@ impl Expression {
                 | Op::IntegerDivide => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
                 }
-                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil => (),
+                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round => (),
                 Op::Empty => unreachable!("validated scalar program"),
             }
             peak = peak.max(depth);
@@ -455,7 +457,7 @@ impl Expression {
                     valid[depth] = [u64::MAX; VALID_WORDS];
                     depth += 1;
                 }
-                Op::Floor | Op::Ceil => {
+                Op::Floor | Op::Ceil | Op::Round => {
                     let values = &mut scratch[(depth - 1) * rows..depth * rows];
                     for (row, value) in values.iter_mut().enumerate() {
                         if valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
@@ -787,6 +789,31 @@ mod tests {
     }
 
     #[test]
+    fn nearest_integral_rounding_uses_half_away_from_zero() {
+        // Adjacent binary64 values distinguish nearest rounding from adding 0.5,
+        // truncation, and ties-to-even. Expected answers are literal values.
+        for (input, expected) in [
+            (f64::from_bits(0x3fdf_ffff_ffff_ffff), 0.0_f64),
+            (0.5, 1.0),
+            (f64::from_bits(0x3fe0_0000_0000_0001), 1.0),
+            (-f64::from_bits(0x3fdf_ffff_ffff_ffff), -0.0),
+            (-0.5, -1.0),
+            (-f64::from_bits(0x3fe0_0000_0000_0001), -1.0),
+            (2.5, 3.0),
+            (-2.5, -3.0),
+            (4_503_599_627_370_495.5, 4_503_599_627_370_496.0),
+            (-4_503_599_627_370_495.5, -4_503_599_627_370_496.0),
+            (f64::MAX, f64::MAX),
+            (-f64::MAX, -f64::MAX),
+        ] {
+            assert_eq!(
+                round_integral(Op::Round, input).to_bits(),
+                expected.to_bits()
+            );
+        }
+    }
+
+    #[test]
     fn integral_rounding_promotes_types_and_preserves_exceptional_bits() {
         let integers = [
             i64::MIN,
@@ -848,7 +875,25 @@ mod tests {
             f64::from_bits(0xfff8_0000_0000_0042),
             0.0,
         ];
-        for (op, double_expected) in [(Op::Floor, &floor_expected), (Op::Ceil, &ceil_expected)] {
+        let round_expected = [
+            -3.0_f64,
+            -0.0,
+            -0.0,
+            -0.0,
+            0.0,
+            0.0,
+            0.0,
+            3.0,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::from_bits(0xfff8_0000_0000_0042),
+            0.0,
+        ];
+        for (op, double_expected) in [
+            (Op::Floor, &floor_expected),
+            (Op::Ceil, &ceil_expected),
+            (Op::Round, &round_expected),
+        ] {
             for (kind, values, validity, expected) in [
                 (
                     DataType::Int64,
