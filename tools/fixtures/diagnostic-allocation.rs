@@ -257,6 +257,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if mode == "analytic-shapes" || mode == "analytic-attribution-negative" {
         return ownership::analytic_shapes(&root, mode == "analytic-attribution-negative");
     }
+    if mode == "wide-set-shapes" || mode == "wide-set-attribution-negative" {
+        return ownership::wide_set_shapes(&root, mode == "wide-set-attribution-negative");
+    }
     if mode == "joined-shapes" || mode == "joined-attribution-negative" {
         return ownership::joined_shapes(&root, mode == "joined-attribution-negative");
     }

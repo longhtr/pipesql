@@ -193,6 +193,18 @@ every returned step. The catalog work ceiling is 1,100 allocation prefixes;
 the EXCEPT healthy census observed 1,056.
 This ceiling bounds campaign work and does not change engine admission.
 
+The ownership selection also runs `wide_set_shapes` in
+[`composed-ownership.rs`](fixtures/composed-ownership.rs) at short and 384-byte
+paths. A two-column left source repeats one nullable STRING across 61 positions;
+a declared 62-column right source supplies each position separately. Together
+they reach the 64-source-column bound without exceeding the query token bound.
+All six UNION/EXCEPT/INTERSECT forms check literal row-id sequences, every STRING
+position and final release. NULL, empty, embedded-NUL UTF-8 and 65,536-byte cells
+exercise different record and output extents. The caller samples requested and
+usable allocations against prepared/result charges after execute and every step.
+UNION ALL must use no temporary bytes; the sorted forms must use external storage.
+A nonexistent measured owner must fail the usable-byte attribution guard.
+
 The same selection runs the nullable self-join, aggregation, and ordering workload
 at 2.2 MB and 12 MB. `joined_shapes` in
 [`composed-ownership.rs`](fixtures/composed-ownership.rs) checks all 4,096 descending

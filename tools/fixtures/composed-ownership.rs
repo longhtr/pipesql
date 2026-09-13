@@ -957,6 +957,177 @@ pub(super) fn append_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error
 
 // The workload matches the learning example; expected values below follow the
 // literal two source rows per key, independently of the sorter and hash layout.
+// Repeated logical positions expand one source STRING into 61 sorted fields.
+// Maximum cells force multiple external runs; short and NULL cells reuse them.
+pub(super) fn wide_set_shapes(
+    root: &Path,
+    wrong_attribution: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir(root)?;
+    let path = root.join("database");
+    let cancel = CancellationToken::new();
+    let db = Database::create_empty(&path, Config::new(192_000_000, 256_000_000)?)?;
+    let long = "雪".repeat(21_845) + "x";
+    let short = "a\0雪";
+    let texts = [None, Some(short), Some(long.as_str()), Some("")];
+    for (table, frequencies) in [
+        ("left_rows", [3, 2, 1, 0, 3, 2, 1, 0]),
+        ("right_rows", [1, 2, 3, 4, 0, 1, 0, 1]),
+    ] {
+        // A declared wide right side keeps the query within the token bound
+        // while the left projection repeats one physical source payload. The two
+        // sources together use all 64 admitted source-column identities.
+        let width = if table == "right_rows" { 62 } else { 2 };
+        let names: Vec<_> = (0..width)
+            .map(|column| match column {
+                0 => "id".to_owned(),
+                1 => "text".to_owned(),
+                _ => format!("text{column}"),
+            })
+            .collect();
+        let declarations: Vec<_> = names
+            .iter()
+            .enumerate()
+            .map(|(column, name)| ColumnDeclaration {
+                name,
+                data_type: if column == 0 {
+                    DataType::Int64
+                } else {
+                    DataType::String
+                },
+                nullable: column != 0,
+            })
+            .collect();
+        db.declare_table(table, &declarations, &cancel)?;
+        let mut append = db.begin_append(
+            table,
+            AppendLimits {
+                batches: 12,
+                encoded_bytes: 32_000_000,
+            },
+            &cancel,
+        )?;
+        for (id, count) in frequencies.into_iter().enumerate() {
+            for _ in 0..count {
+                let text = texts[id % 4];
+                let ids = [id as i64];
+                let values = [text.unwrap_or("hidden")];
+                let validity = [u8::from(text.is_some())];
+                let inputs: Vec<_> = (0..width)
+                    .map(|column| {
+                        if column == 0 {
+                            ColumnInput {
+                                values: ColumnValues::Int64(&ids),
+                                validity: &[1],
+                            }
+                        } else {
+                            ColumnInput {
+                                values: ColumnValues::String(&values),
+                                validity: &validity,
+                            }
+                        }
+                    })
+                    .collect();
+                append.write(&inputs, &cancel)?;
+            }
+        }
+        append.commit(&cancel)?;
+    }
+    let columns = format!("id, {}", vec!["text"; 61].join(", "));
+    println!("wide sets: 62 positions, nullable maximum STRING, duplicate occurrences");
+    for (operation, expected) in [
+        (
+            "UNION ALL",
+            &[
+                0, 0, 0, 1, 1, 2, 4, 4, 4, 5, 5, 6, 0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 5, 7,
+            ][..],
+        ),
+        ("UNION DISTINCT", &[0, 1, 2, 3, 4, 5, 6, 7][..]),
+        ("EXCEPT DISTINCT", &[4, 6][..]),
+        ("INTERSECT DISTINCT", &[0, 1, 2, 5][..]),
+        ("EXCEPT ALL", &[0, 0, 4, 4, 4, 5, 6][..]),
+        ("INTERSECT ALL", &[0, 1, 1, 2, 5][..]),
+    ] {
+        let sql = format!("FROM left_rows |> SELECT {columns} |> {operation} (FROM right_rows)");
+        let before = Live::now();
+        let memory = db.reserved_memory_bytes();
+        let query = db.prepare(&sql)?;
+        let mut result = db.execute(&query, &cancel)?;
+        let mut seen = 0;
+        let mut finished = false;
+        let mut steps = 0;
+        let mut peak_temp = 0;
+        let mut minimum_headroom = i128::MAX;
+        loop {
+            let charge = query.accounted_memory_bytes() + result.accounted_memory_bytes();
+            assert_eq!(db.reserved_memory_bytes(), memory + charge);
+            let heap = Heap::now().increase_from(Heap {
+                requested: before.requested,
+                usable: before.usable,
+            });
+            assert!(
+                heap.requested as u64 <= charge,
+                "wide set requested admission"
+            );
+            let attributed =
+                heap.usable as u128 + u128::from(wrong_attribution) * u128::from(charge);
+            minimum_headroom = minimum_headroom.min(i128::from(charge) - attributed as i128);
+            peak_temp = peak_temp.max(db.reserved_temp_bytes());
+            if finished {
+                break;
+            }
+            steps += 1;
+            assert!(steps < 200_000, "wide set did not finish");
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Finished => finished = true,
+                QueryStep::Failed(error) => panic!("wide set {operation}: {error}"),
+                QueryStep::Rows(batch) => {
+                    assert_eq!(batch.column_count(), 62);
+                    for row in 0..batch.len() {
+                        let id = *expected.get(seen).expect("unexpected set row");
+                        assert_eq!(batch.value(row, 0), Some(Value::Int64(id)));
+                        for column in 1..62 {
+                            match texts[id as usize % 4] {
+                                None => assert_eq!(batch.value(row, column), Some(Value::Null)),
+                                Some(expected) => {
+                                    let Some(Value::String(actual)) = batch.value(row, column)
+                                    else {
+                                        panic!("wide set STRING output");
+                                    };
+                                    assert_eq!(actual.as_str(), expected);
+                                }
+                            }
+                        }
+                        seen += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(seen, expected.len());
+        if operation == "UNION ALL" {
+            assert_eq!(peak_temp, 0);
+        } else {
+            assert!(peak_temp > 0, "wide set must use external storage");
+        }
+        drop(result);
+        drop(query);
+        assert_eq!(Live::now(), before);
+        assert_eq!(db.reserved_memory_bytes(), memory);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        println!(
+            "wide set operation={operation} rows={seen} steps={steps} minimum-usable-headroom={minimum_headroom} temporary={peak_temp} release=complete"
+        );
+        assert!(
+            minimum_headroom >= 0,
+            "wide set usable ownership attribution"
+        );
+    }
+    db.close()?;
+    println!("wide set shapes passed: 6 cases; complete rows, step ownership and release");
+    Ok(())
+}
+
 pub(super) fn joined_shapes(
     root: &Path,
     wrong_attribution: bool,

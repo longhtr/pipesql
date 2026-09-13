@@ -45,18 +45,21 @@ below remain unresolved.
 
 ## Active: wide positional set allocation ownership
 
-The current analytic ownership cases include EXCEPT/INTERSECT and composed UNION,
-but use a narrow payload and return count output. Select a distinct wide,
-nullable-STRING set workload before adding coverage; this is not evidence of an
-existing deficit.
+The selected boundary expands one left STRING source into 61 logical comparison
+positions against 61 separately stored right STRING columns. Including ids, the
+two sources reach the 64-source-column bound and produce 62-column results.
+Selection and tracing resolved within 30 minutes; token/source bounds remain
+unchanged. There is no reproduced allocation deficit.
 
-1. Trace set controllers, both sorted inputs, source and output admission.
-   Timebox this selection to 30 minutes and identify the uncovered width,
-   payload or allocation-history boundary.
-2. Extend the existing public ownership caller with independent complete-row
-   expectations, step-level requested/usable/charged observations, an attribution
-   negative control, forced spill and final memory/temporary release. Repair any
-   reproduced deficit at its owner without weakening the observation.
+1. Traced the set controller, both SortedInput owners and their record/run/merge
+   buffers, runtime output admission and compact source mapping.
+2. Added six UNION/EXCEPT/INTERSECT cases to the existing ownership caller with
+   literal complete-row expectations, NULL/empty/UTF-8/maximum STRING cells,
+   step-level requested/usable/charged observations and final release. Focused
+   macOS short/384-byte paths pass, with minimum sampled usable headroom of
+   7,608 bytes. UNION ALL uses no temporary storage; sorted forms use it. The
+   attribution negative control fails the intended guard. Runner interpretation
+   checks pass. Full cross-platform verification remains pending.
 3. Verify focused behavior and the required frozen macOS/GNU/Linux gates; update
    affected contracts/maps, reconcile inputs and discovery, retain concise evidence,
    remove owned outputs and commit locally. These observations cannot establish

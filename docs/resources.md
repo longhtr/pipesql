@@ -333,8 +333,14 @@ no hash index or join duplicate-product buffer. ALL matches equal occurrences
 one-to-one with the same cursors and no additional allocation. Output copies only surviving left
 values. Replay resets the retained sorted cursors once without reopening either
 source. Completion, refusal, cancellation, and abandonment release these owners
-through the ordinary query lifecycle. These logical ownership bounds do not
-establish a whole-process or RSS cap.
+through the ordinary query lifecycle. The existing public ownership caller also
+checks 62-position set results whose compact left source repeats a nullable STRING
+61 times against separately stored right columns. Maximum-size cells exercise
+expanded sorted records and output buffers; complete rows, requested/usable
+allocations and final release are checked at public step boundaries. The
+[tool map](../tools/README.md) describes invocation and its attribution control.
+These logical ownership bounds and sampled observations do not establish
+transient allocation peaks or a whole-process/RSS cap.
 
 ## Analytic count admission
 

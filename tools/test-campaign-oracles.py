@@ -101,7 +101,8 @@ class GroupExpectations(unittest.TestCase):
 class AllocationInterpretation(unittest.TestCase):
     def test_ownership_requires_joined_and_allocator_observations(self):
         marker = ("joined shapes passed: 2 budgets; complete rows, step ownership and release\n"
-                  "analytic shapes passed: 11 cases; rows, attribution and release")
+                  "analytic shapes passed: 11 cases; rows, attribution and release\n"
+                  "wide set shapes passed: 6 cases; complete rows, step ownership and release")
         for output, missing in [("", True), (marker, False)]:
             failures = []
             run = Mock(return_value=subprocess.CompletedProcess([], 0, output, ""))
@@ -118,6 +119,9 @@ class AllocationInterpretation(unittest.TestCase):
             self.assertEqual("incomplete joined allocation ownership checks" in failures, missing)
             self.assertIn((("joined-shapes", "joined-shapes"), {}), run.call_args_list)
             self.assertIn((("analytic-shapes", "analytic-path384", 384), {}), run.call_args_list)
+            self.assertIn((("wide-set-shapes", "wide-sets-path384", 384), {}), run.call_args_list)
+            self.assertEqual(sum(message.startswith("incomplete wide set allocation checks:")
+                                 for message in failures), 2 if missing else 0)
             self.assertEqual(sum(message.startswith("incomplete analytic allocation checks:")
                                  for message in failures), 2 if missing else 0)
             self.assertIn((("legacy-constant-shapes", "legacy-constants-path384", 384), {}),
