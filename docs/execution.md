@@ -336,7 +336,7 @@ later projection removes it. The DISTINCT producer can retain a sorted run and
 replay it for downstream grouping without reopening either branch. No new
 scheduler state or resource account is introduced.
 
-EXCEPT DISTINCT and INTERSECT DISTINCT use the shared positional descriptor
+EXCEPT and INTERSECT, with either DISTINCT or ALL, use the shared positional descriptor
 with distinct operation kinds. Binding assigns left names; EXCEPT preserves left
 NULLability, while INTERSECT requires both inputs to allow NULL. Independent
 semantic and physical validation check both positional mappings. Demand analysis retains
@@ -346,13 +346,22 @@ that share a physical payload slot.
 The [sorted-set controller](../src/execution/blocking/sorted_set.rs) collects both
 children through the scheduler and sorts their complete rows using two existing
 sorted-input owners. Each record is decoded with its own input layout because
-left and right NULLability can differ. The merge skips duplicate left rows and
+left and right NULLability can differ. For DISTINCT, the merge skips duplicate left rows and
 advances the right cursor until it reaches or passes the current left row.
 EXCEPT suppresses an equal left row and retains a smaller left row. INTERSECT
 retains an equal left row and consumes a smaller left row. Once the right input
 ends, INTERSECT finishes; EXCEPT retains the remaining distinct left rows. The controller
 emits at most one surviving row per step and checks cancellation between bounded
 phases. Replay rewinds the checked sorted inputs instead of reexecuting branches.
+
+For ALL, the merge retains repeated left rows and pairs equal occurrences by
+advancing both cursors. EXCEPT discards each pair; INTERSECT emits the paired left
+row. When the left row is smaller, EXCEPT emits it and INTERSECT discards it.
+When the right row is smaller, both operations advance the right cursor. Thus
+EXCEPT leaves only unmatched left occurrences, while INTERSECT emits one copy
+per pair. Previous-key checks still validate monotonic input even though ALL
+retains duplicates. No group counter, duplicate index or additional buffer is
+needed; replay rewinds both cursors and repeats the same matching decisions.
 
 ### Replay and terminal cleanup
 

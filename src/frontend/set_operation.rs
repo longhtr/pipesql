@@ -17,7 +17,9 @@ pub(crate) struct SetPlan {
 pub(crate) enum SetKind {
     UnionAll,
     ExceptDistinct,
+    ExceptAll,
     IntersectDistinct,
+    IntersectAll,
 }
 
 impl SetPlan {
@@ -50,8 +52,10 @@ impl SetPlan {
             left.data_type(),
             match self.kind {
                 SetKind::UnionAll => left.nullable() || right.nullable(),
-                SetKind::ExceptDistinct => left.nullable(),
-                SetKind::IntersectDistinct => left.nullable() && right.nullable(),
+                SetKind::ExceptDistinct | SetKind::ExceptAll => left.nullable(),
+                SetKind::IntersectDistinct | SetKind::IntersectAll => {
+                    left.nullable() && right.nullable()
+                }
             },
         ))
     }
@@ -72,7 +76,9 @@ impl SetPlan {
             return Err(bind_error(
                 match kind {
                     SetKind::UnionAll => "UNION ALL inputs require equal column counts",
+                    SetKind::ExceptAll => "EXCEPT ALL inputs require equal column counts",
                     SetKind::ExceptDistinct => "EXCEPT DISTINCT inputs require equal column counts",
+                    SetKind::IntersectAll => "INTERSECT ALL inputs require equal column counts",
                     SetKind::IntersectDistinct => {
                         "INTERSECT DISTINCT inputs require equal column counts"
                     }
@@ -103,9 +109,11 @@ impl SetPlan {
                 return Err(bind_error(
                     match kind {
                         SetKind::UnionAll => "UNION ALL column coercion is not implemented",
+                        SetKind::ExceptAll => "EXCEPT ALL column coercion is not implemented",
                         SetKind::ExceptDistinct => {
                             "EXCEPT DISTINCT column coercion is not implemented"
                         }
+                        SetKind::IntersectAll => "INTERSECT ALL column coercion is not implemented",
                         SetKind::IntersectDistinct => {
                             "INTERSECT DISTINCT column coercion is not implemented"
                         }
@@ -219,6 +227,8 @@ mod tests {
             "UNION DISTINCT",
             "EXCEPT DISTINCT",
             "INTERSECT DISTINCT",
+            "EXCEPT ALL",
+            "INTERSECT ALL",
         ] {
             let sql = format!("FROM l |> SELECT a AS x, a AS y |> {mode} (FROM r |> SELECT b, c)");
             for mutation in 0..12 {

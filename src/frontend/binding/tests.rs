@@ -99,6 +99,11 @@ fn wide_constant_preparation_admits_exact_peak_and_releases_it() {
 
 #[test]
 fn set_scope_preparation_admits_exact_peak_and_releases_it() {
+    for operator in ["EXCEPT ALL", "INTERSECT ALL"] {
+        check_scope_preparation(&format!(
+            "FROM facts |> {operator} (FROM facts |> {operator} (FROM facts)), (FROM facts)"
+        ));
+    }
     check_scope_preparation(
         "FROM facts |> UNION ALL (FROM facts |> UNION ALL (FROM facts)), (FROM facts)",
     );
@@ -121,6 +126,8 @@ fn legacy_set_operations_refuse_before_execution_with_their_operator_span() {
         ("UNION ALL", "UNION requires declared-table storage"),
         ("UNION DISTINCT", "UNION requires declared-table storage"),
         ("EXCEPT DISTINCT", "EXCEPT requires declared-table storage"),
+        ("EXCEPT ALL", "EXCEPT requires declared-table storage"),
+        ("INTERSECT ALL", "INTERSECT requires declared-table storage"),
         (
             "INTERSECT DISTINCT",
             "INTERSECT requires declared-table storage",

@@ -23,7 +23,9 @@ pub(super) enum ParsedStage {
     Derived(SourceSpan),
     UnionAll(SourceSpan),
     ExceptDistinct(SourceSpan),
+    ExceptAll(SourceSpan),
     IntersectDistinct(SourceSpan),
+    IntersectAll(SourceSpan),
     Join {
         kind: JoinKind,
         left: SourceSpan,
@@ -372,7 +374,9 @@ enum SetOperator {
     UnionAll,
     UnionDistinct,
     ExceptDistinct,
+    ExceptAll,
     IntersectDistinct,
+    IntersectAll,
 }
 
 struct Parser<'a> {
@@ -949,7 +953,9 @@ impl Parser<'_> {
                     ChildCompletion::Set { pipe, operator } => {
                         let stage = match operator {
                             SetOperator::ExceptDistinct => ParsedStage::ExceptDistinct(pipe),
+                            SetOperator::ExceptAll => ParsedStage::ExceptAll(pipe),
                             SetOperator::IntersectDistinct => ParsedStage::IntersectDistinct(pipe),
+                            SetOperator::IntersectAll => ParsedStage::IntersectAll(pipe),
                             SetOperator::UnionAll | SetOperator::UnionDistinct => {
                                 ParsedStage::UnionAll(pipe)
                             }
@@ -999,20 +1005,27 @@ impl Parser<'_> {
                 }
                 Kind::Reserved if self.is_word("EXCEPT") => {
                     self.word("EXCEPT")?;
-                    self.take(Kind::Distinct)?;
-                    self.set_argument(&mut frames, &mut depth, pipe, SetOperator::ExceptDistinct)?;
+                    let operator = if self.peek() == Kind::Distinct {
+                        self.take(Kind::Distinct)?;
+                        SetOperator::ExceptDistinct
+                    } else {
+                        self.word("ALL")?;
+                        SetOperator::ExceptAll
+                    };
+                    self.set_argument(&mut frames, &mut depth, pipe, operator)?;
                     need_source = true;
                     continue;
                 }
                 Kind::Reserved if self.is_word("INTERSECT") => {
                     self.word("INTERSECT")?;
-                    self.take(Kind::Distinct)?;
-                    self.set_argument(
-                        &mut frames,
-                        &mut depth,
-                        pipe,
-                        SetOperator::IntersectDistinct,
-                    )?;
+                    let operator = if self.peek() == Kind::Distinct {
+                        self.take(Kind::Distinct)?;
+                        SetOperator::IntersectDistinct
+                    } else {
+                        self.word("ALL")?;
+                        SetOperator::IntersectAll
+                    };
+                    self.set_argument(&mut frames, &mut depth, pipe, operator)?;
                     need_source = true;
                     continue;
                 }
@@ -1500,11 +1513,34 @@ mod tests {
     }
 
     #[test]
-    fn sorted_set_distinct_keeps_argument_and_normalized_stage_bounds() {
+    fn multiset_arguments_restore_quantifiers_and_operator_spans() {
+        let sql =
+            "FROM a |> EXCEPT ALL (FROM b |> INTERSECT ALL (FROM c)), (FROM d), |> AS remaining";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.source_count, 4);
+        assert_eq!(parsed.len, 7);
+        assert!(matches!(parsed.stages[0], ParsedStage::Source(1)));
+        assert!(matches!(parsed.stages[1], ParsedStage::Source(2)));
+        let ParsedStage::IntersectAll(inner) = parsed.stages[2] else {
+            panic!("nested intersection retains ALL");
+        };
+        for position in [3, 5] {
+            let ParsedStage::ExceptAll(outer) = parsed.stages[position] else {
+                panic!("each argument completes a left-associated EXCEPT ALL");
+            };
+            assert_eq!(usize::from(outer.start), sql.find("|>").unwrap());
+        }
+        assert_eq!(usize::from(inner.start), sql.find("|> INTERSECT").unwrap());
+        assert!(matches!(parsed.stages[4], ParsedStage::Source(3)));
+        assert!(matches!(parsed.stages[6], ParsedStage::Alias(_)));
+    }
+
+    #[test]
+    fn sorted_set_keeps_argument_and_normalized_stage_bounds() {
         for operator in ["EXCEPT", "INTERSECT"] {
             for sql in [
                 "FROM a |> {operator} (FROM b)",
-                "FROM a |> {operator} ALL (FROM b)",
+                "FROM a |> {operator} ALL",
                 "FROM a |> {operator} DISTINCT",
                 "FROM a |> {operator} DISTINCT ()",
                 "FROM a |> {operator} DISTINCT FROM b",
@@ -1518,16 +1554,18 @@ mod tests {
                     "{sql}"
                 );
             }
-            let arguments = ["(FROM b)"; MAX_STAGES / 2].join(", ");
-            let sql = format!("FROM a |> {operator} DISTINCT {arguments}");
-            assert_eq!(usize::from(parse_query(&sql).unwrap().len), MAX_STAGES);
-            assert!(matches!(
-                parse_query(&format!("{sql}, (FROM b)")),
-                Err(Error::Parse {
-                    message: "normalized stage limit exceeded",
-                    ..
-                })
-            ));
+            for quantifier in ["DISTINCT", "ALL"] {
+                let arguments = ["(FROM b)"; MAX_STAGES / 2].join(", ");
+                let sql = format!("FROM a |> {operator} {quantifier} {arguments}");
+                assert_eq!(usize::from(parse_query(&sql).unwrap().len), MAX_STAGES);
+                assert!(matches!(
+                    parse_query(&format!("{sql}, (FROM b)")),
+                    Err(Error::Parse {
+                        message: "normalized stage limit exceeded",
+                        ..
+                    })
+                ));
+            }
         }
     }
 

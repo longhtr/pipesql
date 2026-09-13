@@ -400,7 +400,9 @@ impl<'db> Runtime<'db> {
                                 output,
                             },
                             frontend::SetKind::ExceptDistinct
-                            | frontend::SetKind::IntersectDistinct => Owner::SortedSet {
+                            | frontend::SetKind::IntersectDistinct
+                            | frontend::SetKind::ExceptAll
+                            | frontend::SetKind::IntersectAll => Owner::SortedSet {
                                 sorted_set: blocking::sorted_set::SortedSet::new(
                                     database, bound, inputs,
                                 )?,

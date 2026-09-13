@@ -1,6 +1,6 @@
 //! Complete-row difference and intersection over two admitted sorted inputs.
 //! Both branches finish before comparison. The operation chooses which left
-//! equivalence classes emit; sorting, replay, and failure ownership are shared.
+//! occurrences emit; sorting, replay, and failure ownership are shared.
 use super::{RowLayout, SortPhase, SortedInput, append_bytes, compare_values, read_value};
 use crate::batch::Batch;
 use crate::effects::Effects;
@@ -283,11 +283,19 @@ impl<'db> SortedSet<'db> {
                     phase
                 } else if self.sides[0].finished() {
                     Phase::Done
-                } else if self.duplicate(0)? {
+                } else if self.duplicate(0)?
+                    && matches!(
+                        self.kind,
+                        SetKind::ExceptDistinct | SetKind::IntersectDistinct
+                    )
+                {
                     self.consume(0)?;
                     phase
                 } else if self.sides[1].finished() {
-                    if self.kind == SetKind::IntersectDistinct {
+                    if matches!(
+                        self.kind,
+                        SetKind::IntersectDistinct | SetKind::IntersectAll
+                    ) {
                         Phase::Done
                     } else {
                         Phase::Emit
@@ -295,12 +303,39 @@ impl<'db> SortedSet<'db> {
                 } else {
                     self.duplicate(1)?;
                     match self.compare()? {
-                        Ordering::Less if self.kind == SetKind::ExceptDistinct => Phase::Emit,
-                        Ordering::Equal if self.kind == SetKind::IntersectDistinct => Phase::Emit,
-                        Ordering::Less | Ordering::Equal => {
+                        Ordering::Less
+                            if matches!(
+                                self.kind,
+                                SetKind::ExceptDistinct | SetKind::ExceptAll
+                            ) =>
+                        {
+                            Phase::Emit
+                        }
+                        Ordering::Less => {
                             self.consume(0)?;
                             phase
                         }
+                        Ordering::Equal => match self.kind {
+                            SetKind::ExceptDistinct => {
+                                self.consume(0)?;
+                                phase
+                            }
+                            SetKind::IntersectDistinct => Phase::Emit,
+                            // ALL pairs occurrences one-to-one. DISTINCT keeps
+                            // the right row to match the entire left class.
+                            SetKind::ExceptAll => {
+                                self.consume(0)?;
+                                self.consume(1)?;
+                                phase
+                            }
+                            SetKind::IntersectAll => {
+                                self.consume(1)?;
+                                Phase::Emit
+                            }
+                            SetKind::UnionAll => {
+                                return Err(Error::Corrupt("union in sorted set owner"));
+                            }
+                        },
                         Ordering::Greater => {
                             self.consume(1)?;
                             phase

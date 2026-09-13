@@ -170,7 +170,12 @@ and native-I/O campaigns continue to exercise those owners. Both operations run
 the internal exact/short admission, cancellation, reader corruption and replay
 schedules. The independent analytic ownership campaign adds INTERSECT with
 256 shared rows and checks actual heap attribution and release at every step;
-its expected rows do not call production set comparison.
+its expected rows do not call production set comparison. The ALL controls use
+unequal duplicate counts and require 768 rows apiece after difference or
+intersection, including per-step ownership and terminal release. Both ALL forms
+also run the common internal failure schedules. They allocate no new merge
+storage; the public prefix and native-I/O sweeps retain the shared constructors
+and file effects rather than duplicating the same schedules per quantifier.
 
 EXCEPT coverage compares complete rows in both native-I/O and allocation
 campaigns. The native input retains only key 2, whose amount is 90. Allocation

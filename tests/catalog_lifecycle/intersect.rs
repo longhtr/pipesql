@@ -342,11 +342,16 @@ fn public_intersect_preserves_typed_equality_bits_and_pinned_inputs() {
 fn public_sorted_set_demands_both_complete_inputs_before_emitting() {
     let (_directory, db) = join_fixture();
     let baseline = db.reserved_memory_bytes();
-    for operator in ["EXCEPT", "INTERSECT"] {
+    for operator in [
+        "EXCEPT DISTINCT",
+        "INTERSECT DISTINCT",
+        "EXCEPT ALL",
+        "INTERSECT ALL",
+    ] {
         for template in [
-            "FROM facts |> SELECT v, v*9223372036854775807 AS unused |> {operator} DISTINCT (FROM facts |> SELECT v, 1 AS unused) |> SELECT v |> LIMIT 1",
-            "FROM facts |> SELECT v, 1 AS unused |> {operator} DISTINCT (FROM facts |> SELECT v, v*9223372036854775807 AS unused) |> SELECT v |> LIMIT 1",
-            "FROM facts |> WHERE v<0 |> SELECT v, 1 AS unused |> {operator} DISTINCT (FROM facts |> SELECT v, v*9223372036854775807 AS unused) |> SELECT v |> LIMIT 1",
+            "FROM facts |> SELECT v, v*9223372036854775807 AS unused |> {operator} (FROM facts |> SELECT v, 1 AS unused) |> SELECT v |> LIMIT 1",
+            "FROM facts |> SELECT v, 1 AS unused |> {operator} (FROM facts |> SELECT v, v*9223372036854775807 AS unused) |> SELECT v |> LIMIT 1",
+            "FROM facts |> WHERE v<0 |> SELECT v, 1 AS unused |> {operator} (FROM facts |> SELECT v, v*9223372036854775807 AS unused) |> SELECT v |> LIMIT 1",
         ] {
             let sql = template.replace("{operator}", operator);
             let cancel = CancellationToken::new();

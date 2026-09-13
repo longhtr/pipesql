@@ -101,6 +101,7 @@ separate from this query manifest.
 | `DISTINCT` | Removes duplicate complete rows on declared tables. Preserves output names and shared identities through fresh replacements; clears order. See [equality](#values-null-and-equality). |
 | `UNION ALL (pipe_query) [, (pipe_query), ...]` | Combines declared-table pipelines by position, preserving duplicates. Requires matching widths and scalar types. See [UNION ALL](#union-all) for names, demand, and bounds. |
 | `UNION DISTINCT (pipe_query) [, (pipe_query), ...]` | Combines matching positional pipelines and removes duplicate complete rows. See [UNION DISTINCT](#union-distinct) for demand and the additional stage. |
+| `EXCEPT ALL (pipe_query) [, (pipe_query), ...]`, `INTERSECT ALL (pipe_query) [, (pipe_query), ...]` | Subtracts or intersects complete-row multiplicities. See [multiset operations](#except-all-and-intersect-all). |
 | `EXCEPT DISTINCT (pipe_query) [, (pipe_query), ...]` | Returns each distinct complete left row absent from every right input. See [EXCEPT DISTINCT](#except-distinct) for comparison and demand. |
 | `INTERSECT DISTINCT (pipe_query) [, (pipe_query), ...]` | Returns each distinct complete row shared by all inputs. See [INTERSECT DISTINCT](#intersect-distinct) for NULLability and demand. |
 | `LIMIT count [OFFSET skip_rows]` | Selects a prefix on legacy or declared tables. Count and offset are non-negative INT64 constant expressions; see [LIMIT](#limit) for demand and error rules. |
@@ -469,7 +470,7 @@ scope, demand, stack, and admission checks.
 Each argument is a parenthesized, independent FROM-based pipe query. At least one
 argument is required; a trailing comma is allowed. Arguments can contain joins,
 derived inputs, and nested unions. TABLE arguments, hints, name-based
-correspondence, bare UNION, INTERSECT, and EXCEPT ALL remain unsupported.
+correspondence and set operators without an explicit ALL or DISTINCT remain unsupported.
 
 Inputs must have equal ordinary column counts and identical scalar types at
 each position. No numeric widening or untyped NULL coercion occurs. Output names
@@ -545,7 +546,7 @@ scope. At least one argument is required, and a trailing comma is accepted.
 These forms follow the pinned
 [pipe EXCEPT syntax](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/pipe-syntax.md#except_pipe_operator)
 and [set difference rules](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/query-syntax.md#except).
-EXCEPT ALL, name-based matching, TABLE arguments, and type coercions remain
+Name-based matching, TABLE arguments, and type coercions remain
 unsupported. Each argument introduces one binary EXCEPT stage in addition to
 its input stages; no separate DISTINCT stage is added. Existing query, token,
 source, column, and stage limits are unchanged.
@@ -566,8 +567,8 @@ exact positional types, left names, fresh identities and pinned snapshots as
 [EXCEPT DISTINCT](#except-distinct). Multiple arguments combine left to right;
 a trailing comma is accepted by the pinned
 [pipe-set grammar](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/parser/googlesql.tm#L5126).
-Each argument adds one binary stage. ALL,
-name-based matching, TABLE arguments and coercions remain unsupported.
+Each argument adds one binary stage. Name-based matching, TABLE arguments and
+coercions remain unsupported.
 
 A result column is nullable only when both corresponding input columns are
 nullable. Complete rows use DISTINCT equality, including typed NULLs, NaNs and
@@ -579,6 +580,32 @@ are preserved. These evaluation and NULLability rules are PipeSQL contracts.
 The [shared sorted-input admission](resources.md#except-distinct-admission)
 accounts for comparison and replay. The relational behavior follows the pinned
 [INTERSECT specification](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/query-syntax.md#intersect).
+
+## EXCEPT ALL and INTERSECT ALL
+
+These forms use the same parenthesized arguments, positional exact types, left
+names, fresh identities, snapshots and complete-row equality as their DISTINCT
+forms. An explicit ALL is required. Arguments combine left to right, and a
+trailing comma is accepted. Each argument adds one binary stage.
+
+For an equivalent complete row occurring `m` times on the left and `n` times on
+the right, EXCEPT ALL returns `max(m - n, 0)` copies and INTERSECT ALL returns
+`min(m, n)` copies. For example, left rows `[1, 1, 2]` and right rows `[1]` produce
+`[1, 2]` with EXCEPT ALL and `[1]` with INTERSECT ALL. NULLs, all NaNs and signed
+zeros retain the existing equivalence classes. These multiplicities follow the
+[pinned set rules](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/query-syntax.md#set_operators).
+
+Each emitted occurrence preserves a selected left row's original stored bits.
+The choice of occurrences and output order are unspecified. EXCEPT ALL keeps
+left NULLability; INTERSECT ALL marks a position nullable only when both inputs
+allow NULL. Both complete inputs remain demanded before output, including hidden
+comparison fields and empty inputs. Original error spans and the downstream
+LIMIT 0 exception are unchanged. These metadata and demand rules are PipeSQL
+contracts. Name matching, TABLE arguments and coercions remain unsupported.
+
+The [sorted-input owner](resources.md#except-distinct-admission) matches equal
+occurrences one-to-one without allocating a duplicate index or buffering a group.
+Try the [duplicate reconciliation example](getting-started.md#reconcile-repeated-facts).
 
 ## Relation state
 

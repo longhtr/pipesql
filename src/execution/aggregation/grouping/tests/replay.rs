@@ -124,7 +124,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
         ],
     );
     let cancel = CancellationToken::new();
-    for variant in 0..20 {
+    for variant in 0..22 {
         let joined = matches!(variant, 0 | 2 | 6 | 16 | 17);
         let sql = if joined {
             "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> AGGREGATE SUM(l.n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY l.k"
@@ -186,6 +186,12 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
             19 => {
                 "FROM facts |> INTERSECT DISTINCT (FROM facts |> WHERE n>3) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
             }
+            20 => {
+                "FROM facts |> UNION ALL (FROM facts) |> EXCEPT ALL (FROM facts |> WHERE n=3) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
+            }
+            21 => {
+                "FROM facts |> UNION ALL (FROM facts) |> INTERSECT ALL (FROM facts |> UNION ALL (FROM facts)) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
+            }
             _ => sql,
         };
         let query = database.prepare(sql).unwrap();
@@ -227,7 +233,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
             if let State::Running(runtime) = &mut result.state {
                 replay |= if joined {
                     runtime.first_join_mut().was_replayed()
-                } else if matches!(variant, 18 | 19) {
+                } else if matches!(variant, 18..=21) {
                     runtime.first_sorted_set_mut().was_replayed()
                 } else if !matches!(variant, 4 | 7) {
                     runtime.first_order_mut().was_replayed()
@@ -268,6 +274,8 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
                 14 => [[1, 1, 2], [2, 1, 1]],
                 15 => [[1, 2, 2], [2, 2, 1]],
                 17 => [[1, 10, 2], [2, 7, 1]],
+                20 => [[1, 11, 3], [2, 14, 2]],
+                21 => [[1, 14, 4], [2, 14, 2]],
                 _ => unreachable!(),
             }
         );

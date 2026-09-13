@@ -401,6 +401,9 @@ fn check_set_width() {
         ("EXCEPT DISTINCT", "right_rows", &expected[..1]),
         ("INTERSECT DISTINCT", "right_rows", &expected[..0]),
         ("INTERSECT DISTINCT", "left_rows", &expected[..1]),
+        ("EXCEPT ALL", "right_rows", &expected[..1]),
+        ("INTERSECT ALL", "right_rows", &expected[..0]),
+        ("INTERSECT ALL", "left_rows", &expected[..1]),
     ] {
         let sql = format!("FROM left_rows |> {operator} (FROM {right}) |> SELECT {columns}");
         let prepared = db.prepare(&sql).unwrap();
@@ -418,6 +421,8 @@ fn check_set_width() {
         "FROM left_rows |> UNION DISTINCT (FROM too_wide)".to_owned(),
         "FROM left_rows |> EXCEPT DISTINCT (FROM too_wide)".to_owned(),
         "FROM left_rows |> INTERSECT DISTINCT (FROM too_wide)".to_owned(),
+        "FROM left_rows |> EXCEPT ALL (FROM too_wide)".to_owned(),
+        "FROM left_rows |> INTERSECT ALL (FROM too_wide)".to_owned(),
         format!("FROM left_rows |> UNION ALL (FROM right_rows) |> SELECT {columns}, c0"),
     ] {
         assert!(

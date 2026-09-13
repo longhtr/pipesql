@@ -316,8 +316,8 @@ new resource account, spool implementation, or replay authority.
 
 ## EXCEPT DISTINCT admission
 
-Each binary EXCEPT or INTERSECT shares the positional descriptor owner above and
-admits two
+Each binary EXCEPT or INTERSECT, with DISTINCT or ALL, shares the positional
+descriptor owner above and admits two
 [sorted inputs](#join-ordering-and-distinct-admission) plus one output batch.
 Each input retains its own nullable row layout. The controller stores two inline
 64-byte mappings from logical comparison positions to child payload slots;
@@ -327,7 +327,8 @@ owners, which retain their existing record, run, merge, I/O, and scratch charges
 
 Both inputs are consumed and sorted before output. Merge comparison retains the
 current row and previous key in the existing sorted-input buffers. It introduces
-no hash index or join duplicate-product buffer. Output copies only surviving left
+no hash index or join duplicate-product buffer. ALL matches equal occurrences
+one-to-one with the same cursors and no additional allocation. Output copies only surviving left
 values. Replay resets the retained sorted cursors once without reopening either
 source. Completion, refusal, cancellation, and abandonment release these owners
 through the ordinary query lifecycle. These logical ownership bounds do not

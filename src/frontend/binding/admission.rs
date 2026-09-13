@@ -98,6 +98,8 @@ impl BindingBudget {
                     ParsedStage::UnionAll(_)
                         | ParsedStage::ExceptDistinct(_)
                         | ParsedStage::IntersectDistinct(_)
+                        | ParsedStage::ExceptAll(_)
+                        | ParsedStage::IntersectAll(_)
                 )
             })
             .count();

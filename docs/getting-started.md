@@ -529,6 +529,30 @@ It returns required INT64 `region` with rows `1` and `2`, followed by
 `row_count=2` and `status=queried`. INTERSECT DISTINCT emits each shared value
 once. Its output is required because the dimension identifier cannot be NULL.
 
+## Reconcile repeated facts
+
+Use the same facts database. Region 1 occurs
+twice in facts and once in regions. Run
+[repeated-regions.sql](../examples/repeated-regions.sql):
+
+```sh
+cargo run --release --offline --locked -- query --database "$pipesql_left_join_dir/facts" \
+  --query-file "$PWD/examples/repeated-regions.sql" \
+  --memory-limit-bytes 8000000 --temp-limit-bytes 4000000
+```
+
+Require three rows: NULL, 1 and 3, followed by `status=queried` and successful
+process exit. EXCEPT ALL subtracts one occurrence of each region in the right
+input. Region 1 therefore retains one occurrence, while region 2 retains none.
+EXCEPT DISTINCT would remove both occurrences of region 1. INTERSECT ALL instead
+retains one occurrence per matched pair; with these inputs it returns 1 and 2.
+
+Trace the [sorted-set merge](../src/execution/blocking/sorted_set.rs): it advances
+both input cursors when rows match. The cursors already hold checked sorted rows,
+so duplicate reconciliation needs no separate table of counts. The
+[language contract](language.md#except-all-and-intersect-all) defines equivalence,
+NULLability, representative bits and demanded errors.
+
 Remove this example's database when finished:
 
 ```sh

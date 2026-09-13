@@ -80,6 +80,8 @@ fn set_branch_positions_and_demands_are_validated_independently() {
         ("UNION ALL", 1),
         ("EXCEPT DISTINCT", 2),
         ("INTERSECT DISTINCT", 2),
+        ("EXCEPT ALL", 2),
+        ("INTERSECT ALL", 2),
     ] {
         let query = db.prepare(&format!("FROM facts |> SELECT a AS x, a AS y |> {operator} (FROM facts |> SELECT b, a) |> SELECT y |> WHERE y>0")).unwrap();
         for mutation in 0..9 {

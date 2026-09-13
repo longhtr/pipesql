@@ -7,14 +7,26 @@ use crate::execution::{QueryResult, QueryStep, State};
 
 // Repeated positions share a source slot. Both inputs exceed the 174-row run
 // capacity: difference keeps keys 88..90; intersection keeps keys 0..88.
-const CASES: [(&str, std::ops::Range<i64>); 2] = [
+const CASES: [(&str, std::ops::Range<i64>, usize); 4] = [
     (
         "FROM facts |> SELECT k AS a, k AS b |> EXCEPT DISTINCT (FROM facts |> WHERE k<88 |> SELECT k, k)",
         88..90,
+        1,
     ),
     (
         "FROM facts |> SELECT k AS a, k AS b |> INTERSECT DISTINCT (FROM facts |> WHERE k<88 |> SELECT k, k)",
         0..88,
+        1,
+    ),
+    (
+        "FROM facts |> SELECT k AS a, k AS b |> EXCEPT ALL (FROM facts |> WHERE k<88 |> SELECT k, k)",
+        88..90,
+        2,
+    ),
+    (
+        "FROM facts |> SELECT k AS a, k AS b |> INTERSECT ALL (FROM facts |> WHERE k<88 |> SELECT k, k)",
+        0..88,
+        2,
     ),
 ];
 const STEPS: usize = 100_000;
@@ -99,8 +111,11 @@ fn collect(result: &mut QueryResult<'_, '_>, effects: &mut Effects) -> Vec<(i64,
 fn exact_admission_spill_and_replay_reconcile_owned_capacities() {
     let directory = Directory::new();
     let db = two_column_database(&directory);
-    for (sql, keys) in &CASES {
-        let expected: Vec<_> = keys.clone().map(|key| (key, key)).collect();
+    for (sql, keys, copies) in &CASES {
+        let expected: Vec<_> = keys
+            .clone()
+            .flat_map(|key| std::iter::repeat_n((key, key), *copies))
+            .collect();
         let cancel = CancellationToken::new();
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
@@ -152,7 +167,7 @@ fn exact_admission_spill_and_replay_reconcile_owned_capacities() {
 fn cancellation_reaches_every_input_sort_merge_and_emission_phase() {
     let directory = Directory::new();
     let db = two_column_database(&directory);
-    for (sql, _) in &CASES {
+    for (sql, _, _) in &CASES {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         for target in 0..17 {
@@ -197,8 +212,11 @@ fn cancellation_reaches_every_input_sort_merge_and_emission_phase() {
 fn both_sorted_inputs_reject_corruption_truncation_and_read_failure() {
     let directory = Directory::new();
     let db = two_column_database(&directory);
-    for (sql, keys) in &CASES {
-        let expected: Vec<_> = keys.clone().map(|key| (key, key)).collect();
+    for (sql, keys, copies) in &CASES {
+        let expected: Vec<_> = keys
+            .clone()
+            .flat_map(|key| std::iter::repeat_n((key, key), *copies))
+            .collect();
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         let cancel = CancellationToken::new();
@@ -291,8 +309,11 @@ fn both_sorted_inputs_reject_corruption_truncation_and_read_failure() {
 fn temporary_refusal_is_terminal_and_allows_healthy_reuse() {
     let directory = Directory::new();
     let db = two_column_database(&directory);
-    for (sql, keys) in &CASES {
-        let expected: Vec<_> = keys.clone().map(|key| (key, key)).collect();
+    for (sql, keys, copies) in &CASES {
+        let expected: Vec<_> = keys
+            .clone()
+            .flat_map(|key| std::iter::repeat_n((key, key), *copies))
+            .collect();
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         let cancel = CancellationToken::new();

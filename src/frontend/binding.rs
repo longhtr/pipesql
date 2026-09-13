@@ -570,13 +570,13 @@ pub(crate) fn prepare<'db>(
             ParsedStage::UnionAll(span) => {
                 return Err(bind_error("UNION requires declared-table storage", *span));
             }
-            ParsedStage::IntersectDistinct(span) => {
+            ParsedStage::IntersectDistinct(span) | ParsedStage::IntersectAll(span) => {
                 return Err(bind_error(
                     "INTERSECT requires declared-table storage",
                     *span,
                 ));
             }
-            ParsedStage::ExceptDistinct(span) => {
+            ParsedStage::ExceptDistinct(span) | ParsedStage::ExceptAll(span) => {
                 return Err(bind_error("EXCEPT requires declared-table storage", *span));
             }
             _ => (),
@@ -763,8 +763,14 @@ impl Binder<'_, '_> {
             ParsedStage::IntersectDistinct(span) => {
                 self.bind_set_operation(index, span, SetKind::IntersectDistinct, &mut input)?
             }
+            ParsedStage::IntersectAll(span) => {
+                self.bind_set_operation(index, span, SetKind::IntersectAll, &mut input)?
+            }
             ParsedStage::ExceptDistinct(span) => {
                 self.bind_set_operation(index, span, SetKind::ExceptDistinct, &mut input)?
+            }
+            ParsedStage::ExceptAll(span) => {
+                self.bind_set_operation(index, span, SetKind::ExceptAll, &mut input)?
             }
             ParsedStage::UnionAll(span) => {
                 self.bind_set_operation(index, span, SetKind::UnionAll, &mut input)?

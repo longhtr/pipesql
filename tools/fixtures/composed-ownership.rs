@@ -115,6 +115,8 @@ pub(super) fn analytic_shapes(
         "FROM facts |> EXTEND COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total GROUP BY v |> AGGREGATE SUM(total) AS total",
         "FROM facts |> EXCEPT DISTINCT (FROM facts |> WHERE v<256) |> SELECT COUNT(*) OVER () AS n",
         "FROM facts |> INTERSECT DISTINCT (FROM facts |> WHERE v<256) |> SELECT COUNT(*) OVER () AS n",
+        "FROM facts |> UNION ALL (FROM facts) |> EXCEPT ALL (FROM facts |> WHERE v<256) |> SELECT COUNT(*) OVER () AS n",
+        "FROM facts |> UNION ALL (FROM facts) |> INTERSECT ALL (FROM facts |> UNION ALL (FROM facts |> WHERE v<256)) |> SELECT COUNT(*) OVER () AS n",
     ];
     println!("entered analytic ownership shapes");
     let path_bytes = std::fs::canonicalize(&path)?.as_os_str().len() + "/units".len();
@@ -123,7 +125,7 @@ pub(super) fn analytic_shapes(
         let before = Live::now();
         let descriptors = match case {
             6 => 5,
-            7 | 8 => 3,
+            7..=10 => 3,
             _ => 2,
         };
         let query = prepare_observed(&db, sql, "analytic", descriptors, false)?;
@@ -190,7 +192,15 @@ pub(super) fn analytic_shapes(
                     };
                     assert_eq!(batch.column_count(), width);
                     for row in 0..batch.len() {
-                        assert!(seen < if case == 6 { 1 } else { 512 });
+                        assert!(
+                            seen < if case == 6 {
+                                1
+                            } else if case >= 9 {
+                                768
+                            } else {
+                                512
+                            }
+                        );
                         for column in 0..width {
                             let expected = match (case, column) {
                                 (3, 0) => Value::Int64(seen as i64),
@@ -209,6 +219,7 @@ pub(super) fn analytic_shapes(
                                 }
                                 (6, _) => Value::Int64(262_144),
                                 (7 | 8, _) => Value::Int64(256),
+                                (9 | 10, _) => Value::Int64(768),
                                 _ => Value::Int64(512),
                             };
                             assert_eq!(batch.value(row, column), Some(expected));
@@ -232,6 +243,7 @@ pub(super) fn analytic_shapes(
                 0 => 0,
                 6 => 1,
                 7 | 8 => 256,
+                9 | 10 => 768,
                 _ => 512,
             }
         );
@@ -260,7 +272,7 @@ pub(super) fn analytic_shapes(
         );
     }
     db.close()?;
-    println!("analytic shapes passed: 9 cases; rows, attribution and release");
+    println!("analytic shapes passed: 11 cases; rows, attribution and release");
     Ok(())
 }
 

@@ -221,6 +221,16 @@ and observed downstream grouping replay. The stock CLI uses the independent
 catalog fixture alongside the legacy composition corpus. The public allocator
 caller requires preparation, execution and stepping refusals for both union modes.
 
+EXCEPT and INTERSECT checks distinguish membership from multiplicity. The public
+ALL oracle counts independent literal complete rows and compares unequal input
+counts, including empty inputs and NULLs. Retain original-bit checks for NaNs and
+signed zeros, exact positional types, left names, operator-specific NULLability,
+pinned snapshots and hidden demanded errors. Both quantifiers run the shared
+sorted-set admission, spill, corruption, cancellation and replay schedules.
+Grouping fallback must observe replay while preserving duplicate counts. Public
+allocation and native-I/O campaigns cover the unchanged shared constructors and
+file effects; per-step ownership cases cover the ALL merge outcomes.
+
 DISTINCT verification covers all ordinary-output identities, duplicate-output
 sharing, fresh identity ranges, preserved visible ranges and cleared semantic
 order. Include all 64 columns and maximum byte widths, repeated stages, empty

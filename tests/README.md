@@ -59,6 +59,7 @@ those operations are outside the original stack contract.
 | `order.rs`, `distinct.rs`, `limit.rs` | Materialization, complete-row equality, ordering, and prefix boundaries. |
 | `except.rs` | Complete positional difference, left NULLability, repeated physical slots, nested composition, typed equality, and prepared snapshots. |
 | `intersect.rs` | Complete-row intersection against an independent set oracle, typed NULL/DOUBLE equality and original bits, pinned snapshots, positional names, input NULLability, and shared EXCEPT/INTERSECT demanded-error controls. |
+| `multiset.rs` | Independent complete-row count oracle, unequal multiplicities, typed NULL/DOUBLE classes and left bits, pinned inputs, metadata, nested arguments, joins and aggregation for EXCEPT ALL and INTERSECT ALL. |
 | `union.rs` | Positional ALL/DISTINCT composition, complete-row equality and original typed representatives, snapshot retention, demanded errors, spill/refusal, and cancellation prefixes. |
 | `wide.rs` | Positional set-operation source-pool and 64-column output limits, including the bounded-thread variant. Full-width schemas, late columns, repeated outputs, and scan admission. |
 
@@ -133,7 +134,7 @@ row/byte caps, merge passes, cancellation, corruption, and terminal failure
 without importing aggregate evaluation.
 [Sorted-set owner tests](../src/execution/blocking/sorted_set/tests.rs) reconcile actual
 allocation capacities, exact/short admission, both sorted readers, replay and
-cancellation phases for EXCEPT and INTERSECT. They share only the two-column database fixture with join
+cancellation phases for both DISTINCT and ALL forms of EXCEPT and INTERSECT. They share only the two-column database fixture with join
 checks; complete-row expectations remain local. Padding checks distinguish allocated
 capacity from encoded-frame, run-byte, and run-row limits, including a valid
 checksummed frame beyond the reader's admitted encoded limit.
