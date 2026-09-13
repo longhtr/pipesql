@@ -7,22 +7,22 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 703 frozen inputs retained in `7b03e84`
+Both complete 24-stage gates verify the 704 frozen inputs retained in `6823ba6`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `f2d2eefb927bc9b79ead68023c9f523c3e9aac2349c99976e2ea162681a1bfa8`.
-Only the two notes files change during finalization. The other 701 inputs retain
-fingerprint `86e48df742c406d6910248c8983c24aee5796c145a666b2a9143d5fb6a3579b7`;
-all inputs remain tracked. Final documentation verification passes.
+gates: `43ee2c47495154012bb0e1fcbdd06c99217a5400568dc460020d304122f51884`.
+Only the two notes files change during finalization. The other 702 inputs retain
+fingerprint `0d07ab68e70b21f176ce196f3cf9545b7b26a9d2af4ddfaaa7cfb11796287e35`;
+all inputs remain tracked. Final documentation verification passes 623 local links.
 
-Each platform executes 618 ordinary Rust tests, including all 132 public catalog
-tests, plus the separate lease subprocess. The affected membership, Boolean,
-admission, independent physical mutation, legacy scan and forced replay checks
-execute on both platforms. No ordinary test is ignored or filtered; the selected
-lease child reports six filtered siblings. Maintenance passes 96 tooling tests,
-44 independent codec fixtures and 606 local links. Independent aggregate semantics
+Each platform executes 621 ordinary Rust tests, including all 134 public catalog
+tests, plus the separate lease subprocess. The SIGN scalar, public, unary
+admission, NULLability mutation, cancellation, wide/small-stack and forced replay
+checks execute on both platforms. No ordinary test is ignored or filtered; the
+selected lease child reports six filtered siblings. Maintenance passes 96 tooling tests,
+44 independent codec fixtures and 616 local links. Independent aggregate semantics
 pass 24 cases and composition passes 311 scenarios. Expected results agree across
 platforms after excluding ambient database paths and stdout digests; these
 digests are not portable semantic hashes.
@@ -36,22 +36,58 @@ independent graph checks. All 43 graph cases, two oracle controls, three CLI
 limits, genesis, lease contention and independent column order pass. Linux
 retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,929.168 seconds
-on macOS and 1,219.963 seconds on Linux. Receipt SHA-256 values are respectively
-`df19e9b62f0acbb2bc457abdd3b398c2b2f767b95a6896f49badee4cd412fe86` and
-`e2fbedbf774707103836a383417fd27576acc5c280c8925550d3a392bb3f6473`.
-Overlapping verification runs are not performance benchmarks. Sixty-five
+Both receipts have zero finalization errors. Stage times total 1,924.879 seconds
+on macOS and 1,158.218 seconds on Linux. Receipt SHA-256 values are respectively
+`c281383c0badd59bfcf61933c5d266f1f9996f427e400b41b6cbe813b918771b` and
+`452533a7d0f3f28d02d52e64f5f09f730164880ab48efc455f9633094fa77c7b`.
+Overlapping verification runs are not performance benchmarks. Sixty-four
 resource samples observed normal/warning host memory pressure on an 8 GiB host,
-with 1,440.12–2,501.88 MiB of swap use. Pressure was normal at final verification.
-Cargo used at most two build jobs; examples used one job and ran after both
-platform Rust test stages. Docker's CPU quota was reduced from two CPUs to one
-after warning pressure; sampled CPU peaked at 198.29% and container memory at
-1.566 GiB. The container had networking disabled and zero network traffic.
-Sampled free disk stayed above 185 GiB. These observations do not qualify engine
-physical-memory bounds. Owned gate outputs, source exports, logs, example
-databases, monitors and the verification container are removed. The existing
-image and toolchains remain. Windows, broader durability, physical-memory and
-sanitizer qualification remain unfinished.
+with 1,423.00–2,206.19 MiB of swap use. The last sample remained at warning
+pressure with 2,089.69 MiB of swap. macOS Cargo used at most two build jobs;
+Docker used one CPU and one build job throughout. Examples used one job and ran
+sequentially after both platform Rust test stages. Sampled container CPU peaked
+at 100.58% and memory at 1.213 GiB. The container had networking disabled and
+zero network traffic. Sampled free disk stayed above 185 GiB. These observations
+do not qualify engine physical-memory bounds. Owned gate outputs, source exports,
+logs, example databases, monitors and the verification container are removed.
+The existing image and toolchains remain. Windows, broader durability,
+physical-memory and sanitizer qualification remain unfinished.
+
+### Numeric sign classification
+
+`670e7bc` implements SIGN; `6823ba6` completes its execution-boundary coverage.
+The [language contract](../docs/language.md#current-public-query-manifest) pins
+INT64/DOUBLE typing, NULL propagation, positive zero for either DOUBLE zero,
+unchanged NaN payloads and signed one for nonzero values, including infinities and
+integer extremes. Semantics were resolved before implementation at the existing
+immutable GoogleSQL revision, within the 30-minute research bound.
+
+The [parser](../src/frontend/parser.rs) emits one unary operation into the existing
+[scalar program](../src/scalar.rs). Batch and [ordered row evaluation](../src/scalar/evaluation.rs)
+share the DOUBLE classification rule. No buffer, allocation owner, type, runtime
+framework or persistent format was added. Independent literal scalar expectations
+cover both numeric types, subnormals, extremes, NULLs, zero and NaN bits, reused
+batch scratch and row demand. A malformed unary program remains rejected.
+
+[Public cases](../tests/catalog_lifecycle/computed.rs) cover classification and
+grouping, nullable keys, nested expressions, stored DOUBLE bits across producers
+and reopen, skipped division/overflow and demanded error categories and spans.
+Wrong arity, missing names and unsupported argument types are rejected. Shared
+unary checks retain type/NULLability mutation controls, 31/32-call nesting boundaries
+and exact/one-byte-short preparation admission. Cancellation, early drop,
+full-width/small-stack execution and forced sorted-producer replay pass.
+
+Existing allocation and native-I/O queries now classify their integer remainder
+or quotient with SIGN. Their independently expected counts remain two and three,
+respectively; exact large-integer behavior and all failure schedules remain
+covered. No extra campaign runner was added. The full catalog allocation census
+remains 1,056 at both pathname lengths.
+
+The fresh [classification example](../examples/sign.sql) and
+[tutorial](../docs/getting-started.md#classify-measurements-by-sign) return the four
+documented NULL, negative, zero and positive groups on both platforms. Setup,
+query schema, every row, count, successful exit and terminal `status=queried`
+were checked before removing the example builds and databases.
 
 ### Infix negated membership and ranges
 

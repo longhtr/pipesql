@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `7b03e84` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 618 ordinary Rust tests per platform, 24 independent aggregate
+The complete 24-stage gates for `6823ba6` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 621 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
@@ -25,49 +25,23 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: infix negated membership and ranges
+## Completed: numeric sign classification
 
-`NOT IN` and `NOT BETWEEN` are implemented in `7b03e84` through the existing
-Boolean parser and verified by matching complete macOS/GNU/Linux gates. The
-[predicate record](evidence.md#infix-negated-membership-and-ranges) retains pinned
-semantics, independent typed/model outcomes, demand and error checks, validators,
-admission, stage limits, legacy scans, replay and failure campaigns. All 618
-ordinary Rust tests per platform and the retained campaigns pass. The fresh
-tutorial returns only `south, 20` on both platforms.
+SIGN is implemented in `670e7bc`, with execution-boundary coverage in `6823ba6`.
+Matching complete macOS/GNU/Linux gates pass all 621 ordinary Rust tests per
+platform and the retained independent semantic, resource and failure campaigns.
+The [SIGN record](evidence.md#numeric-sign-classification) retains pinned semantics,
+independent expected results, demand/error spans, admission, mutation controls,
+replay, cancellation and cleanup evidence. The fresh tutorial returns all four
+documented classification groups on both platforms.
 
-The prior null-safe, scalar, set, join, testing/tooling and resource milestones
-remain complete unless a concrete counterexample reopens their affected boundary.
-Comma spacing is preserved. Resource monitoring reduced Docker's CPU quota after
-warning pressure; pressure was normal at final verification. Example compilation
-followed both platforms' Rust tests. Owned outputs are removed. Publication and
-the broader qualifications below remain unresolved.
-
-## Active: numeric sign classification
-
-`SIGN(value)` is implemented in `670e7bc` for INT64 and DOUBLE expressions so
-queries can classify and group negative, zero and positive measurements. It uses
-the existing unary numeric program; completion requires the verification below.
-
-1. Semantics pinned before implementation at GoogleSQL
-   `0e7d7073ed0360be587a5efa0fa78abeee00f17b`: mathematical_functions.md SIGN
-   preserves the numeric type and NULL; math.h Sign maps either zero to positive
-   zero, returns NaN unchanged, and maps nonzero values (including infinities and
-   integer extremes) to signed one. Research resolved within 30 minutes.
-2. The parser, typed scalar program and row/batch evaluators now implement SIGN.
-   Independent scalar bits, public classification/demand, stored DOUBLE bits
-   across producers/reopen, unary NULLability mutation, operation bounds,
-   exact/short admission, cancellation, forced replay and width/small-stack
-   checks pass. Clippy and maintenance pass. Catalog healthy controls retain
-   the 1,056-allocation census at both pathname lengths; this is not a sweep.
-   No buffer or allocation owner was added.
-3. The classification example and current contracts/navigation are updated.
-   Matching frozen macOS/GNU/Linux full gates and fresh tutorial runs remain
-   pending, followed by coverage/input reconciliation, concise evidence,
-   owned-output cleanup and the final local checkpoint.
-
-Monitor resources with at most two Cargo jobs. Compile examples after platform
-Rust builds and reduce Docker concurrency when memory pressure warrants it.
-Publication restrictions and broader qualification limits remain unchanged.
+Prior predicate, scalar, set, join, testing/tooling and resource milestones remain
+complete unless a concrete counterexample reopens their affected boundary. Comma
+spacing is preserved. Verification used at most two Cargo jobs, one Docker CPU
+and one GNU/Linux build job; examples compiled after both Rust test stages.
+Monitoring observed normal/warning memory pressure, with warning pressure in the
+last sample. Owned outputs are removed. Publication and the broader qualifications
+below remain unresolved.
 
 ## Next engineering priorities
 
