@@ -7,41 +7,80 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 685 frozen inputs retained in `8c28a1f`
+Both complete 24-stage gates verify the 688 frozen inputs retained in `b2236a6`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with read-only source. Input manifests match before/after and across gates:
-`8d4907da9b06132aaaf959c6dce66556b8063c3a1cebcb5777c99742ff53571e`.
-Only the two notes files change during finalization. The other 683 inputs retain
-fingerprint `40857e53d11085714dd0845e9ffdbf18f3e2a381b08236def88b1fb1fd9d3247`;
-all inputs remain tracked. Final documentation verification passes 544 local links.
+`db276f2b369bf02f500968393df075fc8a8c5f1c93b3a04ce854dca80bb9fd01`.
+Only the two notes files change during finalization. The other 686 inputs retain
+fingerprint `74a6efab1e2307f9ea96528d69686207529192542b373fa95ccd50a433b117ca`;
+all inputs remain tracked. Final documentation verification passes 552 local links.
 
-Each platform executes 571 ordinary Rust tests, including all 109 public catalog
-tests, all four DIV tests and the shared DIV/MOD NULL-lane test, plus the separate
-lease subprocess. No ordinary test is ignored or filtered; the selected lease
-child reports six filtered siblings. Maintenance passes 96 tooling tests,
-44 independent codec fixtures and 543 local links. Independent aggregate semantics
-pass 24 cases and composition passes 311 cases. Both allocation campaigns retain
-positions 0–982 and healthy control 983 at each pathname length; the ordered lists
-were reconciled explicitly. The caller ceiling remains 1,000; no engine allowance
-increased. Native initialization passes 30 macOS and 80 GNU/Linux cells;
+Each platform executes 577 ordinary Rust tests, including all 112 public catalog
+tests and the six new LEFT JOIN tests, plus the separate lease subprocess.
+No ordinary test is ignored or filtered; the selected lease child reports six
+filtered siblings. Maintenance passes 96 tooling tests, 44 independent codec
+fixtures and 549 local links. Independent aggregate semantics pass 24 cases and
+composition passes 311 cases. The Rust join corpus separately checks 648 cases.
+Both allocation campaigns retain positions 0–984 and healthy control 985 at each
+pathname length; the ordered lists were reconciled explicitly. The caller ceiling
+remains 1,000. Native initialization passes 30 macOS and 80 GNU/Linux cells;
 synchronization passes 241 cells and I/O passes 1,196 cells per platform.
 Interruption checks retain 76 append cuts, 46 recovery cuts and 249 independent
 graph checks. All 43 graph cases, two oracle controls, three CLI limits, genesis,
 lease contention and independent column order pass. Linux retains the two Darwin
 ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,855.083 seconds
-on macOS and 1,010.114 seconds on Linux; overlapping verification runs are not
+Both receipts have zero finalization errors. Stage times total 1,818.142 seconds
+on macOS and 1,002.320 seconds on Linux; overlapping verification runs are not
 performance benchmarks. Receipt SHA-256 values are respectively
-`a9b501a2356195fd10bd367e358709325d30c5a12284d20be368f76aed2ea85d` and
-`cce5b0ac036453ad1e208f67d227773f826e427c1fc2352099b2daf7066c248e`.
-Earlier gates were deliberately interrupted before the comma-spacing change;
-they provide no complete-gate pass. Owned gate/control outputs, source exports,
-logs and containers are removed. The existing verification image and toolchains
-remain. Windows, broader durability, physical-memory and sanitizer qualification
-remain unfinished.
+`a24faa80a7f705aae1e85e7ef52e2ae98929366d6184b6da3a5999509df0c6e2` and
+`842af5ccc991ad87e638928616584690937c27291068d922f03fdf68fea8ada0`.
+Owned gate/control outputs, source exports, logs, example databases and containers
+are removed. The existing verification image and toolchains remain. Windows,
+broader durability, physical-memory and sanitizer qualification remain unfinished.
+
+### Equality left joins
+
+`160ccb7`, `ee9b83e` and `b2236a6` add equality LEFT JOIN through the existing
+parser, binder, independent validators, demand analysis and shared-sorter join.
+The [language owner](../docs/language.md) pins LEFT/LEFT OUTER spelling, duplicate
+multiplicity, NULL keys, nullable right outputs and subsequent WHERE behavior.
+A prepared descriptor gives right outputs fresh nullable identities while
+preserving the independent right producer's original facts. Its exact vector
+reservation uses the existing per-allocation allowance; queries without LEFT JOIN
+allocate no descriptor vector. The query identity ceiling is unchanged.
+Unmatched rows reuse the join's output batch and retained sorters, without a
+separate queue, match bitmap or persistent-format change.
+
+Independent literal results and a nested-loop row oracle protect unmatched and
+NULL keys, empty inputs, duplicate cross products, post-join filtering, nested
+and repeated producers, grouping and ordering. Typed cases cover NULL, NaN,
+signed zero, dates and strings through spill. Snapshot checks run both inner and
+left joins across publication on ordinary and bounded stacks. Malformed semantic
+mappings and physical join-kind/identity mutations reject with healthy controls.
+Nested and eight-join preparation chains pass exact/one-byte-short admission;
+execution admission, all 20 cancellation phases, forced grouping replay and
+healthy reuse retain their resource and cleanup assertions. An earlier debug
+small-stack run aborted and provides no passing evidence; the documented release
+selection and both complete release gates pass.
+
+The catalog allocation caller retains four matching pairs plus one unmatched
+row, with literal count five; a separate inner-join ordering control retains
+count eight. Its census rises from 983 to 985 within the unchanged ceiling.
+Native I/O retains two left groups but only one matched group contributes to
+AVG, whose literal result is 60. The focused derived campaign passes 340 cells;
+the complete campaigns above retain all 1,196 cells. Demanded aggregate overflow
+keeps its complete call span and terminal failure; unused expressions remain
+undemanded, and NULL-extended arithmetic does not evaluate absent right values.
+
+The [fact/dimension example](../examples/left_join.rs) and its stock CLI query
+run from fresh native databases on both platforms. Both return nullable name
+and total, required count, and exact rows NULL/90/2, north/30/2 and south/30/1.
+RIGHT/FULL joins, USING, compound/non-equality predicates, correlated inputs and
+parallelism remain unsupported. The retained comma-spacing convention applies
+to code and SQL without changing quoted data or intentional lexical fixtures.
 
 ### Integer quotient and comma spacing
 
@@ -79,7 +118,8 @@ fixtures, upstream source bytes, linker flags and intentional lexical fixtures
 remain intact. The spacing changes were reconciled against the pre-format DIV
 inputs, including two ordinary trailing commas introduced by rustfmt. No runner,
 formatter dependency or permanent formatting framework was added. The fresh gates
-above verify the formatted inputs.
+above verify the formatted inputs. Earlier gates deliberately interrupted before
+the spacing change provide no complete-gate pass.
 
 ### Integer remainder
 
