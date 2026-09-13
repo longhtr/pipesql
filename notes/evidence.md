@@ -7,20 +7,21 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 707 frozen inputs retained in `849f38e`
+Both complete 24-stage gates verify the 708 frozen inputs retained in `5f769c5`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `a980ddca3932fd69d942aaa045466e61e8532c522ac9962b7bfff8ab306cf2e8`.
-Finalization changes only the two notes files. The other 705 inputs retain
-fingerprint `382eac141ab8e3fc9d19e40f0927ddea884b085abd08dbf00b0091dd8f866412`;
+gates: `768b8834fe22421262e5190a71ccbddeb1e187c44160b2d224c2e7d203f4a48d`.
+Finalization changes only the two notes files. The other 706 inputs retain
+fingerprint `493be8ee8c63a07ab6177e81e7fa5eb394e8cf3d01fe4e418fdb0982b4cf91ef`;
 all manifested inputs are tracked. Final local-link verification passes.
 
-Each platform executes 626 ordinary Rust tests, including all 136 public catalog
-tests, plus the separate lease subprocess. No ordinary test is ignored or
+Each platform executes 629 ordinary Rust tests, including all 138 public catalog
+tests, plus the separate lease subprocess. Discovery independently lists those
+629 tests across thirteen targets per platform. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 647 local links.
+passes 96 tooling tests, 44 independent codec fixtures and 655 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311
 scenarios. Their complete records agree across platforms after excluding ambient
 database paths and composition stdout digests. Those digests are not portable
@@ -36,26 +37,76 @@ limits, genesis, lease contention and independent column order pass. Linux
 retains the two Darwin ACL exclusions.
 
 Both receipts have zero finalization errors. The full gates run sequentially;
-stage times total 1,723.410 seconds on macOS and 502.177 seconds on Linux. Receipt
+stage times total 1,629.963 seconds on macOS and 500.999 seconds on Linux. Receipt
 SHA-256 values are respectively
-`27b7b13b067d2d5e6b53280ab0dd878d8987c34d7ba9e315fbd537154a577102` and
-`e5b12c36c1e983119aaaa810aa4e642ad87da66d57aa674506c179e31fbcc06b`.
+`fbf73f8bd0958c511df667c988c672c8b3e8c2581506617e548162245af677cb` and
+`a392cf432f8700d8493c95b76ff1e6a64faf533dfd63636668b899da092aaf52`.
 These runs are verification observations, not performance benchmarks.
 
-Eighty-one resource samples observed normal/warning memory pressure on an 8 GiB
-host and 2,373.69–4,133.69 MiB of swap use. The last sample remained at warning
-pressure with 2,795.88 MiB of swap. macOS used at most two Cargo jobs. Docker used
-one CPU, one build job and a 2 GiB container limit; sampled CPU peaked at 100.35%
-and memory at 1.262 GiB. Networking was disabled and sampled network traffic was
-zero. Sampled free disk stayed above 183.28 GiB. No container OOM kill occurred.
-These observations do not qualify engine physical-memory bounds.
+Eighty-six periodic resource samples observed normal/warning memory pressure on
+an 8 GiB host and 342.06–1,898.62 MiB of swap use. The last sample remained at
+warning pressure with 1,898.62 MiB of swap. macOS used at most two Cargo jobs.
+Docker used one CPU, one build job and a 2 GiB container limit; sampled CPU peaked
+at 100.07% and memory at 1.198 GiB. Networking was disabled and sampled container
+network traffic was zero. Host disk samples ranged from zero to 275.35 MB/s;
+free disk stayed above 187.70 GiB. Host process, disk and network observations
+include unrelated applications. No container OOM kill occurred. These observations
+do not qualify engine admission, usable-heap limits or whole-process/RSS bounds.
 
-The fresh square-root tutorial runs sequentially on both platforms after both
-complete gates. Its output matches the documented complete typed row and exact
-DOUBLE bits. Owned gate outputs, source exports, logs, monitors, databases,
-build outputs and the verification container are removed. The existing image
-and toolchains remain. Windows, broader durability, physical-memory and sanitizer
-qualification remain unfinished.
+The Linux image remains `pipesql-verification-rust:1.98.1-time`, digest
+`sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
+The fresh logarithm tutorial runs sequentially on both platforms after both
+complete gates. Its output matches the documented complete typed row. Owned gate
+outputs, source exports, logs, monitor, databases, new build outputs and the
+verification container are removed. Pre-existing target artifacts, the image and
+installed toolchains remain. Windows, broader durability, physical-memory and
+sanitizer qualification remain unfinished.
+
+### Natural logarithms for analytical scales
+
+`5f769c5` adds one-argument LN through the existing parser, binder, independent
+scalar validation, batch scratch and demand cursor. Research and tracing resolved
+within the 30-minute budget against the language guide's pinned GoogleSQL revision.
+The compliance cases and reference kernel return NaN for negative infinity,
+resolving the documentation's broader nonpositive-error wording. This is source
+inspection, not an executed upstream conformance run. The
+[language contract](../docs/language.md#current-public-query-manifest) owns the
+accepted semantics, profile choices and native logarithm precision limits.
+
+Independent 100-digit Decimal logarithms supply literal rounded binary64 answers
+for ten positive inputs, including the neighbors of one, minimum subnormal,
+minimum normal, maximum finite, and converted large integers. Batch and cursor
+checks allow two ULPs for these particular finite answers, while checking exact
+bits for one, infinities and NaNs. This threshold is a regression check, not a
+universal accuracy bound. NULL payloads containing negative numbers must remain
+unevaluated. Finite zero, negative zero and negative values must return domain
+errors in both evaluation paths.
+
+Public cases cover promotion, empty/NULL input, grouping, LEFT JOIN, DISTINCT,
+union, skipped Boolean and COALESCE branches, rejected types and arities, and
+argument overflow. Domain errors preserve UTF-8 spans after source and prepared
+query teardown, including an enclosing SUM call. Existing checks cover exact/short
+admission, malformed NULLability, the 31/32-call boundary, cancellation, early
+drop, stored exceptional values through producers and reopen, and 31 forced
+sort/group replay variants. The ordinary and bounded-thread Boolean scenarios
+also evaluate LN through a computed dependency and aggregate inside the observed
+thread. Platform-specific stack ceilings remain unchanged.
+
+The allocation query still requires the original 1.75 ratio and exact large
+integer, then LN of the rounded fallback must be zero. Its complete result
+remains count two. Native I/O retains total nine after adding LN(n/n), with all
+prior arithmetic controls. Fixed-buffer domain-error and cause formatting runs
+under allocation denial. Both complete campaigns preserve their refusal/I/O
+schedules and healed outcomes. No allocation owner, expression framework,
+persistent format or admission allowance changed.
+
+The [logarithm example](../examples/logarithm.sql) and
+[tutorial](../docs/getting-started.md#compare-amounts-on-a-logarithmic-scale) filter
+positive sales amounts and average their natural logarithms. The values 5, 10
+and 20 have mean logarithm ln(10). Both fresh native-storage runs verify table
+creation, one nullable DOUBLE row, and `status=queried`, observing
+2.302585092994046 with bits `40026bb1bbb55516`. These matching observed bits do
+not establish a bit-identical repeated or cross-platform logarithm contract.
 
 ### Square roots for analytical magnitudes
 
