@@ -25,6 +25,24 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
+## Active: transient preparation and release ownership
+
+Observe the retained wide nullable STRING LEFT JOIN during preparation, normal
+release and abandonment of an unfinished result, including live temporary
+storage. Start with a 30-minute trace of data and reservation destruction order.
+Use the existing scoped allocator observer in the maintained public caller;
+preserve complete-row, independent checkpoint, calibration and attribution
+oracles. Require phase coverage on both pathname lengths and a negative control
+that rejects a missing lifecycle observation. Repair a concrete deficit at its
+owner if one appears, without padding admission allowances.
+
+Complete focused checks, matching frozen sequential macOS/GNU arm64 Linux gates,
+discovery and evidence reconciliation, then fresh relevant examples sequentially.
+Document the ownership flow and precise limits, remove owned outputs, review
+the final diff and commit locally. Earlier boundaries remain closed; arbitrary
+allocators, concurrent histories, whole-process/RSS, Windows and broader
+durability/sanitizer qualification remain unfinished. Publication is prohibited.
+
 ## Completed: exponential transforms and geometric means
 
 `22a62bf` adds one-argument EXP through the existing bounded expression owners.
