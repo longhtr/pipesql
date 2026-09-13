@@ -1819,6 +1819,7 @@ fn unary_numeric_calls_preserve_type_nullability_and_bounded_admission() {
         ("CEILING", DataType::Double),
         ("ROUND", DataType::Double),
         ("SQRT", DataType::Double),
+        ("LN", DataType::Double),
     ] {
         for (argument, kind, nullable) in [
             ("1", integer_output, false),
@@ -1855,7 +1856,11 @@ fn unary_numeric_calls_preserve_type_nullability_and_bounded_admission() {
             drop(result);
             assert_eq!(db.reserved_memory_bytes(), baseline);
         }
-        let threshold = if function == "SQRT" { "2" } else { "-2" };
+        let threshold = if matches!(function, "SQRT" | "LN") {
+            "2"
+        } else {
+            "-2"
+        };
         check_scope_preparation(&format!(
             "FROM facts |> SELECT k, {function}(n-5) AS deviation |> WHERE deviation>{function}({threshold}) |> AGGREGATE AVG(deviation) AS mean GROUP BY k",
         ));

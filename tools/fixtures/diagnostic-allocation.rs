@@ -473,9 +473,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             operation: "square root",
             span: division_span,
         };
+        let logarithm = Error::ArithmeticDomain {
+            operation: "natural logarithm",
+            span: division_span,
+        };
+        let logarithm_cause = pipesql::CauseKind::ArithmeticDomain {
+            operation: "natural logarithm",
+            span: division_span,
+        };
         let formatted = write!(
             &mut text,
-            "{error}; {arithmetic}; {cause}; {division}; {division_cause}; {domain}; {domain_cause}"
+            "{error}; {arithmetic}; {cause}; {division}; {division_cause}; {domain}; {domain_cause}; {logarithm}; {logarithm_cause}"
         );
         DENY.store(false, Ordering::Relaxed);
         formatted.unwrap();
@@ -489,6 +497,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(text.matches("division by zero at bytes 36..39").count(), 2);
         assert_eq!(
             text.matches("arithmetic domain error during square root at bytes 36..39")
+                .count(),
+            2
+        );
+        assert_eq!(
+            text.matches("arithmetic domain error during natural logarithm at bytes 36..39")
                 .count(),
             2
         );

@@ -256,6 +256,34 @@ A negative demanded argument raises a typed domain error; NULL propagates.
 The [language contract](language.md#current-public-query-manifest) owns conversion,
 exceptional-value and argument rules.
 
+## Compare amounts on a logarithmic scale
+
+Run [examples/logarithm.sql](../examples/logarithm.sql) against the same database:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/logarithm.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+Require successful exit and `status=queried`, with one nullable DOUBLE row,
+approximately 2.302585092994046. The three positive amounts are 5, 10 and 20;
+their mean natural logarithm is ln(10). Equal multiplicative changes become
+equal additive distances on this scale. The NULL amount does not contribute.
+The predicate also excludes nonpositive amounts, where a finite logarithm would
+raise a domain error. This is a log-scale summary; it is not the logarithm of
+the arithmetic mean.
+
+Trace `ParsedOp::Ln` through the [binder](../src/frontend/binding.rs) to `Op::Ln`
+in the [scalar program](../src/scalar.rs). The scalar owner converts INT64 before
+evaluation and checks the domain before calling the native logarithm. Batch
+evaluation and the [demand cursor](../src/scalar/evaluation.rs) share that kernel;
+NULL validity prevents an irrelevant payload from reaching it. AVG consumes the
+result through the ordinary aggregate path. The
+[language contract](language.md#current-public-query-manifest) owns exceptional
+values and precision limits; this example's decimal output is approximate.
+
 ## Combine pipeline results
 
 Run [examples/union.sql](../examples/union.sql) against the same database:

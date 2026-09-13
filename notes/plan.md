@@ -40,6 +40,14 @@ negative infinity, resolving the reference prose's broader nonpositive-error
 wording. Preserve input NaN bits explicitly; finite results use the native
 logarithm with no cross-platform bit-identity or correct-rounding promise.
 
+Focused numerical/domain, public composition/span, exact/short admission,
+stored-value/reopen, cancellation, measured small-stack and 31-variant
+forced-replay checks pass. Aggregate domain errors retain their enclosing span.
+Catalog controls retain 1,056 allocations; all eight derived native-I/O census
+controls pass. These focused controls do not replace the full campaigns. One
+initial incomplete exact replay selector ran zero tests; the corrected selector
+executes and passes. Full gates and fresh examples remain pending.
+
 Complete public composition and demanded-error spans, exact/short admission,
 cancellation, forced replay, allocation/native campaigns and a runnable sales
 log-transform tutorial. Run complete sequential frozen macOS and GNU arm64 Linux

@@ -18,6 +18,7 @@ pub(crate) enum ArithmeticFailure {
     Negate,
     Abs,
     SqrtDomain,
+    LnDomain,
 }
 
 impl ArithmeticFailure {
@@ -30,6 +31,12 @@ impl ArithmeticFailure {
             Self::Negate => "negation",
             Self::Abs => "absolute value",
             Self::DivideByZero => return Error::DivisionByZero { span },
+            Self::LnDomain => {
+                return Error::ArithmeticDomain {
+                    operation: "natural logarithm",
+                    span,
+                };
+            }
             Self::SqrtDomain => {
                 return Error::ArithmeticDomain {
                     operation: "square root",
@@ -165,6 +172,7 @@ pub(crate) enum Op {
     Ceil,
     Round,
     Sqrt,
+    Ln,
 }
 
 // SIGN classifies both zeros as positive zero. Preserve a NaN's payload rather
@@ -180,9 +188,24 @@ fn sign_double(value: f64) -> f64 {
 }
 
 // Keep exceptional input bits stable instead of delegating NaN payloads and
-// signed-zero preservation to target-specific numeric instructions.
+// signed-zero preservation to target-specific numeric instructions. LN owns
+// its zero/domain decision before the zero-preserving operations.
 fn double_unary(op: Op, value: f64) -> Result<f64, ArithmeticFailure> {
-    if value.is_nan() || value == 0.0 {
+    if value.is_nan() {
+        return Ok(value);
+    }
+    if op == Op::Ln {
+        // The pinned SQL kernel accepts nonfinite inputs: negative infinity
+        // produces NaN, while finite nonpositive values report a domain error.
+        if value == f64::NEG_INFINITY {
+            return Ok(f64::from_bits(0x7ff8_0000_0000_0000));
+        }
+        if value <= 0.0 {
+            return Err(ArithmeticFailure::LnDomain);
+        }
+        return Ok(value.ln());
+    }
+    if value == 0.0 {
         return Ok(value);
     }
     Ok(match op {
@@ -231,7 +254,14 @@ impl Expression {
                     nullable[depth] = false;
                     depth += 1;
                 }
-                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round | Op::Sqrt => {
+                Op::Negate
+                | Op::Abs
+                | Op::Sign
+                | Op::Floor
+                | Op::Ceil
+                | Op::Round
+                | Op::Sqrt
+                | Op::Ln => {
                     if depth == 0 {
                         return true;
                     }
@@ -289,11 +319,18 @@ impl Expression {
                     }
                     DataType::Double
                 }
-                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round | Op::Sqrt => {
+                Op::Negate
+                | Op::Abs
+                | Op::Sign
+                | Op::Floor
+                | Op::Ceil
+                | Op::Round
+                | Op::Sqrt
+                | Op::Ln => {
                     if depth == 0 {
                         return Err(InferenceFailure::Program("scalar unary stack underflow"));
                     }
-                    if matches!(op, Op::Floor | Op::Ceil | Op::Round | Op::Sqrt) {
+                    if matches!(op, Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Ln) {
                         types[depth - 1] = DataType::Double;
                     }
                     continue;
@@ -373,7 +410,14 @@ impl Expression {
                 | Op::IntegerDivide => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
                 }
-                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round | Op::Sqrt => (),
+                Op::Negate
+                | Op::Abs
+                | Op::Sign
+                | Op::Floor
+                | Op::Ceil
+                | Op::Round
+                | Op::Sqrt
+                | Op::Ln => (),
                 Op::Empty => unreachable!("validated scalar program"),
             }
             peak = peak.max(depth);
@@ -471,7 +515,7 @@ impl Expression {
                     valid[depth] = [u64::MAX; VALID_WORDS];
                     depth += 1;
                 }
-                Op::Floor | Op::Ceil | Op::Round | Op::Sqrt => {
+                Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Ln => {
                     let values = &mut scratch[(depth - 1) * rows..depth * rows];
                     for (row, value) in values.iter_mut().enumerate() {
                         if valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
@@ -799,6 +843,83 @@ mod tests {
             let output = self.evaluate_batch(&inputs, 0..rows, scratch)?;
             assert_eq!(output.valid, [u64::MAX; VALID_WORDS]);
             Ok(output.values)
+        }
+    }
+
+    #[test]
+    fn ln_checks_finite_domains_and_independent_boundary_values() {
+        let column = SemanticColumn::new(42, DataType::Double, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(column), Op::Ln]);
+        expression.len = 2;
+        expression.data_type = DataType::Double;
+        expression.validate(&[column]).unwrap();
+        // Rounded reference values use Python Decimal.from_float(x).ln() at
+        // precision 100. Two ULPs are a regression threshold for these inputs,
+        // not a universal accuracy promise for the target's native logarithm.
+        for (input, expected) in [
+            (0x0000_0000_0000_0001, 0xc087_4385_446d_71c3),
+            (0x0010_0000_0000_0000, 0xc086_232b_dd7a_bcd2),
+            (0x3fef_ffff_ffff_ffff, 0xbca0_0000_0000_0000),
+            (0x3ff0_0000_0000_0001, 0x3caf_ffff_ffff_ffff),
+            (0x3fe0_0000_0000_0000, 0xbfe6_2e42_fefa_39ef),
+            (0x4000_0000_0000_0000, 0x3fe6_2e42_fefa_39ef),
+            (0x4024_0000_0000_0000, 0x4002_6bb1_bbb5_5516),
+            (0x7fef_ffff_ffff_ffff, 0x4086_2e42_fefa_39ef),
+            (0x4340_0000_0000_0000, 0x4042_5e4f_7b27_37fa),
+            (0x43e0_0000_0000_0000, 0x4045_d589_f2fe_5107),
+            (0x3ff0_0000_0000_0000, 0x0000_0000_0000_0000),
+            (0x7ff0_0000_0000_0000, 0x7ff0_0000_0000_0000),
+            (0xfff0_0000_0000_0000, 0x7ff8_0000_0000_0000),
+            (0x7ff0_0000_0000_0042, 0x7ff0_0000_0000_0042),
+            (0xfff8_0000_0000_0042, 0xfff8_0000_0000_0042),
+        ] {
+            let value = f64::from_bits(input);
+            let values = [value, -1.0];
+            let valid = [1];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), Some(&valid)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 2];
+            let output = expression
+                .evaluate_batch(&inputs, 0..2, &mut scratch)
+                .unwrap();
+            assert_eq!(output.value(1), None, "NULL payload must not fail");
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(value)).unwrap();
+            assert_eq!(cursor.next_column().unwrap(), None);
+            let Number::Double(actual) = cursor.value() else {
+                panic!("LN result type");
+            };
+            for actual in [output.value(0).unwrap(), actual.to_bits()] {
+                if value.is_finite() && value != 1.0 {
+                    assert!(
+                        actual.abs_diff(expected) <= 2,
+                        "LN({value:?}): {actual:016x}"
+                    );
+                } else {
+                    assert_eq!(actual, expected);
+                }
+            }
+        }
+        for value in [0.0, -0.0, -1.0, -f64::from_bits(1), -f64::MAX] {
+            let values = [value];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), None).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS];
+            assert!(matches!(
+                expression.evaluate_batch(&inputs, 0..1, &mut scratch),
+                Err(ArithmeticFailure::LnDomain)
+            ));
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(value)).unwrap();
+            assert!(matches!(
+                cursor.next_column(),
+                Err(ArithmeticFailure::LnDomain)
+            ));
         }
     }
 

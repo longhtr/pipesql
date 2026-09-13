@@ -165,6 +165,8 @@ argument-frame representation with SAFE_DIVIDE. DIV uses checked integer
 arithmetic without a floating-point intermediate. Zero-denominator and overflow
 errors retain inline
 source spans and release query ownership through the ordinary failure path.
+LN uses the same DOUBLE unary slot as SQRT, with a finite-domain check and native
+logarithm evaluation; it adds no scratch allocation.
 
 COALESCE retains the same prepared expression and operation bound. A bounded
 row cursor derives fallback endpoints and result types from validated postfix

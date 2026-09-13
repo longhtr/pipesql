@@ -787,6 +787,7 @@ fn public_numeric_cancellation_and_early_drop_release_owners() {
         "FROM facts |> SELECT CEILING(v/15) AS bucket |> ORDER BY bucket",
         "FROM facts |> SELECT ROUND(v/15) AS bucket |> ORDER BY bucket",
         "FROM facts |> SELECT SQRT(v) AS magnitude |> ORDER BY magnitude",
+        "FROM facts |> SELECT LN(v) AS logarithm |> ORDER BY logarithm",
         "FROM facts |> SELECT MOD(v, 3) AS remainder |> ORDER BY remainder",
         "FROM facts |> SELECT DIV(v, 15) AS quotient |> ORDER BY quotient",
         "FROM facts |> SELECT COALESCE(k, v) AS chosen |> ORDER BY chosen",
@@ -1633,6 +1634,18 @@ fn public_unary_numeric_preserves_stored_double_bits_across_producers_and_reopen
                     vec![Cell::Null],
                 ],
             );
+            query(
+                &db,
+                &format!(
+                    "{source} |> WHERE id IN (4, 5, 6, 8) |> ORDER BY id |> SELECT LN(value) AS logarithm"
+                ),
+                vec![
+                    vec![Cell::Number(0x7ff8_0000_0000_0000)],
+                    vec![Cell::Number(0x7ff0_0000_0000_0000)],
+                    vec![Cell::Number(0xfff8_0000_0000_0042)],
+                    vec![Cell::Null],
+                ],
+            );
             // Explicit answers distinguish SIGN's positive zero from rounding's
             // preserved zero sign and exercise subnormal values without an oracle
             // that calls the implementation's rounding primitive.
@@ -2008,6 +2021,201 @@ fn public_sqrt_preserves_values_demand_and_domain_spans() {
         ));
         drop(result);
         drop(prepared);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+}
+
+#[test]
+fn public_ln_preserves_promotion_composition_and_demand() {
+    let (_directory, db) = join_fixture();
+    let baseline = db.reserved_memory_bytes();
+    // Independent 100-digit Decimal logarithms of the converted input values.
+    for (argument, expected) in [
+        ("2", 0x3fe6_2e42_fefa_39ef_u64),
+        ("2.0", 0x3fe6_2e42_fefa_39ef),
+        ("9007199254740993", 0x4042_5e4f_7b27_37fa),
+        ("9223372036854775807", 0x4045_d589_f2fe_5107),
+    ] {
+        let prepared = db
+            .prepare(&format!(
+                "FROM facts |> LIMIT 1 |> SELECT LN({argument}) AS logarithm"
+            ))
+            .unwrap();
+        let column = prepared.result_column(0).unwrap();
+        assert_eq!(
+            (column.data_type, column.nullable),
+            (DataType::Double, false)
+        );
+        let cancel = CancellationToken::new();
+        let mut result = db.execute(&prepared, &cancel).unwrap();
+        let rows = collect(&mut result);
+        let [row] = rows.as_slice() else {
+            panic!("one logarithm row")
+        };
+        let [Cell::Number(actual)] = row.as_slice() else {
+            panic!("DOUBLE logarithm")
+        };
+        assert!(
+            actual.abs_diff(expected) <= 2,
+            "LN({argument}): {actual:016x}"
+        );
+        drop(result);
+        drop(prepared);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+    for (expression, expected) in [
+        ("LN(1)", Cell::Number(0)),
+        ("LN(SAFE_DIVIDE(1, 0))", Cell::Null),
+        ("COALESCE(9, LN(0))", Cell::Number(9.0_f64.to_bits())),
+        (
+            "COALESCE(LN(NULLIF(1, 1)), 9)",
+            Cell::Number(9.0_f64.to_bits()),
+        ),
+    ] {
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT 1 |> SELECT {expression} AS logarithm"),
+            vec![vec![expected]],
+        );
+    }
+    for sql in [
+        "FROM facts |> EXTEND LN(-v) AS unused |> DROP unused |> SELECT v |> ORDER BY v",
+        "FROM facts |> EXTEND LN(-v) AS bad |> WHERE v>0 OR bad>0 |> SELECT v |> ORDER BY v",
+        "FROM facts |> EXTEND LN(v) AS logarithm |> WHERE logarithm>LN(1) |> SELECT v |> ORDER BY v",
+    ] {
+        query(&db, sql, integers(&[10, 20, 30, 40]));
+    }
+    query(
+        &db,
+        "FROM facts |> EXTEND LN(-v) AS bad |> WHERE v<0 AND bad>0 |> SELECT v",
+        vec![],
+    );
+    query(
+        &db,
+        "FROM facts |> EXTEND SIGN(LN(v/20)) AS scale |> AGGREGATE SUM(v) AS total, COUNT(*) AS n GROUP AND ORDER BY scale",
+        vec![
+            vec![
+                Cell::Number((-1.0_f64).to_bits()),
+                Cell::Integer(10),
+                Cell::Integer(1),
+            ],
+            vec![Cell::Number(0), Cell::Integer(20), Cell::Integer(1)],
+            vec![
+                Cell::Number(1.0_f64.to_bits()),
+                Cell::Integer(70),
+                Cell::Integer(2),
+            ],
+        ],
+    );
+    query(
+        &db,
+        "FROM facts AS l |> LEFT JOIN facts AS r ON l.k=r.k |> SELECT SIGN(LN(r.v)) AS scale |> DISTINCT |> ORDER BY scale",
+        vec![vec![Cell::Null], vec![Cell::Number(1.0_f64.to_bits())]],
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT LN(v/v) AS zero |> UNION DISTINCT (FROM facts |> SELECT LN(1) AS zero)",
+        vec![vec![Cell::Number(0)]],
+    );
+    query(
+        &db,
+        "FROM facts |> LIMIT 0 |> AGGREGATE AVG(LN(v)) AS mean",
+        vec![vec![Cell::Null]],
+    );
+    failure(
+        &db,
+        "FROM facts |> SELECT LN(v*9223372036854775807) AS bad",
+        "multiplication",
+        "LN(v*9223372036854775807)",
+    );
+    for expression in [
+        "LN()",
+        "LN(1, 2)",
+        "LN(, 1)",
+        "LN(1, )",
+        "LN('x')",
+        "LN(DATE '1970-01-01')",
+        "LN(NULL)",
+        "LN(missing)",
+        "DIV(LN(1), 1)",
+        "MOD(1, LN(1))",
+        "LOG(1)",
+        "LOG10(1)",
+    ] {
+        assert!(
+            db.prepare(&format!("FROM facts |> SELECT {expression}"))
+                .is_err(),
+            "{expression}"
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    assert!(db.prepare("FROM facts |> LIMIT LN(1)").is_err());
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+}
+
+#[test]
+fn public_ln_owns_demanded_domain_error_spans() {
+    let (_directory, db) = join_fixture();
+    let baseline = db.reserved_memory_bytes();
+    let sql = "FROM facts |> WHERE v>LN(0)";
+    let error = db
+        .prepare(sql)
+        .err()
+        .expect("constant predicate domain error");
+    let Error::ArithmeticDomain { operation, span } = error else {
+        panic!("domain error")
+    };
+    assert_eq!(operation, "natural logarithm");
+    assert_eq!(&sql[span.start()..span.end()], "LN(0)");
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    for expression in [
+        "LN(0)",
+        "LN(-0.0)",
+        "LN(-v)",
+        "SUM(LN(-v))",
+        "LN(-9223372036854775808)",
+        "SAFE_DIVIDE(LN(-v), 0)",
+        "COALESCE(SAFE_DIVIDE(1, 0), LN(-v))",
+    ] {
+        let stage = if expression.starts_with("SUM(") {
+            "AGGREGATE"
+        } else {
+            "SELECT"
+        };
+        let sql = format!("# 雪\nFROM facts |> {stage} {expression} AS logarithm");
+        let start = sql.find(expression).unwrap();
+        let end = start + expression.len();
+        let prepared = db.prepare(&sql).unwrap();
+        drop(sql);
+        let cancel = CancellationToken::new();
+        let mut result = db.execute(&prepared, &cancel).unwrap();
+        let mut failed = false;
+        for _ in 0..100_000 {
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Failed(Error::ArithmeticDomain { operation, span }) => {
+                    assert_eq!(*operation, "natural logarithm");
+                    assert_eq!((span.start(), span.end()), (start, end));
+                    failed = true;
+                    break;
+                }
+                _ => panic!("missing LN domain failure"),
+            }
+        }
+        assert!(failed);
+        assert!(matches!(
+            result.step(),
+            QueryStep::Failed(Error::ArithmeticDomain { .. })
+        ));
+        let error = result.into_error().unwrap();
+        drop(prepared);
+        let Error::ArithmeticDomain { operation, span } = error else {
+            panic!("owned domain error")
+        };
+        assert_eq!(operation, "natural logarithm");
+        assert_eq!((span.start(), span.end()), (start, end));
         assert_eq!(db.reserved_memory_bytes(), baseline);
         assert_eq!(db.reserved_temp_bytes(), 0);
     }
