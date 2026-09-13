@@ -24,14 +24,35 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: SAFE_DIVIDE for nullable analytical ratios
+## Current: numeric ABS for analytical deviations
 
-`374d312` implements nullable DOUBLE division through the existing bounded
-parser, numeric program and validity bitmap. Both complete frozen platform gates,
-the documented example, discovery, manifests and receipts are verified. The
-[safe division record](evidence.md#safe-division) retains consequential behavior,
-coverage and limitations. Owned outputs are removed; publication remains
-unauthorized. Select the next bounded milestone using the priorities below.
+SAFE_DIVIDE is complete at `374d312`; the
+[safe division record](evidence.md#safe-division) retains verified behavior,
+coverage and limitations. Add INT64/DOUBLE ABS so analytical queries can express
+absolute deviations through the existing bounded numeric program. No current
+counterexample reopens the completed division or resource repairs. Windows
+persistence still requires a complete native mapping and runtime evidence;
+this language milestone makes no new platform qualification claim.
+
+1. Pin signatures, NULL, minimum-INT64 overflow, signed zero and nonfinite behavior
+   at the language owner's immutable revision. Reassess research after 30 minutes
+   if authoritative evidence cannot resolve a case; leave disputed forms unsupported.
+2. Extend the existing bounded parser and scalar evaluator, preserving input
+   typing, argument errors, demand, source spans and independent validation.
+   Introduce no separate frontend, allocation owner or persistent representation.
+3. Cover literal expected results, malformed forms/programs, nested composition,
+   exact/short admission and consequential cancellation, replay and failure
+   boundaries. Reuse existing campaign mechanics where they add distinct coverage.
+4. Add a runnable deviation example and update contract, learning and test/tool
+   maps. Run focused checks and both complete frozen gates; reconcile discovery,
+   manifests and receipts, record concise evidence, remove owned outputs and
+   commit locally under the publication restrictions.
+
+The pinned [ABS implementation](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/math.h#L154)
+uses checked negation for negative integer inputs and `fabs` for DOUBLE.
+The existing unary evaluator is the candidate owner. Signature and compliance
+fixture review remain before implementation; no ABS source change is retained.
+Other scalar calls and NUMERIC types remain outside this milestone.
 
 ## Next engineering priorities
 
