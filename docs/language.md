@@ -210,7 +210,7 @@ arguments and other arities are rejected. INT64 ABS constants may satisfy
 LIMIT/OFFSET; DOUBLE results still fail that type requirement.
 
 The pinned [ABS signatures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/common/builtin_function_internal_3.cc#L2260),
-[compliance fixtures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_math.cc#L1255)
+[compliance fixtures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_math.cc#L1255),
 [implementation](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/math.h#L154)
 and [NULL evaluation](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/reference_impl/function.cc#L9015)
 establish the accepted numeric behavior. PipeSQL uses its own error category,

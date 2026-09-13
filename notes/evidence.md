@@ -7,21 +7,22 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 682 frozen inputs retained in `374d312`
+Both complete 24-stage gates verify the 683 frozen inputs retained in `0ea0040`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with read-only source. Input manifests match before/after and across gates:
-`14920bc7c7f7d62fd09a148b77651a794d6422a4a02f26fdb858e3ccc5eb6152`.
-Only the two notes files change during finalization. The other 680 inputs retain
-fingerprint `91da7ee290df0de6bac2ce46dbc56925d25414b4b1a46786230a39ef592a36d8`;
-all inputs remain tracked. Final documentation verification passes 533 local links.
+`dc8915f0b40361b53e33dc7b9dcd124c4f0a58709931a5e1ecaa0fff41aec7c6`.
+Only the two notes files and a punctuation correction in `docs/language.md`
+change during finalization. The other 680 inputs retain fingerprint
+`7b56ff3b01819c6f6113b8c3eaa58367f0a5371ce8c711d3e76d022f253841e3`;
+all inputs remain tracked. Final documentation verification passes 536 local links.
 
-Each platform executes 558 ordinary Rust tests, including all 103 public catalog
-tests and all six SAFE_DIVIDE tests, plus the separate lease subprocess.
+Each platform executes 562 ordinary Rust tests, including all 105 public catalog
+tests and all four ABS tests, plus the separate lease subprocess.
 No ordinary test is ignored or filtered; the selected lease child reports six
 filtered siblings. Maintenance passes 96 tooling tests, 44 independent codec
-fixtures and 532 local links. Independent aggregate semantics pass 24 cases and
+fixtures and 536 local links. Independent aggregate semantics pass 24 cases and
 composition passes 311 cases. Both allocation campaigns retain positions 0–981
 and healthy control 982 at each pathname length; the ordered lists were
 reconciled explicitly. The caller ceiling remains 1,000; no engine allowance
@@ -32,14 +33,44 @@ graph checks. All 43 graph cases, two oracle controls, three CLI limits, genesis
 lease contention and independent column order pass. Linux retains the two Darwin
 ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,760.910 seconds
-on macOS and 879.017 seconds on Linux; overlapping verification runs are not
+Both receipts have zero finalization errors. Stage times total 1,730.612 seconds
+on macOS and 810.461 seconds on Linux; overlapping verification runs are not
 performance benchmarks. Receipt SHA-256 values are respectively
-`5c758dde984d4fc3407376fb7d0ab6cae7844a33631d8040a203d90cf5fb250f` and
-`3145e8e219de1d80e0d0adb5c2be37e002fe38d443d980b5ef7c6c67593c60af`.
+`6edc26c62b4d67b09a2410ef1c8217368a009ba73bb1c32ded0f9a4ece923e09` and
+`72bc12166d43318e85dc17ad2f0ffd983b053b098c2dd6705add0899418837bc`.
 Owned gate/control outputs, source exports, logs and containers are removed.
 The existing verification image and toolchains remain. Windows, broader
 durability, physical-memory and sanitizer qualification remain unfinished.
+
+### Absolute value
+
+`0ea0040` adds INT64/DOUBLE ABS through the existing bounded parser, binder,
+validated numeric program and unary evaluator. It preserves input type and
+NULLability. Minimum INT64 raises a source-spanned absolute-value overflow;
+argument errors remain visible, including when ABS is inside SAFE_DIVIDE.
+DOUBLE maps signed zero to positive zero and infinities to positive infinity;
+NaN remains NaN. The [language owner](../docs/language.md) retains the pinned
+signatures, fixtures, primitive and NULL-evaluation evidence. No allocation
+owner, persistent codec or admission allowance changes.
+
+Four new tests protect literal values, numeric types, NULLs across validity
+words and buffer reuse, signed zero, nonfinite values, subnormals, overflow spans,
+malformed calls/programs, type/nullability mutations, 31/32-call bounds, unused
+expression and Boolean/LIMIT demand, and SET, derived, union and analytic-count
+composition. Retained sorted execution checks exact/one-byte-short admission
+and zero effects on refusal. Forced grouping fallback replays ABS arguments
+with literal grouped totals. Cancellation and early drop release owners and
+permit healthy reuse. These cases execute in both complete gates above.
+
+The catalog allocation caller evaluates ABS of a negated division result while
+retaining its count-two oracle and SAFE_DIVIDE NULL demand. Native I/O similarly
+retains its literal aggregate 4.5 through ABS, without another query or runner.
+Both campaigns retain their previous census and distinct failure schedules.
+The documented deviation example runs on fresh sales databases on both platforms:
+required region, nullable INT64 amount and deviation, north/NULL/NULL, north/5/5,
+north/10/0 and south/20/10. Exact schema, all four rows and successful completion
+match. INT64 ABS constants work in LIMIT; DOUBLE still fails its type requirement.
+Other scalar calls and NUMERIC types remain outside this milestone.
 
 ### Safe division
 

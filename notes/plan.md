@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `374d312` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 558 ordinary Rust tests per platform and 311 composition
+The complete 24-stage gates for `0ea0040` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 562 ordinary Rust tests per platform and 311 composition
 cases, plus the applicable allocation and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
 controls and limits. Linux retains two Darwin ACL exclusions. The
@@ -24,49 +24,13 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Current: numeric ABS for analytical deviations
+## Completed: numeric ABS for analytical deviations
 
-SAFE_DIVIDE is complete at `374d312`; the
-[safe division record](evidence.md#safe-division) retains verified behavior,
-coverage and limitations. Add INT64/DOUBLE ABS so analytical queries can express
-absolute deviations through the existing bounded numeric program. No current
-counterexample reopens the completed division or resource repairs. Windows
-persistence still requires a complete native mapping and runtime evidence;
-this language milestone makes no new platform qualification claim.
-
-1. Pin signatures, NULL, minimum-INT64 overflow, signed zero and nonfinite behavior
-   at the language owner's immutable revision. Reassess research after 30 minutes
-   if authoritative evidence cannot resolve a case; leave disputed forms unsupported.
-2. Extend the existing bounded parser and scalar evaluator, preserving input
-   typing, argument errors, demand, source spans and independent validation.
-   Introduce no separate frontend, allocation owner or persistent representation.
-3. Cover literal expected results, malformed forms/programs, nested composition,
-   exact/short admission and consequential cancellation, replay and failure
-   boundaries. Reuse existing campaign mechanics where they add distinct coverage.
-4. Add a runnable deviation example and update contract, learning and test/tool
-   maps. Run focused checks and both complete frozen gates; reconcile discovery,
-   manifests and receipts, record concise evidence, remove owned outputs and
-   commit locally under the publication restrictions.
-
-The [language owner](../docs/language.md) now pins signatures, minimum-integer
-fixtures, DOUBLE absolute value and NULL evaluation at the existing immutable
-GoogleSQL revision. ABS uses one parser call boundary and one unary instruction,
-preserving type and validity. Its integer overflow reports absolute value;
-argument failures still propagate, including inside SAFE_DIVIDE.
-
-Four focused ABS tests pass, covering scalar lanes and nonfinite inputs,
-binding/type/nullability mutations and program bounds, and public values,
-malformed calls, spans, demand and composition. Retained exact/short sorted
-admission, forced grouping replay and cancellation/early-drop tests pass.
-All-target Clippy and maintenance pass. The documented deviation example runs
-against a fresh macOS sales database with the expected schema, four rows, NULLs
-and successful completion. Catalog allocation controls retain the existing
-census and result; the full refusal sweep is still required.
-
-The implementation and maps are ready for frozen verification. Both complete
-platform gates, GNU/Linux example execution, discovery/manifests/receipts,
-final evidence, cleanup and local commits remain. Other scalar calls and NUMERIC
-types remain outside this milestone. No publication is authorized.
+`0ea0040` implements INT64/DOUBLE ABS through the existing bounded numeric
+program. Both complete frozen platform gates, examples, discovery, manifests and
+receipts are verified. The [absolute-value record](evidence.md#absolute-value)
+retains behavior, coverage and limitations. Owned outputs are removed; publication
+remains unauthorized. Select the next bounded milestone using the priorities below.
 
 ## Next engineering priorities
 
