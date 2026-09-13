@@ -432,6 +432,7 @@ fn bind_expression(
             ParsedOp::Subtract => Op::Subtract,
             ParsedOp::Multiply => Op::Multiply,
             ParsedOp::Divide => Op::Divide,
+            ParsedOp::SafeDivide => Op::SafeDivide,
             ParsedOp::Negate => Op::Negate,
             ParsedOp::Empty
             | ParsedOp::WindowCount
@@ -532,6 +533,7 @@ fn bind_literal(
                 .evaluate_constant()
                 .map_err(|failure| failure.into_error(parsed.span))?;
             Ok(match value {
+                crate::scalar::Number::Null => FilterLiteral::NullDouble,
                 crate::scalar::Number::Integer(value) => FilterLiteral::Int64(value),
                 crate::scalar::Number::Double(value) => FilterLiteral::Double(value.to_bits()),
             })

@@ -88,7 +88,7 @@ separate from this query manifest.
 | `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN or UNION ALL. Comma-separated FROM inputs remain unsupported. |
 | `FROM (pipe_query) [AS alias]` | Uses the child query’s ordinary outputs as an independent input. A JOIN may also use this form. See [table subqueries](#table-subqueries) for scope and ordering. |
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
-| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts bounded STRING and DATE constants and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
+| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts two-argument numeric `SAFE_DIVIDE`, bounded STRING and DATE constants and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
 | `EXTEND expression [[AS] alias], ...` | Appends columns using the same expression profile as SELECT. Preserves all input columns, their identities and ranges. Ordinary expressions preserve order; analytic count clears it. Star expansion, reducing aggregate calls and other scalar forms remain unsupported. |
 | `SET name=expression, ...` | Replaces each named ordinary column in place with a fresh identity. Accepts direct references of any supported type and the nonanalytic SELECT expression profile. Every expression sees the original input; replacements can change type and NULLability. |
 | `DROP name, ...` | Removes all ordinary columns matching each name, including duplicate names. Rejects removal of the entire row. |
@@ -188,7 +188,7 @@ operation, after its checked integer children. A NULL operand produces NULL;
 otherwise either signed-zero denominator raises `DivisionByZero`, including with
 a nonfinite numerator. Finite operands producing infinity raise
 `ArithmeticOverflow`; underflow and nonfinite operands otherwise follow IEEE-754.
-Scalar calls beyond the DATE forms below, other scalar expression forms and NULL
+Scalar calls beyond SAFE_DIVIDE and the DATE forms below, other scalar expression forms and NULL
 literals are unsupported.
 
 These division rules follow the pinned
@@ -198,6 +198,25 @@ These division rules follow the pinned
 and [division implementation](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/arithmetics.h#L139).
 PipeSQL retains its own typed errors, demanded-expression rules and raw DOUBLE
 storage contract.
+
+`SAFE_DIVIDE(numerator, denominator)` accepts two numeric expressions and returns
+nullable DOUBLE. Calls may nest within the existing 32-operation numeric program
+and 160-token query limits. Each call consumes one binary operation; it adds no
+unbounded recursion. NULL arguments yield NULL. A non-NULL zero denominator or
+finite division overflow also yields NULL; underflow and nonfinite values retain
+the ordinary division rules. Argument expressions evaluate before this decision:
+`SAFE_DIVIDE(1/0,1)` and `SAFE_DIVIDE(9223372036854775807+1,0)` still fail.
+Unused expressions and Boolean/LIMIT demand retain their existing rules.
+
+SAFE_DIVIDE is available wherever numeric expressions are accepted, including
+aggregate arguments and numeric predicate constants. A folded NULL retains DOUBLE
+typing: comparing a STRING column with `SAFE_DIVIDE(1,0)` is a type error. The
+result is not INT64, so it cannot satisfy LIMIT/OFFSET's type requirement. Wrong
+arity, STRING/DATE arguments and generic `SAFE.` forms remain unsupported. The
+pinned [signatures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/common/builtin_function_internal_3.cc#L2723),
+[fixtures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_math.cc)
+and [reference evaluator](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/reference_impl/function.cc#L277)
+own the upstream evidence. PipeSQL retains its own source-spanned error categories.
 
 SELECT, EXTEND and SET accept STRING constants and DATE constants, including
 parentheses around the constant. They are nonnullable and own their values in

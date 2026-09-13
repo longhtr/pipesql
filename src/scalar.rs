@@ -115,11 +115,6 @@ impl NumericOutput<'_> {
         Ok(NumericOutput { values, valid })
     }
 
-    pub(crate) fn nonnull_values(&self) -> &[u64] {
-        assert_eq!(self.valid, [u64::MAX; VALID_WORDS], "nonnull scalar result");
-        self.values
-    }
-
     pub(crate) fn value(&self, row: usize) -> Option<u64> {
         assert!(row < self.values.len());
         (self.valid[row / 64] & (1 << (row % 64)) != 0).then_some(self.values[row])
@@ -138,6 +133,7 @@ pub(crate) enum Op {
     Subtract,
     Multiply,
     Divide,
+    SafeDivide,
     Negate,
 }
 
@@ -156,9 +152,9 @@ impl Expression {
     };
 
     pub(crate) fn nullable(&self) -> bool {
-        self.ops[..usize::from(self.len)]
-            .iter()
-            .any(|op| matches!(op, Op::Column(column) if column.nullable()))
+        self.ops[..usize::from(self.len)].iter().any(|op| {
+            *op == Op::SafeDivide || matches!(op, Op::Column(column) if column.nullable())
+        })
     }
 
     pub(crate) fn infer(&self, visible: &[SemanticColumn]) -> Result<DataType, Error> {
@@ -195,12 +191,12 @@ impl Expression {
                     }
                     continue;
                 }
-                Op::Add | Op::Subtract | Op::Multiply | Op::Divide => {
+                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide => {
                     if depth < 2 {
                         return Err(Error::Corrupt("scalar binary stack underflow"));
                     }
                     depth -= 1;
-                    types[depth - 1] = if *op == Op::Divide
+                    types[depth - 1] = if matches!(op, Op::Divide | Op::SafeDivide)
                         || types[depth - 1] == DataType::Double
                         || types[depth] == DataType::Double
                     {
@@ -235,7 +231,7 @@ impl Expression {
         for op in &self.ops[..usize::from(self.len)] {
             match op {
                 Op::Column(_) | Op::Integer(_) | Op::Double(_) => depth += 1,
-                Op::Add | Op::Subtract | Op::Multiply | Op::Divide => {
+                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
                 }
                 Op::Negate => (),
@@ -249,10 +245,13 @@ impl Expression {
     pub(crate) fn evaluate_constant(&self) -> Result<Number, ArithmeticFailure> {
         let mut scratch = [0; MAX_OPS];
         self.evaluate_batch(&[], 0..1, &mut scratch)
-            .map(|output| match self.data_type {
-                DataType::Int64 => Number::Integer(integer(output.nonnull_values()[0])),
-                DataType::Double => Number::Double(f64::from_bits(output.nonnull_values()[0])),
-                _ => unreachable!("validated numeric result"),
+            .map(|output| match output.value(0) {
+                None => Number::Null,
+                Some(bits) => match self.data_type {
+                    DataType::Int64 => Number::Integer(integer(bits)),
+                    DataType::Double => Number::Double(f64::from_bits(bits)),
+                    _ => unreachable!("validated numeric result"),
+                },
             })
     }
     // Each stack vector has one type and `rows` raw 64-bit payloads. Integer
@@ -356,7 +355,7 @@ impl Expression {
                         _ => unreachable!("validated numeric operand"),
                     }
                 }
-                Op::Add | Op::Subtract | Op::Multiply | Op::Divide => {
+                Op::Add | Op::Subtract | Op::Multiply | Op::Divide | Op::SafeDivide => {
                     depth -= 1;
                     let (left, right) = scratch.split_at_mut(depth * rows);
                     let left = &mut left[(depth - 1) * rows..];
@@ -367,7 +366,7 @@ impl Expression {
                     for (left, right) in valid[depth - 1].iter_mut().zip(right_valid) {
                         *left &= right;
                     }
-                    let integer_result = *op != Op::Divide
+                    let integer_result = !matches!(op, Op::Divide | Op::SafeDivide)
                         && left_type == DataType::Int64
                         && right_type == DataType::Int64;
                     let all_valid = valid[depth - 1] == [u64::MAX; VALID_WORDS];
@@ -391,7 +390,18 @@ impl Expression {
                             } else {
                                 f64::from_bits(*right)
                             };
-                            *left = double_binary(*op, a, b)?.to_bits();
+                            match double_binary(*op, a, b) {
+                                Ok(value) => *left = value.to_bits(),
+                                Err(
+                                    ArithmeticFailure::Divide | ArithmeticFailure::DivideByZero,
+                                ) if *op == Op::SafeDivide => {
+                                    // Arguments have already evaluated. Only this
+                                    // division's domain errors become a NULL lane.
+                                    valid[depth - 1][row / 64] &= !(1 << (row % 64));
+                                    *left = 0;
+                                }
+                                Err(failure) => return Err(failure),
+                            }
                         }
                     }
                     if !integer_result {
@@ -419,6 +429,7 @@ fn integer_bits(value: i64) -> u64 {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Number {
+    Null,
     Integer(i64),
     Double(f64),
 }
@@ -437,7 +448,7 @@ fn double_binary(op: Op, left: f64, right: f64) -> Result<f64, ArithmeticFailure
         Op::Add => (left + right, ArithmeticFailure::Add),
         Op::Subtract => (left - right, ArithmeticFailure::Subtract),
         Op::Multiply => (left * right, ArithmeticFailure::Multiply),
-        Op::Divide => {
+        Op::Divide | Op::SafeDivide => {
             // NULL lanes are removed before this operation. Both signed zeros
             // are errors even when the numerator is nonfinite.
             if right == 0.0 {
@@ -493,6 +504,94 @@ mod tests {
             assert_eq!(output.valid, [u64::MAX; VALID_WORDS]);
             Ok(output.values)
         }
+    }
+
+    #[test]
+    fn safe_divide_keeps_validity_across_words_reuse_and_nonfinite_inputs() {
+        let x = SemanticColumn::new(41, DataType::Double, false);
+        let y = SemanticColumn::new(42, DataType::Int64, false);
+        let numerators = [9.0; 130];
+        let mut denominators = [0; 130];
+        denominators[65] = 2;
+        denominators[129] = 2;
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[Op::Column(x), Op::Column(y), Op::SafeDivide]);
+        expression.len = 3;
+        expression.validate(&[x, y]).unwrap();
+        assert!(expression.nullable());
+        let mut scratch = [0; MAX_OPS * 130];
+        for all_present in [false, true] {
+            if all_present {
+                denominators.fill(2);
+            }
+            let inputs = [
+                Some(NumericInput::new(x, NumericValues::Double(&numerators), None).unwrap()),
+                Some(NumericInput::new(y, NumericValues::Int64(&denominators), None).unwrap()),
+            ];
+            let output = expression
+                .evaluate_batch(&inputs, 0..130, &mut scratch)
+                .unwrap();
+            for row in 0..130 {
+                let expected =
+                    (all_present || row == 65 || row == 129).then_some(4.5_f64.to_bits());
+                assert_eq!(output.value(row), expected, "row {row}");
+            }
+        }
+        expression.data_type = DataType::Int64;
+        assert!(expression.validate(&[x, y]).is_err());
+        expression.data_type = DataType::Double;
+        expression.ops[..3].copy_from_slice(&[Op::Column(x), Op::Column(x), Op::SafeDivide]);
+        let nonfinite = [f64::INFINITY, f64::NAN, 0.0, 2.0];
+        let inputs = [Some(
+            NumericInput::new(x, NumericValues::Double(&nonfinite), None).unwrap(),
+        )];
+        let output = expression
+            .evaluate_batch(&inputs, 0..4, &mut scratch)
+            .unwrap();
+        assert!(f64::from_bits(output.value(0).unwrap()).is_nan());
+        assert!(f64::from_bits(output.value(1).unwrap()).is_nan());
+        assert_eq!(output.value(2), None);
+        assert_eq!(output.value(3), Some(1.0_f64.to_bits()));
+        expression.ops[1] = Op::Integer(0);
+        let output = expression
+            .evaluate_batch(&inputs, 0..4, &mut scratch)
+            .unwrap();
+        for row in 0..4 {
+            assert_eq!(output.value(row), None);
+        }
+    }
+
+    #[test]
+    fn safe_divide_constants_preserve_argument_failures_and_nullable_results() {
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[Op::Integer(1), Op::Integer(0), Op::SafeDivide]);
+        expression.len = 3;
+        expression.validate(&[]).unwrap();
+        assert!(matches!(expression.evaluate_constant(), Ok(Number::Null)));
+        expression.ops[..5].copy_from_slice(&[
+            Op::Integer(1),
+            Op::Integer(0),
+            Op::Divide,
+            Op::Integer(0),
+            Op::SafeDivide,
+        ]);
+        expression.len = 5;
+        expression.validate(&[]).unwrap();
+        assert!(matches!(
+            expression.evaluate_constant(),
+            Err(ArithmeticFailure::DivideByZero)
+        ));
+        expression.ops[..3].copy_from_slice(&[Op::Double(1), Op::Integer(2), Op::SafeDivide]);
+        expression.ops[3..].fill(Op::Empty);
+        expression.len = 3;
+        assert!(matches!(
+            expression.evaluate_constant(),
+            Ok(Number::Double(0.0))
+        ));
+        expression.ops[..2].copy_from_slice(&[Op::Integer(1), Op::SafeDivide]);
+        expression.ops[2] = Op::Empty;
+        expression.len = 2;
+        assert!(expression.validate(&[]).is_err());
     }
 
     #[test]
@@ -829,7 +928,7 @@ mod tests {
             .unwrap();
         match expression.evaluate(&[left, right, 0.0, 0.0])? {
             Number::Double(value) => Ok(value),
-            Number::Integer(_) => panic!("DOUBLE expression"),
+            Number::Integer(_) | Number::Null => panic!("nonnull DOUBLE expression"),
         }
     }
 

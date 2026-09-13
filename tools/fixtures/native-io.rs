@@ -38,6 +38,10 @@ fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
         .chain(derived.then_some((
             "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(n/2) AS ratio",
             Value::Double(4.5),
+        )))
+        .chain(derived.then_some((
+            "FROM facts |> SELECT SAFE_DIVIDE(n,0) AS ratio |> AGGREGATE COUNT(ratio) AS present",
+            Value::Int64(0),
         )));
     for (sql, expected) in queries {
         let plan = db.prepare(sql)?;

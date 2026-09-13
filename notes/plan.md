@@ -48,13 +48,36 @@ and generic safe-error modes remain outside this milestone.
    reconcile discovery/manifests/receipts, record evidence, remove owned outputs
    and commit locally under the publication restrictions.
 
-Initial navigation identifies the bounded pending-operator stack in
-`frontend/parser.rs` and the nullability/evaluation owners in `scalar.rs`.
-Pinned upstream
+The pinned
+[signatures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/common/builtin_function_internal_3.cc#L2723),
 [safe division fixtures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_math.cc)
-convert division's out-of-range outcomes to NULL. Signature and argument-error
-handling still need reconciliation before implementation. SAFE_DIVIDE remains
-unsupported in the current public language contract.
+and [SafeInvokeBinary](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/reference_impl/function.cc#L277)
+establish nullable DOUBLE results and suppression of division-domain errors
+after arguments have evaluated. The existing parser stack now represents the
+first and second call arguments without recursion. Numeric evaluation clears a
+lane's validity for zero-denominator or division-overflow errors, while retaining
+argument failures. Constant evaluation now represents NULL explicitly; folded
+numeric NULL predicates retain DOUBLE typing so STRING comparisons still reject.
+The obsolete nonnull-only output helper had no remaining consumers and is removed.
+
+Six focused SAFE_DIVIDE tests pass: two scalar tests, one binding/admission test,
+two public catalog tests and one legacy test. They cover mixed types, nesting,
+precedence, typed NULLs, signed zero, nonfinite values, underflow, validity reuse,
+argument errors, malformed calls/programs, nullable identity mutation, 15/16-call
+limits, empty/loaded legacy storage and composition. Twelve replay tests pass,
+including retained output and forced hash fallback with nullable safe arguments.
+Exact/short sorted execution and explicit cancellation/early-drop checks pass.
+
+Maintenance and all-target Clippy pass; documentation resolves 532 local links.
+The allocation controls retain census 982 at both pathname lengths and the same
+1,000 ceiling. The existing division phase now demands a NULL safe result before
+counting two rows. Native I/O adds a zero count over three NULL ratios. The macOS
+safe-ratio example runs on a fresh database and matches its schema, four rows,
+NULLs, DOUBLE bits and successful completion.
+
+Implementation and test/tool maps are ready for frozen full verification. Both
+complete platform gates, GNU/Linux example execution, discovery/manifests,
+final evidence, cleanup and local commits remain. No publication is authorized.
 
 ## Next engineering priorities
 

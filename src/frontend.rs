@@ -265,6 +265,8 @@ impl Comparison {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FilterLiteral {
     Null,
+    // A folded numeric NULL must not become an untyped NULL for comparison binding.
+    NullDouble,
     Double(u64),
     Int64(i64),
     Date(DateValue),
@@ -275,6 +277,7 @@ impl FilterLiteral {
     fn valid_for(self, data_type: DataType) -> bool {
         match self {
             Self::Null => true,
+            Self::NullDouble => matches!(data_type, DataType::Int64 | DataType::Double),
             Self::Double(bits) => {
                 matches!(data_type, DataType::Double | DataType::Int64)
                     && f64::from_bits(bits).is_finite()

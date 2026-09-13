@@ -124,7 +124,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
         ],
     );
     let cancel = CancellationToken::new();
-    for variant in 0..12 {
+    for variant in 0..13 {
         let joined = matches!(variant, 0 | 2 | 6);
         let sql = if joined {
             "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> AGGREGATE SUM(l.n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY l.k"
@@ -161,6 +161,9 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
             }
             11 => {
                 "FROM facts |> EXTEND COUNT(*) OVER () AS partition_rows |> WHERE partition_rows=3 |> AGGREGATE SUM(n) AS total,COUNT(*) AS nrows GROUP AND ORDER BY k"
+            }
+            12 => {
+                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total,COUNT(SAFE_DIVIDE(n,k-1)) AS nrows GROUP AND ORDER BY k"
             }
             _ => sql,
         };
@@ -237,6 +240,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
                 1 | 4 | 5 | 7 | 8 | 10 | 11 => [[1, 7, 2], [2, 7, 1]],
                 3 => [[1, 4, 1], [2, 7, 1]],
                 9 => [[1, 1, 1], [2, 2, 1]],
+                12 => [[1, 7, 0], [2, 7, 1]],
                 _ => unreachable!(),
             }
         );
@@ -260,9 +264,11 @@ fn runtime_replays_retained_output_after_prefix_or_completion() {
         ],
     );
     let cancel = CancellationToken::new();
-    for mode in 0..4 {
+    for mode in 0..5 {
         let sql = if mode == 0 {
             "FROM facts |> AGGREGATE SUM(n) AS total"
+        } else if mode == 4 {
+            "FROM facts |> AGGREGATE COUNT(SAFE_DIVIDE(n,k-1)) AS present GROUP AND ORDER BY k"
         } else if mode == 3 {
             "FROM facts |> SELECT COUNT(*) OVER () AS n"
         } else {
@@ -360,6 +366,12 @@ fn runtime_replays_retained_output_after_prefix_or_completion() {
             assert!(finished);
             let expected = if mode == 0 {
                 vec![vec![Some(12)]]
+            } else if mode == 4 {
+                vec![
+                    vec![None, Some(0)],
+                    vec![Some(1), Some(0)],
+                    vec![Some(2), Some(2)],
+                ]
             } else if mode == 3 {
                 vec![vec![Some(4)]; 4]
             } else {

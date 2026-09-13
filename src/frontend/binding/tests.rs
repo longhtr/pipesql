@@ -1658,3 +1658,37 @@ fn division_preparation_admits_exact_peak_and_releases_it() {
         "FROM facts |> SELECT k,n/(k+1) AS ratio |> WHERE ratio>1/2 |> AGGREGATE AVG(ratio) AS mean GROUP BY k",
     );
 }
+
+#[test]
+fn safe_divide_keeps_nullable_identity_and_bounded_call_programs() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    for argument in ["1,2", "l_quantity,0"] {
+        let mut query = db
+            .prepare(&format!(
+                "FROM lineitem |> SELECT SAFE_DIVIDE({argument}) AS ratio"
+            ))
+            .unwrap();
+        let output = query.result_column(0).unwrap();
+        assert_eq!(output.data_type, DataType::Double);
+        assert!(output.nullable);
+        let column = query.plan.computed[0].column;
+        query.plan.computed[0].column =
+            SemanticColumn::new(column.identity().value(), DataType::Double, false);
+        assert!(validate(&query.plan).is_err());
+    }
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    for depth in [15, 16] {
+        let expression = format!("{}1{}", "SAFE_DIVIDE(".repeat(depth), ",1)".repeat(depth));
+        let sql = format!("FROM lineitem |> SELECT {expression} AS ratio");
+        if depth == 15 {
+            assert!(db.prepare(&sql).is_ok());
+        } else {
+            assert!(matches!(db.prepare(&sql), Err(Error::Parse { .. })));
+        }
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k,SAFE_DIVIDE(n,k) AS ratio |> WHERE ratio>SAFE_DIVIDE(1,2) |> AGGREGATE AVG(ratio) AS mean GROUP BY k",
+    );
+}

@@ -154,7 +154,10 @@ bitmaps, plus its type stack. At most 128 borrowed numeric-input descriptors
 carry identity, payload and validity references; they allocate nothing and die
 after consumption. The result carries four validity words and borrows the
 existing scratch payload. Division uses the same two-input stack transition as
-multiplication and returns DOUBLE in the existing lane; it adds no allocation
+multiplication and returns DOUBLE in the existing lane. SAFE_DIVIDE uses that
+same transition and the existing validity bitmap for NULL results. Its two
+argument phases occupy the bounded parser stack, without recursion or a separate
+allocation. A folded NULL keeps its numeric type inline. Neither adds an allocation
 owner or temporary storage. Zero-denominator and overflow errors retain inline
 source spans and release query ownership through the ordinary failure path.
 

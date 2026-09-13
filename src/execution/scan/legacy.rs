@@ -287,7 +287,7 @@ impl StoredColumn<'_> {
             | (
                 column,
                 Predicate::Compare {
-                    literal: FilterLiteral::Null,
+                    literal: FilterLiteral::Null | FilterLiteral::NullDouble,
                     ..
                 },
             ) => {

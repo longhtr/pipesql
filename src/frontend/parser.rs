@@ -106,6 +106,7 @@ pub(super) enum ParsedOp {
     Subtract,
     Multiply,
     Divide,
+    SafeDivide,
     Negate,
 }
 
@@ -139,6 +140,10 @@ impl ParsedExpression {
 #[derive(Clone, Copy)]
 enum PendingOp {
     Paren,
+    // Call boundaries keep argument commas inside this frame. Closing the
+    // second argument emits one binary instruction without recursive parsing.
+    SafeDivideFirst,
+    SafeDivideSecond,
     Unary,
     Binary(Kind),
 }
@@ -146,7 +151,7 @@ enum PendingOp {
 impl PendingOp {
     fn precedence(self) -> u8 {
         match self {
-            Self::Paren => 0,
+            Self::Paren | Self::SafeDivideFirst | Self::SafeDivideSecond => 0,
             Self::Binary(Kind::Star | Kind::Slash) => 2,
             Self::Binary(_) => 1,
             Self::Unary => 3,
@@ -555,6 +560,26 @@ impl Parser<'_> {
                         expression.push(ParsedOp::Number(span), span)?;
                         operand = false;
                     }
+                    Kind::Identifier
+                        if self.is_word("SAFE_DIVIDE")
+                            && self
+                                .tokens
+                                .values
+                                .get(self.position + 1)
+                                .is_some_and(|token| token.kind == Kind::LeftParen) =>
+                    {
+                        if depth == MAX_OPS {
+                            return Err(Error::Parse {
+                                message: "scalar stack limit exceeded",
+                                span: at,
+                            });
+                        }
+                        self.take(Kind::Identifier)?;
+                        self.take(Kind::LeftParen)?;
+                        pending[depth] = PendingOp::SafeDivideFirst;
+                        depth += 1;
+                        parentheses += 1;
+                    }
                     Kind::Identifier | Kind::Aggregate => {
                         let span = self.column()?;
                         expression.push(ParsedOp::Column(span), span)?;
@@ -618,13 +643,39 @@ impl Parser<'_> {
                     self.take(kind)?;
                     operand = true;
                 }
+                Kind::Comma if parentheses != 0 => {
+                    while depth != 0 && pending[depth - 1].precedence() != 0 {
+                        depth -= 1;
+                        expression.push(pending[depth].parsed(), at)?;
+                    }
+                    if depth == 0 || !matches!(pending[depth - 1], PendingOp::SafeDivideFirst) {
+                        return Err(Error::Parse {
+                            message: "SAFE_DIVIDE requires two arguments",
+                            span: at,
+                        });
+                    }
+                    pending[depth - 1] = PendingOp::SafeDivideSecond;
+                    self.take(Kind::Comma)?;
+                    operand = true;
+                }
                 Kind::RightParen if parentheses != 0 => {
-                    while depth != 0 && !matches!(pending[depth - 1], PendingOp::Paren) {
+                    while depth != 0 && pending[depth - 1].precedence() != 0 {
                         depth -= 1;
                         expression.push(pending[depth].parsed(), at)?;
                     }
                     assert!(depth != 0);
                     depth -= 1;
+                    match pending[depth] {
+                        PendingOp::SafeDivideFirst => {
+                            return Err(Error::Parse {
+                                message: "SAFE_DIVIDE requires two arguments",
+                                span: at,
+                            });
+                        }
+                        PendingOp::SafeDivideSecond => expression.push(ParsedOp::SafeDivide, at)?,
+                        PendingOp::Paren => (),
+                        _ => unreachable!("scalar parenthesis boundary"),
+                    }
                     parentheses -= 1;
                     self.take(kind)?;
                 }

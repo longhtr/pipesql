@@ -361,3 +361,68 @@ fn legacy_window_count_selects_storage_and_preserves_empty_cardinality() {
         assert_eq!(db.reserved_temp_bytes(), 0);
     }
 }
+
+#[test]
+fn legacy_safe_divide_preserves_typed_null_predicates_and_counts() {
+    let temp = TempDir::new();
+    let path = temp.0.join("database");
+    let input = temp.0.join("lineitem.tbl");
+    fs::write(&input, ROW.repeat(257)).unwrap();
+    let mut database = Database::create(&path, config()).unwrap();
+    let cancel = CancellationToken::new();
+    for loaded in [false, true] {
+        if loaded {
+            database.load_lineitem(&input, &cancel).unwrap();
+        }
+        let baseline = database.reserved_memory_bytes();
+        for (sql, expected) in [
+            (
+                "FROM lineitem |> WHERE l_quantity>SAFE_DIVIDE(1,0) |> AGGREGATE COUNT(*) AS n",
+                0,
+            ),
+            (
+                "FROM lineitem |> WHERE NOT(l_quantity=SAFE_DIVIDE(1,0)) |> AGGREGATE COUNT(*) AS n",
+                0,
+            ),
+            (
+                "FROM lineitem |> WHERE l_quantity=SAFE_DIVIDE(1,0) OR l_quantity>0 |> AGGREGATE COUNT(*) AS n",
+                if loaded { 257 } else { 0 },
+            ),
+            (
+                "FROM lineitem |> SELECT SAFE_DIVIDE(l_quantity,0) AS ratio |> AGGREGATE COUNT(ratio) AS n",
+                0,
+            ),
+            (
+                "FROM lineitem |> WHERE l_quantity=SAFE_DIVIDE(1,1) |> AGGREGATE COUNT(*) AS n",
+                if loaded { 257 } else { 0 },
+            ),
+        ] {
+            let prepared = database.prepare(sql).unwrap();
+            let mut result = database.execute(&prepared, &cancel).unwrap();
+            let mut seen = false;
+            let mut done = false;
+            for _ in 0..100_000 {
+                match result.step() {
+                    QueryStep::Progress => (),
+                    QueryStep::Rows(batch) => {
+                        assert!(!seen);
+                        assert_eq!(batch.len(), 1);
+                        assert_eq!(batch.column_count(), 1);
+                        assert_eq!(batch.value(0, 0), Some(Value::Int64(expected)));
+                        seen = true;
+                    }
+                    QueryStep::Finished => {
+                        done = true;
+                        break;
+                    }
+                    QueryStep::Failed(error) => panic!("{sql}: {error}"),
+                }
+            }
+            assert!(seen && done);
+            drop(result);
+            drop(prepared);
+            assert_eq!(database.reserved_memory_bytes(), baseline);
+            assert_eq!(database.reserved_temp_bytes(), 0);
+        }
+    }
+}

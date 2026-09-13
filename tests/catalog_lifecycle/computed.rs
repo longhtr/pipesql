@@ -766,31 +766,170 @@ fn public_division_composes_with_set_union_grouping_and_boolean_demand() {
 fn public_division_cancellation_and_early_drop_release_owners() {
     let (_directory, db) = join_fixture();
     let baseline = db.reserved_memory_bytes();
-    let prepared = db
-        .prepare("FROM facts |> SELECT v/2 AS ratio |> ORDER BY ratio")
-        .unwrap();
-    let admitted = db.reserved_memory_bytes();
-    for after in [0, 1, 3] {
-        for cancel_query in [false, true] {
-            let cancel = CancellationToken::new();
-            let mut result = db.execute(&prepared, &cancel).unwrap();
-            for _ in 0..after {
-                assert!(matches!(result.step(), QueryStep::Progress));
+    for sql in [
+        "FROM facts |> SELECT v/2 AS ratio |> ORDER BY ratio",
+        "FROM facts |> SELECT SAFE_DIVIDE(v,k-1) AS ratio |> ORDER BY ratio",
+    ] {
+        let prepared = db.prepare(sql).unwrap();
+        let admitted = db.reserved_memory_bytes();
+        for after in [0, 1, 3] {
+            for cancel_query in [false, true] {
+                let cancel = CancellationToken::new();
+                let mut result = db.execute(&prepared, &cancel).unwrap();
+                for _ in 0..after {
+                    assert!(matches!(result.step(), QueryStep::Progress));
+                }
+                if cancel_query {
+                    cancel.cancel();
+                    assert!(matches!(result.step(), QueryStep::Failed(Error::Cancelled)));
+                }
+                drop(result);
+                assert_eq!(db.reserved_memory_bytes(), admitted);
+                assert_eq!(db.reserved_temp_bytes(), 0);
             }
-            if cancel_query {
-                cancel.cancel();
-                assert!(matches!(result.step(), QueryStep::Failed(Error::Cancelled)));
-            }
-            drop(result);
-            assert_eq!(db.reserved_memory_bytes(), admitted);
-            assert_eq!(db.reserved_temp_bytes(), 0);
         }
+        drop(prepared);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
     }
-    drop(prepared);
-    assert_eq!(db.reserved_memory_bytes(), baseline);
     query(
         &db,
         "FROM facts |> AGGREGATE SUM(v/2) AS total",
         vec![vec![Cell::Number(50.0_f64.to_bits())]],
+    );
+}
+
+#[test]
+fn public_safe_divide_preserves_values_nulls_and_argument_errors() {
+    let (_directory, db) = join_fixture();
+    for (expression, expected) in [
+        ("SAFE_DIVIDE(3,2)", Some(1.5_f64)),
+        ("SAFE_DIVIDE(3.0,2)", Some(1.5)),
+        ("SAFE_DIVIDE(3,2.0)", Some(1.5)),
+        ("SAFE_DIVIDE(1,0)", None),
+        ("SAFE_DIVIDE(1,-0.0)", None),
+        ("SAFE_DIVIDE(1e308,0.1)", None),
+        ("1+SAFE_DIVIDE(3,2)*2", Some(4.0)),
+        ("SAFE_DIVIDE(SAFE_DIVIDE(9,2),3)", Some(1.5)),
+        ("SAFE_DIVIDE(1,SAFE_DIVIDE(1,0))", None),
+        ("-SAFE_DIVIDE((3+1),2)", Some(-2.0)),
+        ("SAFE_DIVIDE(1,0)+2", None),
+    ] {
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT 1 |> SELECT {expression} AS ratio"),
+            vec![vec![
+                expected.map_or(Cell::Null, |n| Cell::Number(n.to_bits())),
+            ]],
+        );
+    }
+    query(
+        &db,
+        "FROM facts |> ORDER BY v |> SELECT k,SAFE_DIVIDE(v,k-1) AS ratio",
+        vec![
+            vec![Cell::Integer(1), Cell::Null],
+            vec![Cell::Integer(1), Cell::Null],
+            vec![Cell::Integer(2), Cell::Number(30.0_f64.to_bits())],
+            vec![Cell::Null, Cell::Null],
+        ],
+    );
+    for condition in [
+        "v=SAFE_DIVIDE(1,0)",
+        "v>SAFE_DIVIDE(1,0)",
+        "NOT(v=SAFE_DIVIDE(1,0))",
+    ] {
+        query(
+            &db,
+            &format!("FROM facts |> WHERE {condition} |> SELECT v"),
+            vec![],
+        );
+    }
+    failure(
+        &db,
+        "FROM facts |> SELECT SAFE_DIVIDE(9223372036854775807+1,0) AS ratio",
+        "addition",
+        "SAFE_DIVIDE(9223372036854775807+1,0)",
+    );
+    let baseline = db.reserved_memory_bytes();
+    for expression in [
+        "SAFE_DIVIDE()",
+        "SAFE_DIVIDE(1)",
+        "SAFE_DIVIDE(1,2,3)",
+        "SAFE_DIVIDE(,2)",
+        "SAFE_DIVIDE(1,)",
+        "SAFE_DIVIDE('x',2)",
+        "SAFE_DIVIDE(DATE '1970-01-01',2)",
+        "SAFE_DIVIDE(1,(2,3))",
+    ] {
+        assert!(
+            db.prepare(&format!("FROM facts |> SELECT {expression} AS ratio"))
+                .is_err(),
+            "{expression}"
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    assert!(matches!(
+        db.prepare("FROM dimensions |> WHERE label=SAFE_DIVIDE(1,0)"),
+        Err(Error::Bind { .. })
+    ));
+}
+
+#[test]
+fn public_safe_divide_composes_and_preserves_demand() {
+    let (_directory, db) = join_fixture();
+    query(
+        &db,
+        "FROM facts |> SELECT v AS SAFE_DIVIDE |> SELECT SAFE_DIVIDE |> ORDER BY SAFE_DIVIDE",
+        integers(&[10, 20, 30, 40]),
+    );
+    for sql in [
+        "FROM facts |> SELECT v,SAFE_DIVIDE(9223372036854775807+1,0) AS unused |> SELECT v |> ORDER BY v",
+        "FROM facts |> EXTEND SAFE_DIVIDE(9223372036854775807+1,0) AS unused |> DROP unused |> SELECT v |> ORDER BY v",
+    ] {
+        query(&db, sql, integers(&[10, 20, 30, 40]));
+    }
+    query(
+        &db,
+        "FROM facts |> SELECT SAFE_DIVIDE(9223372036854775807+1,0) AS unused |> LIMIT 0",
+        vec![],
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT k,SAFE_DIVIDE(v/(k-1),1) AS ratio |> WHERE k=1 OR ratio>0 |> SELECT k |> ORDER BY k",
+        integers(&[1, 1, 2]),
+    );
+    for sql in [
+        "FROM facts |> SET v=SAFE_DIVIDE(v,k-1) |> SELECT v |> ORDER BY v NULLS FIRST",
+        "FROM (FROM facts |> SELECT SAFE_DIVIDE(v,k-1) AS v) AS input |> SELECT v |> ORDER BY v NULLS FIRST",
+    ] {
+        query(
+            &db,
+            sql,
+            vec![
+                vec![Cell::Null],
+                vec![Cell::Null],
+                vec![Cell::Null],
+                vec![Cell::Number(30.0_f64.to_bits())],
+            ],
+        );
+    }
+    query(
+        &db,
+        "FROM facts |> SELECT SAFE_DIVIDE(v,k-1) AS v |> UNION DISTINCT (FROM facts |> SELECT SAFE_DIVIDE(v,k-1) AS v) |> ORDER BY v NULLS FIRST",
+        vec![vec![Cell::Null], vec![Cell::Number(30.0_f64.to_bits())]],
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT SAFE_DIVIDE(v,k-1) AS ratio |> AGGREGATE SUM(ratio) AS s,COUNT(ratio) AS n",
+        vec![vec![Cell::Number(30.0_f64.to_bits()), Cell::Integer(1)]],
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT SAFE_DIVIDE(v,k-1) AS ratio |> EXTEND COUNT(*) OVER () AS n |> ORDER BY ratio NULLS FIRST |> SELECT ratio,n",
+        vec![
+            vec![Cell::Null, Cell::Integer(4)],
+            vec![Cell::Null, Cell::Integer(4)],
+            vec![Cell::Null, Cell::Integer(4)],
+            vec![Cell::Number(30.0_f64.to_bits()), Cell::Integer(4)],
+        ],
     );
 }

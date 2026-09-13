@@ -490,7 +490,7 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
             consume_count(result, 16)?;
             drop(count);
             phase = "division-prepare";
-            let division = db.prepare("FROM facts |> SELECT measure/2 AS ratio |> WHERE ratio=1.75 |> AGGREGATE COUNT(*) AS n")?;
+            let division = db.prepare("FROM facts |> SELECT measure/2 AS ratio |> WHERE ratio=1.75 |> EXTEND SAFE_DIVIDE(ratio,0) AS missing |> WHERE missing IS NULL |> AGGREGATE COUNT(*) AS n")?;
             phase = "division-execute";
             let result = db.execute(&division, &cancel)?;
             phase = "division-step";
