@@ -440,6 +440,8 @@ fn bind_expression(
             ParsedOp::Negate => Op::Negate,
             ParsedOp::Abs => Op::Abs,
             ParsedOp::Sign => Op::Sign,
+            ParsedOp::Floor => Op::Floor,
+            ParsedOp::Ceil => Op::Ceil,
             ParsedOp::Empty
             | ParsedOp::WindowCount
             | ParsedOp::String(_)

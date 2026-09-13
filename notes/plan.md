@@ -47,18 +47,28 @@ Publication and the broader qualifications below remain unresolved.
 ## Active: numeric rounding for analytical buckets
 
 FLOOR and CEIL let queries round measurements into analytical buckets using the
-existing scalar program. Confirm CEILING as an alias before accepting it.
+existing scalar program. CEILING is confirmed as a CEIL alias.
 
-1. Pin numeric argument/result typing, INT64 conversion, NULL, signed zero,
-   NaN/infinity and boundaries at the existing immutable GoogleSQL reference.
-   Timebox semantic research to 30 minutes; keep uncertain forms unsupported.
-2. Implement the confirmed profile through existing unary parser, validation and
-   row/batch execution. Retain demand, spans, bounds and admission; add independent
-   scalar/public outcomes and relevant shared cancellation, replay and failure
-   coverage without new runtime owners or a generic expression framework.
-3. Add one runnable rounding example and affected navigation/contracts. Verify
-   focused behavior and matching frozen macOS/GNU/Linux full gates, reconcile
-   discovery and inputs, retain concise evidence, clean owned outputs and commit.
+1. Confirmed before implementation at GoogleSQL
+   `0e7d7073ed0360be587a5efa0fa78abeee00f17b`: mathematical_functions.md
+   CEIL/FLOOR return DOUBLE for INT64 or DOUBLE; CEILING aliases CEIL. The
+   registered DOUBLE signatures coerce integer arguments before the std::ceil/
+   std::floor reference kernels. Preserve NULL; infinities remain unchanged.
+   PipeSQL will preserve signed-zero and NaN input bits explicitly, and use
+   nearest/ties-to-even INT64 conversion before rounding. This is not exact
+   integer bucketing above DOUBLE precision. Research resolved within 30 minutes.
+2. Implemented through existing unary parser, validation and row/batch execution.
+   Focused scalar, admission, 21 public numeric and 28 forced-replay variants
+   pass. Stored exceptional bits/reopen and cancellation reuse existing fixtures.
+   Allocation healthy controls retain 1,056 allocations at both pathname lengths;
+   native I/O healthy controls include a rounding total of nine. These controls
+   do not establish failure-sweep coverage. No allocation owner or framework was
+   added. All six wide-schema tests pass, including both small-stack scenarios.
+3. Added the rounding example, tutorial and affected language/test/tool maps.
+   Maintenance and warnings-denied Clippy pass. Still required: matching frozen
+   macOS/GNU/Linux full gates, fresh example execution after both Rust test stages,
+   discovery/input reconciliation, concise evidence, output cleanup and local
+   finalization commits.
 
 Monitor resources with at most two Cargo jobs and one Docker CPU/build job.
 Compile examples after both platform Rust test stages. Publication and broader

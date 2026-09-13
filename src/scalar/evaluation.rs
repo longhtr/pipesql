@@ -50,6 +50,7 @@ impl<'a> Evaluation<'a> {
                     depth += 1;
                 }
                 Op::Abs | Op::Negate | Op::Sign => (),
+                Op::Floor | Op::Ceil => types[depth - 1] = DataType::Double,
                 Op::Empty => unreachable!("validated scalar extent"),
                 _ => {
                     depth -= 1;
@@ -81,6 +82,13 @@ impl<'a> Evaluation<'a> {
                 Op::Column(column) => return Ok(Some(column)),
                 Op::Integer(value) => self.push(Number::Integer(value)),
                 Op::Double(bits) => self.push(Number::Double(f64::from_bits(bits))),
+                Op::Floor | Op::Ceil => {
+                    self.values[self.depth - 1] = match self.values[self.depth - 1] {
+                        Number::Null => Number::Null,
+                        Number::Integer(value) => Number::Double(round_integral(op, value as f64)),
+                        Number::Double(value) => Number::Double(round_integral(op, value)),
+                    };
+                }
                 Op::Abs | Op::Negate | Op::Sign => {
                     self.values[self.depth - 1] = match self.values[self.depth - 1] {
                         Number::Null => Number::Null,

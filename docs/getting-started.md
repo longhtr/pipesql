@@ -181,6 +181,35 @@ to see the same numeric rule used by batch and row evaluation. The
 [language contract](language.md#current-public-query-manifest) owns type,
 exceptional-value and argument-demand rules.
 
+## Group measurements into buckets
+
+Run [examples/rounding.sql](../examples/rounding.sql) against the same sales database:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/rounding.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+Dividing by 15 and applying FLOOR puts amounts in intervals of width 15.
+Bucket zero contains amounts from zero up to, but excluding, 15. NULL remains
+separate. Require successful exit and `status=queried`, with these rows:
+
+| bucket | total | n |
+| ---: | ---: | ---: |
+| NULL | NULL | 1 |
+| 0 | 15 | 2 |
+| 1 | 20 | 1 |
+
+FLOOR rounds downward; CEIL (also spelled CEILING) rounds upward. Both return
+DOUBLE even for integer arguments. Follow `Op::Floor` and `Op::Ceil` in the
+[scalar program](../src/scalar.rs): validation changes the result type, and batch
+evaluation reuses the argument's scratch slot. The
+[demand cursor](../src/scalar/evaluation.rs) applies the same rule when a row
+requests the value. The [language contract](language.md#current-public-query-manifest)
+explains conversion precision and exceptional values.
+
 ## Combine pipeline results
 
 Run [examples/union.sql](../examples/union.sql) against the same database:

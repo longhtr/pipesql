@@ -154,6 +154,8 @@ pub(crate) enum Op {
     Negate,
     Abs,
     Sign,
+    Floor,
+    Ceil,
 }
 
 // SIGN classifies both zeros as positive zero. Preserve a NaN's payload rather
@@ -165,6 +167,19 @@ fn sign_double(value: f64) -> f64 {
         value
     } else {
         value.signum()
+    }
+}
+
+// Keep exceptional input bits stable instead of delegating NaN payloads and
+// signed-zero preservation to target-specific rounding instructions.
+fn round_integral(op: Op, value: f64) -> f64 {
+    if value.is_nan() || value == 0.0 {
+        return value;
+    }
+    match op {
+        Op::Floor => value.floor(),
+        Op::Ceil => value.ceil(),
+        _ => unreachable!("integral rounding operation"),
     }
 }
 
@@ -200,7 +215,7 @@ impl Expression {
                     nullable[depth] = false;
                     depth += 1;
                 }
-                Op::Negate | Op::Abs | Op::Sign => {
+                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil => {
                     if depth == 0 {
                         return true;
                     }
@@ -258,9 +273,12 @@ impl Expression {
                     }
                     DataType::Double
                 }
-                Op::Negate | Op::Abs | Op::Sign => {
+                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil => {
                     if depth == 0 {
                         return Err(InferenceFailure::Program("scalar unary stack underflow"));
+                    }
+                    if matches!(op, Op::Floor | Op::Ceil) {
+                        types[depth - 1] = DataType::Double;
                     }
                     continue;
                 }
@@ -339,7 +357,7 @@ impl Expression {
                 | Op::IntegerDivide => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
                 }
-                Op::Negate | Op::Abs | Op::Sign => (),
+                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil => (),
                 Op::Empty => unreachable!("validated scalar program"),
             }
             peak = peak.max(depth);
@@ -436,6 +454,21 @@ impl Expression {
                     types[depth] = DataType::Double;
                     valid[depth] = [u64::MAX; VALID_WORDS];
                     depth += 1;
+                }
+                Op::Floor | Op::Ceil => {
+                    let values = &mut scratch[(depth - 1) * rows..depth * rows];
+                    for (row, value) in values.iter_mut().enumerate() {
+                        if valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
+                            continue;
+                        }
+                        let input = if types[depth - 1] == DataType::Int64 {
+                            integer(*value) as f64
+                        } else {
+                            f64::from_bits(*value)
+                        };
+                        *value = round_integral(*op, input).to_bits();
+                    }
+                    types[depth - 1] = DataType::Double;
                 }
                 Op::Negate | Op::Abs | Op::Sign => {
                     let values = &mut scratch[(depth - 1) * rows..depth * rows];
@@ -750,6 +783,141 @@ mod tests {
             let output = self.evaluate_batch(&inputs, 0..rows, scratch)?;
             assert_eq!(output.valid, [u64::MAX; VALID_WORDS]);
             Ok(output.values)
+        }
+    }
+
+    #[test]
+    fn integral_rounding_promotes_types_and_preserves_exceptional_bits() {
+        let integers = [
+            i64::MIN,
+            -9_007_199_254_740_993,
+            0,
+            9_007_199_254_740_993,
+            9_007_199_254_740_995,
+            i64::MAX,
+            99,
+        ];
+        let integer_expected = [
+            -9_223_372_036_854_775_808.0_f64,
+            -9_007_199_254_740_992.0,
+            0.0,
+            9_007_199_254_740_992.0,
+            9_007_199_254_740_996.0,
+            9_223_372_036_854_775_808.0,
+            0.0,
+        ];
+        let doubles = [
+            -2.75_f64,
+            -0.25,
+            -f64::from_bits(1),
+            -0.0,
+            0.0,
+            f64::from_bits(1),
+            0.25,
+            2.75,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::from_bits(0xfff8_0000_0000_0042),
+            99.0,
+        ];
+        let floor_expected = [
+            -3.0_f64,
+            -1.0,
+            -1.0,
+            -0.0,
+            0.0,
+            0.0,
+            0.0,
+            2.0,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::from_bits(0xfff8_0000_0000_0042),
+            0.0,
+        ];
+        let ceil_expected = [
+            -2.0_f64,
+            -0.0,
+            -0.0,
+            -0.0,
+            0.0,
+            1.0,
+            1.0,
+            3.0,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::from_bits(0xfff8_0000_0000_0042),
+            0.0,
+        ];
+        for (op, double_expected) in [(Op::Floor, &floor_expected), (Op::Ceil, &ceil_expected)] {
+            for (kind, values, validity, expected) in [
+                (
+                    DataType::Int64,
+                    NumericValues::Int64(&integers),
+                    63_u64,
+                    integer_expected.as_slice(),
+                ),
+                (
+                    DataType::Double,
+                    NumericValues::Double(&doubles),
+                    2047_u64,
+                    double_expected.as_slice(),
+                ),
+            ] {
+                let column = SemanticColumn::new(42, kind, true);
+                let mut expression = Expression::EMPTY;
+                expression.ops[..2].copy_from_slice(&[Op::Column(column), op]);
+                expression.len = 2;
+                expression.data_type = DataType::Double;
+                expression.validate(&[column]).unwrap();
+                assert!(expression.nullable());
+                let validity = [validity];
+                let inputs = [Some(
+                    NumericInput::new(column, values, Some(&validity)).unwrap(),
+                )];
+                let mut scratch = [0; MAX_OPS * 12];
+                for range in [0..expected.len(), 2..expected.len(), 0..expected.len()] {
+                    let output = expression
+                        .evaluate_batch(&inputs, range.clone(), &mut scratch)
+                        .unwrap();
+                    for (lane, row) in range.enumerate() {
+                        let expected = if row + 1 == expected.len() {
+                            None
+                        } else {
+                            Some(expected[row].to_bits())
+                        };
+                        assert_eq!(output.value(lane), expected);
+                    }
+                }
+                for (row, expected) in expected.iter().enumerate() {
+                    let mut cursor = Evaluation::new(&expression);
+                    assert_eq!(cursor.next_column().unwrap(), Some(column));
+                    let null = validity[0] & (1 << row) == 0;
+                    cursor
+                        .supply(if null {
+                            Number::Null
+                        } else if kind == DataType::Int64 {
+                            Number::Integer(integers[row])
+                        } else {
+                            Number::Double(doubles[row])
+                        })
+                        .unwrap();
+                    assert_eq!(cursor.next_column().unwrap(), None);
+                    if null {
+                        assert!(matches!(cursor.value(), Number::Null));
+                    } else {
+                        let Number::Double(actual) = cursor.value() else {
+                            panic!("rounding result type");
+                        };
+                        assert_eq!(actual.to_bits(), expected.to_bits());
+                    }
+                }
+                expression.data_type = DataType::Int64;
+                assert!(expression.validate(&[column]).is_err());
+                expression.data_type = DataType::Double;
+                expression.ops[0] = op;
+                expression.len = 1;
+                assert!(expression.validate(&[]).is_err());
+            }
         }
     }
 

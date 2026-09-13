@@ -119,6 +119,8 @@ pub(super) enum ParsedOp {
     Negate,
     Abs,
     Sign,
+    Floor,
+    Ceil,
 }
 
 #[derive(Clone, Copy)]
@@ -178,6 +180,8 @@ enum PendingOp {
     SecondArgument(BinaryCall),
     Abs,
     Sign,
+    Floor,
+    Ceil,
     Unary,
     Binary(Kind),
 }
@@ -189,7 +193,9 @@ impl PendingOp {
             | Self::FirstArgument(_)
             | Self::SecondArgument(_)
             | Self::Abs
-            | Self::Sign => 0,
+            | Self::Sign
+            | Self::Floor
+            | Self::Ceil => 0,
             Self::Binary(Kind::Star | Kind::Slash) => 2,
             Self::Binary(_) => 1,
             Self::Unary => 3,
@@ -619,6 +625,9 @@ impl Parser<'_> {
                             || self.is_word("SAFE_DIVIDE")
                             || self.is_word("ABS")
                             || self.is_word("SIGN")
+                            || self.is_word("FLOOR")
+                            || self.is_word("CEIL")
+                            || self.is_word("CEILING")
                             || self.is_word("MOD")
                             || self.is_word("DIV"))
                             && self
@@ -641,6 +650,10 @@ impl Parser<'_> {
                             PendingOp::Abs
                         } else if self.is_word("SIGN") {
                             PendingOp::Sign
+                        } else if self.is_word("FLOOR") {
+                            PendingOp::Floor
+                        } else if self.is_word("CEIL") || self.is_word("CEILING") {
+                            PendingOp::Ceil
                         } else if self.is_word("DIV") {
                             PendingOp::FirstArgument(BinaryCall::IntegerDivide)
                         } else if self.is_word("MOD") {
@@ -751,6 +764,8 @@ impl Parser<'_> {
                         PendingOp::SecondArgument(call) => expression.push(call.parsed(), at)?,
                         PendingOp::Abs => expression.push(ParsedOp::Abs, at)?,
                         PendingOp::Sign => expression.push(ParsedOp::Sign, at)?,
+                        PendingOp::Floor => expression.push(ParsedOp::Floor, at)?,
+                        PendingOp::Ceil => expression.push(ParsedOp::Ceil, at)?,
                         PendingOp::Paren => (),
                         _ => unreachable!("scalar parenthesis boundary"),
                     }

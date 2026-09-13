@@ -42,6 +42,10 @@ fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
             Value::Double(4.5),
         )))
         .chain(derived.then_some((
+            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(FLOOR(n/2)+CEIL(n/2)) AS rounded",
+            Value::Double(9.0),
+        )))
+        .chain(derived.then_some((
             "FROM facts |> SELECT SAFE_DIVIDE(n, 0) AS ratio |> EXTEND COALESCE(ratio, 0) AS filled |> WHERE filled IS NOT DISTINCT FROM 0 |> AGGREGATE COUNT(NULLIF(filled, 0)) AS present |> SELECT COALESCE(present, DIV(1, 0)) AS present",
             Value::Int64(0),
         )))

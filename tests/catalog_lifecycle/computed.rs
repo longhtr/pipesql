@@ -783,6 +783,8 @@ fn public_numeric_cancellation_and_early_drop_release_owners() {
         "FROM facts |> SELECT SAFE_DIVIDE(v, k-1) AS ratio |> ORDER BY ratio",
         "FROM facts |> SELECT ABS(v-25) AS deviation |> ORDER BY deviation",
         "FROM facts |> SELECT SIGN(v-25) AS direction |> ORDER BY direction",
+        "FROM facts |> SELECT FLOOR(v/15) AS bucket |> ORDER BY bucket",
+        "FROM facts |> SELECT CEILING(v/15) AS bucket |> ORDER BY bucket",
         "FROM facts |> SELECT MOD(v, 3) AS remainder |> ORDER BY remainder",
         "FROM facts |> SELECT DIV(v, 15) AS quotient |> ORDER BY quotient",
         "FROM facts |> SELECT COALESCE(k, v) AS chosen |> ORDER BY chosen",
@@ -1555,7 +1557,7 @@ fn public_sign_preserves_types_classification_and_demand() {
 }
 
 #[test]
-fn public_sign_preserves_stored_double_bits_across_producers_and_reopen() {
+fn public_unary_numeric_preserves_stored_double_bits_across_producers_and_reopen() {
     let directory = Directory::new();
     let path = directory.database();
     let mut db = Database::create_empty(&path, config()).unwrap();
@@ -1615,24 +1617,195 @@ fn public_sign_preserves_stored_double_bits_across_producers_and_reopen() {
             "FROM samples |> ORDER BY id DESC",
             "FROM samples |> UNION ALL (FROM samples |> LIMIT 0)",
         ] {
-            query(
-                &db,
-                &format!("{source} |> ORDER BY id |> SELECT SIGN(value) AS direction"),
-                [
-                    Some(0.0_f64),
-                    Some(0.0),
-                    Some(-1.0),
-                    Some(1.0),
-                    Some(-1.0),
-                    Some(1.0),
-                    Some(f64::from_bits(0xfff8_0000_0000_0042)),
-                    Some(-1.0),
-                    None,
-                ]
-                .map(|value| vec![value.map_or(Cell::Null, |v| Cell::Number(v.to_bits()))])
-                .to_vec(),
-            );
+            // Explicit answers distinguish SIGN's positive zero from rounding's
+            // preserved zero sign and exercise subnormal values without an oracle
+            // that calls the implementation's rounding primitive.
+            for (function, expected) in [
+                (
+                    "SIGN",
+                    [
+                        0.0_f64,
+                        0.0,
+                        -1.0,
+                        1.0,
+                        -1.0,
+                        1.0,
+                        f64::from_bits(0xfff8_0000_0000_0042),
+                        -1.0,
+                    ],
+                ),
+                (
+                    "FLOOR",
+                    [
+                        -0.0,
+                        0.0,
+                        -1.0,
+                        0.0,
+                        f64::NEG_INFINITY,
+                        f64::INFINITY,
+                        f64::from_bits(0xfff8_0000_0000_0042),
+                        -7.0,
+                    ],
+                ),
+                (
+                    "CEIL",
+                    [
+                        -0.0,
+                        0.0,
+                        -0.0,
+                        1.0,
+                        f64::NEG_INFINITY,
+                        f64::INFINITY,
+                        f64::from_bits(0xfff8_0000_0000_0042),
+                        -7.0,
+                    ],
+                ),
+                (
+                    "CEILING",
+                    [
+                        -0.0,
+                        0.0,
+                        -0.0,
+                        1.0,
+                        f64::NEG_INFINITY,
+                        f64::INFINITY,
+                        f64::from_bits(0xfff8_0000_0000_0042),
+                        -7.0,
+                    ],
+                ),
+            ] {
+                let mut rows: Vec<_> = expected
+                    .map(|value| vec![Cell::Number(value.to_bits())])
+                    .into();
+                rows.push(vec![Cell::Null]);
+                query(
+                    &db,
+                    &format!("{source} |> ORDER BY id |> SELECT {function}(value) AS result"),
+                    rows,
+                );
+            }
         }
     }
     db.close().unwrap();
+}
+
+#[test]
+fn public_integral_rounding_preserves_promotion_and_demand() {
+    let (_directory, db) = join_fixture();
+    for function in ["FLOOR", "CEIL", "CEILING"] {
+        for (argument, expected) in [
+            ("-9223372036854775808", -9_223_372_036_854_775_808.0_f64),
+            ("9223372036854775807", 9_223_372_036_854_775_808.0),
+            ("9007199254740993", 9_007_199_254_740_992.0),
+            ("9007199254740995", 9_007_199_254_740_996.0),
+            ("-0.0", -0.0),
+        ] {
+            query(
+                &db,
+                &format!("FROM facts |> LIMIT 1 |> SELECT {function}({argument}) AS rounded"),
+                vec![vec![Cell::Number(expected.to_bits())]],
+            );
+        }
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT 1 |> SELECT {function}(SAFE_DIVIDE(1, 0)) AS missing"),
+            vec![vec![Cell::Null]],
+        );
+        query(
+            &db,
+            &format!(
+                "FROM facts |> SELECT COALESCE(1, {function}(v*9223372036854775807)) AS chosen |> LIMIT 1"
+            ),
+            vec![vec![Cell::Number(1.0_f64.to_bits())]],
+        );
+        query(
+            &db,
+            &format!(
+                "FROM facts |> EXTEND {function}(v/(k-1)) AS rounded |> WHERE k=1 OR rounded>0 |> SELECT k |> ORDER BY k"
+            ),
+            integers(&[1, 1, 2]),
+        );
+        query(
+            &db,
+            &format!(
+                "FROM facts |> EXTEND {function}(v*9223372036854775807) AS unused |> DROP unused |> SELECT v |> ORDER BY v"
+            ),
+            integers(&[10, 20, 30, 40]),
+        );
+        failure(
+            &db,
+            &format!("FROM facts |> SELECT {function}(v*9223372036854775807) AS rounded"),
+            "multiplication",
+            &format!("{function}(v*9223372036854775807)"),
+        );
+        for argument in [
+            "",
+            "1, 2",
+            ", 1",
+            "1, ",
+            "'text'",
+            "DATE '1970-01-01'",
+            "NULL",
+            "missing",
+        ] {
+            let baseline = db.reserved_memory_bytes();
+            assert!(
+                db.prepare(&format!(
+                    "FROM facts |> SELECT {function}({argument}) AS rounded"
+                ))
+                .is_err()
+            );
+            assert_eq!(db.reserved_memory_bytes(), baseline);
+        }
+        assert!(
+            db.prepare(&format!("FROM facts |> LIMIT {function}(1)"))
+                .is_err()
+        );
+    }
+    for (expression, expected) in [
+        ("FLOOR(-2.75)", -3.0_f64),
+        ("CEIL(-2.75)", -2.0),
+        ("FLOOR(2.75)", 2.0),
+        ("CEILING(2.75)", 3.0),
+        ("CEIL(-0.25)", -0.0),
+        ("FLOOR(0.25)", 0.0),
+        ("FLOOR(CEIL(2.25)/2)", 1.0),
+    ] {
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT 1 |> SELECT {expression} AS rounded"),
+            vec![vec![Cell::Number(expected.to_bits())]],
+        );
+    }
+    query(
+        &db,
+        "FROM facts |> EXTEND FLOOR(v/15) AS bucket |> AGGREGATE SUM(v) AS total, COUNT(*) AS n GROUP AND ORDER BY bucket",
+        vec![
+            vec![
+                Cell::Number(0.0_f64.to_bits()),
+                Cell::Integer(10),
+                Cell::Integer(1),
+            ],
+            vec![
+                Cell::Number(1.0_f64.to_bits()),
+                Cell::Integer(20),
+                Cell::Integer(1),
+            ],
+            vec![
+                Cell::Number(2.0_f64.to_bits()),
+                Cell::Integer(70),
+                Cell::Integer(2),
+            ],
+        ],
+    );
+    query(
+        &db,
+        "FROM facts |> ORDER BY v |> SELECT NULLIF(FLOOR(v/15), 1) AS bucket",
+        vec![
+            vec![Cell::Number(0.0_f64.to_bits())],
+            vec![Cell::Null],
+            vec![Cell::Number(2.0_f64.to_bits())],
+            vec![Cell::Number(2.0_f64.to_bits())],
+        ],
+    );
 }

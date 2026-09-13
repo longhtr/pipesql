@@ -1811,9 +1811,15 @@ fn safe_divide_keeps_nullable_identity_and_bounded_call_programs() {
 fn unary_numeric_calls_preserve_type_nullability_and_bounded_admission() {
     let (_temp, db) = database(4_000_000);
     let baseline = db.reserved_memory_bytes();
-    for function in ["ABS", "SIGN"] {
+    for (function, integer_output) in [
+        ("ABS", DataType::Int64),
+        ("SIGN", DataType::Int64),
+        ("FLOOR", DataType::Double),
+        ("CEIL", DataType::Double),
+        ("CEILING", DataType::Double),
+    ] {
         for (argument, kind, nullable) in [
-            ("1", DataType::Int64, false),
+            ("1", integer_output, false),
             ("-1.0", DataType::Double, false),
             ("SAFE_DIVIDE(1, 0)", DataType::Double, true),
         ] {
