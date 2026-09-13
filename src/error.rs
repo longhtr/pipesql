@@ -69,6 +69,10 @@ pub enum Error {
         operation: &'static str,
         span: SourceSpan,
     },
+    ArithmeticDomain {
+        operation: &'static str,
+        span: SourceSpan,
+    },
     /// Publication may have committed. Resolve this exact transaction token;
     /// this error does not establish that retrying the write is safe.
     CommitAmbiguous {
@@ -136,6 +140,9 @@ impl fmt::Display for Error {
             Self::DivisionByZero { span } => error_cause::fmt_division_by_zero(*span, formatter),
             Self::ArithmeticOverflow { operation, span } => {
                 error_cause::fmt_arithmetic(operation, *span, formatter)
+            }
+            Self::ArithmeticDomain { operation, span } => {
+                error_cause::fmt_arithmetic_domain(operation, *span, formatter)
             }
             Self::CommitAmbiguous {
                 transaction,

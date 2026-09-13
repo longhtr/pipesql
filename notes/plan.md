@@ -73,13 +73,17 @@ durability, sanitizer and physical-memory qualifications remain unresolved.
 SQRT is absent from the accepted profile. Add one numeric argument through the
 existing scalar owners to support magnitude and root-mean-square calculations.
 
-1. Bound initial semantic research and tracing to 30 minutes. Check the pinned
-   GoogleSQL result types, negative-input errors, NULL, signed zero and nonfinite
-   behavior before implementation. Trace typed arithmetic failures through batch
-   and demanded row evaluation so negative inputs retain truthful source spans.
-2. Add literal boundary oracles and public stored-value, composition, demand,
-   cancellation/replay, admission and cleanup coverage in existing tests/campaigns.
-   Reuse fixed expression bounds and scratch; avoid a new framework or allowance.
+1. Research and tracing resolved within 30 minutes. Pinned GoogleSQL promotes
+   INT64 to DOUBLE and rejects negative inputs, including negative infinity.
+   NULL follows existing demand; signed-zero/NaN bits retain an explicit PipeSQL
+   policy. Add a typed domain error rather than misreporting a negative argument
+   as overflow; its static operation and source span remain owned inline.
+2. Implementation adds SQRT through the existing scalar owners and inline domain
+   error/cause variants. Focused batch/cursor boundaries, public demand/spans,
+   INT64 promotion and RMS answers, stored exceptional bits/reopen and forced
+   grouping replay pass. Existing cancellation, binding, allocation and native
+   campaigns now include SQRT; their complete verification remains pending.
+   Fixed expression bounds, scratch and admission allowances are unchanged.
 3. Update the language contract and a runnable example. Verify focused checks,
    matching frozen sequential macOS/GNU/Linux full gates and fresh examples after
    both Rust stages. Monitor resources, reconcile discovery/manifests, retain

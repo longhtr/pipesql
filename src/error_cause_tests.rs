@@ -35,6 +35,10 @@ fn leaf_facts_and_display_survive_inline_conversion() {
         Error::Unsupported("operation"),
         Error::Cancelled,
         Error::DivisionByZero { span },
+        Error::ArithmeticDomain {
+            operation: "square root",
+            span,
+        },
         Error::ArithmeticOverflow {
             operation: "multiply",
             span,

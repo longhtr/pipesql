@@ -17,6 +17,7 @@ pub(crate) enum ArithmeticFailure {
     DivideByZero,
     Negate,
     Abs,
+    SqrtDomain,
 }
 
 impl ArithmeticFailure {
@@ -29,6 +30,12 @@ impl ArithmeticFailure {
             Self::Negate => "negation",
             Self::Abs => "absolute value",
             Self::DivideByZero => return Error::DivisionByZero { span },
+            Self::SqrtDomain => {
+                return Error::ArithmeticDomain {
+                    operation: "square root",
+                    span,
+                };
+            }
         };
         Error::ArithmeticOverflow { operation, span }
     }
@@ -157,6 +164,7 @@ pub(crate) enum Op {
     Floor,
     Ceil,
     Round,
+    Sqrt,
 }
 
 // SIGN classifies both zeros as positive zero. Preserve a NaN's payload rather
@@ -172,17 +180,23 @@ fn sign_double(value: f64) -> f64 {
 }
 
 // Keep exceptional input bits stable instead of delegating NaN payloads and
-// signed-zero preservation to target-specific rounding instructions.
-fn round_integral(op: Op, value: f64) -> f64 {
+// signed-zero preservation to target-specific numeric instructions.
+fn double_unary(op: Op, value: f64) -> Result<f64, ArithmeticFailure> {
     if value.is_nan() || value == 0.0 {
-        return value;
+        return Ok(value);
     }
-    match op {
+    Ok(match op {
         Op::Floor => value.floor(),
         Op::Ceil => value.ceil(),
         Op::Round => value.round(),
-        _ => unreachable!("integral rounding operation"),
-    }
+        Op::Sqrt => {
+            if value < 0.0 {
+                return Err(ArithmeticFailure::SqrtDomain);
+            }
+            value.sqrt()
+        }
+        _ => unreachable!("DOUBLE unary operation"),
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -217,7 +231,7 @@ impl Expression {
                     nullable[depth] = false;
                     depth += 1;
                 }
-                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round => {
+                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round | Op::Sqrt => {
                     if depth == 0 {
                         return true;
                     }
@@ -275,11 +289,11 @@ impl Expression {
                     }
                     DataType::Double
                 }
-                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round => {
+                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round | Op::Sqrt => {
                     if depth == 0 {
                         return Err(InferenceFailure::Program("scalar unary stack underflow"));
                     }
-                    if matches!(op, Op::Floor | Op::Ceil | Op::Round) {
+                    if matches!(op, Op::Floor | Op::Ceil | Op::Round | Op::Sqrt) {
                         types[depth - 1] = DataType::Double;
                     }
                     continue;
@@ -359,7 +373,7 @@ impl Expression {
                 | Op::IntegerDivide => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
                 }
-                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round => (),
+                Op::Negate | Op::Abs | Op::Sign | Op::Floor | Op::Ceil | Op::Round | Op::Sqrt => (),
                 Op::Empty => unreachable!("validated scalar program"),
             }
             peak = peak.max(depth);
@@ -457,7 +471,7 @@ impl Expression {
                     valid[depth] = [u64::MAX; VALID_WORDS];
                     depth += 1;
                 }
-                Op::Floor | Op::Ceil | Op::Round => {
+                Op::Floor | Op::Ceil | Op::Round | Op::Sqrt => {
                     let values = &mut scratch[(depth - 1) * rows..depth * rows];
                     for (row, value) in values.iter_mut().enumerate() {
                         if valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
@@ -468,7 +482,7 @@ impl Expression {
                         } else {
                             f64::from_bits(*value)
                         };
-                        *value = round_integral(*op, input).to_bits();
+                        *value = double_unary(*op, input)?.to_bits();
                     }
                     types[depth - 1] = DataType::Double;
                 }
@@ -789,6 +803,66 @@ mod tests {
     }
 
     #[test]
+    fn sqrt_preserves_bits_nulls_and_reports_negative_domains() {
+        let column = SemanticColumn::new(42, DataType::Double, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(column), Op::Sqrt]);
+        expression.len = 2;
+        expression.data_type = DataType::Double;
+        expression.validate(&[column]).unwrap();
+        // Literal IEEE answers include powers of two and the nearest root of two.
+        for (input, expected) in [
+            (0.0, 0x0000_0000_0000_0000),
+            (-0.0, 0x8000_0000_0000_0000),
+            (4.0, 0x4000_0000_0000_0000),
+            (2.0, 0x3ff6_a09e_667f_3bcd),
+            (f64::from_bits(1), 0x1e60_0000_0000_0000),
+            (f64::MIN_POSITIVE, 0x2000_0000_0000_0000),
+            (f64::MAX, 0x5fef_ffff_ffff_ffff),
+            (f64::INFINITY, 0x7ff0_0000_0000_0000),
+            (f64::from_bits(0xfff8_0000_0000_0042), 0xfff8_0000_0000_0042),
+        ] {
+            let values = [input, -1.0];
+            let valid = [1];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), Some(&valid)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 2];
+            let output = expression
+                .evaluate_batch(&inputs, 0..2, &mut scratch)
+                .unwrap();
+            assert_eq!(output.value(0), Some(expected));
+            assert_eq!(output.value(1), None);
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(input)).unwrap();
+            assert_eq!(cursor.next_column().unwrap(), None);
+            let Number::Double(actual) = cursor.value() else {
+                panic!("SQRT result type");
+            };
+            assert_eq!(actual.to_bits(), expected);
+        }
+        for input in [-1.0, -f64::from_bits(1), f64::NEG_INFINITY] {
+            let values = [input];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), None).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS];
+            assert!(matches!(
+                expression.evaluate_batch(&inputs, 0..1, &mut scratch),
+                Err(ArithmeticFailure::SqrtDomain)
+            ));
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(input)).unwrap();
+            assert!(matches!(
+                cursor.next_column(),
+                Err(ArithmeticFailure::SqrtDomain)
+            ));
+        }
+    }
+
+    #[test]
     fn nearest_integral_rounding_uses_half_away_from_zero() {
         // Adjacent binary64 values distinguish nearest rounding from adding 0.5,
         // truncation, and ties-to-even. Expected answers are literal values.
@@ -807,7 +881,7 @@ mod tests {
             (-f64::MAX, -f64::MAX),
         ] {
             assert_eq!(
-                round_integral(Op::Round, input).to_bits(),
+                double_unary(Op::Round, input).unwrap().to_bits(),
                 expected.to_bits()
             );
         }

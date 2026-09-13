@@ -443,6 +443,7 @@ fn bind_expression(
             ParsedOp::Floor => Op::Floor,
             ParsedOp::Ceil => Op::Ceil,
             ParsedOp::Round => Op::Round,
+            ParsedOp::Sqrt => Op::Sqrt,
             ParsedOp::Empty
             | ParsedOp::WindowCount
             | ParsedOp::String(_)

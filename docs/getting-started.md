@@ -234,6 +234,28 @@ and -7.5 would enter bucket minus one. `Op::Round` uses the same scalar and dema
 owners as FLOOR and CEIL, with a different rounding primitive. Decimal-position
 and rounding-mode arguments are outside the accepted profile.
 
+## Compute a root-mean-square amount
+
+Run [examples/square_root.sql](../examples/square_root.sql) against the same database:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/square_root.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+The three present amounts have squares 25, 100 and 400. AVG ignores the NULL
+amount and returns 175. SQRT produces one DOUBLE row, approximately
+13.228756555322953, with bits `402a751f9447b724`. Require successful exit and
+`status=queried`. Squaring uses checked INT64 multiplication; sufficiently large
+amounts would fail before AVG. This example's small inputs avoid that boundary.
+
+`Op::Sqrt` uses the scalar batch and demand cursor already used by rounding.
+A negative demanded argument raises a typed domain error; NULL propagates.
+The [language contract](language.md#current-public-query-manifest) owns conversion,
+exceptional-value and argument rules.
+
 ## Combine pipeline results
 
 Run [examples/union.sql](../examples/union.sql) against the same database:

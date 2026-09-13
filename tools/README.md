@@ -154,11 +154,11 @@ its eight-pair check. Its negated NOT IN list retains the same NULL-aware
 membership result. Native I/O selects the right key with NOT BETWEEN, retaining
 the expected mean of 60. Native I/O checks a total of three after SIGN of each
 positive DIV/MOD quotient over three count-only rows. Its ABS/division aggregate
-remains 4.5; a separate FLOOR/CEIL aggregate returns nine across the same three
-count-only rows. Catalog allocation phases
+remains 4.5; a separate FLOOR/CEIL/ROUND aggregate returns nine across the same three
+count-only rows after SQRT(n*n) recovers each count of three. Catalog allocation phases
 separately prepare, execute and consume a nullable division/filter query with
-count two after ABS of the negated ratio and CEIL of SIGN of an exact oddness
-check on INT64 amounts above 2^53. The filter retains the exact ratio check.
+count two after ABS of the negated ratio and SQRT of ROUND/CEIL/SIGN of an exact
+oddness check on INT64 amounts above 2^53. Each unary result remains one. The filter retains the exact ratio check.
 DIV by one must preserve the first amount exactly before filtering. COALESCE must select that exact value without evaluating its failing
 fallback. A demanded SAFE_DIVIDE result must be NULL without losing its row;
 a second COALESCE evaluates NULLIF of the original ratio and the NULL result.
@@ -168,8 +168,8 @@ the defaults, then checks that NULLIF converts three
 COALESCE defaults back to NULL, so COUNT returns zero; an outer COALESCE skips
 a failing fallback after the count. These queries retain the existing allocation
 and I/O schedules while checking both NULLIF decisions.
-Fixed-buffer diagnostic controls render division-by-zero errors and
-captured causes under allocation denial. Both retain refusal, recovery and
+Fixed-buffer diagnostic controls render division-by-zero and square-root domain
+errors and captured causes under allocation denial. Both retain refusal, recovery and
 healthy-reuse checks around the full sequence.
 
 INTERSECT uses the same descriptor allocation, two sorted-input constructors,

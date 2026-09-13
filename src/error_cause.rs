@@ -48,6 +48,10 @@ pub enum CauseKind {
         operation: &'static str,
         span: SourceSpan,
     },
+    ArithmeticDomain {
+        operation: &'static str,
+        span: SourceSpan,
+    },
     Io {
         operation: &'static str,
         source: io::Error,
@@ -100,6 +104,9 @@ impl ErrorCause {
             Error::DivisionByZero { span } => CauseKind::DivisionByZero { span },
             Error::ArithmeticOverflow { operation, span } => {
                 CauseKind::ArithmeticOverflow { operation, span }
+            }
+            Error::ArithmeticDomain { operation, span } => {
+                CauseKind::ArithmeticDomain { operation, span }
             }
             Error::Io { operation, source } => CauseKind::Io { operation, source },
             Error::RecoveryRequired { generation, source } => {
@@ -190,6 +197,9 @@ impl fmt::Display for CauseKind {
             Self::ArithmeticOverflow { operation, span } => {
                 fmt_arithmetic(operation, *span, formatter)
             }
+            Self::ArithmeticDomain { operation, span } => {
+                fmt_arithmetic_domain(operation, *span, formatter)
+            }
             Self::Io { operation, source } => fmt_io(operation, source, formatter),
         }
     }
@@ -235,6 +245,19 @@ pub(super) fn fmt_arithmetic(
     write!(
         formatter,
         "arithmetic overflow during {operation} at bytes {}..{}",
+        span.start(),
+        span.end()
+    )
+}
+
+pub(super) fn fmt_arithmetic_domain(
+    operation: &str,
+    span: SourceSpan,
+    formatter: &mut fmt::Formatter<'_>,
+) -> fmt::Result {
+    write!(
+        formatter,
+        "arithmetic domain error during {operation} at bytes {}..{}",
         span.start(),
         span.end()
     )

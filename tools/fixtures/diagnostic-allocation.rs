@@ -465,9 +465,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let division_cause = pipesql::CauseKind::DivisionByZero {
             span: division_span,
         };
+        let domain = Error::ArithmeticDomain {
+            operation: "square root",
+            span: division_span,
+        };
+        let domain_cause = pipesql::CauseKind::ArithmeticDomain {
+            operation: "square root",
+            span: division_span,
+        };
         let formatted = write!(
             &mut text,
-            "{error}; {arithmetic}; {cause}; {division}; {division_cause}"
+            "{error}; {arithmetic}; {cause}; {division}; {division_cause}; {domain}; {domain_cause}"
         );
         DENY.store(false, Ordering::Relaxed);
         formatted.unwrap();
@@ -479,6 +487,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             2
         );
         assert_eq!(text.matches("division by zero at bytes 36..39").count(), 2);
+        assert_eq!(
+            text.matches("arithmetic domain error during square root at bytes 36..39")
+                .count(),
+            2
+        );
         println!("returned rendered diagnostic: {text}");
         return Ok(());
     }

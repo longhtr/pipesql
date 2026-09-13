@@ -786,6 +786,7 @@ fn public_numeric_cancellation_and_early_drop_release_owners() {
         "FROM facts |> SELECT FLOOR(v/15) AS bucket |> ORDER BY bucket",
         "FROM facts |> SELECT CEILING(v/15) AS bucket |> ORDER BY bucket",
         "FROM facts |> SELECT ROUND(v/15) AS bucket |> ORDER BY bucket",
+        "FROM facts |> SELECT SQRT(v) AS magnitude |> ORDER BY magnitude",
         "FROM facts |> SELECT MOD(v, 3) AS remainder |> ORDER BY remainder",
         "FROM facts |> SELECT DIV(v, 15) AS quotient |> ORDER BY quotient",
         "FROM facts |> SELECT COALESCE(k, v) AS chosen |> ORDER BY chosen",
@@ -1618,6 +1619,20 @@ fn public_unary_numeric_preserves_stored_double_bits_across_producers_and_reopen
             "FROM samples |> ORDER BY id DESC",
             "FROM samples |> UNION ALL (FROM samples |> LIMIT 0)",
         ] {
+            query(
+                &db,
+                &format!(
+                    "{source} |> WHERE id IN (0, 1, 3, 5, 6, 8) |> ORDER BY id |> SELECT SQRT(value) AS magnitude"
+                ),
+                vec![
+                    vec![Cell::Number(0x8000_0000_0000_0000)],
+                    vec![Cell::Number(0)],
+                    vec![Cell::Number(0x1e60_0000_0000_0000)],
+                    vec![Cell::Number(0x7ff0_0000_0000_0000)],
+                    vec![Cell::Number(0xfff8_0000_0000_0042)],
+                    vec![Cell::Null],
+                ],
+            );
             // Explicit answers distinguish SIGN's positive zero from rounding's
             // preserved zero sign and exercise subnormal values without an oracle
             // that calls the implementation's rounding primitive.
@@ -1860,4 +1875,140 @@ fn public_integral_rounding_preserves_promotion_and_demand() {
             vec![Cell::Number(2.0_f64.to_bits())],
         ],
     );
+}
+
+#[test]
+fn public_sqrt_preserves_values_demand_and_domain_spans() {
+    let (_directory, db) = join_fixture();
+    for (expression, expected) in [
+        ("SQRT(4)", Some(2.0_f64)),
+        // Decimal square roots of the independently rounded INT64 inputs.
+        (
+            "SQRT(9007199254740993)",
+            Some(f64::from_bits(0x4196_a09e_667f_3bcd)),
+        ),
+        (
+            "SQRT(9007199254740995)",
+            Some(f64::from_bits(0x4196_a09e_667f_3bce)),
+        ),
+        (
+            "SQRT(9223372036854775807)",
+            Some(f64::from_bits(0x41e6_a09e_667f_3bcd)),
+        ),
+        ("SQRT(2.0)", Some(f64::from_bits(0x3ff6_a09e_667f_3bcd))),
+        ("SQRT(-0.0)", Some(-0.0)),
+        ("SQRT(SAFE_DIVIDE(1, 0))", None),
+        ("COALESCE(9, SQRT(-1))", Some(9.0)),
+    ] {
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT 1 |> SELECT {expression} AS magnitude"),
+            vec![vec![
+                expected.map_or(Cell::Null, |n| Cell::Number(n.to_bits())),
+            ]],
+        );
+    }
+    query(
+        &db,
+        "FROM facts |> EXTEND SQRT(-v) AS unused |> DROP unused |> SELECT v |> ORDER BY v",
+        integers(&[10, 20, 30, 40]),
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT SQRT(v*v) AS magnitude |> ORDER BY magnitude",
+        [10.0_f64, 20.0, 30.0, 40.0]
+            .into_iter()
+            .map(|n| vec![Cell::Number(n.to_bits())])
+            .collect(),
+    );
+    query(
+        &db,
+        "FROM facts |> AGGREGATE AVG(v*v) AS mean_square |> SELECT SQRT(mean_square) AS rms",
+        vec![vec![Cell::Number(0x403b_62d9_46c4_4ef3)]],
+    );
+    for argument in [
+        "",
+        "1, 2",
+        ", 1",
+        "1, ",
+        "'text'",
+        "DATE '1970-01-01'",
+        "NULL",
+        "missing",
+    ] {
+        let baseline = db.reserved_memory_bytes();
+        assert!(
+            db.prepare(&format!(
+                "FROM facts |> SELECT SQRT({argument}) AS magnitude"
+            ))
+            .is_err()
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    for sql in [
+        "FROM facts |> LIMIT SQRT(4)",
+        "FROM facts |> SELECT DIV(SQRT(4), 1) AS bad",
+        "FROM facts |> SELECT MOD(1, SQRT(4)) AS bad",
+    ] {
+        let baseline = db.reserved_memory_bytes();
+        assert!(db.prepare(sql).is_err());
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    query(
+        &db,
+        "FROM facts |> EXTEND SQRT(-v) AS bad |> WHERE v>0 OR bad>0 |> SELECT v |> ORDER BY v",
+        integers(&[10, 20, 30, 40]),
+    );
+    let baseline = db.reserved_memory_bytes();
+    let sql = "FROM facts |> WHERE v>SQRT(-2)";
+    let error = db
+        .prepare(sql)
+        .err()
+        .expect("constant predicate domain error");
+    let Error::ArithmeticDomain { operation, span } = error else {
+        panic!("expected domain error: {error}");
+    };
+    assert_eq!(operation, "square root");
+    assert_eq!(&sql[span.start()..span.end()], "SQRT(-2)");
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    for expression in [
+        "SQRT(-v)",
+        "SQRT(-9223372036854775808)",
+        "SAFE_DIVIDE(SQRT(-v), 0)",
+        "COALESCE(SAFE_DIVIDE(1, 0), SQRT(-v))",
+    ] {
+        let baseline = db.reserved_memory_bytes();
+        let sql = format!("FROM facts |> SELECT {expression} AS magnitude");
+        let start = sql.find(expression).unwrap();
+        let end = start + expression.len();
+        let prepared = db.prepare(&sql).unwrap();
+        drop(sql);
+        let cancel = CancellationToken::new();
+        let mut result = db.execute(&prepared, &cancel).unwrap();
+        let mut failed = false;
+        for _ in 0..100_000 {
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Failed(Error::ArithmeticDomain { operation, span }) => {
+                    assert_eq!(*operation, "square root");
+                    assert_eq!((span.start(), span.end()), (start, end));
+                    failed = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("expected square-root domain failure: {error}"),
+                QueryStep::Rows(_) | QueryStep::Finished => {
+                    panic!("missing square-root domain failure")
+                }
+            }
+        }
+        assert!(failed);
+        assert!(matches!(
+            result.step(),
+            QueryStep::Failed(Error::ArithmeticDomain { .. })
+        ));
+        drop(result);
+        drop(prepared);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
 }
