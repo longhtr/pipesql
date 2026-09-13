@@ -307,7 +307,7 @@ impl Pipeline<'_> {
 
     fn has_conditional_work(&self) -> bool {
         self.computed.iter().any(|definition| {
-            matches!(&definition.expression, Computation::Numeric(expression) if expression.has_coalesce())
+            matches!(&definition.expression, Computation::Numeric(expression) if expression.requires_ordered_evaluation())
         })
     }
 

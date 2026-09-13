@@ -434,6 +434,7 @@ fn bind_expression(
             ParsedOp::Divide => Op::Divide,
             ParsedOp::SafeDivide => Op::SafeDivide,
             ParsedOp::Coalesce => Op::Coalesce,
+            ParsedOp::NullIf => Op::NullIf,
             ParsedOp::Mod => Op::Mod,
             ParsedOp::IntegerDivide => Op::IntegerDivide,
             ParsedOp::Negate => Op::Negate,

@@ -61,6 +61,46 @@ have no new counterexample and remain closed.
    matching frozen macOS/GNU/Linux gates, reconcile evidence, remove owned outputs
    and commit locally. Preserve resource monitoring and comma spacing.
 
+Pinned research is resolved. The existing revision's
+[NULLIF rules](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/conditional_expressions.md#nullif)
+and [signature](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/common/builtin_function_internal_3.cc#L851)
+require two comparable arguments and their common result type. Retain INT64 for
+two integer arguments; otherwise compare and return DOUBLE after coercion.
+The [lowering](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/reference_impl/algebrizer.cc#L1280)
+evaluates the first argument once, then compares it with the second. The
+[call evaluator](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/reference_impl/value_expr.cc#L1350)
+evaluates the second argument even when the first is NULL. Only a TRUE equality
+produces NULL; FALSE/UNKNOWN returns the first coerced value. Numeric SQL equality
+makes NaNs unequal and signed zeros equal. Preserve original DOUBLE bits when
+returning the first value; declare NULLIF results conservatively nullable.
+
+The current demand evaluator can preserve this order without a new program
+representation. Route NULLIF through it even without a surrounding COALESCE;
+eagerly collecting computed inputs could otherwise expose the wrong error first.
+Its operation result-type table must drive coercion when a typed DOUBLE argument
+is NULL. Ordinary NULL-propagating arithmetic cannot implement NULLIF because a
+NULL second argument must retain a present first value.
+
+Consumer and admission tracing is complete. The first implementation adds one
+opcode, conservative NULLability and ordered evaluation through the existing
+cursor. Focused checks pass: two scalar NULLIF tests, 23 scalar regressions,
+public composition and error-order tests, numeric binding/metadata/exact-short
+admission, parser limits and the public COALESCE demand regression. No additional
+allocation owner or expression representation was introduced.
+
+Focused verification passes for stored exceptional DOUBLE bits and prepared
+snapshots across reopen, validity word boundaries and scratch reuse, wide/small
+stack execution and forced grouping replay. Independent malformed-program checks
+cover NULLIF as well as arithmetic. Shared public allocation and native-I/O
+queries now exercise NULLIF's retained-value and equal-to-NULL outcomes without
+adding another runner. Clippy, maintenance checks and the fresh sentinel example
+pass; the example returns `(130, 4, 5)` as documented.
+
+Freeze the reviewed source for matching complete macOS/GNU/Linux gates. Reconcile
+discovery, failure schedules, input manifests and concise evidence, then remove
+owned temporary outputs and commit the final checkpoint. Host memory pressure
+is normal; verification uses two Cargo jobs and a bounded Docker CPU quota.
+
 Exclude text/DATE/Boolean-valued NULLIF, new types, general CASE/IF, unrelated
 coercions and persistent-format changes. Research precedes implementation;
 publication and broader qualification restrictions remain unchanged.

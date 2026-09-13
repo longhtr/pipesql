@@ -529,6 +529,29 @@ It returns required INT64 `region` with rows `1` and `2`, followed by
 `row_count=2` and `status=queried`. INTERSECT DISTINCT emits each shared value
 once. Its output is required because the dimension identifier cannot be NULL.
 
+## Exclude a sentinel from an aggregate
+
+Suppose amount 20 marks an unavailable measurement in the same facts database.
+Run [sentinel-amounts.sql](../examples/sentinel-amounts.sql):
+
+```sh
+cargo run --release --offline --locked -- query --database "$pipesql_left_join_dir/facts" \
+  --query-file "$PWD/examples/sentinel-amounts.sql" \
+  --memory-limit-bytes 8000000 --temp-limit-bytes 4000000
+```
+
+The single row is `(130, 4, 5)`: nullable INT64 `total`, required INT64 `measured`
+and required INT64 `nrows`, followed by `row_count=1` and `status=queried`.
+NULLIF returns NULL for the sentinel. SUM and COUNT of that expression skip it,
+while COUNT(*) still counts all five facts. A WHERE filter would also remove the
+row from COUNT(*).
+
+Trace the [numeric evaluator](../src/scalar/evaluation.rs): NULLIF evaluates both
+arguments in order, compares their common numeric values and retains the first
+value unless equality is true. An outer COALESCE can supply a default. See the
+[numeric contract](language.md#current-public-query-manifest) for coercion,
+NULLs, NaNs and errors.
+
 ## Reconcile repeated facts
 
 Use the same facts database. Region 1 occurs

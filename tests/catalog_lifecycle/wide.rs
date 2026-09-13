@@ -203,6 +203,15 @@ fn check_complete_declared_schema(small_stack: bool) {
                 "FROM wide |> SELECT c60+1 AS x |> AGGREGATE SUM(x) AS s |> SELECT s+1 AS total",
                 vec![vec![Cell::Integer(18007)]],
             );
+            order::query(
+                &db,
+                "FROM wide |> SELECT NULLIF(c60, 6001) AS x, NULLIF(c61, -1.0) AS y",
+                vec![
+                    vec![Cell::Integer(6000), Cell::Number(61.0_f64.to_bits())],
+                    vec![Cell::Null, Cell::Null],
+                    vec![Cell::Integer(6002), Cell::Number(61.5_f64.to_bits())],
+                ],
+            );
             let arguments = (0..16)
                 .map(|i| format!("c{}", i * 4))
                 .collect::<Vec<_>>()

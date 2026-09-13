@@ -415,6 +415,13 @@ unselected aggregate finalization untouched. Scans with conditional computations
 fill their existing batch buffers through this row resolver. Aggregate arguments
 use the same cursor over their already materialized inputs.
 
+NULLIF also requests operands through that cursor, so an earlier argument failure
+precedes a later computed dependency's failure. Both operands are demanded even
+when the first is NULL. The cursor coerces both to the inferred result type,
+compares ordinary numeric values and retains the first value unless equality is
+TRUE. Its type table preserves DOUBLE coercion when the second value is NULL;
+ordinary arithmetic's NULL propagation would lose that first value.
+
 ### Dense aggregation
 
 Legacy grouping directly indexes the complete domain of zero, one or two

@@ -157,9 +157,11 @@ count two after ABS of the negated ratio and an exact oddness check on INT64
 amounts above 2^53. DIV by one must preserve the first amount exactly before
 filtering. COALESCE must select that exact value without evaluating its failing
 fallback. A demanded SAFE_DIVIDE result must be NULL without losing its row;
-a second COALESCE then supplies the original ratio. Native I/O also checks that
-counting three zero-denominator ratios produces zero, while COALESCE supplies
-a filter default and skips a failing fallback after the count.
+a second COALESCE evaluates NULLIF of the original ratio and the NULL result.
+NULLIF must retain that ratio. Native I/O checks that NULLIF converts three
+COALESCE defaults back to NULL, so COUNT returns zero; an outer COALESCE skips
+a failing fallback after the count. These queries retain the existing allocation
+and I/O schedules while checking both NULLIF decisions.
 Fixed-buffer diagnostic controls render division-by-zero errors and
 captured causes under allocation denial. Both retain refusal, recovery and
 healthy-reuse checks around the full sequence.

@@ -3,6 +3,8 @@
 //! Postfix subtrees remain contiguous. At the start of a COALESCE fallback, the
 //! left result is on top of the value stack. A non-NULL result skips directly
 //! past that call, after coercion to the call's statically determined type.
+//! NULLIF uses the same cursor to evaluate both operands in order, retaining
+//! the first value for the unequal/UNKNOWN result without evaluating it again.
 use super::*;
 
 pub(crate) struct Evaluation<'a> {
@@ -101,6 +103,18 @@ impl<'a> Evaluation<'a> {
                         // A present left value already bypassed this instruction.
                         debug_assert!(matches!(left, Number::Null));
                         coerce(right, self.result_types[self.position])
+                    } else if op == Op::NullIf {
+                        // Both operands have been evaluated in source order.
+                        // The static type also controls coercion when one is NULL.
+                        let kind = self.result_types[self.position];
+                        let left = coerce(left, kind);
+                        let right = coerce(right, kind);
+                        let equal = match (left, right) {
+                            (Number::Integer(a), Number::Integer(b)) => a == b,
+                            (Number::Double(a), Number::Double(b)) => a == b,
+                            _ => false,
+                        };
+                        if equal { Number::Null } else { left }
                     } else {
                         binary(op, left, right)?
                     };
@@ -238,6 +252,172 @@ mod tests {
     use super::*;
 
     #[test]
+    fn nullif_preserves_numeric_equality_coercion_and_left_bits() {
+        use DataType::{Double, Int64};
+        let nan = f64::from_bits(0x7ff8_0000_0000_0042);
+        for (left_type, right_type, left, right, expected) in [
+            (
+                Int64,
+                Int64,
+                Number::Integer(7),
+                Number::Integer(7),
+                Number::Null,
+            ),
+            (
+                Int64,
+                Int64,
+                Number::Integer(7),
+                Number::Integer(8),
+                Number::Integer(7),
+            ),
+            (Int64, Int64, Number::Null, Number::Integer(7), Number::Null),
+            (
+                Int64,
+                Int64,
+                Number::Integer(7),
+                Number::Null,
+                Number::Integer(7),
+            ),
+            (Int64, Int64, Number::Null, Number::Null, Number::Null),
+            (
+                Int64,
+                Int64,
+                Number::Integer(9_007_199_254_740_993),
+                Number::Integer(9_007_199_254_740_992),
+                Number::Integer(9_007_199_254_740_993),
+            ),
+            (
+                Int64,
+                Double,
+                Number::Integer(9_007_199_254_740_993),
+                Number::Double(9_007_199_254_740_992.0),
+                Number::Null,
+            ),
+            (
+                Int64,
+                Double,
+                Number::Integer(9_007_199_254_740_993),
+                Number::Null,
+                Number::Double(9_007_199_254_740_992.0),
+            ),
+            (
+                Double,
+                Int64,
+                Number::Double(1.5),
+                Number::Integer(1),
+                Number::Double(1.5),
+            ),
+            (
+                Double,
+                Double,
+                Number::Double(-0.0),
+                Number::Double(0.0),
+                Number::Null,
+            ),
+            (
+                Double,
+                Double,
+                Number::Double(-0.0),
+                Number::Double(1.0),
+                Number::Double(-0.0),
+            ),
+            (
+                Double,
+                Double,
+                Number::Double(nan),
+                Number::Double(nan),
+                Number::Double(nan),
+            ),
+            (
+                Double,
+                Double,
+                Number::Double(1.0),
+                Number::Double(nan),
+                Number::Double(1.0),
+            ),
+            (
+                Double,
+                Double,
+                Number::Double(f64::INFINITY),
+                Number::Double(f64::INFINITY),
+                Number::Null,
+            ),
+            (
+                Double,
+                Double,
+                Number::Double(f64::NEG_INFINITY),
+                Number::Double(f64::INFINITY),
+                Number::Double(f64::NEG_INFINITY),
+            ),
+        ] {
+            let a = SemanticColumn::new(1, left_type, true);
+            let b = SemanticColumn::new(2, right_type, true);
+            let mut expression = Expression::EMPTY;
+            expression.ops[..3].copy_from_slice(&[Op::Column(a), Op::Column(b), Op::NullIf]);
+            expression.len = 3;
+            expression.data_type = if left_type == Double || right_type == Double {
+                Double
+            } else {
+                Int64
+            };
+            expression.validate(&[a, b]).unwrap();
+            assert!(expression.nullable());
+            let mut evaluation = Evaluation::new(&expression);
+            assert_eq!(evaluation.next_column().unwrap(), Some(a));
+            evaluation.supply(left).unwrap();
+            assert_eq!(evaluation.next_column().unwrap(), Some(b));
+            evaluation.supply(right).unwrap();
+            assert_eq!(evaluation.next_column().unwrap(), None);
+            let bits = |value| match value {
+                Number::Null => None,
+                Number::Integer(value) => Some((Int64, value as u64)),
+                Number::Double(value) => Some((Double, value.to_bits())),
+            };
+            assert_eq!(
+                bits(evaluation.value()),
+                bits(expected),
+                "{left:?}, {right:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn nullif_demands_second_operand_after_null_but_stops_at_first_error() {
+        let a = SemanticColumn::new(1, DataType::Int64, true);
+        let b = SemanticColumn::new(2, DataType::Int64, true);
+        let mut expression = Expression::EMPTY;
+        // NULLIF(DIV(a, 0), DIV(b, 0))
+        expression.ops[..7].copy_from_slice(&[
+            Op::Column(a),
+            Op::Integer(0),
+            Op::IntegerDivide,
+            Op::Column(b),
+            Op::Integer(0),
+            Op::IntegerDivide,
+            Op::NullIf,
+        ]);
+        expression.len = 7;
+        expression.data_type = DataType::Int64;
+        expression.validate(&[a, b]).unwrap();
+        let mut evaluation = Evaluation::new(&expression);
+        assert_eq!(evaluation.next_column().unwrap(), Some(a));
+        evaluation.supply(Number::Integer(1)).unwrap();
+        assert!(matches!(
+            evaluation.next_column(),
+            Err(ArithmeticFailure::DivideByZero)
+        ));
+        let mut evaluation = Evaluation::new(&expression);
+        assert_eq!(evaluation.next_column().unwrap(), Some(a));
+        evaluation.supply(Number::Null).unwrap();
+        assert_eq!(evaluation.next_column().unwrap(), Some(b));
+        evaluation.supply(Number::Integer(1)).unwrap();
+        assert!(matches!(
+            evaluation.next_column(),
+            Err(ArithmeticFailure::DivideByZero)
+        ));
+    }
+
+    #[test]
     fn coalesce_requests_only_selected_columns_and_preserves_exact_values() {
         let left = SemanticColumn::new(1, DataType::Int64, true);
         let right = SemanticColumn::new(2, DataType::Int64, true);
@@ -302,6 +482,46 @@ mod tests {
         evaluation.supply(Number::Integer(7)).unwrap();
         assert_eq!(evaluation.next_column().unwrap(), None);
         assert!(matches!(evaluation.value(), Number::Integer(7)));
+    }
+
+    #[test]
+    fn nullif_batch_preserves_validity_boundaries_and_reused_lanes() {
+        let x = SemanticColumn::new(1, DataType::Int64, true);
+        let y = SemanticColumn::new(2, DataType::Double, true);
+        let integers = [9_007_199_254_740_993; 130];
+        let doubles = [9_007_199_254_740_992.0; 130];
+        let integer_valid = [0x5555_5555_5555_5555; 3];
+        let double_valid = [0x3333_3333_3333_3333; 3];
+        let inputs = [
+            Some(
+                NumericInput::new(x, NumericValues::Int64(&integers), Some(&integer_valid))
+                    .unwrap(),
+            ),
+            Some(
+                NumericInput::new(y, NumericValues::Double(&doubles), Some(&double_valid)).unwrap(),
+            ),
+        ];
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[Op::Column(x), Op::Column(y), Op::NullIf]);
+        expression.len = 3;
+        expression.data_type = DataType::Double;
+        expression.validate(&[x, y]).unwrap();
+        let mut scratch = [u64::MAX; 3 * MAX_ROWS];
+        for range in [0..130, 33..100, 0..2, 62..67] {
+            let output = expression
+                .evaluate_batch(&inputs, range.clone(), &mut scratch)
+                .unwrap();
+            for (lane, row) in range.enumerate() {
+                // Only a present left value with a NULL right survives. Both
+                // present values compare equal after common DOUBLE coercion.
+                let expected = if row % 4 == 2 {
+                    Some(9_007_199_254_740_992.0_f64.to_bits())
+                } else {
+                    None
+                };
+                assert_eq!(output.value(lane), expected, "source row {row}");
+            }
+        }
     }
 
     #[test]

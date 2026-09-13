@@ -148,6 +148,7 @@ pub(crate) enum Op {
     Divide,
     SafeDivide,
     Coalesce,
+    NullIf,
     Mod,
     IntegerDivide,
     Negate,
@@ -199,7 +200,7 @@ impl Expression {
                     depth -= 1;
                     nullable[depth - 1] = match op {
                         Op::Coalesce => nullable[depth - 1] && nullable[depth],
-                        Op::SafeDivide => true,
+                        Op::SafeDivide | Op::NullIf => true,
                         _ => nullable[depth - 1] || nullable[depth],
                     };
                 }
@@ -208,8 +209,10 @@ impl Expression {
         depth != 1 || nullable[0]
     }
 
-    pub(crate) fn has_coalesce(&self) -> bool {
-        self.ops[..usize::from(self.len)].contains(&Op::Coalesce)
+    pub(crate) fn requires_ordered_evaluation(&self) -> bool {
+        self.ops[..usize::from(self.len)]
+            .iter()
+            .any(|op| matches!(op, Op::Coalesce | Op::NullIf))
     }
 
     pub(crate) fn infer(&self, visible: &[SemanticColumn]) -> Result<DataType, InferenceFailure> {
@@ -254,6 +257,7 @@ impl Expression {
                 | Op::Divide
                 | Op::SafeDivide
                 | Op::Coalesce
+                | Op::NullIf
                 | Op::Mod
                 | Op::IntegerDivide => {
                     if depth < 2 {
@@ -317,6 +321,7 @@ impl Expression {
                 | Op::Divide
                 | Op::SafeDivide
                 | Op::Coalesce
+                | Op::NullIf
                 | Op::Mod
                 | Op::IntegerDivide => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
@@ -365,7 +370,7 @@ impl Expression {
                 );
             }
         }
-        if self.has_coalesce() {
+        if self.requires_ordered_evaluation() {
             return self.evaluate_conditional(columns, range, scratch);
         }
         let mut valid = [[u64::MAX; VALID_WORDS]; MAX_OPS];
@@ -508,7 +513,7 @@ impl Expression {
                         types[depth - 1] = DataType::Double;
                     }
                 }
-                Op::Coalesce => unreachable!("conditional program uses demand evaluation"),
+                Op::Coalesce | Op::NullIf => unreachable!("ordered program uses demand evaluation"),
                 Op::Empty => unreachable!("validated scalar program"),
             }
         }
@@ -1487,29 +1492,32 @@ mod tests {
     #[test]
     fn independent_validation_rejects_invalid_programs() {
         let visible = [SourceColumn::QUANTITY.semantic()];
-        let mut valid = Expression::EMPTY;
-        valid.ops[..3].copy_from_slice(&[
-            Op::Column(SourceColumn::QUANTITY.semantic()),
-            Op::Integer(1),
-            Op::Add,
-        ]);
-        valid.len = 3;
-        valid.validate(&visible).unwrap();
-        for mutation in 0..9 {
-            let mut invalid = valid;
-            match mutation {
-                0 => invalid.len = 0,
-                1 => invalid.len = u8::MAX,
-                2 => invalid.ops[3] = Op::Integer(0),
-                3 => invalid.ops[0] = Op::Column(SourceColumn::SHIP_DATE.semantic()),
-                4 => invalid.ops[0] = Op::Column(SourceColumn::TAX.semantic()),
-                5 => invalid.ops[1] = Op::Double(f64::INFINITY.to_bits()),
-                6 => invalid.ops[0] = Op::Negate,
-                7 => invalid.ops[2] = Op::Integer(2),
-                8 => invalid.data_type = DataType::Int64,
-                _ => unreachable!(),
+        for operator in [Op::Add, Op::NullIf] {
+            let mut valid = Expression::EMPTY;
+            valid.ops[..3].copy_from_slice(&[
+                Op::Column(SourceColumn::QUANTITY.semantic()),
+                Op::Integer(1),
+                operator,
+            ]);
+            valid.len = 3;
+            valid.validate(&visible).unwrap();
+            for mutation in 0..10 {
+                let mut invalid = valid;
+                match mutation {
+                    0 => invalid.len = 0,
+                    1 => invalid.len = u8::MAX,
+                    2 => invalid.ops[3] = Op::Integer(0),
+                    3 => invalid.ops[0] = Op::Column(SourceColumn::SHIP_DATE.semantic()),
+                    4 => invalid.ops[0] = Op::Column(SourceColumn::TAX.semantic()),
+                    5 => invalid.ops[1] = Op::Double(f64::INFINITY.to_bits()),
+                    6 => invalid.ops[0] = Op::Negate,
+                    7 => invalid.ops[2] = Op::Integer(2),
+                    8 => invalid.data_type = DataType::Int64,
+                    9 => invalid.ops[0] = Op::NullIf,
+                    _ => unreachable!(),
+                }
+                assert!(invalid.validate(&visible).is_err(), "mutation {mutation}");
             }
-            assert!(invalid.validate(&visible).is_err(), "mutation {mutation}");
         }
     }
 

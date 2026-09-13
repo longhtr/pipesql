@@ -113,6 +113,7 @@ pub(super) enum ParsedOp {
     Divide,
     SafeDivide,
     Coalesce,
+    NullIf,
     Mod,
     IntegerDivide,
     Negate,
@@ -150,6 +151,7 @@ impl ParsedExpression {
 enum BinaryCall {
     SafeDivide,
     Coalesce,
+    NullIf,
     Mod,
     IntegerDivide,
 }
@@ -159,6 +161,7 @@ impl BinaryCall {
         match self {
             Self::SafeDivide => ParsedOp::SafeDivide,
             Self::Coalesce => ParsedOp::Coalesce,
+            Self::NullIf => ParsedOp::NullIf,
             Self::Mod => ParsedOp::Mod,
             Self::IntegerDivide => ParsedOp::IntegerDivide,
         }
@@ -606,6 +609,7 @@ impl Parser<'_> {
                     }
                     Kind::Identifier
                         if (self.is_word("COALESCE")
+                            || self.is_word("NULLIF")
                             || self.is_word("SAFE_DIVIDE")
                             || self.is_word("ABS")
                             || self.is_word("MOD")
@@ -624,6 +628,8 @@ impl Parser<'_> {
                         }
                         let call = if self.is_word("COALESCE") {
                             PendingOp::FirstArgument(BinaryCall::Coalesce)
+                        } else if self.is_word("NULLIF") {
+                            PendingOp::FirstArgument(BinaryCall::NullIf)
                         } else if self.is_word("ABS") {
                             PendingOp::Abs
                         } else if self.is_word("DIV") {
@@ -1357,33 +1363,36 @@ mod tests {
     }
 
     #[test]
-    fn coalesce_uses_existing_arity_and_operation_bounds() {
-        for expression in [
-            "COALESCE()",
-            "COALESCE(a)",
-            "COALESCE(a, )",
-            "COALESCE(, a)",
-            "COALESCE(a, b, 0)",
-            "COALESCE(a, (b, 0))",
-            "COALESCE(a, COALESCE(b))",
-            "COALESCE(a, b",
-        ] {
-            let sql = format!("FROM facts |> SELECT {expression}");
-            assert!(parse_query(&sql).is_err(), "{sql}");
+    fn numeric_conditionals_use_existing_arity_and_operation_bounds() {
+        for function in ["COALESCE", "NULLIF"] {
+            for expression in [
+                "COALESCE()",
+                "COALESCE(a)",
+                "COALESCE(a, )",
+                "COALESCE(, a)",
+                "COALESCE(a, b, 0)",
+                "COALESCE(a, (b, 0))",
+                "COALESCE(a, COALESCE(b))",
+                "COALESCE(a, b",
+            ] {
+                let expression = expression.replace("COALESCE", function);
+                let sql = format!("FROM facts |> SELECT {expression}");
+                assert!(parse_query(&sql).is_err(), "{sql}");
+            }
+            let mut expression = "a".to_owned();
+            for _ in 0..15 {
+                expression = format!("{function}(a, {expression})");
+            }
+            let parsed = parse_query(&format!("FROM facts |> SELECT -{expression}")).unwrap();
+            assert_eq!(parsed.projections[0].expression.len, 32);
+            assert!(matches!(
+                parse_query(&format!("FROM facts |> SELECT {function}(a, {expression})")),
+                Err(Error::Parse {
+                    message: "scalar operation limit exceeded",
+                    ..
+                })
+            ));
         }
-        let mut expression = "a".to_owned();
-        for _ in 0..15 {
-            expression = format!("COALESCE(a, {expression})");
-        }
-        let parsed = parse_query(&format!("FROM facts |> SELECT -{expression}")).unwrap();
-        assert_eq!(parsed.projections[0].expression.len, 32);
-        assert!(matches!(
-            parse_query(&format!("FROM facts |> SELECT COALESCE(a, {expression})")),
-            Err(Error::Parse {
-                message: "scalar operation limit exceeded",
-                ..
-            })
-        ));
     }
 
     #[test]

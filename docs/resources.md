@@ -169,7 +169,9 @@ source spans and release query ownership through the ordinary failure path.
 COALESCE retains the same prepared expression and operation bound. A bounded
 row cursor derives fallback endpoints and result types from validated postfix
 subtrees and reuses the checked arithmetic primitives. Conditional batches reuse
-the admitted payload scratch; programs without COALESCE retain vector evaluation.
+the admitted payload scratch. NULLIF uses the same cursor and its static result
+types, evaluating both operands in order without a new buffer or allocation.
+Programs without COALESCE or NULLIF retain vector evaluation.
 Computed conditional output uses the existing batch buffers and a per-row cache.
 Pending computed dependencies always precede their consumer. A cached dependency
 can cause a bounded program to restart, but each restart follows completion of

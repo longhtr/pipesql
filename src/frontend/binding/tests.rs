@@ -1886,3 +1886,40 @@ fn coalesce_validates_both_branches_and_nullable_result_identity() {
         "FROM facts |> SELECT k, COALESCE(n, k) AS value |> WHERE value>COALESCE(1, 0) |> AGGREGATE SUM(value) AS total GROUP BY k",
     );
 }
+
+#[test]
+fn nullif_validates_numeric_arguments_nullable_identity_and_admission() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    for (arguments, kind) in [
+        ("1, 2", DataType::Int64),
+        ("1, 2.0", DataType::Double),
+        ("1, SAFE_DIVIDE(1, 0)", DataType::Double),
+    ] {
+        let mut query = db
+            .prepare(&format!("FROM lineitem |> SELECT NULLIF({arguments}) AS n"))
+            .unwrap();
+        let output = query.result_column(0).unwrap();
+        assert_eq!((output.data_type, output.nullable), (kind, true));
+        validate(&query.plan).unwrap();
+        let column = query.plan.computed[0].column;
+        query.plan.computed[0].column = SemanticColumn::new(column.identity().value(), kind, false);
+        assert!(validate(&query.plan).is_err());
+    }
+    for expression in [
+        "NULLIF(1, missing)",
+        "NULLIF(1, l_returnflag)",
+        "NULLIF(l_shipdate, l_shipdate)",
+        "NULLIF(1, 9223372036854775808)",
+        "NULLIF(1, NULL)",
+    ] {
+        assert!(
+            db.prepare(&format!("FROM lineitem |> SELECT {expression}"))
+                .is_err()
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k, NULLIF(n, k) AS value |> WHERE value>NULLIF(1, 0) |> AGGREGATE SUM(value) AS total GROUP BY k",
+    );
+}
