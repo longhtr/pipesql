@@ -124,8 +124,8 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
         ],
     );
     let cancel = CancellationToken::new();
-    for variant in 0..17 {
-        let joined = matches!(variant, 0 | 2 | 6 | 16);
+    for variant in 0..18 {
+        let joined = matches!(variant, 0 | 2 | 6 | 16 | 17);
         let sql = if joined {
             "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> AGGREGATE SUM(l.n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY l.k"
         } else {
@@ -176,6 +176,9 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
             }
             16 => {
                 "FROM facts AS l |> LEFT JOIN (FROM facts |> WHERE k=2) AS r ON l.k=r.k |> AGGREGATE SUM(l.n) AS total, COUNT(r.n) AS nrows GROUP AND ORDER BY l.k"
+            }
+            17 => {
+                "FROM facts AS l |> LEFT JOIN (FROM facts |> WHERE k=2) AS r ON l.k=r.k |> AGGREGATE SUM(COALESCE(r.n, 5)) AS total, COUNT(COALESCE(r.n, 0)) AS nrows GROUP AND ORDER BY l.k"
             }
             _ => sql,
         };
@@ -256,6 +259,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
                 13 => [[1, 3, 2], [2, 2, 1]],
                 14 => [[1, 1, 2], [2, 1, 1]],
                 15 => [[1, 2, 2], [2, 2, 1]],
+                17 => [[1, 10, 2], [2, 7, 1]],
                 _ => unreachable!(),
             }
         );

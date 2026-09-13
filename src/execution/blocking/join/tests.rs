@@ -10,6 +10,8 @@ use crate::{AppendLimits, ColumnDeclaration, ColumnInput, ColumnValues, Config};
 const QUERY: &str = "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> SELECT l.v, r.v";
 const LEFT_QUERY: &str = "FROM facts AS l |> LEFT JOIN \
     (FROM facts |> WHERE k >= 1 |> WHERE k <= 88) AS r ON l.k = r.k |> SELECT l.v, r.v";
+const DEFAULT_QUERY: &str = "FROM facts AS l |> LEFT JOIN \
+    (FROM facts |> WHERE k >= 1 |> WHERE k <= 88) AS r ON l.k = r.k |> SELECT l.v, COALESCE(r.v, -1)";
 const STEPS: usize = 100_000;
 
 fn database(directory: &Directory) -> Database {
@@ -145,7 +147,11 @@ fn join_exact_admission_precedes_io_and_reconciles_each_transition() {
     let directory = Directory::new();
     let db = database(&directory);
     let cancel = CancellationToken::new();
-    for (sql, left_join) in [(QUERY, false), (LEFT_QUERY, true)] {
+    for (sql, left_join, defaults) in [
+        (QUERY, false, false),
+        (LEFT_QUERY, true, false),
+        (DEFAULT_QUERY, true, true),
+    ] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         let result = db.execute(&query, &cancel).unwrap();
@@ -176,7 +182,7 @@ fn join_exact_admission_precedes_io_and_reconciles_each_transition() {
                                 }
                             }
                         } else {
-                            rows.push((l, None));
+                            rows.push((l, if defaults { Some(-1) } else { None }));
                         }
                         rows
                     })
@@ -226,7 +232,7 @@ fn join_exact_admission_precedes_io_and_reconciles_each_transition() {
 fn cancellation_covers_both_inputs_sort_matching_and_duplicate_rewind() {
     let directory = Directory::new();
     let db = database(&directory);
-    for (sql, phases) in [(QUERY, 19), (LEFT_QUERY, 20)] {
+    for (sql, phases) in [(QUERY, 19), (LEFT_QUERY, 20), (DEFAULT_QUERY, 20)] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         for target in 0..phases {

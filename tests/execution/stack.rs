@@ -107,7 +107,7 @@ fn check_loaded_queries(path: &Path) {
     // Constants and aggregate arguments share parser storage, including
     // BETWEEN's two bounds. Exercise their independent programs through
     // the public runtime.
-    let source = "FROM lineitem |> WHERE l_quantity BETWEEN (3-3) AND (1+1) |> WHERE l_shipdate >= DATE_ADD(DATE '1993-12-31', INTERVAL 1 DAY) |> AGGREGATE SUM((l_quantity+2)*3) AS s, AVG(l_quantity*4) AS a, COUNT(*) AS n |> WHERE s > (2*4) |> LIMIT (2-1) OFFSET (3-3)";
+    let source = "FROM lineitem |> WHERE l_quantity BETWEEN (3-3) AND (1+1) |> WHERE l_shipdate >= DATE_ADD(DATE '1993-12-31', INTERVAL 1 DAY) |> AGGREGATE SUM((COALESCE(l_quantity, 1/0)+2)*3) AS s, AVG(l_quantity*4) AS a, COUNT(*) AS n |> SELECT COALESCE(s, 1/0) AS s, a, n |> WHERE s > (2*4) |> LIMIT (2-1) OFFSET (3-3)";
     {
         let query = database.prepare(source).unwrap();
         let cancellation = CancellationToken::new();

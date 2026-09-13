@@ -330,6 +330,48 @@ mod tests {
                 Some(7.0_f64.to_bits()),
             ]
         );
+        let special = [
+            0x7ff8_0000_0000_0042,
+            f64::INFINITY.to_bits(),
+            f64::NEG_INFINITY.to_bits(),
+            1,
+            (-0.0_f64).to_bits(),
+            0,
+        ];
+        let special_valid = [0b011111];
+        let input = NumericInput::new(
+            y,
+            NumericValues::Bits {
+                values: &special,
+                kind: DataType::Double,
+            },
+            Some(&special_valid),
+        )
+        .unwrap();
+        expression.ops.fill(Op::Empty);
+        expression.ops[..3].copy_from_slice(&[
+            Op::Column(y),
+            Op::Double(0.5_f64.to_bits()),
+            Op::Coalesce,
+        ]);
+        expression.len = 3;
+        expression.validate(&[y]).unwrap();
+        let output = expression
+            .evaluate_batch(&[Some(input)], 0..6, &mut scratch)
+            .unwrap();
+        for (row, bits) in [
+            0x7ff8_0000_0000_0042,
+            f64::INFINITY.to_bits(),
+            f64::NEG_INFINITY.to_bits(),
+            1,
+            (-0.0_f64).to_bits(),
+            0.5_f64.to_bits(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(output.value(row), Some(bits));
+        }
         expression.data_type = DataType::Int64;
         assert!(expression.validate(&[x, y]).is_err());
         expression.len = 1;

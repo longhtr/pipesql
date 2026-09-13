@@ -42,7 +42,7 @@ fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
             Value::Double(4.5),
         )))
         .chain(derived.then_some((
-            "FROM facts |> SELECT SAFE_DIVIDE(n, 0) AS ratio |> AGGREGATE COUNT(ratio) AS present",
+            "FROM facts |> SELECT SAFE_DIVIDE(n, 0) AS ratio |> EXTEND COALESCE(ratio, 0) AS filled |> WHERE filled=0 |> AGGREGATE COUNT(ratio) AS present |> SELECT COALESCE(present, DIV(1, 0)) AS present",
             Value::Int64(0),
         )));
     for (sql, expected) in queries {

@@ -93,17 +93,38 @@ program/result facts. Clippy passes all workspace targets with warnings denied.
 The fresh fact/dimension example and stock default-region query return the
 documented schema and rows `(0, 90, 2)`, `(1, 30, 2)`, `(2, 30, 1)` on macOS.
 
+The retained join tests pass exact/one-byte-short execution admission and all
+20 cancellation phases with defaulted right values, alongside unchanged inner
+and NULL-extended controls. Forced grouping fallback passes eighteen variants,
+including defaulted LEFT JOIN arguments with independent rows `(1, 10, 2)` and
+`(2, 7, 1)`. Ordinary and observed native-small-stack loaded-query checks pass
+with COALESCE in arguments and final output. Additional cases preserve nonfinite
+DOUBLE bits, minimum/maximum/exact INT64 values, the 32-operation boundary,
+cancellation/early drop and repeated terminal overflow. All 26 public computed
+checks pass after these extensions.
+
+Catalog controls retain census 985 at both pathname lengths, with the exact
+INT64 result and selected numeric default demanded before counting two rows.
+The derived native I/O campaign passes all 340 cells with its existing zero-count
+oracle, a demanded default and a skipped failing fallback. An initial control
+used an unsupported function on a WHERE comparison's left side; the fixture now
+projects that value explicitly, preserving the language profile and oracle.
+
+A complete CLI cost observation uses the existing composed example's 8,192-row
+nullable sales table. `FROM sales |> SELECT amount+0 AS base |> SELECT base+0 AS
+next |> AGGREGATE SUM(next) AS total` and the same query with
+`COALESCE(amount, 0)` replacing `amount+0` both return literal sum 11,264. Seven
+alternating runs per query, including open/prepare/execute/close, have medians
+10.659 ms and 11.541 ms; the first ordinary run took 667.398 ms. Native verification
+was concurrent. These observations do not establish a speed ranking or justify
+another scheduling/ownership change.
+
 Remaining work is finite:
-- Extend retained composition, stack, admission, cancellation and forced-replay
-  cases to exercise COALESCE, including nonfinite values, exact arity/nesting
-  limits and repeated terminal failure. Review complete-query cost of conditional
-  dependency scheduling against a representative ordinary/defaulting workload.
-- Exercise COALESCE in retained allocation and native failure callers without
-  removing their independent controls; reconcile their observed schedules.
-- Verify the example on GNU/Linux, run both complete matching frozen platform
-  gates, reconcile discovery/manifests and update final evidence within budget.
-- Complete navigation and diff review, remove owned outputs and commit the
-  completed milestone locally. These focused checks are not full-gate evidence.
+- Verify the example on GNU/Linux and run both complete matching frozen platform
+  gates, including every allocation-refusal prefix and applicable native campaign.
+- Reconcile discovery and manifests, complete final navigation/diff review,
+  retain concise evidence within budget, remove owned outputs and commit locally.
+  Focused checks and allocation controls are not full-gate evidence.
 Preserve spaced comma separators, existing platform/resource limits and the
 publication restrictions below.
 

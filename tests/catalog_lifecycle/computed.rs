@@ -30,6 +30,10 @@ fn failure(db: &Database, sql: &str, operation: &'static str, expression: &str) 
         }
     }
     assert!(failed);
+    assert!(matches!(
+        result.step(),
+        QueryStep::Failed(Error::ArithmeticOverflow { .. })
+    ));
     drop(result);
     drop(prepared);
     assert_eq!(db.reserved_memory_bytes(), baseline);
@@ -780,6 +784,7 @@ fn public_division_cancellation_and_early_drop_release_owners() {
         "FROM facts |> SELECT ABS(v-25) AS deviation |> ORDER BY deviation",
         "FROM facts |> SELECT MOD(v, 3) AS remainder |> ORDER BY remainder",
         "FROM facts |> SELECT DIV(v, 15) AS quotient |> ORDER BY quotient",
+        "FROM facts |> SELECT COALESCE(k, v) AS chosen |> ORDER BY chosen",
     ] {
         let prepared = db.prepare(sql).unwrap();
         let admitted = db.reserved_memory_bytes();
@@ -1349,6 +1354,31 @@ fn public_div_composes_and_preserves_argument_demand() {
 #[test]
 fn public_coalesce_selects_defaults_and_skips_unused_dependencies() {
     let (_directory, db) = join_fixture();
+    for (expression, expected) in [
+        ("COALESCE(-9223372036854775808, 0)", i64::MIN),
+        ("COALESCE(9223372036854775807, 0)", i64::MAX),
+        ("COALESCE(9007199254740993, 0)", 9_007_199_254_740_993),
+    ] {
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT 1 |> SELECT {expression}"),
+            integers(&[expected]),
+        );
+    }
+    let mut nested = "v".to_owned();
+    for _ in 0..15 {
+        nested = format!("COALESCE(k, {nested})");
+    }
+    query(
+        &db,
+        &format!("FROM facts |> SELECT -{nested} AS n |> ORDER BY n"),
+        integers(&[-40, -2, -1, -1]),
+    );
+    assert!(
+        db.prepare(&format!("FROM facts |> SELECT COALESCE(k, {nested})"))
+            .is_err()
+    );
+
     for (sql, expected) in [
         (
             "FROM facts |> SELECT COALESCE(k, 9) AS n |> ORDER BY n",
