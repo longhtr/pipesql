@@ -25,6 +25,32 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
+## Active: exponential transforms and geometric means
+
+Add one-argument EXP for INT64/DOUBLE through the existing bounded numeric
+program, parser, binder, independent validators, batch scratch and demand cursor.
+This makes log-scale aggregates usable in their original units: the learning
+example will average LN of positive amounts, then apply EXP in a later pipe
+stage to obtain their geometric mean.
+
+The initial semantic and ownership trace has a 30-minute budget. Pinned GoogleSQL
+signatures, compliance cases and the reference kernel agree on DOUBLE promotion,
+NULL propagation, finite overflow errors, positive infinity and negative-infinity
+zero. Preserve input NaN bits as a PipeSQL choice. Retain representable subnormal
+results; results too small to remain nonzero become positive zero. Finite
+exponentials use the native approximate primitive without a universal precision
+or repeated/cross-platform bit-identity promise.
+
+The cheapest falsifier is a literal high-precision numeric oracle around normal,
+subnormal, zero and overflow boundaries, exercised through both batch and demand
+paths. Preserve finite-overflow spans, preparation-time constant failures,
+integer-child errors, skipped COALESCE/Boolean branches, admission/refusal,
+cancellation, stored exceptional bits, replay and complete composed rows. Extend
+existing failure callers without changing their independent result controls.
+Finish focused checks, both sequential frozen platform gates, fresh examples,
+discovery/evidence reconciliation, cleanup and coherent local commits. Broader
+qualification and publication restrictions remain unchanged.
+
 ## Completed: transient allocation ownership in wide LEFT JOIN
 
 `60bf34d` observes live requested/usable Rust allocations inside public execute
