@@ -7,26 +7,26 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 700 frozen inputs retained in `0e13c43`
+Both complete 24-stage gates verify the 702 frozen inputs retained in `4d77e98`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `b5ed9948b8de24b04784c7d08091f0ed02edbb25590acb1c87c749a6354fb2fc`.
-Only the two notes files change during finalization. The other 698 inputs retain
-fingerprint `3a7e1be17ffcb329c1df0dc2684be4ef33a62c2e36d785d90705278c72ec30b4`;
+gates: `01790b2ce1b6c121d3b74c4b9e6101bfc12b072b1ed51ea638ed46533ea47429`.
+Only the two notes files change during finalization. The other 700 inputs retain
+fingerprint `84adb3385a19c640773fb4b81695319cfcf94aa8cdad7af56edecb18e79a98e8`;
 all inputs remain tracked. Final documentation verification passes.
 
-Each platform executes 611 ordinary Rust tests, including all 129 public catalog
-tests, plus the separate lease subprocess. All three public NULLIF tests, its
-three scalar tests, binding/admission check, shared parser limits, forced grouping
-replay and both width/small-stack tests execute on both platforms. No ordinary
-test is ignored or filtered; the selected lease child reports six filtered
-siblings. Maintenance passes 96 tooling tests, 44 independent codec fixtures and
-591 local links. Independent aggregate semantics pass 24 cases and composition
-passes 311 scenarios. Expected results agree across platforms after excluding
-ambient database paths and stdout digests; these digests are not portable
-semantic hashes.
+Each platform executes 617 ordinary Rust tests, including all 132 public catalog
+tests, plus the separate lease subprocess. All three public null-safe predicate
+tests, primitive truth tables, semantic and physical mutations, legacy scan
+payloads, forced grouping replay, cancellation and both width/small-stack checks
+execute on both platforms. No ordinary test is ignored or filtered; the selected
+lease child reports six filtered siblings. Maintenance passes 96 tooling tests,
+44 independent codec fixtures and 599 local links. Independent aggregate semantics
+pass 24 cases and composition passes 311 scenarios. Expected results agree across
+platforms after excluding ambient database paths and stdout digests; these
+digests are not portable semantic hashes.
 
 Both allocation campaigns retain positions 0–1055 and healthy control 1056 at
 each pathname length; all four ordered lists were reconciled explicitly. The
@@ -37,21 +37,58 @@ independent graph checks. All 43 graph cases, two oracle controls, three CLI
 limits, genesis, lease contention and independent column order pass. Linux
 retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,950.196 seconds
-on macOS and 907.800 seconds on Linux. Receipt SHA-256 values are respectively
-`f17b7c328f997a6d080494e99bea36f58e686a2379977308e2374b853f5f5b1a` and
-`b74cc55828624fd3dddbaf5171a3e32a079209779229242c912ed0869834b433`.
-Overlapping verification runs are not performance benchmarks. All 66 resource
-samples observed normal host memory pressure, with 1,355.31–1,371.31 MiB of swap
-use. Cargo used two build jobs; the separate GNU example used one. Docker was
-capped at two CPUs, with sampled CPU use at most 200.62%, container memory at
-most 1.501 GiB and network traffic 1.75 kB received/126 bytes sent. Sampled free
-disk space stayed above 185 GiB. No concurrency reduction was needed.
-These observations do not qualify engine physical-memory bounds. Owned gate and
-control outputs, source exports, logs, example databases, monitors and the
-verification container are removed. The existing verification image and toolchains
-remain. Windows, broader durability, physical-memory and sanitizer qualification
-remain unfinished.
+Both receipts have zero finalization errors. Stage times total 1,954.356 seconds
+on macOS and 1,134.421 seconds on Linux. Receipt SHA-256 values are respectively
+`ca032486ad8bd11d109376cca6e625ecfc7e4ae241bd14ea74af3d52d9d2207d` and
+`11bf48e30a1e7bb7be7141db6a99d481b6cbb5ee58851b895c980917c220f3fc`.
+Overlapping verification runs are not performance benchmarks. Sixty-eight
+resource samples observed normal/warning host memory pressure on an 8 GiB host,
+with 1,517.25–2,236.62 MiB of swap use. Pressure remained at warning level after
+verification. Cargo used two build jobs; the separate GNU example used one.
+Docker's CPU quota was reduced from two CPUs to one after warning pressure;
+sampled CPU peaked at 203.01% and container memory at 1.974 GiB. Network traffic
+was 1.75 kB received/126 bytes sent. Sampled free disk stayed above 185 GiB.
+Future qualification should avoid overlapping example compilation with both
+platforms' Rust builds. These observations do not qualify engine physical-memory
+bounds. Owned gate and control outputs, source exports, logs, example databases,
+monitors and the verification container are removed. The existing image and
+toolchains remain. Windows, broader durability, physical-memory and sanitizer
+qualification remain unfinished.
+
+### Null-safe column and literal predicates
+
+`4d77e98` adds `IS [NOT] DISTINCT FROM` through two comparison variants in the
+existing one-column/owned-literal predicate. The
+[language contract](../docs/language.md#current-public-query-manifest) pins NULL,
+NaN, signed-zero and numeric common-typing rules. Research resolved within its
+30-minute bound. The [shared decision](../src/execution/predicate.rs) handles
+NULL before ordinary comparison can yield UNKNOWN, then respects enclosing
+Boolean negation. Legacy scan kernels reuse the same comparisons. No new field,
+buffer, allocation owner, Boolean representation or persistent format was added.
+
+Three [public tests](../tests/catalog_lifecycle/null_safe.rs) check typed two-valued
+truth tables, literal compatibility, exact INT64 and mixed DOUBLE boundaries,
+NaN/signed-zero stored bits, prepared snapshots and reopen. Literal row-id oracles
+cover enclosing NOT, nested sources, ordered producers, grouping, joins and set
+composition. Invalid names, types, incomplete predicate syntax, nonfinite/range
+literals and column-to-column forms remain rejected. Shared demanded-error tests
+retain arithmetic spans, terminal failure, LIMIT 0, and ownership release even
+when NULLability predicts a predicate's result. Independent validator mutations
+retain healthy controls; exact/short binding admission and stage bounds pass.
+
+The legacy scan test checks eight literal count/sum outcomes over 130 rows,
+including DOUBLE, STRING, DATE and NULL-literal paths. Shared cancellation and
+full-width/small-stack tests run the new predicates. Forced grouping fallback
+replays a sorted producer with NULLIF-generated NULLs that must survive the new
+filter. Allocation and native-I/O queries use null-safe NULL/present-value tests
+within their retained failure schedules; the full allocation census stays 1,056.
+
+The fresh [region filter](../examples/null-safe-region.sql) and its
+[tutorial](../docs/getting-started.md#keep-null-rows-when-excluding-a-sentinel)
+produce `(110, 4)` on both platforms, while ordinary inequality produces `(60, 3)`.
+Both report nullable INT64 total, required INT64 nrows, one row, successful process
+exit and `status=queried`. The complete gates above retain ordinary comparison
+UNKNOWN, COALESCE/NULLIF demand, storage, replay and publication coverage.
 
 ### Numeric NULLIF sentinel normalization
 

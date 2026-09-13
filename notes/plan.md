@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `0e13c43` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 611 ordinary Rust tests per platform, 24 independent aggregate
+The complete 24-stage gates for `4d77e98` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 617 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
@@ -25,84 +25,24 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: numeric NULLIF for sentinel normalization
+## Completed: null-safe column and literal predicates
 
-Numeric NULLIF is implemented in `0e13c43` and verified by matching complete
-macOS/GNU/Linux gates. The [NULLIF record](evidence.md#numeric-nullif-sentinel-normalization)
-retains pinned semantics, independent numeric results, ordered demanded errors,
-snapshots, parser/admission bounds, width/stack, forced replay and failure
-campaigns. The fresh sentinel example returns `(130, 4, 5)` on both platforms.
-All 611 ordinary Rust tests per platform and the retained campaigns pass.
+`IS [NOT] DISTINCT FROM` is implemented in `4d77e98` and verified by matching
+complete macOS/GNU/Linux gates. The
+[predicate record](evidence.md#null-safe-column-and-literal-predicates) retains
+pinned semantics, independent typed outcomes, numeric boundaries, snapshots,
+Boolean demand and error spans, validators, admission, legacy scans, width/stack,
+replay and failure campaigns. The fresh example returns `(110, 4)`; ordinary
+inequality returns `(60, 3)` on both platforms. All 617 ordinary Rust tests per
+platform and the retained campaigns pass.
 
-The prior set, join, scalar, testing/tooling and resource milestones remain
+The prior scalar, set, join, testing/tooling and resource milestones remain
 complete unless a concrete counterexample reopens their affected boundary.
-Comma spacing is preserved. All resource samples observed normal host memory
-pressure; verification retained two Cargo jobs and a two-CPU Docker cap.
-Owned scratch outputs are removed. Publication remains unauthorized, and the
-platform, durability and physical-memory qualifications below remain unfinished.
-
-## Current: null-safe column/literal predicates
-
-Add `name IS [NOT] DISTINCT FROM literal` to the existing WHERE profile.
-Ordinary inequality drops NULL rows through UNKNOWN; a null-safe comparison
-lets a sentinel filter retain them intentionally. The current predicate owner
-already holds one column identity and an owned literal, so this scope does not
-require column-to-column expression comparison or another Boolean framework.
-The completed NULLIF, resource and testing/tooling milestones have no new
-counterexample and remain closed.
-
-1. Pin NULL/NaN/signed-zero truth tables, existing scalar/literal compatibility,
-   numeric coercion and negation at the immutable GoogleSQL revision. Reassess
-   unresolved semantic research after 30 minutes.
-2. Trace Boolean syntax, binding, independent validators, literal ownership,
-   scan/row decisions, computed demand and admission before editing. Reuse their
-   bounded owners and retain ordinary comparison UNKNOWN behavior.
-3. Implement the predicate with independent typed truth tables, malformed-plan
-   controls, demanded/skipped errors, composition and affected resource/failure
-   boundaries. Keep inputs and expected results visible.
-4. Add a runnable NULL-preserving sentinel filter, update contracts/maps, run
-   focused checks and matching frozen macOS/GNU/Linux gates, reconcile evidence,
-   remove owned outputs and commit locally.
-
-Research is resolved within the 30-minute bound. The pinned
-[operator contract](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/operators.md#is_distinct)
-and [reference comparison](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/reference_impl/function.cc#L3637)
-require a two-valued result: NULLs are not distinct from NULLs, NaNs are not
-distinct from NaNs, and signed zeros compare equal. NOT inverts that Boolean
-result. The reference requires equal argument types outside unsupported unsigned
-integer overloads. Existing [numeric coercion](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/conversion_rules.md#supertypes)
-therefore remains: INT64 pairs compare exactly, mixed numeric values compare as
-DOUBLE. Keep the current STRING/DATE literal restrictions and finite numeric
-literal validation; untyped NULL is valid for every existing column type.
-
-The trace reaches `boolean_leaf`, `bind_comparison`, semantic predicate validity,
-physical predicate/identity/control comparison, legacy scan fast paths and shared
-`PhysicalFilter::matches` for computed and general rows. Extend the comparison
-enum and existing one-column/owned-literal predicate. No new buffer, field or
-Boolean representation is required. Ordinary UNKNOWN must still match neither
-requested truth, while the new NULL decisions obey enclosing Boolean negation.
-
-Implementation and focused verification are complete. Two comparison variants
-reuse the existing predicate and Boolean controls. Typed public truth tables,
-NULL/NaN/zero behavior, exact/mixed numeric boundaries, snapshots/reopen,
-short-circuit and demanded errors with original spans, legacy scan payloads,
-width/small-stack, cancellation and forced grouping replay pass. Independent
-semantic and physical mutations and exact/short binding admission pass. Shared
-allocation and native-I/O queries exercise NULL and present-value decisions;
-the catalog healthy controls retain the 1,056-allocation census. This controls-only
-run is not a refusal-sweep claim.
-
-Clippy and maintenance checks pass. The fresh null-safe region example returns
-`(110, 4)`; ordinary inequality returns `(60, 3)`, as documented. Freeze the
-reviewed source for matching full macOS/GNU/Linux gates, then reconcile discovery,
-receipts, manifests and retained failure coverage. Remove owned outputs and commit
-the final evidence before completing this milestone. Host memory pressure is
-normal; focused builds use at most two Cargo jobs.
-
-Exclude column-to-column predicates, general scalar Boolean expressions, new
-types, collations, unrelated coercions and persistent-format changes. Continue
-resource monitoring and comma spacing. Native Windows, durability and physical
-memory qualifications remain separate obligations; publication is unauthorized.
+Comma spacing is preserved. Resource monitoring reduced Docker's CPU quota after
+warning pressure; pressure still warned at final verification. Avoid overlapping
+example compilation with both platforms' Rust builds in future qualification.
+Owned outputs are removed. Publication and the broader qualifications below
+remain unresolved.
 
 ## Next engineering priorities
 
