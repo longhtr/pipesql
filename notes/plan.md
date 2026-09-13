@@ -35,9 +35,36 @@ limits. Both complete platform gates pass on matching frozen inputs. The earlier
 remains complete. Keep comma separators spaced in code and SQL, preserving
 literal data and intentional fixtures.
 
-The next bounded milestone must follow the decision order below. Completed
-repairs remain closed without a concrete new counterexample. No publication is
-authorized.
+## Current: numeric COALESCE defaults
+
+Add two-argument numeric COALESCE so a query can replace a missing joined amount
+or a nullable aggregate with a default. Keep the existing INT64/DOUBLE profile;
+variadic forms, new data types, CASE, IF and IFNULL remain outside this milestone.
+Completed repairs remain closed without a concrete new counterexample.
+
+1. Pin result selection, numeric coercion, NULLability and short-circuit error
+   behavior at the language owner's immutable revision. Reassess unresolved
+   research after 30 minutes and leave disputed forms unsupported.
+2. Trace the bounded parser, binding, independent validators, demand analysis and
+   scalar/aggregate evaluation. COALESCE must skip an unused fallback's runtime
+   errors while still binding its syntax, names and types. Repair concrete
+   prerequisite defects without another frontend or expression framework.
+3. Implement the bounded form with independent literal results, NULL and numeric
+   extremes, skipped/demanded failures, malformed programs, arity/nesting bounds,
+   LEFT JOIN and aggregate composition, admission, replay, cancellation and reuse.
+4. Add a runnable example and update contract and test/tool maps. Run focused
+   checks and both complete matching frozen platform gates; reconcile discovery
+   and manifests, retain concise evidence, remove owned outputs and commit locally.
+
+Initial research uses the pinned
+[conditional-expression contract](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/conditional_expressions.md#coalesce):
+select the first non-NULL argument, skip the remainder and use a common supertype.
+Numeric coercion and result NULLability still need to be reconciled with the
+current implementation. The parser's binary-call frames and scalar program are
+the starting owners; short-circuiting requires more than another eager binary
+opcode. No COALESCE implementation or passing feature verification is claimed.
+Preserve spaced comma separators, existing platform/resource limits and the
+publication restrictions below.
 
 ## Next engineering priorities
 
