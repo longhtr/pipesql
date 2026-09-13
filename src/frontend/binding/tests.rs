@@ -1820,6 +1820,7 @@ fn unary_numeric_calls_preserve_type_nullability_and_bounded_admission() {
         ("ROUND", DataType::Double),
         ("SQRT", DataType::Double),
         ("LN", DataType::Double),
+        ("EXP", DataType::Double),
     ] {
         for (argument, kind, nullable) in [
             ("1", integer_output, false),

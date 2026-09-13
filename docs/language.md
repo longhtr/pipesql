@@ -88,7 +88,7 @@ separate from this query manifest.
 | `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN or positional set operations. Comma-separated FROM inputs remain unsupported. |
 | `FROM (pipe_query) [AS alias]` | Uses the child query’s ordinary outputs as an independent input. A JOIN may also use this form. See [table subqueries](#table-subqueries) for scope and ordering. |
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
-| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts numeric `ABS`/`SIGN`/`FLOOR`/`CEIL` (`CEILING`)/`ROUND`/`SQRT`/`LN`, INT64 `DIV`/`MOD` and two-argument `SAFE_DIVIDE`, `COALESCE` and `NULLIF`, bounded STRING and DATE constants and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
+| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts numeric `ABS`/`SIGN`/`FLOOR`/`CEIL` (`CEILING`)/`ROUND`/`SQRT`/`LN`/`EXP`, INT64 `DIV`/`MOD` and two-argument `SAFE_DIVIDE`, `COALESCE` and `NULLIF`, bounded STRING and DATE constants and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
 | `EXTEND expression [[AS] alias], ...` | Appends columns using the same expression profile as SELECT. Preserves all input columns, their identities and ranges. Ordinary expressions preserve order; analytic count clears it. Star expansion, reducing aggregate calls and other scalar forms remain unsupported. |
 | `SET name=expression, ...` | Replaces each named ordinary column in place with a fresh identity. Accepts direct references of any supported type and the nonanalytic SELECT expression profile. Every expression sees the original input; replacements can change type and NULLability. |
 | `DROP name, ...` | Removes all ordinary columns matching each name, including duplicate names. Rejects removal of the entire row. |
@@ -201,7 +201,7 @@ operation, after its checked integer children. A NULL operand produces NULL;
 otherwise either signed-zero denominator raises `DivisionByZero`, including with
 a nonfinite numerator. Finite operands producing infinity raise
 `ArithmeticOverflow`; underflow and nonfinite operands otherwise follow IEEE-754.
-Scalar calls beyond ABS, SIGN, FLOOR, CEIL, CEILING, ROUND, SQRT, LN, DIV, MOD, SAFE_DIVIDE, COALESCE, NULLIF and the DATE forms below, other scalar
+Scalar calls beyond ABS, SIGN, FLOOR, CEIL, CEILING, ROUND, SQRT, LN, EXP, DIV, MOD, SAFE_DIVIDE, COALESCE, NULLIF and the DATE forms below, other scalar
 expression forms and NULL literals are unsupported.
 
 These division rules follow the pinned
@@ -356,7 +356,7 @@ operation within the existing expression bounds and reuses the batch scratch
 and demand cursor.
 
 The pinned [SQRT contract](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/mathematical_functions.md#sqrt)
-and [reference kernel](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/math.h#L269)
+and [reference kernel](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/math.h#L291)
 establish promotion and negative-domain errors. Rust's
 [`f64::sqrt`](https://doc.rust-lang.org/std/primitive.f64.html#method.sqrt)
 provides correctly rounded square root; the explicit negative-input check adds
@@ -370,14 +370,16 @@ infinity remains positive infinity. Negative infinity returns a quiet NaN with
 bits `7ff8000000000000`; input NaNs retain their original bits. LN(1) returns
 positive zero.
 
-The pinned [LN compliance cases](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_math.cc#L1423)
-and [reference kernel](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/math.h#L298)
+The pinned [LN compliance cases](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_math.cc#L1515)
+and [reference kernel](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/math.h#L321)
 resolve negative infinity to NaN, despite the
 [reference prose](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/mathematical_functions.md#ln)
 saying that nonpositive inputs error. PipeSQL follows the explicit compliance
 case. Input NaN preservation and the generated NaN bits are profile choices.
-Finite logarithms use Rust's [`f64::ln`](https://doc.rust-lang.org/std/primitive.f64.html#method.ln),
-whose precision can vary by platform, compiler and invocation. Correct rounding
+Finite logarithms and exponentials use Rust's
+[`f64::ln`](https://doc.rust-lang.org/std/primitive.f64.html#method.ln) and
+[`f64::exp`](https://doc.rust-lang.org/std/primitive.f64.html#method.exp).
+Their precision can vary by platform, compiler and invocation. Correct rounding
 and bit-identical repeated or cross-platform results are not promised. Stored
 DOUBLE values still preserve their bits.
 
@@ -387,6 +389,32 @@ Predicate constants can fail during preparation. STRING, DATE, untyped NULL,
 other arities, LOG and LOG10 remain unsupported. The DOUBLE result cannot satisfy
 INT64-only LIMIT/OFFSET or DIV/MOD arguments. LN uses the existing unary operation
 bound, scratch slot and iterative demand cursor.
+
+`EXP(value)` accepts one INT64 or DOUBLE argument and returns e raised to that
+value as DOUBLE. INT64 converts before evaluation. NULL propagates. Both zero
+signs produce exactly 1; positive infinity remains positive infinity and negative
+infinity produces positive zero. Input NaNs retain their bits as a PipeSQL
+profile choice. Finite inputs that produce infinity raise `ArithmeticOverflow`
+with operation `exponentiation` and the demanded expression's owned span.
+Representable subnormal results remain subnormal; values too small to remain
+nonzero become positive zero. Finite results have the approximate precision
+limits described above.
+
+An unused expression or skipped Boolean/COALESCE branch remains unevaluated.
+SAFE_DIVIDE does not suppress errors in its arguments, including EXP overflow.
+Constant predicate arguments can fail during preparation; integer-child overflow
+still occurs before DOUBLE promotion. STRING, DATE, untyped NULL and other
+arities are rejected. EXP returns DOUBLE even for integer inputs and therefore
+cannot supply an INT64-only LIMIT/OFFSET or DIV/MOD argument. It uses one unary
+operation within the existing bounds and shares the batch scratch and demand
+cursor. EXP2 and EXPM1 remain unsupported.
+
+The pinned [EXP contract](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/mathematical_functions.md#exp),
+[signature](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/common/builtin_function_internal_3.cc#L2769),
+[compliance cases](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_math.cc#L1506)
+and [reference kernel](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/math.h#L315)
+establish promotion, finite overflow and exceptional-value behavior. PipeSQL
+retains its own typed errors and explicit bit choices.
 
 `ABS(value)` accepts one INT64 or DOUBLE expression and preserves its type and
 NULLability. NULL yields NULL. Minimum INT64 has no positive INT64 counterpart

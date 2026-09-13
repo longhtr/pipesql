@@ -33,7 +33,7 @@ This makes log-scale aggregates usable in their original units: the learning
 example will average LN of positive amounts, then apply EXP in a later pipe
 stage to obtain their geometric mean.
 
-The initial semantic and ownership trace has a 30-minute budget. Pinned GoogleSQL
+The semantic and ownership trace completed within its 30-minute budget. Pinned GoogleSQL
 signatures, compliance cases and the reference kernel agree on DOUBLE promotion,
 NULL propagation, finite overflow errors, positive infinity and negative-infinity
 zero. Preserve input NaN bits as a PipeSQL choice. Retain representable subnormal
@@ -41,15 +41,20 @@ results; results too small to remain nonzero become positive zero. Finite
 exponentials use the native approximate primitive without a universal precision
 or repeated/cross-platform bit-identity promise.
 
-The cheapest falsifier is a literal high-precision numeric oracle around normal,
-subnormal, zero and overflow boundaries, exercised through both batch and demand
-paths. Preserve finite-overflow spans, preparation-time constant failures,
-integer-child errors, skipped COALESCE/Boolean branches, admission/refusal,
-cancellation, stored exceptional bits, replay and complete composed rows. Extend
-existing failure callers without changing their independent result controls.
-Finish focused checks, both sequential frozen platform gates, fresh examples,
-discovery/evidence reconciliation, cleanup and coherent local commits. Broader
-qualification and publication restrictions remain unchanged.
+Implementation and focused checks pass through both batch and demand paths.
+Independent Decimal answers cover normal, subnormal, zero and overflow boundaries;
+public checks retain finite-overflow spans after source/plan teardown, constant
+predicate failures, integer-child errors, both SAFE_DIVIDE argument positions,
+skipped COALESCE/Boolean branches, empty geometric means, exact/short admission,
+stored bits/reopen, cancellation and 32 replay variants. The catalog census stays
+at 1,056 allocations on both pathname lengths, and eight derived I/O controls
+pass; these controls alone do not constitute failure campaigns. Three nearby
+SQRT/LN source-link anchors were corrected against the pinned revision without
+changing their semantics.
+
+Complete both sequential frozen platform gates, fresh examples, discovery and
+semantic/allocation reconciliation, evidence, cleanup and coherent local commits.
+Broader qualification and publication restrictions remain unchanged.
 
 ## Completed: transient allocation ownership in wide LEFT JOIN
 

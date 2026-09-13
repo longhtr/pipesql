@@ -445,6 +445,7 @@ fn bind_expression(
             ParsedOp::Round => Op::Round,
             ParsedOp::Sqrt => Op::Sqrt,
             ParsedOp::Ln => Op::Ln,
+            ParsedOp::Exp => Op::Exp,
             ParsedOp::Empty
             | ParsedOp::WindowCount
             | ParsedOp::String(_)

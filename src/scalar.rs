@@ -19,6 +19,7 @@ pub(crate) enum ArithmeticFailure {
     Abs,
     SqrtDomain,
     LnDomain,
+    Exp,
 }
 
 impl ArithmeticFailure {
@@ -30,6 +31,7 @@ impl ArithmeticFailure {
             Self::Divide => "division",
             Self::Negate => "negation",
             Self::Abs => "absolute value",
+            Self::Exp => "exponentiation",
             Self::DivideByZero => return Error::DivisionByZero { span },
             Self::LnDomain => {
                 return Error::ArithmeticDomain {
@@ -173,6 +175,7 @@ pub(crate) enum Op {
     Round,
     Sqrt,
     Ln,
+    Exp,
 }
 
 // SIGN classifies both zeros as positive zero. Preserve a NaN's payload rather
@@ -188,11 +191,30 @@ fn sign_double(value: f64) -> f64 {
 }
 
 // Keep exceptional input bits stable instead of delegating NaN payloads and
-// signed-zero preservation to target-specific numeric instructions. LN owns
-// its zero/domain decision before the zero-preserving operations.
+// signed-zero preservation to target-specific numeric instructions. LN and EXP
+// own their zero decisions before the zero-preserving operations.
 fn double_unary(op: Op, value: f64) -> Result<f64, ArithmeticFailure> {
     if value.is_nan() {
         return Ok(value);
+    }
+    if op == Op::Exp {
+        if value == 0.0 {
+            return Ok(1.0);
+        }
+        if value == f64::NEG_INFINITY {
+            return Ok(0.0);
+        }
+        if value == f64::INFINITY {
+            return Ok(value);
+        }
+        // The remaining input is finite. Preserve gradual underflow, but do
+        // not publish infinity created by finite exponential overflow.
+        let result = value.exp();
+        return if result.is_finite() {
+            Ok(result)
+        } else {
+            Err(ArithmeticFailure::Exp)
+        };
     }
     if op == Op::Ln {
         // The pinned SQL kernel accepts nonfinite inputs: negative infinity
@@ -261,7 +283,8 @@ impl Expression {
                 | Op::Ceil
                 | Op::Round
                 | Op::Sqrt
-                | Op::Ln => {
+                | Op::Ln
+                | Op::Exp => {
                     if depth == 0 {
                         return true;
                     }
@@ -326,11 +349,15 @@ impl Expression {
                 | Op::Ceil
                 | Op::Round
                 | Op::Sqrt
-                | Op::Ln => {
+                | Op::Ln
+                | Op::Exp => {
                     if depth == 0 {
                         return Err(InferenceFailure::Program("scalar unary stack underflow"));
                     }
-                    if matches!(op, Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Ln) {
+                    if matches!(
+                        op,
+                        Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Ln | Op::Exp
+                    ) {
                         types[depth - 1] = DataType::Double;
                     }
                     continue;
@@ -417,7 +444,8 @@ impl Expression {
                 | Op::Ceil
                 | Op::Round
                 | Op::Sqrt
-                | Op::Ln => (),
+                | Op::Ln
+                | Op::Exp => (),
                 Op::Empty => unreachable!("validated scalar program"),
             }
             peak = peak.max(depth);
@@ -515,7 +543,7 @@ impl Expression {
                     valid[depth] = [u64::MAX; VALID_WORDS];
                     depth += 1;
                 }
-                Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Ln => {
+                Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Ln | Op::Exp => {
                     let values = &mut scratch[(depth - 1) * rows..depth * rows];
                     for (row, value) in values.iter_mut().enumerate() {
                         if valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
@@ -843,6 +871,97 @@ mod tests {
             let output = self.evaluate_batch(&inputs, 0..rows, scratch)?;
             assert_eq!(output.valid, [u64::MAX; VALID_WORDS]);
             Ok(output.values)
+        }
+    }
+
+    #[test]
+    fn exp_checks_overflow_underflow_and_independent_boundary_values() {
+        let column = SemanticColumn::new(42, DataType::Double, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(column), Op::Exp]);
+        expression.len = 2;
+        expression.data_type = DataType::Double;
+        expression.validate(&[column]).unwrap();
+        // Decimal.from_float(x).exp() at precision 100 supplies independent
+        // rounded answers. The two-ULP threshold qualifies these finite inputs,
+        // not the native primitive universally. Tiny/zero transitions and
+        // exceptional bits have explicit exact expectations.
+        for (input, expected, tolerance) in [
+            (0x3ff0_0000_0000_0000, 0x4005_bf0a_8b14_5769, 2),
+            (0xbff0_0000_0000_0000, 0x3fd7_8b56_362c_ef38, 2),
+            (0x4000_0000_0000_0000, 0x401d_8e64_b8d4_ddae, 2),
+            (0x3fe0_0000_0000_0000, 0x3ffa_6129_8e1e_069c, 2),
+            (0xbfe0_0000_0000_0000, 0x3fe3_68b2_fc6f_960a, 2),
+            (0x3ca0_0000_0000_0000, 0x3ff0_0000_0000_0001, 2),
+            (0xbca0_0000_0000_0000, 0x3fef_ffff_ffff_ffff, 2),
+            (0x4034_0000_0000_0000, 0x41bc_eb08_8b68_e804, 2),
+            (0xc034_0000_0000_0000, 0x3e21_b486_55f3_7267, 2),
+            (0x4085_e000_0000_0000, 0x7f0d_945d_f4f8_ec8e, 2),
+            (0xc085_e000_0000_0000, 0x00d1_4f2b_0fb9_307f, 2),
+            (0xc086_2000_0000_0000, 0x0017_c8ab_2288_c9ab, 2),
+            (0xc086_2800_0000_0000, 0x0008_bfe5_5de0_2338, 2),
+            (0x4086_2e42_fefa_39ef, 0x7fef_ffff_ffff_ff2a, 2),
+            (0xc087_4800_0000_0000, 0x0000_0000_0000_0001, 0),
+            (0xc087_5000_0000_0000, 0x0000_0000_0000_0000, 0),
+            (0xc087_4910_d52d_3051, 0x0000_0000_0000_0001, 0),
+            (0xc087_4910_d52d_3052, 0x0000_0000_0000_0000, 0),
+            (0xffef_ffff_ffff_ffff, 0x0000_0000_0000_0000, 0),
+            (0x0000_0000_0000_0000, 0x3ff0_0000_0000_0000, 0),
+            (0x8000_0000_0000_0000, 0x3ff0_0000_0000_0000, 0),
+            (0x7ff0_0000_0000_0000, 0x7ff0_0000_0000_0000, 0),
+            (0xfff0_0000_0000_0000, 0x0000_0000_0000_0000, 0),
+            (0x7ff0_0000_0000_0042, 0x7ff0_0000_0000_0042, 0),
+            (0xfff8_0000_0000_0042, 0xfff8_0000_0000_0042, 0),
+        ] {
+            let value = f64::from_bits(input);
+            let values = [value, 1000.0];
+            let valid = [1];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), Some(&valid)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 2];
+            let output = expression
+                .evaluate_batch(&inputs, 0..2, &mut scratch)
+                .unwrap();
+            assert_eq!(output.value(1), None, "NULL must skip exponential overflow");
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(value)).unwrap();
+            assert_eq!(cursor.next_column().unwrap(), None);
+            let Number::Double(actual) = cursor.value() else {
+                panic!("EXP result type");
+            };
+            for actual in [output.value(0).unwrap(), actual.to_bits()] {
+                assert!(
+                    actual.abs_diff(expected) <= tolerance,
+                    "EXP({value:?}): {actual:016x}"
+                );
+            }
+            let mut null = Evaluation::new(&expression);
+            assert_eq!(null.next_column().unwrap(), Some(column));
+            null.supply(Number::Null).unwrap();
+            assert_eq!(null.next_column().unwrap(), None);
+            assert!(matches!(null.value(), Number::Null));
+        }
+        for value in [
+            710.0,
+            1000.0,
+            f64::MAX,
+            f64::from_bits(0x4086_2e42_fefa_39f0),
+        ] {
+            let values = [value];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), None).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS];
+            assert!(matches!(
+                expression.evaluate_batch(&inputs, 0..1, &mut scratch),
+                Err(ArithmeticFailure::Exp)
+            ));
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(value)).unwrap();
+            assert!(matches!(cursor.next_column(), Err(ArithmeticFailure::Exp)));
         }
     }
 

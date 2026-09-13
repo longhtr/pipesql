@@ -788,6 +788,7 @@ fn public_numeric_cancellation_and_early_drop_release_owners() {
         "FROM facts |> SELECT ROUND(v/15) AS bucket |> ORDER BY bucket",
         "FROM facts |> SELECT SQRT(v) AS magnitude |> ORDER BY magnitude",
         "FROM facts |> SELECT LN(v) AS logarithm |> ORDER BY logarithm",
+        "FROM facts |> SELECT EXP(v) AS growth |> ORDER BY growth",
         "FROM facts |> SELECT MOD(v, 3) AS remainder |> ORDER BY remainder",
         "FROM facts |> SELECT DIV(v, 15) AS quotient |> ORDER BY quotient",
         "FROM facts |> SELECT COALESCE(k, v) AS chosen |> ORDER BY chosen",
@@ -1646,6 +1647,20 @@ fn public_unary_numeric_preserves_stored_double_bits_across_producers_and_reopen
                     vec![Cell::Null],
                 ],
             );
+            query(
+                &db,
+                &format!(
+                    "{source} |> WHERE id IN (0, 1, 4, 5, 6, 8) |> ORDER BY id |> SELECT EXP(value) AS growth"
+                ),
+                vec![
+                    vec![Cell::Number(0x3ff0_0000_0000_0000)],
+                    vec![Cell::Number(0x3ff0_0000_0000_0000)],
+                    vec![Cell::Number(0)],
+                    vec![Cell::Number(0x7ff0_0000_0000_0000)],
+                    vec![Cell::Number(0xfff8_0000_0000_0042)],
+                    vec![Cell::Null],
+                ],
+            );
             // Explicit answers distinguish SIGN's positive zero from rounding's
             // preserved zero sign and exercise subnormal values without an oracle
             // that calls the implementation's rounding primitive.
@@ -2215,6 +2230,229 @@ fn public_ln_owns_demanded_domain_error_spans() {
             panic!("owned domain error")
         };
         assert_eq!(operation, "natural logarithm");
+        assert_eq!((span.start(), span.end()), (start, end));
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+}
+
+#[test]
+fn public_exp_preserves_promotion_composition_and_demand() {
+    let (_directory, db) = join_fixture();
+    let baseline = db.reserved_memory_bytes();
+    // Decimal exp at precision 100 supplies the scalar answers. The geometric
+    // mean uses two independent Decimal square roots of 10*20*30*40, avoiding
+    // the implementation's logarithm/exponential composition as an oracle.
+    for (sql, nullable, expected, tolerance) in [
+        (
+            "FROM facts |> LIMIT 1 |> SELECT EXP(1) AS growth",
+            false,
+            0x4005_bf0a_8b14_5769,
+            2,
+        ),
+        (
+            "FROM facts |> LIMIT 1 |> SELECT EXP(1.0) AS growth",
+            false,
+            0x4005_bf0a_8b14_5769,
+            2,
+        ),
+        (
+            "FROM facts |> LIMIT 1 |> SELECT EXP(-1) AS growth",
+            false,
+            0x3fd7_8b56_362c_ef38,
+            2,
+        ),
+        (
+            "FROM facts |> LIMIT 1 |> SELECT EXP(-1.0) AS growth",
+            false,
+            0x3fd7_8b56_362c_ef38,
+            2,
+        ),
+        (
+            "FROM facts |> AGGREGATE AVG(LN(v)) AS mean_log |> SELECT EXP(mean_log) AS geometric_mean",
+            true,
+            0x4036_2236_2033_bf62,
+            8,
+        ),
+    ] {
+        let prepared = db.prepare(sql).unwrap();
+        let column = prepared.result_column(0).unwrap();
+        assert_eq!(
+            (column.data_type, column.nullable),
+            (DataType::Double, nullable)
+        );
+        let cancel = CancellationToken::new();
+        let mut result = db.execute(&prepared, &cancel).unwrap();
+        let rows = collect(&mut result);
+        let [row] = rows.as_slice() else {
+            panic!("one exponential row")
+        };
+        let [Cell::Number(actual)] = row.as_slice() else {
+            panic!("DOUBLE exponential")
+        };
+        assert!(
+            actual.abs_diff(expected) <= tolerance,
+            "{sql}: {actual:016x}"
+        );
+        drop(result);
+        drop(prepared);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+    for (expression, expected) in [
+        ("EXP(0)", Cell::Number(1.0_f64.to_bits())),
+        ("EXP(-0.0)", Cell::Number(1.0_f64.to_bits())),
+        ("EXP(-1000)", Cell::Number(0)),
+        ("EXP(-9223372036854775808)", Cell::Number(0)),
+        ("EXP(SAFE_DIVIDE(1, 0))", Cell::Null),
+        ("COALESCE(9, EXP(1000))", Cell::Number(9.0_f64.to_bits())),
+        (
+            "COALESCE(EXP(NULLIF(1, 1)), 9)",
+            Cell::Number(9.0_f64.to_bits()),
+        ),
+    ] {
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT 1 |> SELECT {expression} AS growth"),
+            vec![vec![expected]],
+        );
+    }
+    for sql in [
+        "FROM facts |> EXTEND EXP(v*1000) AS unused |> DROP unused |> SELECT v |> ORDER BY v",
+        "FROM facts |> EXTEND EXP(v*1000) AS bad |> WHERE v>0 OR bad>0 |> SELECT v |> ORDER BY v",
+        "FROM facts |> EXTEND EXP(v) AS growth |> WHERE growth>EXP(0) |> SELECT v |> ORDER BY v",
+    ] {
+        query(&db, sql, integers(&[10, 20, 30, 40]));
+    }
+    query(
+        &db,
+        "FROM facts |> EXTEND EXP(v*1000) AS bad |> WHERE v<0 AND bad>0 |> SELECT v",
+        vec![],
+    );
+    query(
+        &db,
+        "FROM facts |> EXTEND SIGN(EXP(v/20)-3) AS scale |> AGGREGATE SUM(v) AS total, COUNT(*) AS n GROUP AND ORDER BY scale",
+        vec![
+            vec![
+                Cell::Number((-1.0_f64).to_bits()),
+                Cell::Integer(30),
+                Cell::Integer(2),
+            ],
+            vec![
+                Cell::Number(1.0_f64.to_bits()),
+                Cell::Integer(70),
+                Cell::Integer(2),
+            ],
+        ],
+    );
+    query(
+        &db,
+        "FROM facts AS l |> LEFT JOIN facts AS r ON l.k=r.k |> SELECT SIGN(EXP(r.v)) AS scale |> DISTINCT |> ORDER BY scale",
+        vec![vec![Cell::Null], vec![Cell::Number(1.0_f64.to_bits())]],
+    );
+    query(
+        &db,
+        "FROM facts |> SELECT EXP(v-v) AS one |> UNION DISTINCT (FROM facts |> SELECT EXP(0) AS one)",
+        vec![vec![Cell::Number(1.0_f64.to_bits())]],
+    );
+    query(
+        &db,
+        "FROM facts |> LIMIT 0 |> AGGREGATE AVG(EXP(v)) AS mean",
+        vec![vec![Cell::Null]],
+    );
+    query(
+        &db,
+        "FROM facts |> LIMIT 0 |> AGGREGATE AVG(LN(v)) AS mean_log |> SELECT EXP(mean_log) AS geometric_mean",
+        vec![vec![Cell::Null]],
+    );
+    failure(
+        &db,
+        "FROM facts |> SELECT EXP(v*9223372036854775807) AS bad",
+        "multiplication",
+        "EXP(v*9223372036854775807)",
+    );
+    for expression in [
+        "EXP()",
+        "EXP(1, 2)",
+        "EXP(, 1)",
+        "EXP(1, )",
+        "EXP('x')",
+        "EXP(DATE '1970-01-01')",
+        "EXP(NULL)",
+        "EXP(missing)",
+        "DIV(EXP(0), 1)",
+        "MOD(1, EXP(0))",
+        "EXP2(1)",
+        "EXPM1(1)",
+    ] {
+        assert!(
+            db.prepare(&format!("FROM facts |> SELECT {expression}"))
+                .is_err(),
+            "{expression}"
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    assert!(db.prepare("FROM facts |> LIMIT EXP(0)").is_err());
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+}
+
+#[test]
+fn public_exp_owns_demanded_overflow_spans() {
+    let (_directory, db) = join_fixture();
+    let baseline = db.reserved_memory_bytes();
+    let sql = "FROM facts |> WHERE v>EXP(1000)";
+    let error = db.prepare(sql).err().expect("constant predicate overflow");
+    let Error::ArithmeticOverflow { operation, span } = error else {
+        panic!("overflow")
+    };
+    assert_eq!(operation, "exponentiation");
+    assert_eq!(&sql[span.start()..span.end()], "EXP(1000)");
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    for expression in [
+        "EXP(1000)",
+        "EXP(v*1000)",
+        "SUM(EXP(v*1000))",
+        "EXP(9223372036854775807)",
+        "SAFE_DIVIDE(EXP(v*1000), 0)",
+        "SAFE_DIVIDE(1, EXP(v*1000))",
+        "COALESCE(SAFE_DIVIDE(1, 0), EXP(v*1000))",
+    ] {
+        let stage = if expression.starts_with("SUM(") {
+            "AGGREGATE"
+        } else {
+            "SELECT"
+        };
+        let sql = format!("# 雪\nFROM facts |> {stage} {expression} AS growth");
+        let start = sql.find(expression).unwrap();
+        let end = start + expression.len();
+        let prepared = db.prepare(&sql).unwrap();
+        drop(sql);
+        let cancel = CancellationToken::new();
+        let mut result = db.execute(&prepared, &cancel).unwrap();
+        let mut failed = false;
+        for _ in 0..100_000 {
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Failed(Error::ArithmeticOverflow { operation, span }) => {
+                    assert_eq!(*operation, "exponentiation");
+                    assert_eq!((span.start(), span.end()), (start, end));
+                    failed = true;
+                    break;
+                }
+                _ => panic!("missing EXP overflow"),
+            }
+        }
+        assert!(failed);
+        assert!(matches!(
+            result.step(),
+            QueryStep::Failed(Error::ArithmeticOverflow { .. })
+        ));
+        let error = result.into_error().unwrap();
+        drop(prepared);
+        let Error::ArithmeticOverflow { operation, span } = error else {
+            panic!("owned overflow")
+        };
+        assert_eq!(operation, "exponentiation");
         assert_eq!((span.start(), span.end()), (start, end));
         assert_eq!(db.reserved_memory_bytes(), baseline);
         assert_eq!(db.reserved_temp_bytes(), 0);

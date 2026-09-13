@@ -124,6 +124,7 @@ pub(super) enum ParsedOp {
     Round,
     Sqrt,
     Ln,
+    Exp,
 }
 
 #[derive(Clone, Copy)]
@@ -188,6 +189,7 @@ enum PendingOp {
     Round,
     Sqrt,
     Ln,
+    Exp,
     Unary,
     Binary(Kind),
 }
@@ -204,7 +206,8 @@ impl PendingOp {
             | Self::Ceil
             | Self::Round
             | Self::Sqrt
-            | Self::Ln => 0,
+            | Self::Ln
+            | Self::Exp => 0,
             Self::Binary(Kind::Star | Kind::Slash) => 2,
             Self::Binary(_) => 1,
             Self::Unary => 3,
@@ -640,6 +643,7 @@ impl Parser<'_> {
                             || self.is_word("ROUND")
                             || self.is_word("SQRT")
                             || self.is_word("LN")
+                            || self.is_word("EXP")
                             || self.is_word("MOD")
                             || self.is_word("DIV"))
                             && self
@@ -666,6 +670,8 @@ impl Parser<'_> {
                             PendingOp::Floor
                         } else if self.is_word("CEIL") || self.is_word("CEILING") {
                             PendingOp::Ceil
+                        } else if self.is_word("EXP") {
+                            PendingOp::Exp
                         } else if self.is_word("LN") {
                             PendingOp::Ln
                         } else if self.is_word("SQRT") {
@@ -787,6 +793,7 @@ impl Parser<'_> {
                         PendingOp::Round => expression.push(ParsedOp::Round, at)?,
                         PendingOp::Sqrt => expression.push(ParsedOp::Sqrt, at)?,
                         PendingOp::Ln => expression.push(ParsedOp::Ln, at)?,
+                        PendingOp::Exp => expression.push(ParsedOp::Exp, at)?,
                         PendingOp::Paren => (),
                         _ => unreachable!("scalar parenthesis boundary"),
                     }

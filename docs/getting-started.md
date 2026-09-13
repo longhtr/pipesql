@@ -284,6 +284,34 @@ result through the ordinary aggregate path. The
 [language contract](language.md#current-public-query-manifest) owns exceptional
 values and precision limits; this example's decimal output is approximate.
 
+## Compute a geometric mean
+
+Run [examples/geometric_mean.sql](../examples/geometric_mean.sql) against the same
+sales database to express the logarithmic average in the original units:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/geometric_mean.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+Require successful exit and `status=queried`, with one nullable DOUBLE row
+approximately equal to 10. The geometric mean of 5, 10 and 20 is the cube root
+of their product, 1,000. Averaging logarithms and then applying EXP computes the
+same mathematical quantity without forming that product. This is useful when
+multiplicative changes matter. The filter selects positive amounts; NULL amounts
+do not contribute. An empty positive input produces NULL.
+
+The final pipe stage consumes AVG's nullable DOUBLE result and evaluates EXP
+through the same [scalar program](../src/scalar.rs) and
+[demand cursor](../src/scalar/evaluation.rs) as other numeric expressions. The
+kernel handles zeros and infinities explicitly, preserves input NaN bits, and
+reports overflow created by finite inputs. It retains representable subnormals
+and permits underflow to zero. The [language contract](language.md#current-public-query-manifest)
+owns these rules and the approximate precision limits; the composed answer can
+vary slightly from 10.
+
 ## Combine pipeline results
 
 Run [examples/union.sql](../examples/union.sql) against the same database:

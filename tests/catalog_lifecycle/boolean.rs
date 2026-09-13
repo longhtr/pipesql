@@ -312,11 +312,11 @@ fn check_boolean_scan_scratch(small_stack: bool) {
                     assert_eq!(charges[1] - charges[0], rows * 5 + 2 * 4096);
                     assert_eq!(charges[2], charges[1]);
                 }
-                // Exercise native logarithm evaluation inside the observed
+                // Exercise native logarithm and exponential evaluation in the observed
                 // thread, including a computed Boolean dependency and aggregate.
                 query(
                     &db,
-                    "FROM facts |> SELECT id, LN(id+1) AS logarithm |> WHERE id=0 OR logarithm>0 |> AGGREGATE COUNT(logarithm) AS n",
+                    "FROM facts |> SELECT id, EXP(LN(id+1)) AS growth |> WHERE id=0 OR growth>0 |> AGGREGATE COUNT(growth) AS n",
                     integers(&[4]),
                 );
                 let source = format!(
