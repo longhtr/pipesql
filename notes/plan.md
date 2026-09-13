@@ -44,6 +44,26 @@ Comma spacing is preserved. Verification used at most two Cargo jobs and one
 Docker CPU/build job; resource monitoring observed normal/warning pressure.
 Publication and the broader qualifications below remain unresolved.
 
+## Active: numeric rounding for analytical buckets
+
+FLOOR and CEIL let queries round measurements into analytical buckets using the
+existing scalar program. Confirm CEILING as an alias before accepting it.
+
+1. Pin numeric argument/result typing, INT64 conversion, NULL, signed zero,
+   NaN/infinity and boundaries at the existing immutable GoogleSQL reference.
+   Timebox semantic research to 30 minutes; keep uncertain forms unsupported.
+2. Implement the confirmed profile through existing unary parser, validation and
+   row/batch execution. Retain demand, spans, bounds and admission; add independent
+   scalar/public outcomes and relevant shared cancellation, replay and failure
+   coverage without new runtime owners or a generic expression framework.
+3. Add one runnable rounding example and affected navigation/contracts. Verify
+   focused behavior and matching frozen macOS/GNU/Linux full gates, reconcile
+   discovery and inputs, retain concise evidence, clean owned outputs and commit.
+
+Monitor resources with at most two Cargo jobs and one Docker CPU/build job.
+Compile examples after both platform Rust test stages. Publication and broader
+qualification restrictions remain unchanged.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
