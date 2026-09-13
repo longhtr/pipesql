@@ -90,19 +90,28 @@ fn joins_compose_with_further_joins_filters_and_aggregation() {
 
 #[test]
 fn joins_keep_one_snapshot_across_appends_threads_and_reopen() {
-    check_join_snapshots(false);
+    for left_join in [false, true] {
+        check_join_snapshots(false, left_join);
+    }
 }
 
 #[test]
 fn join_snapshots_fit_reported_stack_allowance() {
-    check_join_snapshots(true);
+    for left_join in [false, true] {
+        check_join_snapshots(true, left_join);
+    }
 }
 
-fn check_join_snapshots(small_stack: bool) {
+fn check_join_snapshots(small_stack: bool, left_join: bool) {
     let (directory, db) = join_fixture();
     let baseline = db.reserved_memory_bytes();
     let cancel = CancellationToken::new();
-    let sql = "FROM facts AS f |> JOIN dimensions AS d ON f.k = d.k |> AGGREGATE COUNT(*) AS n";
+    let sql = if left_join {
+        "FROM facts AS f |> LEFT JOIN dimensions AS d ON f.k=d.k |> AGGREGATE COUNT(*) AS n"
+    } else {
+        "FROM facts AS f |> JOIN dimensions AS d ON f.k=d.k |> AGGREGATE COUNT(*) AS n"
+    };
+    let [old_rows, middle_rows, fresh_rows] = if left_join { [6, 8, 11] } else { [5, 7, 10] };
     let old = db.prepare(sql).unwrap();
     let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
     let (resume_tx, resume_rx) = std::sync::mpsc::sync_channel(1);
@@ -123,7 +132,7 @@ fn check_join_snapshots(small_stack: bool) {
                 assert!(matches!(result.step(), QueryStep::Progress));
                 ready_tx.send(()).unwrap();
                 resume_rx.recv_timeout(timeout).unwrap();
-                assert_eq!(collect(&mut result), vec![vec![Cell::Integer(5)]]);
+                assert_eq!(collect(&mut result), vec![vec![Cell::Integer(old_rows)]]);
             })
             .unwrap();
         ready_rx.recv_timeout(timeout).unwrap();
@@ -168,12 +177,12 @@ fn check_join_snapshots(small_stack: bool) {
         worker.join().unwrap();
         assert_eq!(
             collect(&mut db.execute(&middle, &cancel).unwrap()),
-            vec![vec![Cell::Integer(7)]]
+            vec![vec![Cell::Integer(middle_rows)]]
         );
         let fresh = db.prepare(sql).unwrap();
         assert_eq!(
             collect(&mut db.execute(&fresh, &cancel).unwrap()),
-            vec![vec![Cell::Integer(10)]]
+            vec![vec![Cell::Integer(fresh_rows)]]
         );
     });
     drop(old);
@@ -185,7 +194,7 @@ fn check_join_snapshots(small_stack: bool) {
     let fresh = db.prepare(sql).unwrap();
     assert_eq!(
         collect(&mut db.execute(&fresh, &cancel).unwrap()),
-        vec![vec![Cell::Integer(10)]]
+        vec![vec![Cell::Integer(fresh_rows)]]
     );
     drop(fresh);
     db.close().unwrap();
@@ -439,4 +448,67 @@ fn left_join_empty_inputs_and_post_join_filters() {
         "FROM facts AS f |> LEFT JOIN dimensions AS d ON f.k=d.k |> AGGREGATE COUNT(*) AS n, COUNT(d.label) AS matches, SUM(f.v) AS total",
         vec![vec![Cell::Integer(6), Cell::Integer(5), Cell::Integer(130)]],
     );
+}
+
+#[test]
+fn left_join_nested_producers_preserve_nulls_and_expression_demand() {
+    assert_query_rows(
+        "FROM facts AS f |> LEFT JOIN dimensions AS d ON f.k=d.k |> LEFT JOIN facts AS g ON d.k=g.k |> AGGREGATE COUNT(*) AS n, COUNT(g.v) AS present, SUM(f.v) AS total",
+        vec![vec![
+            Cell::Integer(10),
+            Cell::Integer(9),
+            Cell::Integer(190),
+        ]],
+    );
+    assert_query_rows(
+        "FROM facts AS f |> LEFT JOIN (FROM dimensions AS d |> LEFT JOIN facts AS g ON d.k=g.k |> SELECT d.k, g.v) AS r ON f.k=r.k |> AGGREGATE COUNT(*) AS n, SUM(r.v+1) AS total",
+        vec![vec![Cell::Integer(10), Cell::Integer(159)]],
+    );
+    assert_query_rows(
+        "FROM facts AS f |> LEFT JOIN (FROM facts |> AGGREGATE SUM(v+9223372036854775807) AS unused GROUP BY k) AS r ON f.k=r.k |> SELECT f.v",
+        [10, 20, 30, 40].map(|v| vec![Cell::Integer(v)]).to_vec(),
+    );
+    assert_query_rows(
+        "FROM facts AS f |> WHERE f.k IS NULL |> LEFT JOIN facts AS r ON f.k=r.k |> SELECT r.v/0 AS missing",
+        vec![vec![Cell::Null]],
+    );
+
+    let (_directory, db) = join_fixture();
+    let baseline = db.reserved_memory_bytes();
+    let cancel = CancellationToken::new();
+    let sql = "FROM facts AS f |> LEFT JOIN (FROM facts |> AGGREGATE SUM(v+9223372036854775807) AS demanded GROUP BY k) AS r ON f.k=r.k |> AGGREGATE COUNT(r.demanded) AS n";
+    let query = db.prepare(sql).unwrap();
+    let mut result = db.execute(&query, &cancel).unwrap();
+    let mut failed = false;
+    for _ in 0..4096 {
+        match result.step() {
+            QueryStep::Progress => (),
+            QueryStep::Failed(Error::ArithmeticOverflow { span, .. }) => {
+                assert_eq!(&sql[span.start()..span.end()], "SUM(v+9223372036854775807)");
+                failed = true;
+                break;
+            }
+            _ => panic!("demanded argument must fail before output"),
+        }
+    }
+    assert!(failed);
+    assert!(matches!(
+        result.step(),
+        QueryStep::Failed(Error::ArithmeticOverflow { .. })
+    ));
+    drop(result);
+    drop(query);
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    let healthy = db
+        .prepare(
+            "FROM facts AS f |> LEFT JOIN dimensions AS d ON f.k=d.k |> AGGREGATE COUNT(*) AS n",
+        )
+        .unwrap();
+    assert_eq!(
+        collect(&mut db.execute(&healthy, &cancel).unwrap()),
+        vec![vec![Cell::Integer(6)]]
+    );
+    drop(healthy);
+    assert_eq!(db.reserved_memory_bytes(), baseline);
 }

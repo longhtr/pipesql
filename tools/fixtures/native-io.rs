@@ -26,11 +26,13 @@ fn consume(mut rows: QueryResult<'_, '_>) -> Result<(), Error> {
 }
 fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
     let sql = if derived {
-        "FROM (FROM facts |> WHERE category IS NULL OR category >= 'A' |> AGGREGATE SUM(n) AS total GROUP BY k) AS a |> JOIN (FROM facts |> AGGREGATE SUM(n) AS total GROUP BY k) AS b ON a.k = b.k |> EXTEND COUNT(*) OVER () AS partition_rows |> WHERE partition_rows=2 |> AGGREGATE AVG(a.total+b.total) AS mean"
+        "FROM (FROM facts |> WHERE category IS NULL OR category >= 'A' |> AGGREGATE SUM(n) AS total GROUP BY k) AS a |> LEFT JOIN (FROM facts |> WHERE k=1 |> AGGREGATE SUM(n) AS total GROUP BY k) AS b ON a.k = b.k |> EXTEND COUNT(*) OVER () AS partition_rows |> WHERE partition_rows=2 |> AGGREGATE AVG(a.total+b.total) AS mean"
     } else {
         "FROM facts |> AGGREGATE SUM(n) AS total GROUP BY k |> AGGREGATE SUM(total) AS subtotal GROUP BY total |> AGGREGATE AVG(subtotal) AS mean"
     };
-    let queries = std::iter::once((sql, Value::Double(if derived { 120.0 } else { 60.0 })))
+    // The derived join retains two groups. Only key 1 contributes 30 + 30
+    // to AVG; key 2 has a NULL right total and is skipped by AVG.
+    let queries = std::iter::once((sql, Value::Double(60.0)))
         .chain(derived.then_some((
             "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(DIV(MOD(n, 4), 2)) AS total",
             Value::Int64(3),

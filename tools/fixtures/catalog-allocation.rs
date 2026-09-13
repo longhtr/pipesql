@@ -249,7 +249,7 @@ fn consume_rows(
 
 const ORDERED: &str =
     "FROM facts |> ORDER BY note DESC NULLS FIRST |> SELECT note, amount |> LIMIT 4";
-const DERIVED_JOIN: &str = "FROM (FROM facts |> WHERE note IN ('first 雪', 'absent', NULL) |> EXTEND 'branch 雪' AS tag, DATE '1970-01-02' AS day |> WHERE tag = 'branch 雪' AND day = DATE '1970-01-02' |> SELECT amount) AS a |> JOIN (FROM facts |> SELECT amount) AS b ON a.amount = b.amount |> AGGREGATE COUNT(*) AS n";
+const DERIVED_JOIN: &str = "FROM (FROM facts |> WHERE note IS NULL OR note IN ('first 雪', 'absent', NULL) |> EXTEND 'branch 雪' AS tag, DATE '1970-01-02' AS day |> WHERE tag = 'branch 雪' AND day = DATE '1970-01-02' |> SELECT amount) AS a |> LEFT JOIN (FROM facts |> WHERE note IS NULL |> SELECT amount) AS b ON a.amount = b.amount |> AGGREGATE COUNT(*) AS n";
 const JOINED_ORDER: &str = "FROM facts AS a |> JOIN facts AS b ON a.amount = b.amount |> ORDER BY a.amount DESC |> LIMIT 8 |> AGGREGATE COUNT(*) AS n";
 fn consume_count(mut result: QueryResult<'_, '_>, expected: usize) -> Result<(), Error> {
     let mut rows = 0;
@@ -457,7 +457,8 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
             phase = "derived-execute";
             let result = db.execute(&derived, &cancel)?;
             phase = "derived-step";
-            consume_count(result, 2)?;
+            // Two MAX amounts match twice each; the first named row has no match.
+            consume_count(result, 5)?;
             drop(derived);
             phase = "union-prepare";
             let union = db.prepare(UNION)?;

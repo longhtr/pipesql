@@ -145,8 +145,12 @@ observations.
 The catalog allocation campaign includes analytic count followed by ordering and
 aggregation, with an independent total of 16 for its four-row input. A separate
 count-only query retains the same total and exercises the counter's allocations. The native
-I/O composition campaign also consumes analytic count after a join; its existing
-result oracle checks the complete aggregate. It also checks a DIV/MOD total of
+I/O composition campaign also consumes analytic count after a LEFT JOIN. Its
+right input retains only key 1, so two left groups survive but only the matched
+group contributes to AVG; the expected result is 60. The catalog allocation
+campaign's derived LEFT JOIN retains four matching pairs and one unmatched row,
+with an expected count of five. The separate inner-join ordering query retains
+its eight-pair check. It also checks a DIV/MOD total of
 three over three count-only rows and an ABS/division aggregate of 4.5. Catalog allocation phases
 separately prepare, execute and consume a nullable division/filter query with
 count two after ABS of the negated ratio and an exact oddness check on INT64

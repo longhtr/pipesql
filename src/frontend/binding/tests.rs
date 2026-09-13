@@ -44,6 +44,20 @@ fn derived_scope_preparation_admits_exact_peak_and_releases_it() {
 }
 
 #[test]
+fn left_join_scope_preparation_admits_exact_peak_and_releases_it() {
+    check_scope_preparation(
+        "FROM facts AS a |> LEFT JOIN (FROM facts AS b |> LEFT JOIN (FROM facts |> SELECT k, n) AS c ON b.k=c.k |> SELECT b.k, c.n) AS d ON a.k=d.k |> SELECT a.n, d.n",
+    );
+    let mut widest_chain = String::from("FROM facts AS a");
+    for index in 0..8 {
+        widest_chain.push_str(&format!(
+            " |> LEFT JOIN facts AS b{index} ON a.k=b{index}.k"
+        ));
+    }
+    check_scope_preparation(&widest_chain);
+}
+
+#[test]
 fn wide_constant_preparation_admits_exact_peak_and_releases_it() {
     let (_directory, db) = database(4_000_000);
     let resident = db.reserved_memory_bytes();

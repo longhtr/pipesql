@@ -32,6 +32,24 @@ fn pairs<'a>(left: &'a [Row], right: &'a [Row]) -> Vec<(&'a Row, &'a Row)> {
     result
 }
 
+// Enumerate pairs directly. This model has no sort order, bookmarks or engine
+// equality helpers; an absent right row is represented by two NULL fields.
+fn left_pairs(left: &[Row], right: &[Row]) -> Vec<(Row, Row)> {
+    let mut result = Vec::new();
+    for l in left {
+        let before = result.len();
+        for r in right {
+            if l.0.is_some() && l.0 == r.0 {
+                result.push((*l, *r));
+            }
+        }
+        if result.len() == before {
+            result.push((*l, (None, None)));
+        }
+    }
+    result
+}
+
 fn append(db: &Database, name: &str, rows: &[Row]) {
     let cancel = CancellationToken::new();
     db.declare_table(
@@ -144,6 +162,57 @@ fn generated_join_compositions_match_independent_multisets() {
                     let context = format!(
                         "keys={keys}, null_keys={null_keys}, null_values={null_values}, left={left}"
                     );
+                    let outer = left_pairs(l, r);
+                    let expected = outer
+                        .iter()
+                        .map(|(l, r)| vec![cell(r.1), cell(l.1), cell(r.0)])
+                        .collect::<Vec<_>>();
+                    for sql in [
+                        format!(
+                            "FROM {left} AS l |> LEFT JOIN {right} AS r ON l.k=r.k |> SELECT r.v, l.v, r.k"
+                        ),
+                        format!(
+                            "FROM {left} AS l |> LEFT OUTER JOIN (FROM {right} |> SELECT v, k) AS r ON r.k=l.k |> SELECT r.v, l.v, r.k"
+                        ),
+                    ] {
+                        check(&db, &sql, expected.clone(), &context);
+                        cases += 1;
+                    }
+                    check(
+                        &db,
+                        &format!(
+                            "FROM {left} AS l |> LEFT JOIN {right} AS r ON l.k=r.k |> WHERE r.k IS NULL |> SELECT l.v"
+                        ),
+                        outer
+                            .iter()
+                            .filter(|(_, r)| r.0.is_none())
+                            .map(|(l, _)| vec![cell(l.1)])
+                            .collect(),
+                        &context,
+                    );
+                    cases += 1;
+                    let mut outer_groups: BTreeMap<Option<i64>, Vec<Option<i64>>> = BTreeMap::new();
+                    for (l, r) in &outer {
+                        outer_groups.entry(r.0).or_default().push(l.1);
+                    }
+                    check(
+                        &db,
+                        &format!(
+                            "FROM {left} AS l |> LEFT JOIN {right} AS r ON l.k=r.k |> AGGREGATE SUM(l.v) AS total, COUNT(*) AS n GROUP BY r.k"
+                        ),
+                        outer_groups
+                            .iter()
+                            .map(|(key, values)| {
+                                vec![
+                                    cell(*key),
+                                    sum(values.iter().copied()),
+                                    Cell::Integer(values.len() as i64),
+                                ]
+                            })
+                            .collect(),
+                        &context,
+                    );
+                    cases += 1;
                     let joined = pairs(l, r);
                     observed_empty |= joined.is_empty();
                     observed_full_product |= joined.len() == 64;
@@ -252,7 +321,7 @@ fn generated_join_compositions_match_independent_multisets() {
             }
         }
     }
-    assert_eq!(cases, 432);
+    assert_eq!(cases, 648);
     assert!(observed_empty && observed_full_product && observed_nonempty_null_sum);
 }
 

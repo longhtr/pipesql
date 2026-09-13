@@ -81,15 +81,26 @@ mutations reject, alongside their healthy controls. An earlier debug all-join
 run aborted at the small-stack test; it is not passing evidence. Its owned
 outputs were removed, and the documented release selection passed.
 
-Remaining implementation and verification work is finite:
-- Extend independent composition cases, repeated/derived producers, demanded
-  errors, preparation admission and snapshot/replay scenarios to LEFT JOIN.
-- Include LEFT JOIN in public allocation-refusal and native failure campaigns,
-  preserving their existing controls and verifying actual selection.
-- Verify the fact/dimension example on GNU/Linux and its CLI query from fresh paths;
-  reconcile test/tool maps and review code, contracts and failure cleanup.
-- Run both complete matching frozen platform gates, audit manifests/discovery,
-  retain concise evidence, remove owned outputs and commit the final milestone.
+The independent join corpus now passes 648 compositions, including left joins
+with nullable keys/payloads, derived inputs, post-join filtering and grouping.
+Eleven public join tests pass with nested/repeated nullable producers, demanded
+aggregate errors and exact call spans, unused-expression suppression, and
+inner/left snapshot checks on ordinary and bounded stacks. Forced grouping
+fallback confirms LEFT JOIN replays its retained sorters. Nested and eight-join
+preparation chains pass exact/one-byte-short admission with complete release.
+
+The catalog allocation controls observe 985 allocations at both pathname
+lengths. The derived LEFT JOIN checks four matching pairs plus one unmatched
+row; the separate inner-join ordering control remains. The focused native I/O
+campaign passes all 340 cells with both matched and unmatched groups and its
+healthy-reuse checks. Controls alone do not prove an allocation refusal sweep.
+
+Remaining work is finite:
+- Verify the fact/dimension example on GNU/Linux and its CLI query from fresh paths.
+- Run both complete matching frozen platform gates, including every allocation
+  refusal prefix and applicable native/interruption campaign.
+- Audit manifests and discovery, retain concise evidence, remove owned outputs,
+  review the final diff and commit the completed milestone locally.
 
 The macOS development release run passed 575 ordinary Rust tests and the
 selected lease subprocess; Clippy passed with warnings denied. The new
