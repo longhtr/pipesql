@@ -238,6 +238,8 @@ pub(crate) enum Comparison {
     NotEqual,
     GreaterEqual,
     Greater,
+    IsDistinct,
+    IsNotDistinct,
 }
 
 impl Comparison {
@@ -245,8 +247,8 @@ impl Comparison {
         match self {
             Self::Less => order.is_lt(),
             Self::LessEqual => !order.is_gt(),
-            Self::Equal => order.is_eq(),
-            Self::NotEqual => !order.is_eq(),
+            Self::Equal | Self::IsNotDistinct => order.is_eq(),
+            Self::NotEqual | Self::IsDistinct => !order.is_eq(),
             Self::GreaterEqual => !order.is_lt(),
             Self::Greater => order.is_gt(),
         }
@@ -260,6 +262,8 @@ impl Comparison {
             Self::NotEqual => left != right,
             Self::GreaterEqual => left >= right,
             Self::Greater => left > right,
+            Self::IsDistinct => left != right && !(left.is_nan() && right.is_nan()),
+            Self::IsNotDistinct => left == right || (left.is_nan() && right.is_nan()),
         }
     }
 }
@@ -310,7 +314,11 @@ impl Predicate {
                 literal,
             } => {
                 literal.valid_for(data_type)
-                    && (literal != FilterLiteral::Null || comparison == Comparison::Equal)
+                    && (literal != FilterLiteral::Null
+                        || matches!(
+                            comparison,
+                            Comparison::Equal | Comparison::IsDistinct | Comparison::IsNotDistinct
+                        ))
             }
             Self::IsNull { .. } => true,
         }

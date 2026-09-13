@@ -44,6 +44,9 @@ mod multiset;
 #[path = "catalog_lifecycle/null_predicate.rs"]
 mod null_predicate;
 
+#[path = "catalog_lifecycle/null_safe.rs"]
+mod null_safe;
+
 #[path = "catalog_lifecycle/nullif.rs"]
 mod nullif;
 

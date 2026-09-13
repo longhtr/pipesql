@@ -35,11 +35,18 @@ impl PhysicalFilter<'_> {
                 literal,
             } => (comparison, literal),
         };
-        if value == Value::Null
-            || matches!(literal, FilterLiteral::Null | FilterLiteral::NullDouble)
-        {
-            return Ok(false);
-        } // UNKNOWN matches neither requested truth.
+        let value_null = matches!(value, Value::Null);
+        let literal_null = matches!(literal, FilterLiteral::Null | FilterLiteral::NullDouble);
+        if value_null || literal_null {
+            // Null-safe comparisons have a Boolean result even here. Ordinary
+            // UNKNOWN still matches neither truth requested by the branch.
+            let distinct = value_null != literal_null;
+            return Ok(match comparison {
+                Comparison::IsDistinct => distinct != self.control.negated,
+                Comparison::IsNotDistinct => !distinct != self.control.negated,
+                _ => false,
+            });
+        }
         Ok(match (value, literal) {
             (Value::Double(value), FilterLiteral::Double(bits)) => {
                 comparison.test(value, f64::from_bits(*bits))
@@ -98,5 +105,57 @@ impl BranchScratch {
             next: allocate(rows, rows, "scan branch cursors", admitted)?,
             selected: allocate(rows, rows, "scan branch selection", admitted)?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn null_safe_truth_tables_preserve_nan_zero_and_unknown_negation() {
+        let nan = f64::from_bits(0x7ff8_0000_0000_0042);
+        for (left, right, distinct) in [
+            (nan, f64::NAN, false),
+            (nan, 0.0, true),
+            (0.0, nan, true),
+            (-0.0, 0.0, false),
+            (f64::INFINITY, f64::INFINITY, false),
+            (f64::NEG_INFINITY, f64::INFINITY, true),
+            (1.0, 2.0, true),
+        ] {
+            assert_eq!(Comparison::IsDistinct.test(left, right), distinct);
+            assert_eq!(Comparison::IsNotDistinct.test(left, right), !distinct);
+        }
+        for (value, literal, distinct) in [
+            (Value::Null, FilterLiteral::Null, false),
+            (Value::Null, FilterLiteral::Int64(0), true),
+            (Value::Int64(0), FilterLiteral::Null, true),
+            (Value::Null, FilterLiteral::NullDouble, false),
+            (Value::Int64(0), FilterLiteral::NullDouble, true),
+        ] {
+            for negated in [false, true] {
+                for (comparison, expected) in [
+                    (Comparison::IsDistinct, distinct != negated),
+                    (Comparison::IsNotDistinct, !distinct != negated),
+                    (Comparison::Equal, false),
+                    (Comparison::NotEqual, false),
+                ] {
+                    let predicate = Predicate::Compare {
+                        comparison,
+                        literal,
+                    };
+                    let filter = PhysicalFilter {
+                        predicate: &predicate,
+                        control: FilterControl {
+                            negated,
+                            ..FilterControl::LINEAR
+                        },
+                        ..PhysicalFilter::EMPTY
+                    };
+                    assert_eq!(filter.matches(value).unwrap(), expected);
+                }
+            }
+        }
     }
 }

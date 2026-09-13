@@ -13,9 +13,9 @@ impl Drop for Directory {
 }
 
 #[test]
-fn membership_literals_and_decisions_match_the_semantic_plan() {
+fn literal_predicates_and_decisions_match_the_semantic_plan() {
     let directory = Directory(std::env::temp_dir().join(format!(
-        "pipesql-physical-membership-{}",
+        "pipesql-physical-predicates-{}",
         std::process::id()
     )));
     let db = Database::create_empty(
@@ -33,26 +33,31 @@ fn membership_literals_and_decisions_match_the_semantic_plan() {
         &CancellationToken::new(),
     )
     .unwrap();
-    let query = db
-        .prepare("FROM facts |> WHERE NOT a IN (1, NULL, 3)")
-        .unwrap();
-    for mutation in 0..5 {
-        let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
-        let pipeline = &mut plan.pipelines[0];
-        assert_eq!(pipeline.filter_count, 3);
-        match mutation {
-            0 => (),
-            1 => pipeline.filters[1].predicate = &frontend::Predicate::IsNull { negated: false },
-            2 => pipeline.filters[1].control.negated = false,
-            3 => pipeline.filters[0].control.matched = 0,
-            4 => pipeline.filter_count = 2,
-            _ => unreachable!(),
+    for sql in [
+        "FROM facts |> WHERE NOT a IN (1, NULL, 3)",
+        "FROM facts |> WHERE NOT (a IS DISTINCT FROM 1 OR a IS NOT DISTINCT FROM NULL OR a IS DISTINCT FROM 3)",
+    ] {
+        let query = db.prepare(sql).unwrap();
+        for mutation in 0..5 {
+            let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
+            let pipeline = &mut plan.pipelines[0];
+            assert_eq!(pipeline.filter_count, 3);
+            match mutation {
+                0 => (),
+                1 => {
+                    pipeline.filters[1].predicate = &frontend::Predicate::IsNull { negated: false }
+                }
+                2 => pipeline.filters[1].control.negated = false,
+                3 => pipeline.filters[0].control.matched = 0,
+                4 => pipeline.filter_count = 2,
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                validate_physical(&plan, &query, &db, RootState::Empty, 0).is_ok(),
+                mutation == 0,
+                "predicate mutation {mutation}: {sql}"
+            );
         }
-        assert_eq!(
-            validate_physical(&plan, &query, &db, RootState::Empty, 0).is_ok(),
-            mutation == 0,
-            "membership mutation {mutation}"
-        );
     }
 }
 

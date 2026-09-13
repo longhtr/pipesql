@@ -169,6 +169,11 @@ fn check_complete_declared_schema(small_stack: bool) {
                 let mut result = db.execute(&q, &cancel).unwrap();
                 assert_eq!(collect(&mut result), expected);
             }
+            order::query(
+                &db,
+                "FROM wide |> WHERE c60 IS DISTINCT FROM 6001",
+                vec![expected[0].clone(), expected[2].clone()],
+            );
             let q = db
                 .prepare("FROM wide |> WHERE c60 >= 6001 |> SELECT c63 AS last, c60, c61, c62")
                 .unwrap();

@@ -59,6 +59,7 @@ those operations are outside the original stack contract.
 | `order.rs`, `distinct.rs`, `limit.rs` | Materialization, complete-row equality, ordering, and prefix boundaries. |
 | `except.rs` | Complete positional difference, left NULLability, repeated physical slots, nested composition, typed equality, and prepared snapshots. |
 | `intersect.rs` | Complete-row intersection against an independent set oracle, typed NULL/DOUBLE equality and original bits, pinned snapshots, positional names, input NULLability, and shared EXCEPT/INTERSECT demanded-error controls. |
+| `null_safe.rs` | Two-valued column/literal truth tables, typed NULLs, numeric boundaries and stored bits, Boolean demand, composition, literal rejection and prepared snapshots across reopen. Shared null-predicate tests retain demanded errors and spans. |
 | `nullif.rs` | Numeric sentinel normalization, mixed-type NULL coercion, stored NaN/signed-zero bits and prepared snapshots, argument error order, outer demand, grouping, joins and set composition. |
 | `multiset.rs` | Independent complete-row count oracle, unequal multiplicities, typed NULL/DOUBLE classes and left bits, pinned inputs, metadata, nested arguments, joins and aggregation for EXCEPT ALL and INTERSECT ALL. |
 | `union.rs` | Positional ALL/DISTINCT composition, complete-row equality and original typed representatives, snapshot retention, demanded errors, spill/refusal, and cancellation prefixes. |

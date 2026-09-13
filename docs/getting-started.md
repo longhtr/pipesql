@@ -552,6 +552,28 @@ value unless equality is true. An outer COALESCE can supply a default. See the
 [numeric contract](language.md#current-public-query-manifest) for coercion,
 NULLs, NaNs and errors.
 
+## Keep NULL rows when excluding a sentinel
+
+To exclude region 3 and retain facts whose region is unknown, run
+[null-safe-region.sql](../examples/null-safe-region.sql) on the same database:
+
+```sh
+cargo run --release --offline --locked -- query --database "$pipesql_left_join_dir/facts" \
+  --query-file "$PWD/examples/null-safe-region.sql" \
+  --memory-limit-bytes 8000000 --temp-limit-bytes 4000000
+```
+
+The single row is `(110, 4)`: nullable INT64 `total` and required INT64 `nrows`,
+followed by `row_count=1` and `status=queried`. `IS DISTINCT FROM 3` is true for
+NULL, so the unknown region's amount 50 remains. Replace it with `!=3` and the
+result becomes `(60, 3)` because ordinary comparison produces UNKNOWN for NULL.
+
+The [predicate decision](../src/execution/predicate.rs) handles NULL before
+ordinary comparison, then applies the enclosing Boolean negation. It borrows the
+same prepared literal and demands the same column as other filters. The
+[language contract](language.md#current-public-query-manifest) specifies type
+compatibility and the NaN distinction.
+
 ## Reconcile repeated facts
 
 Use the same facts database. Region 1 occurs

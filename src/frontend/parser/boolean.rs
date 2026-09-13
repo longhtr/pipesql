@@ -246,8 +246,31 @@ impl Parser<'_> {
             if negated {
                 self.word("NOT")?;
             }
-            self.word("NULL")?;
-            parsed.push_stage(ParsedStage::WhereNull { column, negated }, span)?;
+            if self.is_word("DISTINCT") {
+                self.word("DISTINCT")?;
+                self.word("FROM")?;
+                let literal = if self.is_word("NULL") {
+                    self.word("NULL")?;
+                    ParsedLiteral::Null
+                } else {
+                    self.comparison_literal(parsed)?
+                };
+                parsed.push_stage(
+                    ParsedStage::Where {
+                        column,
+                        comparison: if negated {
+                            Comparison::IsNotDistinct
+                        } else {
+                            Comparison::IsDistinct
+                        },
+                        literal,
+                    },
+                    span,
+                )?;
+            } else {
+                self.word("NULL")?;
+                parsed.push_stage(ParsedStage::WhereNull { column, negated }, span)?;
+            }
             syntax.leaf(first)
         } else if self.is_word("IN") {
             self.word("IN")?;

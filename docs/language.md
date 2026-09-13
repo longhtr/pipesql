@@ -96,6 +96,7 @@ separate from this query manifest.
 | `WHERE name comparison constant` | Accepts `<`, `<=`, `=`, `!=`, `>=`, `>` over numeric, DATE or STRING columns and compatible constants. |
 | `WHERE name IN (constant, ...)` | Tests membership in a nonempty list of equality-compatible constants, including NULL. Each candidate consumes one normalized stage. See [literal-list membership](#literal-list-membership). |
 | `WHERE name IS [NOT] NULL` | Tests a visible column, including a computed or aggregate output. IS NULL retains NULL values; IS NOT NULL retains non-NULL values, including zero, empty text and NaN. Both tests preserve column demand and input order. |
+| `WHERE name IS [NOT] DISTINCT FROM literal` | Compares a visible column with a compatible constant or NULL. The result is always TRUE or FALSE; NULLs match NULLs, NaNs match NaNs, and signed zeros compare equal. Existing numeric coercion and STRING/DATE literal restrictions apply. |
 | `WHERE` Boolean expression | Comparisons, NULL tests and membership compose with NOT, AND, OR and parentheses. NOT binds above AND, which binds above OR. Each leaf consumes one normalized stage; inclusive BETWEEN consumes two. See the demand rules below. |
 | `AGGREGATE SUM(expression) AS name`, `AVG(expression) AS name`, `COUNT(*) AS name`, `COUNT(expression) AS name`, `MIN(expression) AS name`, `MAX(expression) AS name` | Aggregate stages may repeat; each consumes the preceding relation. All aggregate stages together may introduce at most ten output identities, including grouping keys. Every entry requires an explicit alias. SUM/AVG accept INT64 or DOUBLE expressions. COUNT/MIN/MAX also accept direct STRING/DATE columns. SUM/MIN/MAX preserve the argument type; AVG returns DOUBLE; COUNT returns nonnullable INT64. Other aggregates return nullable results. |
 | `DISTINCT` | Removes duplicate complete rows on declared tables. Preserves output names and shared identities through fresh replacements; clears order. See [equality](#values-null-and-equality). |
@@ -346,13 +347,29 @@ FALSE for every current scalar type; they do not compare against a NULL literal.
 Each test consumes one normalized predicate stage and may appear in a Boolean
 expression. When demanded, it evaluates its referenced column even when semantic
 nullability predicts the Boolean result: demanded arithmetic errors and source
-corruption remain observable. IS TRUE/FALSE/UNKNOWN, IS DISTINCT FROM, Boolean
+corruption remain observable. IS TRUE/FALSE/UNKNOWN, Boolean
 value columns and general scalar Boolean expressions outside WHERE remain
 unsupported. The [NULL predicate
 record](../notes/evidence.md#query-semantics-and-accepted-costs) preserves
 pinned semantics and the independent-oracle boundary for NaN. DOUBLE comparisons
-use IEEE unordered-NaN behavior; both signed zeros compare equal. Empty global
-aggregation produces one row containing NULL SUM/AVG/MIN/MAX and zero COUNT. Empty
+use IEEE unordered-NaN behavior; both signed zeros compare equal.
+
+`name IS [NOT] DISTINCT FROM literal` uses grouping equality instead of ordinary
+comparison UNKNOWN. NULL is distinct from every non-NULL value; two NULLs are not
+distinct. NaNs form one comparison class, and signed zeros compare equal. The
+optional NOT inverts the result, as does an enclosing Boolean NOT. The predicate
+retains existing column demand, literal ownership and one-stage normalization.
+INT64 pairs compare exactly; a DOUBLE operand makes the numeric comparison
+DOUBLE. STRING and DATE retain their existing compatible literal forms. Bare
+NULL works with every supported column type; folded numeric NULL retains its
+numeric type. NaN/infinity literals and column-to-column comparisons remain
+unsupported. These rules follow the pinned
+[null-safe comparison contract](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/operators.md#is_distinct).
+
+For example, `WHERE region IS DISTINCT FROM 3` excludes region 3 while retaining
+NULL regions. `WHERE region != 3` rejects those NULL rows through UNKNOWN.
+
+Empty global aggregation produces one row containing NULL SUM/AVG/MIN/MAX and zero COUNT. Empty
 grouped input produces no rows. SUM preserves the first value's signed zero and
 uses the aggregate exceptional/range rules below; AVG-only state must not
 inherit a discarded SUM's overflow dependency.

@@ -550,6 +550,11 @@ Projection constants share the admitted computed-descriptor allocation with
 numeric expressions. Their values bypass numeric scratch buffers; materialized
 STRING outputs use the batch capacities above. DATE shifts fold during binding
 with the same calendar checks as predicate constants.
+Null-safe column/literal comparisons add comparison variants to the existing
+predicate. They retain one normalized stage, the same owned literal and physical
+borrow, with no new allocation or scratch buffer. Their NULL decision still
+demands the referenced column before evaluating its value.
+
 Boolean controls occupy four bytes per logical leaf; copied physical controls
 belong to pipeline admission. Temporary Boolean syntax arrays are bounded by 160
 tokens and do not survive preparation.

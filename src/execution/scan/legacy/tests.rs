@@ -379,11 +379,46 @@ fn stored_blocks_ownership_and_effect_cuts() {
 }
 
 #[test]
+fn null_safe_legacy_filters_preserve_counts_and_payloads() {
+    let (_fixture, database) = loaded(130);
+    // Four complete cycles of quantities 0..30, followed by 0..5, sum to 1875.
+    // Zero occurs five times. Stored flags are A and dates are 1994-01-01.
+    for (predicate, expected) in [
+        ("l_quantity IS NOT DISTINCT FROM 0.0", (5, 0)),
+        ("l_quantity IS DISTINCT FROM 0.0", (125, 1875)),
+        ("l_quantity IS DISTINCT FROM NULL", (130, 1875)),
+        ("l_quantity IS NOT DISTINCT FROM NULL", (0, 0)),
+        ("l_returnflag IS NOT DISTINCT FROM 'A'", (130, 1875)),
+        ("l_returnflag IS DISTINCT FROM NULL", (130, 1875)),
+        (
+            "l_shipdate IS NOT DISTINCT FROM DATE '1994-01-01'",
+            (130, 1875),
+        ),
+        ("l_shipdate IS NOT DISTINCT FROM NULL", (0, 0)),
+    ] {
+        let query = database
+            .prepare(&format!(
+                "FROM lineitem |> WHERE {predicate} |> SELECT l_quantity"
+            ))
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let mut result = database.execute(&query, &cancel).unwrap();
+        assert_eq!(
+            drain(&mut result, &mut Effects::default()).unwrap(),
+            expected,
+            "{predicate}"
+        );
+    }
+}
+
+#[test]
 fn cancellation_drop_and_empty_progress() {
     let (_fixture, database) = loaded(BLOCK_ROWS + 1);
     for source in [
         SQL,
         "FROM lineitem |> WHERE l_quantity < -1.0 |> SELECT l_extendedprice",
+        "FROM lineitem |> WHERE l_quantity IS DISTINCT FROM NULL |> SELECT l_extendedprice",
+        "FROM lineitem |> WHERE l_quantity IS NOT DISTINCT FROM NULL |> SELECT l_extendedprice",
     ] {
         for after_rows in [false, true] {
             let query = database.prepare(source).unwrap();

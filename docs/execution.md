@@ -282,6 +282,13 @@ returns a Boolean decision. Empty text, zero and NaN are non-NULL. It uses the
 same bounded selection loops and column-demand paths as comparison predicates;
 no nullability-based shortcut skips demanded evaluation or payload validation.
 
+IS DISTINCT FROM and IS NOT DISTINCT FROM reuse the comparison leaf and owned
+literal. The shared decision handles NULL before ordinary comparisons can return
+UNKNOWN. Present numeric values use the existing exact/mixed typing; DOUBLE
+comparison also treats two NaNs as equal. Ordered values reuse their equality
+comparison. Both the legacy scan kernels and general row producers apply the
+same comparison and enclosing Boolean negation, without a new branch buffer.
+
 Boolean filters use validated forward decisions over the same leaf kernels. Row
 producers share the lazy `RowValues::retains` interpreter. A linear AND scan
 keeps its existing selection path. A branching scan adds one next-decision byte

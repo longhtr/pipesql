@@ -452,6 +452,57 @@ fn boolean_controls_preserve_scope_bounds_and_finite_paths() {
 }
 
 #[test]
+fn null_safe_predicates_preserve_types_validation_and_admission() {
+    let (_temp, db) = database(2_000_000);
+    for keyword in ["IS DISTINCT FROM", "IS NOT DISTINCT FROM"] {
+        let sql = format!("FROM lineitem |> SELECT l_quantity |> WHERE l_quantity {keyword} NULL");
+        for mutation in 0..6 {
+            let mut query = db.prepare(&sql).unwrap();
+            let Stage::Where(filter) = &mut query.plan.stages[1].stage else {
+                unreachable!()
+            };
+            match mutation {
+                0 => (),
+                1 => filter.column = SourceColumn::PRICE.identity,
+                2 => filter.span = ZERO_SPAN,
+                3 | 4 => {
+                    let Predicate::Compare { literal, .. } = &mut filter.predicate else {
+                        unreachable!()
+                    };
+                    *literal = if mutation == 3 {
+                        FilterLiteral::Double(f64::NAN.to_bits())
+                    } else {
+                        FilterLiteral::Int64(1) // DOUBLE inputs require a coerced literal.
+                    };
+                }
+                5 => filter.control.end = 0,
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                validate(&query.plan).is_ok(),
+                mutation == 0,
+                "{keyword}: mutation {mutation}"
+            );
+        }
+        let repeated = format!(
+            "FROM lineitem{}",
+            format!(" |> WHERE l_quantity {keyword} 0").repeat(MAX_STAGES)
+        );
+        db.prepare(&repeated).unwrap();
+        assert!(
+            db.prepare(&(repeated + " |> WHERE l_quantity IS NULL"))
+                .is_err()
+        );
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k, n |> WHERE n IS DISTINCT FROM NULL |> AGGREGATE SUM(n) AS total GROUP BY k",
+    );
+    check_scope_preparation(
+        "FROM facts |> SELECT k, n |> WHERE NOT (n IS NOT DISTINCT FROM NULL OR k IS DISTINCT FROM 1)",
+    );
+}
+
+#[test]
 fn null_predicates_keep_scope_validation_and_stage_bounds() {
     let (_temp, db) = database(2_000_000);
     for mutation in 0..2 {

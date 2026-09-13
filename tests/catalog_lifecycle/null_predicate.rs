@@ -139,7 +139,12 @@ fn public_null_predicates_distinguish_all_types_and_compose() {
 fn null_tests_preserve_demanded_errors_and_prior_predicate_order() {
     let (_directory, db) = fixture().unwrap();
     let baseline = db.reserved_memory_bytes();
-    for test in ["IS NULL", "IS NOT NULL"] {
+    for test in [
+        "IS NULL",
+        "IS NOT NULL",
+        "IS DISTINCT FROM NULL",
+        "IS NOT DISTINCT FROM NULL",
+    ] {
         for boundary in ["", " |> ORDER BY x"] {
             let sql = format!(
                 "FROM facts |> SELECT id*9223372036854775807 AS x{boundary} |> WHERE x {test}"
@@ -153,7 +158,10 @@ fn null_tests_preserve_demanded_errors_and_prior_predicate_order() {
                 match result.step() {
                     QueryStep::Progress | QueryStep::Rows(_) => (),
                     QueryStep::Failed(error) => {
-                        assert!(matches!(error, Error::ArithmeticOverflow { .. }));
+                        let Error::ArithmeticOverflow { span, .. } = error else {
+                            panic!("wrong demanded failure: {error}");
+                        };
+                        assert_eq!(&sql[span.start()..span.end()], "id*9223372036854775807");
                         failed = true;
                         break;
                     }
@@ -161,10 +169,12 @@ fn null_tests_preserve_demanded_errors_and_prior_predicate_order() {
                 }
             }
             assert!(failed);
+            assert!(matches!(result.step(), QueryStep::Failed(_)));
             drop(result);
             drop(prepared);
             assert_eq!(db.reserved_memory_bytes(), baseline);
             assert_eq!(db.reserved_temp_bytes(), 0);
+            query(&db, &format!("{sql} |> LIMIT 0"), vec![]);
         }
     }
     query(

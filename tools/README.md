@@ -158,7 +158,9 @@ amounts above 2^53. DIV by one must preserve the first amount exactly before
 filtering. COALESCE must select that exact value without evaluating its failing
 fallback. A demanded SAFE_DIVIDE result must be NULL without losing its row;
 a second COALESCE evaluates NULLIF of the original ratio and the NULL result.
-NULLIF must retain that ratio. Native I/O checks that NULLIF converts three
+NULLIF must retain that ratio. IS NOT DISTINCT FROM NULL keeps the missing-value
+rows in the catalog query. Native I/O uses IS NOT DISTINCT FROM zero to select
+the defaults, then checks that NULLIF converts three
 COALESCE defaults back to NULL, so COUNT returns zero; an outer COALESCE skips
 a failing fallback after the count. These queries retain the existing allocation
 and I/O schedules while checking both NULLIF decisions.
