@@ -74,6 +74,7 @@ pub(super) fn demand_masks(plan: &frontend::Plan) -> Result<[ColumnSet; MAX_PIPE
             }
             Stage::Where(filter) => masks[input] |= output | bit(filter.column),
             Stage::Join {
+                nulls,
                 right,
                 left_key,
                 right_key,
@@ -84,7 +85,17 @@ pub(super) fn demand_masks(plan: &frontend::Plan) -> Result<[ColumnSet; MAX_PIPE
                     masks[input] |= output & bit(id);
                 }
                 for id in plan.available_columns(right)?.iter() {
-                    masks[usize::from(right.0)] |= output & bit(id);
+                    let joined = if let Some(descriptor) = nulls {
+                        plan.null_extensions
+                            .get(usize::from(descriptor))
+                            .and_then(|extension| extension.output_for(id))
+                            .ok_or(Error::Corrupt("join demand null extension"))?
+                    } else {
+                        id
+                    };
+                    if output.contains(joined) {
+                        masks[usize::from(right.0)] |= bit(id);
+                    }
                 }
             }
             Stage::Aggregate(aggregate_index) => {

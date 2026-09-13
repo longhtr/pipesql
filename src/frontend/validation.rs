@@ -81,6 +81,12 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
     {
         return Err(Error::Corrupt("invalid range scope envelope"));
     }
+    let mut null_cursor = 0;
+    if plan.null_extensions.len() > MAX_STAGES
+        || plan.null_extensions.capacity() != plan.null_extensions.len()
+    {
+        return Err(Error::Corrupt("null extension descriptor capacity"));
+    }
     let mut union_cursor = 0;
     if plan.unions.len() > MAX_STAGES || plan.unions.capacity() != plan.unions.len() {
         return Err(Error::Corrupt("union descriptor capacity"));
@@ -149,6 +155,7 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
                 usize::from(plan.occurrences[usize::from(*source)].columns)
             }
             Stage::Join {
+                nulls: _,
                 right,
                 left_key,
                 right_key,
@@ -190,6 +197,21 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
             return Err(Error::Corrupt("invalid producer width"));
         }
         match &node.stage {
+            Stage::Join {
+                nulls: Some(descriptor),
+                right,
+                ..
+            } => {
+                if !catalog || usize::from(*descriptor) != null_cursor {
+                    return Err(Error::Corrupt("null extension descriptor ownership"));
+                }
+                let bound = plan
+                    .null_extensions
+                    .get(null_cursor)
+                    .ok_or(Error::Corrupt("null extension descriptor absent"))?;
+                next_identity = bound.validate(plan, *right, next_identity)?;
+                null_cursor += 1;
+            }
             Stage::UnionAll { right, descriptor } => {
                 if !catalog || usize::from(*descriptor) != union_cursor {
                     return Err(Error::Corrupt("union descriptor ownership"));
@@ -434,7 +456,8 @@ pub(crate) fn validate(plan: &Plan) -> Result<(), Error> {
             Stage::Empty => return Err(Error::Corrupt("empty stage inside plan")),
         }
     }
-    if union_cursor != plan.unions.len()
+    if null_cursor != plan.null_extensions.len()
+        || union_cursor != plan.unions.len()
         || distinct_cursor != plan.distinct.len()
         || computed_cursor != plan.computed.len()
         || next_identity > MAX_QUERY_COLUMNS as u32 + 1
@@ -541,7 +564,26 @@ fn validate_range_scope(plan: &Plan, index: usize, node: &Node) -> Result<(), Er
             return Err(Error::Corrupt("range exposes an input outside its row"));
         }
         Stage::Select { .. } | Stage::Aggregate(_) | Stage::UnionAll { .. } => ColumnSet::EMPTY,
-        Stage::Join { right, .. } => input | plan.range_columns[usize::from(right.0)],
+        Stage::Join { right, nulls, .. } => {
+            let right = plan.range_columns[usize::from(right.0)];
+            if let Some(descriptor) = nulls {
+                let extension = plan
+                    .null_extensions
+                    .get(usize::from(descriptor))
+                    .ok_or(Error::Corrupt("range null extension descriptor"))?;
+                let mut mapped = input;
+                for id in right.iter() {
+                    mapped.insert(
+                        extension
+                            .output_for(id)
+                            .ok_or(Error::Corrupt("range null extension mapping"))?,
+                    );
+                }
+                mapped
+            } else {
+                input | right
+            }
+        }
         Stage::Distinct(descriptor) => {
             let descriptor = plan
                 .distinct

@@ -461,6 +461,41 @@ database counters. After inspecting the results, remove the generated databases:
 rm -r -- "$pipesql_strings_dir"
 ```
 
+## Retain facts with missing dimensions
+
+The [LEFT JOIN example](../examples/left_join.rs) creates `facts(region, amount)`
+and `regions(id, name)`, appends their rows, and reopens the database. Run it from
+the repository root with a fresh path:
+
+```sh
+pipesql_left_join_dir=$(mktemp -d)
+cargo run --release --offline --locked --example left_join -- "$pipesql_left_join_dir/facts"
+```
+
+Successful completion prints:
+
+```text
+unmatched total=90 rows=2
+north total=30 rows=2
+south total=30 rows=1
+```
+
+The [query](../examples/left-join.sql) joins each fact to its region and then
+groups by the region name. Region 3 has no dimension row, and the last fact has
+a NULL region key. LEFT JOIN retains both facts with NULL right-side values;
+their amounts, 40 and 50, form the NULL group. The printed word `unmatched` is
+only the example's display label. The query result contains SQL NULL.
+
+Change LEFT JOIN to JOIN to see those two facts disappear. A later
+`WHERE r.name IS NULL` would retain only unmatched rows; placing a filter inside
+the right input instead changes which dimension rows can match. See the
+[execution trace](execution.md#equality-joins) for matching and duplicate replay.
+Remove this example's database when finished:
+
+```sh
+rm -rf "$pipesql_left_join_dir"
+```
+
 ## Follow a join through grouping and sorting
 
 The [composed example](../examples/composed.rs) uses the same 4,096 regions, but

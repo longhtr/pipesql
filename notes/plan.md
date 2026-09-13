@@ -62,22 +62,41 @@ columns. A following WHERE filters that result, so rejecting all matched rows
 must not manufacture an unmatched row. Right output facts must permit NULL
 without changing the independent right producer's input facts.
 
-Parsing now carries the join kind through direct and nested input continuations;
-binding still explicitly refuses LEFT JOIN until nullable output identities and
-execution are implemented. All 56 frontend tests pass on macOS, including the
-new parser case (348 unrelated library tests filtered). Parser storage remains
-4,452 bytes. The next implementation must remap both visible right outputs and
-range-only right columns: `available_columns` includes both, while
-`relation_columns` describes only the visible row. `column_type` supplies
-canonical facts globally, so changing source NULLability would corrupt the input
-contract. Add a bounded descriptor of fresh nullable right identities, translate
-backward demand to its original inputs, and translate physical positions in both
-lowering and the independent validator. Semantic validation must check descriptor
-capacity, canonical input facts, consecutive identities and the remapped range
-scope. The independent aggregate-demand walk also needs this translation.
-Retain the current right-group bookmark and replay schedule for matching rows;
-add bounded unmatched-left emission for exhausted right input and lesser or
-nonmatching NULL/NaN keys. Full implementation and verification remain.
+Parsing carries the join kind through direct and nested input continuations.
+`NullExtension` now preserves canonical right-input facts and assigns fresh
+nullable identities to visible and retained qualified outputs. Binding, range
+validation, both demand walks, lowering and independent position validation use
+that mapping. The controller adds unmatched-left emission to its existing
+matching/replay schedule, retaining post-join predicate evaluation. The query
+identity ceiling is unchanged: each join's additional width can use its distinct
+source stage's identity budget. No persistent format or sorter owner was added.
+
+Focused macOS release checks pass all ten public join tests, including the
+small-stack snapshot scenario and the typed NULL/NaN/signed-zero/string/date
+oracle through spill. Seven join-controller tests pass with LEFT JOIN included
+in exact/one-byte-short admission and cancellation at all 20 phases. Its right
+fixture retains 176 matching rows to exercise a real spill, plus unmatched keys
+at both ends. Semantic descriptor mutations and physical join-kind/identity
+mutations reject, alongside their healthy controls. An earlier debug all-join
+run aborted at the small-stack test; it is not passing evidence. Its owned
+outputs were removed, and the documented release selection passed.
+
+Remaining implementation and verification work is finite:
+- Extend independent composition cases, repeated/derived producers, demanded
+  errors, preparation admission and snapshot/replay scenarios to LEFT JOIN.
+- Include LEFT JOIN in public allocation-refusal and native failure campaigns,
+  preserving their existing controls and verifying actual selection.
+- Verify the fact/dimension example on GNU/Linux and its CLI query from fresh paths;
+  reconcile test/tool maps and review code, contracts and failure cleanup.
+- Run both complete matching frozen platform gates, audit manifests/discovery,
+  retain concise evidence, remove owned outputs and commit the final milestone.
+
+The macOS development release run passed 575 ordinary Rust tests and the
+selected lease subprocess; Clippy passed with warnings denied. The new
+fact/dimension example produced the documented three rows from a fresh database.
+The descriptor mutation test passed again after hardening invalid-identity
+lookup. Documentation checks pass 549 local links. These are development checks,
+not frozen full-gate results; final verification remains unfinished.
 RIGHT/FULL joins, USING, compound
 or non-equality ON predicates, correlated inputs and parallelism remain outside
 this milestone. Keep comma separators spaced in code and SQL, preserving literal

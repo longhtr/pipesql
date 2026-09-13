@@ -498,6 +498,16 @@ record boundary and retains the original run's end and remaining-row bound.
 Every reread checks the frame, layout, lengths and checksum. Duplicate groups
 produce their full Cartesian product without retaining that product in memory.
 
+LEFT JOIN uses the same matching and replay states. Seek enters Unmatched when
+no right key matches the current left row, including when the right input is
+exhausted. Unmatched emits through the same filter/projection evaluation and
+output batch, supplying NULL for right positions, then consumes only the left
+row. A rejected matched pair continues through Right; it cannot enter Unmatched.
+The [null-extension descriptor](../src/frontend/join.rs) assigns fresh nullable
+identities to right outputs while preserving the original producer's facts.
+Backward demand maps these identities to their original right inputs; lowering
+and independent validation translate positions in opposite directions.
+
 Sorting uses the shared total ordering, but matching applies ordinary equality:
 NULL and NaN never match, and signed zeros match. Filters and projections use
 the validated concatenated-input positions. A filter may suppress an output

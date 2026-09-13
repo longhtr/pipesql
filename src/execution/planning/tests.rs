@@ -384,123 +384,140 @@ fn join_pipelines_bind_both_inputs_and_validate_positions_independently() {
     database
         .declare_table("lineitem", &columns, &crate::CancellationToken::new())
         .unwrap();
-    let query = database
-        .prepare(
+    for (kind, modifier) in [
+        (frontend::JoinKind::Inner, ""),
+        (frontend::JoinKind::Left, "LEFT "),
+    ] {
+        let sql = format!(
             "FROM lineitem AS a |> WHERE a.l_quantity < 20 |> SELECT a.l_quantity AS q |> AS p \
-         |> JOIN lineitem AS b ON p.q = b.l_quantity \
+         |> {modifier}JOIN lineitem AS b ON p.q = b.l_quantity \
          |> WHERE b.l_extendedprice > 10 |> SELECT b.l_extendedprice, p.q",
-        )
-        .unwrap();
-    let before = database.reserved_memory_bytes();
-    let plan = lower(
-        &database,
-        &query,
-        query.snapshot.as_ref().unwrap().state(),
-        0,
-    )
-    .unwrap();
-    validate_physical(
-        &plan,
-        &query,
-        &database,
-        query.snapshot.as_ref().unwrap().state(),
-        0,
-    )
-    .unwrap();
-    assert_eq!(plan.pipelines.len(), 3);
-    assert_eq!(plan.pipelines[0].producer, Producer::Scan(0));
-    assert_eq!(plan.pipelines[1].producer, Producer::Scan(1));
-    assert_eq!(
-        &plan.pipelines[0].columns[..plan.pipelines[0].column_count],
-        &[0]
-    );
-    assert_eq!(
-        &plan.pipelines[1].columns[..plan.pipelines[1].column_count],
-        &[0, 1]
-    );
-    assert_eq!(
-        plan.pipelines[2].producer,
-        Producer::Join {
-            left: PipelineId(0),
-            right: PipelineId(1),
-            left_key: 0,
-            right_key: 0,
-        }
-    );
-    assert_eq!(
-        &plan.output().columns[..plan.output().column_count],
-        &[2, 0]
-    );
-    assert_eq!(plan.output().filters[0].column, 2);
-    assert_eq!(plan.scan().filters[0].column, 0);
-    assert_eq!(plan.scan().filter_count, 1);
-    assert_eq!(plan.output().filter_count, 1);
-    assert_eq!(
-        database.reserved_memory_bytes() - before,
-        plan.memory_bytes()
-    );
-    drop(plan);
-    assert_eq!(database.reserved_memory_bytes(), before);
-    for mutation in 0..11 {
-        let mut plan = lower(
+        );
+        let query = database.prepare(&sql).unwrap();
+        let before = database.reserved_memory_bytes();
+        let plan = lower(
             &database,
             &query,
             query.snapshot.as_ref().unwrap().state(),
             0,
         )
         .unwrap();
-        match mutation {
-            0 => plan.pipelines[0].producer = Producer::Scan(1),
-            1 => plan.pipelines[1].column_count = MAX_ROW_VALUES + 1,
-            2 => plan.pipelines[2].columns[0] = 1,
-            3 => plan.pipelines[2].filters[0].column = 1,
-            4 => plan.pipelines[2].relation = RelationId(u8::MAX),
-            5 => plan.pipelines[1].identities[0] = plan.pipelines[0].identities[0],
-            6 => plan.pipelines[0].filter_count = 0,
-            7..=9 => {
-                let Producer::Join {
-                    left,
-                    right,
-                    right_key,
-                    ..
-                } = &mut plan.pipelines[2].producer
-                else {
-                    unreachable!()
-                };
-                match mutation {
-                    7 => *left = PipelineId(1),
-                    8 => *right = PipelineId(2),
-                    9 => *right_key = 1,
-                    _ => unreachable!(),
-                }
-            }
-            10 => {
-                // A malformed edge must not let computation mapping inspect an
-                // unvalidated future row before rejecting the producer graph.
-                plan.pipelines[0].producer = Producer::Join {
-                    left: PipelineId(0),
-                    right: PipelineId(1),
-                    left_key: 0,
-                    right_key: 0,
-                };
-                plan.pipelines[0].column_count = 0;
-                plan.pipelines[1].column_count = MAX_ROW_VALUES + 1;
-            }
-            _ => unreachable!(),
-        }
-        assert!(
-            validate_physical(
-                &plan,
-                &query,
-                &database,
-                query.snapshot.as_ref().unwrap().state(),
-                0
-            )
-            .is_err(),
-            "mutation {mutation}"
+        validate_physical(
+            &plan,
+            &query,
+            &database,
+            query.snapshot.as_ref().unwrap().state(),
+            0,
+        )
+        .unwrap();
+        assert_eq!(plan.pipelines.len(), 3);
+        assert_eq!(plan.pipelines[0].producer, Producer::Scan(0));
+        assert_eq!(plan.pipelines[1].producer, Producer::Scan(1));
+        assert_eq!(
+            &plan.pipelines[0].columns[..plan.pipelines[0].column_count],
+            &[0]
         );
+        assert_eq!(
+            &plan.pipelines[1].columns[..plan.pipelines[1].column_count],
+            &[0, 1]
+        );
+        assert_eq!(
+            plan.pipelines[2].producer,
+            Producer::Join {
+                kind,
+                left: PipelineId(0),
+                right: PipelineId(1),
+                left_key: 0,
+                right_key: 0,
+            }
+        );
+        assert_eq!(
+            &plan.output().columns[..plan.output().column_count],
+            &[2, 0]
+        );
+        assert_eq!(plan.output().filters[0].column, 2);
+        assert_eq!(plan.scan().filters[0].column, 0);
+        assert_eq!(plan.scan().filter_count, 1);
+        assert_eq!(plan.output().filter_count, 1);
+        assert_eq!(
+            database.reserved_memory_bytes() - before,
+            plan.memory_bytes()
+        );
+        drop(plan);
+        assert_eq!(database.reserved_memory_bytes(), before);
+        for mutation in 0..13 {
+            let mut plan = lower(
+                &database,
+                &query,
+                query.snapshot.as_ref().unwrap().state(),
+                0,
+            )
+            .unwrap();
+            match mutation {
+                0 => plan.pipelines[0].producer = Producer::Scan(1),
+                1 => plan.pipelines[1].column_count = MAX_ROW_VALUES + 1,
+                2 => plan.pipelines[2].columns[0] = 1,
+                3 => plan.pipelines[2].filters[0].column = 1,
+                4 => plan.pipelines[2].relation = RelationId(u8::MAX),
+                5 => plan.pipelines[1].identities[0] = plan.pipelines[0].identities[0],
+                6 => plan.pipelines[0].filter_count = 0,
+                7..=9 => {
+                    let Producer::Join {
+                        left,
+                        right,
+                        right_key,
+                        ..
+                    } = &mut plan.pipelines[2].producer
+                    else {
+                        unreachable!()
+                    };
+                    match mutation {
+                        7 => *left = PipelineId(1),
+                        8 => *right = PipelineId(2),
+                        9 => *right_key = 1,
+                        _ => unreachable!(),
+                    }
+                }
+                10 => {
+                    // A malformed edge must not let computation mapping inspect an
+                    // unvalidated future row before rejecting the producer graph.
+                    plan.pipelines[0].producer = Producer::Join {
+                        kind: frontend::JoinKind::Inner,
+                        left: PipelineId(0),
+                        right: PipelineId(1),
+                        left_key: 0,
+                        right_key: 0,
+                    };
+                    plan.pipelines[0].column_count = 0;
+                    plan.pipelines[1].column_count = MAX_ROW_VALUES + 1;
+                }
+                11 => {
+                    let Producer::Join { kind, .. } = &mut plan.pipelines[2].producer else {
+                        unreachable!()
+                    };
+                    *kind = if *kind == frontend::JoinKind::Inner {
+                        frontend::JoinKind::Left
+                    } else {
+                        frontend::JoinKind::Inner
+                    };
+                }
+                12 => plan.pipelines[2].identities[0] = plan.pipelines[1].identities[0],
+                _ => unreachable!(),
+            }
+            assert!(
+                validate_physical(
+                    &plan,
+                    &query,
+                    &database,
+                    query.snapshot.as_ref().unwrap().state(),
+                    0
+                )
+                .is_err(),
+                "mutation {mutation}"
+            );
+        }
+        drop(query);
     }
-    drop(query);
     let query = database
         .prepare(
             "FROM lineitem |> AGGREGATE SUM(l_quantity) AS s GROUP BY l_returnflag |> AS g \
@@ -542,6 +559,7 @@ fn join_pipelines_bind_both_inputs_and_validate_positions_independently() {
     assert_eq!(
         plan.pipelines[3].producer,
         Producer::Join {
+            kind: frontend::JoinKind::Inner,
             left: PipelineId(1),
             right: PipelineId(2),
             left_key: 0,

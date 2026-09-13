@@ -341,6 +341,14 @@ DISTINCT allocate no such vector. Demand and producer slot arrays follow the
 frontend's conservative identity ceiling, including sixteen full-width identity
 replacements. Those arrays remain part of ordinary physical-plan admission.
 
+LEFT JOIN adds a prepared null-extension descriptor for each left join stage.
+The vector reserves the exact descriptor count times `size_of::<NullExtension>()`
+plus one 4,096-byte allocator allowance. Queries without LEFT JOIN allocate no
+such vector. Each descriptor covers the visible right row and retained qualified
+values within `MAX_ROW_VALUES`; fresh identities use the existing query identity
+ceiling. Unmatched output reuses the ordinary batch and both retained sorters,
+without a separate row queue or match bitmap.
+
 Each join owns two sorted inputs and one producer output. Standalone ordering
 and DISTINCT each own one sorted input and one output. All use the same
 admission equation. Let R be the 32-byte frame header plus the schema's maximum

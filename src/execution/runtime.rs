@@ -343,6 +343,7 @@ impl<'db> Runtime<'db> {
                 | Producer::Limit { .. } => {
                     let output = producer_output(database, query, pipeline)?;
                     if let Producer::Join {
+                        kind,
                         left,
                         right,
                         left_key,
@@ -354,6 +355,7 @@ impl<'db> Runtime<'db> {
                             plan.pipelines()[left.index()].output_columns(&query.plan),
                             plan.pipelines()[right.index()].output_columns(&query.plan),
                             (left_key, right_key),
+                            kind,
                         )?;
                         Owner::Join { join, output }
                     } else if let Producer::Order { input, start, len } = pipeline.producer {

@@ -7,7 +7,7 @@ use crate::effects::Effects;
 use crate::execution::ConsumerInput;
 use crate::execution::computed::RowValues;
 use crate::execution::planning::Pipeline;
-use crate::frontend::{MAX_ROW_VALUES, SemanticColumn};
+use crate::frontend::{JoinKind, MAX_ROW_VALUES, SemanticColumn};
 use crate::resources::{Reservation, allocate};
 use crate::value::Value;
 use crate::{CancellationToken, Database, Error};
@@ -59,6 +59,7 @@ enum Phase {
     Sort(usize),
     Seek,
     Emit,
+    Unmatched,
     Right,
     Left,
     Done,
@@ -76,6 +77,7 @@ pub(in crate::execution) struct Join<'db> {
     sides: [SortedInput<'db>; 2],
     phase: Phase,
     group: Option<Bookmark>,
+    kind: JoinKind,
     replayed: bool,
     reservation: Reservation<'db>,
 }
@@ -86,6 +88,7 @@ impl<'db> Join<'db> {
         left: impl Iterator<Item = SemanticColumn>,
         right: impl Iterator<Item = SemanticColumn>,
         keys: (u8, u8),
+        kind: JoinKind,
     ) -> Result<Vec<Self>, Error> {
         let left = RowLayout::for_join(left, usize::from(keys.0))?;
         let right = RowLayout::for_join(right, usize::from(keys.1))?;
@@ -112,6 +115,7 @@ impl<'db> Join<'db> {
             sides,
             phase: Phase::Create(0),
             group: None,
+            kind,
             replayed: false,
             reservation,
         });
@@ -249,14 +253,24 @@ impl<'db> Join<'db> {
             Phase::Seek => {
                 if self.sides[0].load(cancel, effects)? || self.sides[1].load(cancel, effects)? {
                     phase
-                } else if self.sides[0].finished() || self.sides[1].finished() {
+                } else if self.sides[0].finished() {
                     Phase::Done
+                } else if self.sides[1].finished() {
+                    if self.kind == JoinKind::Left {
+                        Phase::Unmatched
+                    } else {
+                        Phase::Done
+                    }
                 } else {
                     let (left, right) = (self.sides[0].key()?, self.sides[1].key()?);
                     match compare_values(left, right) {
                         Ordering::Less => {
-                            self.sides[0].consume()?;
-                            phase
+                            if self.kind == JoinKind::Left {
+                                Phase::Unmatched
+                            } else {
+                                self.sides[0].consume()?;
+                                phase
+                            }
                         }
                         Ordering::Greater => {
                             self.sides[1].consume()?;
@@ -265,8 +279,12 @@ impl<'db> Join<'db> {
                         Ordering::Equal if left == Value::Null || left != right => {
                             // Ordinary equality rejects NULL and NaN; the sort
                             // equivalence class alone cannot establish a match.
-                            self.sides[0].consume()?;
-                            phase
+                            if self.kind == JoinKind::Left {
+                                Phase::Unmatched
+                            } else {
+                                self.sides[0].consume()?;
+                                phase
+                            }
                         }
                         Ordering::Equal => {
                             self.group = Some(self.sides[1].bookmark()?);
@@ -275,9 +293,14 @@ impl<'db> Join<'db> {
                     }
                 }
             }
-            Phase::Emit => {
+            Phase::Emit | Phase::Unmatched => {
                 let left = self.sides[0].values()?;
-                let right = self.sides[1].values()?;
+                let unmatched = matches!(phase, Phase::Unmatched);
+                let right = if unmatched {
+                    None
+                } else {
+                    Some(self.sides[1].values()?)
+                };
                 let left_width = self.sides[0].layout.count;
                 let width = left_width + self.sides[1].layout.count;
                 let value = |column: u8| -> Result<Value<'_>, Error> {
@@ -288,7 +311,9 @@ impl<'db> Join<'db> {
                     Ok(if column < left_width {
                         left[column]
                     } else {
-                        right[column - left_width]
+                        right
+                            .as_ref()
+                            .map_or(Value::Null, |right| right[column - left_width])
                     })
                 };
                 let mut evaluated = RowValues::new(plan, value);
@@ -300,8 +325,15 @@ impl<'db> Join<'db> {
                     output.publish_rows(1);
                     step = Step::Rows;
                 }
-                self.sides[1].consume()?;
-                Phase::Right
+                // WHERE is evaluated after matching. A rejected matching pair
+                // still advances the right group; it never becomes an unmatched row.
+                if unmatched {
+                    self.sides[0].consume()?;
+                    Phase::Seek
+                } else {
+                    self.sides[1].consume()?;
+                    Phase::Right
+                }
             }
             Phase::Right => {
                 if self.sides[1].load(cancel, effects)? {

@@ -277,78 +277,91 @@ fn typed_join_matches_an_independent_row_oracle_through_spill() {
     for cap in [16_000_000, 4_000_000, 3_000_000] {
         let db = Database::open(&path, Config::new(cap, 16_000_000).unwrap()).unwrap();
         let baseline = db.reserved_memory_bytes();
-        for key in ["k", "day", "s"] {
-            let sql = format!(
-                "FROM typed AS l |> JOIN typed AS r ON r.{key} = l.{key} |> SELECT r.s, l.id, r.id, l.k, r.day, l.s"
-            );
-            let query = db.prepare(&sql).unwrap();
-            if cap == 3_000_000 {
-                assert!(matches!(
-                    db.execute(&query, &cancel),
-                    Err(Error::Resource { .. })
-                ));
-                drop(query);
-                assert_eq!(db.reserved_memory_bytes(), baseline);
-                assert_eq!(db.reserved_temp_bytes(), 0);
-                continue;
-            }
-            let mut result = db.execute(&query, &cancel).unwrap();
-            let mut expected = vec![];
-            for left in 0..keys.len() {
-                for right in 0..keys.len() {
-                    let equal = match key {
-                        "k" => keys[left].zip(keys[right]).is_some_and(|(l, r)| l == r),
-                        "day" => days[left] == days[right],
-                        "s" => texts[left].zip(texts[right]).is_some_and(|(l, r)| l == r),
-                        _ => unreachable!(),
-                    };
-                    if equal {
+        for modifier in ["", "LEFT "] {
+            for key in ["k", "day", "s"] {
+                let sql = format!(
+                    "FROM typed AS l |> {modifier}JOIN typed AS r ON r.{key} = l.{key} |> SELECT r.s, l.id, r.id, l.k, r.day, l.s"
+                );
+                let query = db.prepare(&sql).unwrap();
+                if cap == 3_000_000 {
+                    assert!(matches!(
+                        db.execute(&query, &cancel),
+                        Err(Error::Resource { .. })
+                    ));
+                    drop(query);
+                    assert_eq!(db.reserved_memory_bytes(), baseline);
+                    assert_eq!(db.reserved_temp_bytes(), 0);
+                    continue;
+                }
+                let mut result = db.execute(&query, &cancel).unwrap();
+                let mut expected = vec![];
+                for left in 0..keys.len() {
+                    let before = expected.len();
+                    for right in 0..keys.len() {
+                        let equal = match key {
+                            "k" => keys[left].zip(keys[right]).is_some_and(|(l, r)| l == r),
+                            "day" => days[left] == days[right],
+                            "s" => texts[left].zip(texts[right]).is_some_and(|(l, r)| l == r),
+                            _ => unreachable!(),
+                        };
+                        if equal {
+                            expected.push(vec![
+                                texts[right].map_or(Cell::Null, |v| Cell::Text(v.to_owned())),
+                                Cell::Integer(left as i64),
+                                Cell::Integer(right as i64),
+                                keys[left].map_or(Cell::Null, |v| Cell::Number(v.to_bits())),
+                                Cell::Day(days[right]),
+                                texts[left].map_or(Cell::Null, |v| Cell::Text(v.to_owned())),
+                            ]);
+                        }
+                    }
+                    if modifier == "LEFT " && expected.len() == before {
                         expected.push(vec![
-                            texts[right].map_or(Cell::Null, |v| Cell::Text(v.to_owned())),
+                            Cell::Null,
                             Cell::Integer(left as i64),
-                            Cell::Integer(right as i64),
+                            Cell::Null,
                             keys[left].map_or(Cell::Null, |v| Cell::Number(v.to_bits())),
-                            Cell::Day(days[right]),
+                            Cell::Null,
                             texts[left].map_or(Cell::Null, |v| Cell::Text(v.to_owned())),
                         ]);
                     }
                 }
-            }
-            expected.sort_unstable();
-            let mut actual = vec![];
-            let mut done = false;
-            let mut peak_temp = 0;
-            for _ in 0..20_000 {
-                assert_eq!(
-                    db.reserved_memory_bytes(),
-                    baseline + query.accounted_memory_bytes() + result.accounted_memory_bytes()
-                );
-                peak_temp = peak_temp.max(db.reserved_temp_bytes());
-                match result.step() {
-                    QueryStep::Rows(batch) => {
-                        for row in 0..batch.len() {
-                            actual.push(
-                                (0..6)
-                                    .map(|column| owned_cell(batch.value(row, column).unwrap()))
-                                    .collect::<Vec<_>>(),
-                            );
+                expected.sort_unstable();
+                let mut actual = vec![];
+                let mut done = false;
+                let mut peak_temp = 0;
+                for _ in 0..20_000 {
+                    assert_eq!(
+                        db.reserved_memory_bytes(),
+                        baseline + query.accounted_memory_bytes() + result.accounted_memory_bytes()
+                    );
+                    peak_temp = peak_temp.max(db.reserved_temp_bytes());
+                    match result.step() {
+                        QueryStep::Rows(batch) => {
+                            for row in 0..batch.len() {
+                                actual.push(
+                                    (0..6)
+                                        .map(|column| owned_cell(batch.value(row, column).unwrap()))
+                                        .collect::<Vec<_>>(),
+                                );
+                            }
                         }
+                        QueryStep::Finished => {
+                            done = true;
+                            break;
+                        }
+                        QueryStep::Failed(error) => panic!("{key}, cap {cap}: {error}"),
+                        QueryStep::Progress => (),
                     }
-                    QueryStep::Finished => {
-                        done = true;
-                        break;
-                    }
-                    QueryStep::Failed(error) => panic!("{key}, cap {cap}: {error}"),
-                    QueryStep::Progress => (),
                 }
+                assert!(done && peak_temp > 65_536);
+                actual.sort_unstable();
+                assert_eq!(actual, expected, "{key}, cap {cap}");
+                drop(result);
+                drop(query);
+                assert_eq!(db.reserved_memory_bytes(), baseline);
+                assert_eq!(db.reserved_temp_bytes(), 0);
             }
-            assert!(done && peak_temp > 65_536);
-            actual.sort_unstable();
-            assert_eq!(actual, expected, "{key}, cap {cap}");
-            drop(result);
-            drop(query);
-            assert_eq!(db.reserved_memory_bytes(), baseline);
-            assert_eq!(db.reserved_temp_bytes(), 0);
         }
         db.close().unwrap();
     }
@@ -374,5 +387,56 @@ fn range_aliases_preserve_values_through_projection_filter_and_aggregation() {
         [30, 30, 40]
             .map(|value| vec![Cell::Integer(value)])
             .to_vec(),
+    );
+}
+
+#[test]
+fn left_join_retains_null_keys_and_duplicate_matches() {
+    for modifier in ["LEFT", "LEFT OUTER"] {
+        let mut expected = [(10, "a"), (10, "b"), (20, "a"), (20, "b"), (30, "c")]
+            .map(|(v, label)| vec![Cell::Integer(v), Cell::Text(label.to_owned())])
+            .to_vec();
+        expected.push(vec![Cell::Integer(40), Cell::Null]);
+        assert_query_rows(
+            &format!(
+                "FROM facts AS f |> {modifier} JOIN dimensions AS d ON f.k=d.k |> SELECT f.v, d.label"
+            ),
+            expected,
+        );
+    }
+    assert_query_rows(
+        "FROM facts AS f |> LEFT JOIN (FROM dimensions |> WHERE k=2) AS d ON f.k=d.k |> SELECT f.v, d.label",
+        vec![
+            vec![Cell::Integer(10), Cell::Null],
+            vec![Cell::Integer(20), Cell::Null],
+            vec![Cell::Integer(30), Cell::Text("c".to_owned())],
+            vec![Cell::Integer(40), Cell::Null],
+        ],
+    );
+}
+
+#[test]
+fn left_join_empty_inputs_and_post_join_filters() {
+    assert_query_rows(
+        "FROM facts AS f |> LEFT JOIN (FROM dimensions |> WHERE k>100) AS d ON f.k=d.k |> SELECT f.v, d.label",
+        [10, 20, 30, 40]
+            .map(|v| vec![Cell::Integer(v), Cell::Null])
+            .to_vec(),
+    );
+    assert_query_rows(
+        "FROM facts AS f |> WHERE v>100 |> LEFT JOIN dimensions AS d ON f.k=d.k",
+        vec![],
+    );
+    assert_query_rows(
+        "FROM facts AS f |> LEFT JOIN dimensions AS d ON f.k=d.k |> WHERE d.label IS NULL |> SELECT f.v",
+        vec![vec![Cell::Integer(40)]],
+    );
+    assert_query_rows(
+        "FROM facts AS f |> LEFT JOIN dimensions AS d ON f.k=d.k |> WHERE d.label='absent' |> SELECT f.v",
+        vec![],
+    );
+    assert_query_rows(
+        "FROM facts AS f |> LEFT JOIN dimensions AS d ON f.k=d.k |> AGGREGATE COUNT(*) AS n, COUNT(d.label) AS matches, SUM(f.v) AS total",
+        vec![vec![Cell::Integer(6), Cell::Integer(5), Cell::Integer(130)]],
     );
 }

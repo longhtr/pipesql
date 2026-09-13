@@ -181,12 +181,14 @@ pub(in crate::execution) fn validate_physical(
             }
             (
                 Producer::Join {
+                    kind,
                     left,
                     right,
                     left_key,
                     right_key,
                 },
                 Some(Stage::Join {
+                    nulls,
                     right: right_relation,
                     left_key: left_id,
                     right_key: right_id,
@@ -194,7 +196,13 @@ pub(in crate::execution) fn validate_physical(
             ) => {
                 check_input(left, node.expect("join node").input)?;
                 check_input(right, right_relation)?;
-                if left == right
+                if kind
+                    != if nulls.is_some() {
+                        frontend::JoinKind::Left
+                    } else {
+                        frontend::JoinKind::Inner
+                    }
+                    || left == right
                     || inputs[left.index()].position(left_id) != Some(usize::from(left_key))
                     || inputs[right.index()].position(right_id) != Some(usize::from(right_key))
                 {
@@ -475,9 +483,22 @@ fn identity_at(
             if position < left.column_count {
                 left.identities.get(position).copied()
             } else {
-                right.identities[..right.column_count]
+                let original = right.identities[..right.column_count]
                     .get(position - left.column_count)
-                    .copied()
+                    .copied();
+                match semantic.node(relation)?.stage {
+                    Stage::Join {
+                        nulls: Some(descriptor),
+                        ..
+                    } => original.and_then(|id| {
+                        semantic
+                            .null_extensions
+                            .get(usize::from(descriptor))?
+                            .output_for(id)
+                    }),
+                    Stage::Join { nulls: None, .. } => original,
+                    _ => return Err(Error::Corrupt("join output semantic stage")),
+                }
             }
         }
     };

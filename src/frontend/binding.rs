@@ -8,11 +8,11 @@ use super::validate;
 use super::{
     AggregateArgument, AggregateEntry, AggregateKind, AggregatePlan, ColumnFacts, ColumnId,
     Comparison, Computation, Computed, Constant, DataType, Database, DateValue, DistinctPlan,
-    Error, Expression, Filter, FilterLiteral, Group, LimitBounds, MAX_AGGREGATE_COLUMNS,
-    MAX_COLUMNS, MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_QUERY_COLUMNS, MAX_STAGES, Name, Node, Op,
-    OrderKey, Output, OwnedPlan, PREPARED_ALLOCATION_ALLOWANCE, Plan, Predicate, PreparedQuery,
-    RelationId, SemanticColumn, SetAssignment, SourceColumn, SourceOccurrence, SourceSpan, Stage,
-    UnionPlan, bind_error, initial_outputs, text,
+    Error, Expression, Filter, FilterLiteral, Group, JoinKind, LimitBounds, MAX_AGGREGATE_COLUMNS,
+    MAX_COLUMNS, MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_QUERY_COLUMNS, MAX_STAGES, Name, Node,
+    NullExtension, Op, OrderKey, Output, OwnedPlan, PREPARED_ALLOCATION_ALLOWANCE, Plan, Predicate,
+    PreparedQuery, RelationId, SemanticColumn, SetAssignment, SourceColumn, SourceOccurrence,
+    SourceSpan, Stage, UnionPlan, bind_error, initial_outputs, text,
 };
 use crate::date::DatePart;
 use std::mem::size_of;
@@ -534,6 +534,7 @@ fn bind_literal(
                     computed: &[],
                     distinct: &[],
                     unions: &[],
+                    null_extensions: &[],
                 },
                 &Ranges::empty(),
             )?;
@@ -677,6 +678,7 @@ fn bind_plan<'db>(
     plan.computed = descriptors.computed;
     plan.distinct = descriptors.distinct;
     plan.unions = descriptors.unions;
+    plan.null_extensions = descriptors.null_extensions;
     validate(plan)?;
     Ok(PreparedQuery {
         plan: owned,
@@ -722,6 +724,7 @@ fn allocate_plan(
         computed: Vec::new(),
         distinct: Vec::new(),
         unions: Vec::new(),
+        null_extensions: Vec::new(),
     };
     OwnedPlan::new(plan, database.config().memory_limit_bytes())
 }
@@ -769,10 +772,7 @@ impl Binder<'_, '_> {
             }
             ParsedStage::Source(occurrence) => self.bind_source(occurrence, &mut input)?,
             ParsedStage::Join { kind, left, right } => {
-                if kind == super::JoinKind::Left {
-                    return Err(bind_error("LEFT JOIN binding is not implemented", left));
-                }
-                self.bind_join(index, left, right, &mut input)?
+                self.bind_join(index, kind, left, right, &mut input)?
             }
             ParsedStage::Limit {
                 count,
@@ -834,6 +834,7 @@ impl Binder<'_, '_> {
             computed: &self.descriptors.computed,
             distinct: &self.descriptors.distinct,
             unions: &self.descriptors.unions,
+            null_extensions: &self.descriptors.null_extensions,
         }
     }
 
@@ -936,6 +937,7 @@ impl Binder<'_, '_> {
                 computed: &self.descriptors.computed,
                 distinct: &self.descriptors.distinct,
                 unions: &self.descriptors.unions,
+                null_extensions: &self.descriptors.null_extensions,
             },
             &mut self.next_identity,
         )?;
@@ -984,6 +986,7 @@ impl Binder<'_, '_> {
     fn bind_join(
         &mut self,
         index: usize,
+        kind: JoinKind,
         left: SourceSpan,
         right: SourceSpan,
         input: &mut RelationId,
@@ -1030,8 +1033,33 @@ impl Binder<'_, '_> {
         if first_type != second_type {
             return Err(bind_error("join key coercion is not implemented", left));
         }
+        let nulls = if kind == JoinKind::Left {
+            let bound = NullExtension::bind(
+                &self.plan.outputs[left_width..usize::from(self.plan.output_count)],
+                right_ranges,
+                &self.facts(),
+                self.next_identity,
+            )?;
+            for output in &mut self.plan.outputs[left_width..usize::from(self.plan.output_count)] {
+                output.id = bound
+                    .output_for(output.id)
+                    .ok_or(Error::Corrupt("nullable join output"))?;
+            }
+            for member in &mut self.ranges.members[..self.ranges.len] {
+                if let Some(id) = bound.output_for(member.id) {
+                    member.id = id;
+                }
+            }
+            self.next_identity += bound.len() as u32;
+            let descriptor = self.descriptors.null_extensions.len() as u8;
+            self.descriptors.null_extensions.push(bound);
+            Some(descriptor)
+        } else {
+            None
+        };
         *input = left_input;
         Ok(Stage::Join {
+            nulls,
             right: RelationId(index as u8),
             left_key,
             right_key,

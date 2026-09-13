@@ -652,6 +652,7 @@ fn join_binding_preserves_occurrences_ranges_and_both_input_edges() {
     assert_eq!(
         query.plan.stages[1].stage,
         Stage::Join {
+            nulls: None,
             right: RelationId(1),
             left_key: ColumnId::new(1),
             right_key: ColumnId::new(8),
@@ -668,6 +669,7 @@ fn join_binding_preserves_occurrences_ranges_and_both_input_edges() {
             4 => query.plan.stages[2].input = RelationId(1),
             5..=8 => {
                 let Stage::Join {
+                    nulls: _,
                     right,
                     left_key,
                     right_key,

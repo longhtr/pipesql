@@ -8,6 +8,8 @@ use crate::frontend::DataType;
 use crate::{AppendLimits, ColumnDeclaration, ColumnInput, ColumnValues, Config};
 
 const QUERY: &str = "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> SELECT l.v, r.v";
+const LEFT_QUERY: &str = "FROM facts AS l |> LEFT JOIN \
+    (FROM facts |> WHERE k >= 1 |> WHERE k <= 88) AS r ON l.k = r.k |> SELECT l.v, r.v";
 const STEPS: usize = 100_000;
 
 fn database(directory: &Directory) -> Database {
@@ -115,6 +117,7 @@ fn phase_index(phase: Phase) -> usize {
         Phase::Right => 16,
         Phase::Left => 17,
         Phase::Done => 18,
+        Phase::Unmatched => 19,
         Phase::Failed => panic!("healthy phase"),
     }
 }
@@ -142,66 +145,80 @@ fn join_exact_admission_precedes_io_and_reconciles_each_transition() {
     let directory = Directory::new();
     let db = database(&directory);
     let cancel = CancellationToken::new();
-    let query = db.prepare(QUERY).unwrap();
-    let baseline = db.reserved_memory_bytes();
-    let result = db.execute(&query, &cancel).unwrap();
-    let peak = result.accounted_memory_bytes() + crate::catalog::MAX_BYTES as u64;
-    drop(result);
-    for shortfall in [0, 1] {
-        let pressure = db
-            .reserve_memory(
-                db.config().memory_limit_bytes() - baseline - peak + shortfall,
-                "join minimum test",
-            )
-            .unwrap();
-        let mut effects = Effects::default();
-        let admitted = db.execute_with_effects(&query, &cancel, &mut effects);
-        if shortfall == 1 {
-            assert!(matches!(admitted, Err(Error::Resource { .. })));
-            assert_eq!(effects.count(), 0);
-        } else {
-            let mut result = admitted.unwrap();
-            let expected: Vec<_> = (0..180)
-                .flat_map(|l| {
-                    (0..180)
-                        .filter(move |r| l / 2 == r / 2)
-                        .map(move |r| (l, r))
-                })
-                .collect();
-            let mut observed = vec![];
-            let mut done = false;
-            for _ in 0..STEPS {
-                check_physical_account(join(&mut result));
-                assert_eq!(
-                    db.reserved_memory_bytes(),
-                    baseline + pressure.bytes() + result.accounted_memory_bytes()
-                );
-                match result.step_with_effects(&mut effects) {
-                    QueryStep::Rows(batch) => {
-                        for row in 0..batch.len() {
-                            let (Some(Value::Int64(l)), Some(Value::Int64(r))) =
-                                (batch.value(row, 0), batch.value(row, 1))
-                            else {
-                                panic!("pair");
-                            };
-                            observed.push((l, r));
+    for (sql, left_join) in [(QUERY, false), (LEFT_QUERY, true)] {
+        let query = db.prepare(sql).unwrap();
+        let baseline = db.reserved_memory_bytes();
+        let result = db.execute(&query, &cancel).unwrap();
+        let peak = result.accounted_memory_bytes() + crate::catalog::MAX_BYTES as u64;
+        drop(result);
+        for shortfall in [0, 1] {
+            let pressure = db
+                .reserve_memory(
+                    db.config().memory_limit_bytes() - baseline - peak + shortfall,
+                    "join minimum test",
+                )
+                .unwrap();
+            let mut effects = Effects::default();
+            let admitted = db.execute_with_effects(&query, &cancel, &mut effects);
+            if shortfall == 1 {
+                assert!(matches!(admitted, Err(Error::Resource { .. })));
+                assert_eq!(effects.count(), 0);
+            } else {
+                let mut result = admitted.unwrap();
+                let expected: Vec<_> = (0..180)
+                    .flat_map(|l| {
+                        let matched = !left_join || (2..178).contains(&l);
+                        let mut rows = Vec::new();
+                        if matched {
+                            for r in 0..180 {
+                                if l / 2 == r / 2 {
+                                    rows.push((l, Some(r)));
+                                }
+                            }
+                        } else {
+                            rows.push((l, None));
                         }
+                        rows
+                    })
+                    .collect();
+                let mut observed = vec![];
+                let mut done = false;
+                for _ in 0..STEPS {
+                    check_physical_account(join(&mut result));
+                    assert_eq!(
+                        db.reserved_memory_bytes(),
+                        baseline + pressure.bytes() + result.accounted_memory_bytes()
+                    );
+                    match result.step_with_effects(&mut effects) {
+                        QueryStep::Rows(batch) => {
+                            for row in 0..batch.len() {
+                                let Some(Value::Int64(l)) = batch.value(row, 0) else {
+                                    panic!("left value")
+                                };
+                                let r = match batch.value(row, 1) {
+                                    Some(Value::Int64(r)) => Some(r),
+                                    Some(Value::Null) => None,
+                                    other => panic!("right value: {other:?}"),
+                                };
+                                observed.push((l, r));
+                            }
+                        }
+                        QueryStep::Finished => {
+                            done = true;
+                            break;
+                        }
+                        QueryStep::Progress => (),
+                        QueryStep::Failed(error) => panic!("exact minimum: {error}"),
                     }
-                    QueryStep::Finished => {
-                        done = true;
-                        break;
-                    }
-                    QueryStep::Progress => (),
-                    QueryStep::Failed(error) => panic!("exact minimum: {error}"),
                 }
+                assert!(done);
+                observed.sort_unstable();
+                assert_eq!(observed, expected);
             }
-            assert!(done);
-            observed.sort_unstable();
-            assert_eq!(observed, expected);
+            drop(pressure);
+            assert_eq!(db.reserved_memory_bytes(), baseline);
+            assert_eq!(db.reserved_temp_bytes(), 0);
         }
-        drop(pressure);
-        assert_eq!(db.reserved_memory_bytes(), baseline);
-        assert_eq!(db.reserved_temp_bytes(), 0);
     }
 }
 
@@ -209,47 +226,49 @@ fn join_exact_admission_precedes_io_and_reconciles_each_transition() {
 fn cancellation_covers_both_inputs_sort_matching_and_duplicate_rewind() {
     let directory = Directory::new();
     let db = database(&directory);
-    let query = db.prepare(QUERY).unwrap();
-    let baseline = db.reserved_memory_bytes();
-    for target in 0..19 {
-        let cancel = CancellationToken::new();
-        let mut result = db.execute(&query, &cancel).unwrap();
-        let mut effects = Effects::default();
-        let mut reached = false;
-        for _ in 0..STEPS {
-            if phase_index(join(&mut result).phase) == target {
-                cancel.cancel();
-                let before = effects.count();
-                for _ in 0..2 {
-                    let step = result.step_with_effects(&mut effects);
-                    if target == 18 {
-                        assert!(
-                            matches!(step, QueryStep::Finished),
-                            "completed join is terminal"
-                        );
-                    } else {
-                        assert!(
-                            matches!(step, QueryStep::Failed(Error::Cancelled)),
-                            "phase {target}"
-                        );
+    for (sql, phases) in [(QUERY, 19), (LEFT_QUERY, 20)] {
+        let query = db.prepare(sql).unwrap();
+        let baseline = db.reserved_memory_bytes();
+        for target in 0..phases {
+            let cancel = CancellationToken::new();
+            let mut result = db.execute(&query, &cancel).unwrap();
+            let mut effects = Effects::default();
+            let mut reached = false;
+            for _ in 0..STEPS {
+                if phase_index(join(&mut result).phase) == target {
+                    cancel.cancel();
+                    let before = effects.count();
+                    for _ in 0..2 {
+                        let step = result.step_with_effects(&mut effects);
+                        if target == 18 {
+                            assert!(
+                                matches!(step, QueryStep::Finished),
+                                "completed join is terminal"
+                            );
+                        } else {
+                            assert!(
+                                matches!(step, QueryStep::Failed(Error::Cancelled)),
+                                "phase {target}"
+                            );
+                        }
                     }
+                    assert_eq!(effects.count(), before);
+                    reached = true;
+                    break;
                 }
-                assert_eq!(effects.count(), before);
-                reached = true;
-                break;
+                assert!(
+                    matches!(
+                        result.step_with_effects(&mut effects),
+                        QueryStep::Progress | QueryStep::Rows(_)
+                    ),
+                    "phase {target}"
+                );
             }
-            assert!(
-                matches!(
-                    result.step_with_effects(&mut effects),
-                    QueryStep::Progress | QueryStep::Rows(_)
-                ),
-                "phase {target}"
-            );
+            assert!(reached, "phase {target}");
+            drop(result);
+            assert_eq!(db.reserved_memory_bytes(), baseline);
+            assert_eq!(db.reserved_temp_bytes(), 0);
         }
-        assert!(reached, "phase {target}");
-        drop(result);
-        assert_eq!(db.reserved_memory_bytes(), baseline);
-        assert_eq!(db.reserved_temp_bytes(), 0);
     }
 }
 

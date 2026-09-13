@@ -159,16 +159,25 @@ earlier ranges; a following AS names the resulting row. Duplicate range names
 are rejected. Duplicate member names are ambiguous even when their identities
 are equal.
 
-Declared-table queries execute `|> JOIN table [AS alias] ON left.column =
-right.column`. The condition must connect same-type columns from the two inputs;
+Declared-table queries execute `|> [LEFT [OUTER]] JOIN table [AS alias] ON
+left.column = right.column`. The condition must connect same-type columns from the two inputs;
 either operand order is accepted. Projected, grouped and previously joined left
 inputs compose with the join. Every matching pair is retained, including
 duplicate keys. NULL and NaN do not match; signed zeros compare equal. Joining
 establishes no output order. Later projections, filters and aggregate stages
 operate on the joined relation.
 
+LEFT JOIN retains each unmatched left row once and fills its right columns
+with NULL. Left column NULLability is preserved; every right output is nullable,
+even when its source declaration is required. Matching duplicates still produce
+every pair. A following WHERE filters the joined rows: rejecting every matched
+pair does not create an unmatched row. These rules follow the pinned
+[pipe JOIN](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/pipe-syntax.md#join_pipe_operator)
+and [LEFT JOIN](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/query-syntax.md#left_join)
+contracts.
+
 Either input may be a parenthesized pipe query with an optional alias.
-Non-equality or compound conditions, outer joins, USING and key coercion remain
+Non-equality or compound conditions, RIGHT/FULL joins, USING and key coercion remain
 unsupported. Legacy format-4 queries reject joins during preparation because
 their storage path does not admit the required scratch owner. The declared-table
 integration has scoped semantic and failure tests; full release qualification

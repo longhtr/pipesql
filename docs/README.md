@@ -35,6 +35,9 @@ reach an allocation or spill boundary. For failures, follow
 [cancellation](concurrency.md#cancellation) back to the operation that owns
 cleanup.
 
+Try [LEFT JOIN with missing dimensions](getting-started.md#retain-facts-with-missing-dimensions)
+to follow nullable output identities into matching, grouping and ordering.
+
 Run the [snapshot lifetime example](getting-started.md#keep-an-old-snapshot-readable)
 to connect preparation pins, append publication and reclamation in one small
 public-library flow. It checks old and new row values before closing and reopening.

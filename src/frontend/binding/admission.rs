@@ -1,7 +1,7 @@
 //! Prepared-plan capacity calculation and fallible descriptor allocation.
 use super::{
-    AggregateEntry, AggregatePlan, Computed, DistinctPlan, Error, PREPARED_ALLOCATION_ALLOWANCE,
-    Parsed, ParsedOp, ParsedStage, Plan, PreparedQuery, UnionPlan,
+    AggregateEntry, AggregatePlan, Computed, DistinctPlan, Error, JoinKind, NullExtension,
+    PREPARED_ALLOCATION_ALLOWANCE, Parsed, ParsedOp, ParsedStage, Plan, PreparedQuery, UnionPlan,
 };
 use std::mem::size_of;
 
@@ -11,9 +11,11 @@ pub(super) struct BindingBudget {
     computed_capacity: usize,
     distinct_count: usize,
     union_count: usize,
+    null_count: usize,
     computed_bytes: usize,
     distinct_bytes: usize,
     union_bytes: usize,
+    null_bytes: usize,
 }
 
 // The caller retains the prepared-plan reservation until all descriptors drop.
@@ -21,6 +23,7 @@ pub(super) struct Descriptors {
     pub(super) computed: Vec<Computed>,
     pub(super) distinct: Vec<DistinctPlan>,
     pub(super) unions: Vec<UnionPlan>,
+    pub(super) null_extensions: Vec<NullExtension>,
     pub(super) aggregates: Vec<AggregatePlan>,
 }
 
@@ -96,6 +99,23 @@ impl BindingBudget {
         } else {
             union_count * size_of::<UnionPlan>() + PREPARED_ALLOCATION_ALLOWANCE
         };
+        let null_count = parsed.stages[..usize::from(parsed.len)]
+            .iter()
+            .filter(|stage| {
+                matches!(
+                    stage,
+                    ParsedStage::Join {
+                        kind: JoinKind::Left,
+                        ..
+                    }
+                )
+            })
+            .count();
+        let null_bytes = if null_count == 0 {
+            0
+        } else {
+            null_count * size_of::<NullExtension>() + PREPARED_ALLOCATION_ALLOWANCE
+        };
         let bytes = size_of::<PreparedQuery<'_>>()
             .checked_add(size_of::<Plan>())
             .and_then(|bytes| bytes.checked_add(PREPARED_ALLOCATION_ALLOWANCE))
@@ -103,6 +123,7 @@ impl BindingBudget {
             .and_then(|bytes| bytes.checked_add(computed_bytes))
             .and_then(|bytes| bytes.checked_add(distinct_bytes))
             .and_then(|bytes| bytes.checked_add(union_bytes))
+            .and_then(|bytes| bytes.checked_add(null_bytes))
             .and_then(|bytes| u64::try_from(bytes).ok())
             .ok_or(Error::Corrupt("prepared plan size overflow"))?;
         Ok(Self {
@@ -111,9 +132,11 @@ impl BindingBudget {
             computed_capacity,
             distinct_count,
             union_count,
+            null_count,
             computed_bytes,
             distinct_bytes,
             union_bytes,
+            null_bytes,
         })
     }
 
@@ -124,9 +147,11 @@ impl BindingBudget {
             computed_capacity,
             distinct_count,
             union_count,
+            null_count,
             computed_bytes,
             distinct_bytes,
             union_bytes,
+            null_bytes,
         } = *self;
         let mut aggregates = Vec::new();
         aggregates
@@ -173,6 +198,21 @@ impl BindingBudget {
                 limit: union_bytes as u64,
             });
         }
+        let mut null_extensions = Vec::new();
+        null_extensions
+            .try_reserve_exact(null_count)
+            .map_err(|_| Error::Resource {
+                owner: "prepared null extension descriptors",
+                required: null_bytes as u64,
+                limit: bytes,
+            })?;
+        if null_extensions.capacity() != null_count {
+            return Err(Error::Resource {
+                owner: "prepared null extension capacity",
+                required: (null_extensions.capacity() * size_of::<NullExtension>()) as u64,
+                limit: null_bytes as u64,
+            });
+        }
         let mut computed = Vec::new();
         computed
             .try_reserve_exact(computed_capacity)
@@ -192,6 +232,7 @@ impl BindingBudget {
             computed,
             distinct,
             unions,
+            null_extensions,
             aggregates,
         })
     }

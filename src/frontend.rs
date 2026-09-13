@@ -1,6 +1,7 @@
 //! Semantic identities, immutable plans, and prepared-query ownership.
 mod binding;
 mod distinct;
+mod join;
 mod lexer;
 mod parser;
 mod union;
@@ -15,6 +16,7 @@ use crate::scalar::{Expression, Op};
 use crate::{Database, DatabaseId, Error, SourceSpan};
 pub(crate) use binding::{prepare, prepare_catalog};
 use distinct::DistinctPlan;
+pub(crate) use join::NullExtension;
 use lexer::reserved_identifier;
 use std::mem::size_of;
 pub(crate) use union::UnionPlan;
@@ -563,6 +565,7 @@ pub(crate) enum Stage {
         descriptor: u8,
     },
     Join {
+        nulls: Option<u8>,
         right: RelationId,
         left_key: ColumnId,
         right_key: ColumnId,
@@ -717,12 +720,19 @@ impl RelationColumns<'_> {
                         .map(|o| o.id);
                 }
                 Stage::Source(source) => return self.plan.occurrence_column(source, index),
-                Stage::Join { right, .. } => {
+                Stage::Join { right, nulls, .. } => {
                     let left_count = self.plan.relation_columns(node.input).ok()?.len();
                     if index < left_count {
                         relation = node.input;
                     } else {
                         index -= left_count;
+                        if let Some(descriptor) = nulls {
+                            return self
+                                .plan
+                                .null_extensions
+                                .get(usize::from(descriptor))?
+                                .visible(index);
+                        }
                         relation = right;
                     }
                 }
@@ -771,6 +781,9 @@ impl SourceOccurrence {
 }
 
 pub(crate) const MAX_COMPUTED: usize = MAX_PROJECTIONS;
+// A LEFT JOIN can extend a visible row plus retained qualified values (2 widths).
+// Each join also requires a distinct source stage, which creates no fresh output
+// identities. Charging one width to each of those stages retains this bound.
 pub(crate) const MAX_QUERY_COLUMNS: usize =
     MAX_COLUMNS + MAX_COMPUTED + MAX_AGGREGATE_COLUMNS + MAX_STAGES * MAX_COLUMNS;
 
@@ -931,6 +944,7 @@ pub(crate) struct Plan {
     pub(crate) aggregates: Vec<AggregatePlan>,
     pub(crate) distinct: Vec<DistinctPlan>,
     pub(crate) unions: Vec<UnionPlan>,
+    pub(crate) null_extensions: Vec<NullExtension>,
     pub(crate) computed: Vec<Computed>,
 }
 // One allocation keeps the caller's prepared handle bounded as typed plans grow.
@@ -1024,8 +1038,9 @@ impl PreparedQuery<'_> {
                 * size_of::<Computed>()
             + MAX_STAGES * size_of::<DistinctPlan>()
             + MAX_STAGES * size_of::<UnionPlan>()
+            + MAX_STAGES * size_of::<NullExtension>()
             + PREPARED_ALLOCATION_ALLOWANCE
-            + (MAX_AGGREGATE_COLUMNS + 4) * PREPARED_ALLOCATION_ALLOWANCE) as u64
+            + (MAX_AGGREGATE_COLUMNS + 5) * PREPARED_ALLOCATION_ALLOWANCE) as u64
     }
 }
 
@@ -1114,6 +1129,7 @@ impl Plan {
             &self.computed,
             &self.distinct,
             &self.unions,
+            &self.null_extensions,
         )
     }
 
@@ -1327,10 +1343,22 @@ impl Plan {
                     }
                 }
                 Stage::Join {
+                    nulls,
                     left_key,
                     right_key,
                     ..
                 } => {
+                    if let Some(descriptor) = nulls {
+                        let extension = &self.null_extensions[usize::from(descriptor)];
+                        for value in 1..=MAX_QUERY_COLUMNS {
+                            if needed[value]
+                                && let Some(input) =
+                                    extension.input_for(ColumnId::new(value as u32))
+                            {
+                                needed[input.identity().value() as usize] = true;
+                            }
+                        }
+                    }
                     needed[left_key.value() as usize] = true;
                     needed[right_key.value() as usize] = true;
                 }
@@ -1444,6 +1472,7 @@ struct ColumnFacts<'a> {
     computed: &'a [Computed],
     distinct: &'a [DistinctPlan],
     unions: &'a [UnionPlan],
+    null_extensions: &'a [NullExtension],
 }
 
 impl ColumnFacts<'_> {
@@ -1455,6 +1484,7 @@ impl ColumnFacts<'_> {
             self.computed,
             self.distinct,
             self.unions,
+            self.null_extensions,
         )?;
         Some(SemanticColumn::new(id.value(), kind, nullable))
     }
@@ -1471,8 +1501,14 @@ fn column_type(
     computed: &[Computed],
     distinct: &[DistinctPlan],
     unions: &[UnionPlan],
+    null_extensions: &[NullExtension],
 ) -> Option<(DataType, bool)> {
-    if let Some(column) = unions.iter().find_map(|union| union.column(id)) {
+    if let Some(column) = null_extensions
+        .iter()
+        .find_map(|extension| extension.column(id))
+    {
+        Some((column.data_type(), true))
+    } else if let Some(column) = unions.iter().find_map(|union| union.column(id)) {
         Some((column.data_type(), column.nullable()))
     } else if let Some(column) = distinct.iter().find_map(|stage| stage.input_for(id)) {
         Some((column.data_type(), column.nullable()))

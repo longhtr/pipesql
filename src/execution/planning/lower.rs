@@ -189,6 +189,7 @@ fn select_producer(
                 }
             }
             Stage::Join {
+                nulls,
                 right,
                 left_key,
                 right_key,
@@ -196,6 +197,11 @@ fn select_producer(
                 let left = lookup(node.input)?;
                 let right = lookup(right)?;
                 Producer::Join {
+                    kind: if nulls.is_some() {
+                        frontend::JoinKind::Left
+                    } else {
+                        frontend::JoinKind::Inner
+                    },
                     left,
                     right,
                     left_key: pipelines[left.index()]
@@ -271,9 +277,21 @@ fn base_position(
                 let right = pipelines
                     .get(right.index())
                     .ok_or(Error::Corrupt("join right pipeline absent"))?;
+                let right_id = match semantic.node(relation)?.stage {
+                    Stage::Join {
+                        nulls: Some(descriptor),
+                        ..
+                    } => semantic
+                        .null_extensions
+                        .get(usize::from(descriptor))
+                        .and_then(|extension| extension.input_for(id))
+                        .map(|column| column.identity()),
+                    Stage::Join { nulls: None, .. } => Some(id),
+                    _ => return Err(Error::Corrupt("join producer semantic stage")),
+                };
                 left.position(id).or_else(|| {
-                    right
-                        .position(id)
+                    right_id
+                        .and_then(|id| right.position(id))
                         .map(|position| left.column_count + position)
                 })
             }

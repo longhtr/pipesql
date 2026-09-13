@@ -87,6 +87,7 @@ pub(super) enum Producer {
         demand: u16,
     },
     Join {
+        kind: frontend::JoinKind,
         left: PipelineId,
         right: PipelineId,
         left_key: u8,
