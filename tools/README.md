@@ -216,6 +216,20 @@ external storage and checks requested/usable charges through execute, every step
 Finished and release. The existing false-attribution mechanism must reject a
 nonexistent owner after the complete rows and release have been checked.
 
+[`transient-ownership.rs`](fixtures/transient-ownership.rs) additionally arms a
+borrowed, thread-local observer only inside this workload's execute/step calls.
+The allocator samples live requested/usable increments after allocation and
+before physical free against the current database charge. Caller setup, row
+checks and reporting run outside the scope. The caller prints event counts and
+minimum requested/usable headroom, requires both event types and nonnegative
+headroom, and preserves the independent checkpoint equations. Calibration
+detects an uncharged 65,536-byte allocation created and freed within one call
+despite unchanged entry/exit counters; a second case observes only its free and
+must still detect the live owner. `wide-left-join-observer-negative` disables
+observation and must fail calibration. These checks cover the exercised
+single-threaded Rust allocation events, excluding foreign allocations, allocator
+metadata/retained pages, other process mappings and RSS.
+
 The same selection runs the nullable self-join, aggregation, and ordering workload
 at 2.2 MB and 12 MB. `joined_shapes` in
 [`composed-ownership.rs`](fixtures/composed-ownership.rs) checks all 4,096 descending

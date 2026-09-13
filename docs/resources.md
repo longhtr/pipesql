@@ -426,8 +426,22 @@ maximum-length STRING payloads, unequal duplicate groups and unmatched rows.
 Both sorted inputs, the null-extension descriptor and the output batch contribute
 to the measured prepared/result ownership. Complete-row checks accompany each
 returned-step sample and final release; the [tool map](../tools/README.md) owns
-invocation and the false-attribution control. These samples do not cover transient
-peaks inside a step or establish a whole-process/RSS bound.
+invocation and the false-attribution control. For this workload, the allocator
+caller also samples after each successful Rust allocation and immediately before
+each physical free inside execute and step. It compares live requested/usable
+increments from the pre-preparation baseline with the contemporaneous database
+charge above its resident baseline. Caller heap storage stays fixed while armed;
+the public charge read is an atomic load. The observer borrows the database and
+uses a scoped thread-local pointer without allocating or taking a lock.
+
+These event samples cover temporary allocations that disappear before a public
+call returns, including old/new buffer overlap during allocation-based growth.
+They compare aggregate ownership; they do not assign each pointer to an account
+or replace the independent nonheap equations at the maintained checkpoints.
+They qualify only this single-threaded workload and the exercised native
+allocator histories. Foreign allocations, allocator metadata/retained pages,
+mapped or resident stack, other process mappings and whole-process/RSS bounds
+remain outside the observation.
 
 ## Blocking buffer capacity
 

@@ -33,20 +33,24 @@ LEFT JOIN. Current step-boundary checks cannot see an allocation created and
 freed within one call. Preserve their literal eleven-pair oracle, both pathname
 lengths, false-attribution control and complete release checks.
 
-The initial ownership/observer trace has a 30-minute budget. The public memory
-report is an atomic load. A scoped observer can compare live heap increments
-with the contemporaneous database charge after allocation and before freeing,
-without an engine hook or allocation in the observer. Keep caller storage fixed
-while armed and tie pointer access to the database borrow. Reconcile baseline
-owners independently; this does not assign each pointer to an engine account.
+The ownership/observer trace completed within its 30-minute budget. The public
+memory report is an atomic load. The caller now samples after allocation and
+before physical free inside execute/step, using a scoped observer borrowed from
+the database. Caller storage stays fixed while armed; aggregate deltas do not
+assign each pointer to an engine account. Independent checkpoint equations and
+all existing controls remain.
 
-The cheapest falsifier is an intentionally uncharged allocation that is created
-and freed inside one observed call while entry/exit heap totals agree. Require
-its detection and reject a disabled observer. Then exercise the real join and
-repair any exposed admission or release defect. Complete focused controls, both
-sequential frozen platform gates, documentation, evidence, cleanup and local
-commits. Whole-process/RSS, arbitrary allocators and concurrent allocation
-histories remain outside this observation. Publication restrictions are unchanged.
+Focused ownership checks pass at both pathname lengths: 371 allocations and 371
+frees, with minimum requested/usable headroom of 6,992/4,296 bytes on macOS. An
+uncharged allocation created and freed inside a call is detected despite equal
+entry/exit totals. A separate free-only calibration observes the still-live
+owner, and disabling observation is rejected. The supervisor also rejects
+missing calibration output. No engine accounting defect was exposed.
+
+Complete both sequential frozen platform gates, discovery/evidence reconciliation,
+cleanup and local commits. Whole-process/RSS, arbitrary allocators and concurrent
+allocation histories remain outside this observation. Publication restrictions
+are unchanged.
 
 ## Completed: natural logarithms for analytical scales
 

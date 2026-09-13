@@ -209,6 +209,8 @@ def check_ownership(work, run, failures):
         print(joined.stdout + joined.stderr, end="", flush=True)
         if "wide left join passed: 64 columns, 11 pairs; rows, ownership and release" not in joined.stdout:
             failures.append(f"incomplete wide left join ownership checks: {label}")
+        if "transient ownership calibration passed: hidden allocation detected; entry/exit agree" not in joined.stdout:
+            failures.append(f"incomplete transient ownership calibration: {label}")
         prepared = run("prepared-aggregate-shapes", f"prepared-aggregates-{label}", length)
         print(prepared.stdout + prepared.stderr, end="", flush=True)
         if "prepared aggregate shapes passed: 14 accepted and 54 rejected; attribution, rows and release" not in prepared.stdout:
@@ -295,6 +297,7 @@ def check_ownership(work, run, failures):
         ("legacy-constant-attribution-negative", "execution ownership attribution: legacy-text"),
         ("joined-attribution-negative", "joined usable ownership attribution"),
         ("wide-left-join-attribution-negative", "wide left join usable ownership attribution"),
+        ("wide-left-join-observer-negative", "transient ownership calibration missed uncharged allocation"),
         ("wide-set-attribution-negative", "wide set usable ownership attribution"),
         ("append-allocation-shapes-negative", "append allocation rounding"),
         ("ownership-negative", "complete-row oracle"),

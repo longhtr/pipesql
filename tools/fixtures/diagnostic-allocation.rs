@@ -89,6 +89,7 @@ unsafe impl GlobalAlloc for Allocator {
                     PEAK_REQUESTED.fetch_max(requested, Ordering::Relaxed);
                     PEAK_USABLE.fetch_max(physical, Ordering::Relaxed);
                 }
+                transient_ownership::sample(true);
             }
             pointer
         }
@@ -99,6 +100,7 @@ unsafe impl GlobalAlloc for Allocator {
         // the GlobalAlloc caller retains the matching lifetime obligations.
         // SAFETY: obtain the extent while the System owner is still live.
         let usable = unsafe { usable_size(pointer) };
+        transient_ownership::sample(false);
         unsafe { System.dealloc(pointer, layout) };
         // Release observations only after the physical allocation has been freed.
         change_live(&LIVE_REQUESTED, layout.size(), false);
@@ -115,6 +117,8 @@ mod catalog;
 mod grouping_ownership;
 #[path = "composed-ownership.rs"]
 mod ownership;
+#[path = "transient-ownership.rs"]
+mod transient_ownership;
 #[path = "workload-allocation.rs"]
 mod workload;
 
@@ -260,11 +264,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if mode == "wide-set-shapes" || mode == "wide-set-attribution-negative" {
         return ownership::wide_set_shapes(&root, mode == "wide-set-attribution-negative");
     }
-    if mode == "wide-left-join-shape" || mode == "wide-left-join-attribution-negative" {
-        return ownership::wide_left_join_shape(
-            &root,
-            mode == "wide-left-join-attribution-negative",
-        );
+    if mode == "wide-left-join-shape"
+        || mode == "wide-left-join-attribution-negative"
+        || mode == "wide-left-join-observer-negative"
+    {
+        let control = if mode == "wide-left-join-attribution-negative" {
+            ownership::WideJoinControl::WrongAttribution
+        } else if mode == "wide-left-join-observer-negative" {
+            ownership::WideJoinControl::DisabledObserver
+        } else {
+            ownership::WideJoinControl::Healthy
+        };
+        return ownership::wide_left_join_shape(&root, control);
     }
     if mode == "joined-shapes" || mode == "joined-attribution-negative" {
         return ownership::joined_shapes(&root, mode == "joined-attribution-negative");

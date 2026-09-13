@@ -451,6 +451,19 @@ attribution must fail the same guard after result and release checks. These
 observations qualify the exercised stable boundaries; they do not measure
 transient allocations inside a step or arbitrary allocation histories.
 
+For the 64-column nullable STRING LEFT JOIN, also observe live requested/usable
+increments after successful allocation and before physical free inside execute
+and each step. Compare each event with the current database charge above the
+resident baseline; keep caller storage fixed while the scoped observer is armed.
+Require allocation and free events, nonnegative headroom, complete literal rows,
+and final heap/descriptor/reservation release at both pathname lengths. A
+deliberately uncharged allocation created and freed within one scope must be
+detected even though entry/exit counters agree. Observe a separately allocated
+owner only at its free to reject sampling after physical release. Disabling the
+observer must fail calibration. Retain the existing false-attribution control
+and independent nonheap equations. This extends observation to the exercised
+intra-call allocation events, not arbitrary histories, threads or process/RSS.
+
 Recovery allocation checks cover short/384-byte paths, empty/data missing-peer
 repair, corrupt roots, and Darwin repair-rename permission failure. The
 supervisor must remove its owned ACL after child failure or timeout. Check exact

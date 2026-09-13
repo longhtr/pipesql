@@ -104,7 +104,10 @@ class AllocationInterpretation(unittest.TestCase):
                   "analytic shapes passed: 11 cases; rows, attribution and release\n"
                   "wide set shapes passed: 6 cases; complete rows, step ownership and release\n"
                   "wide left join passed: 64 columns, 11 pairs; rows, ownership and release")
-        for output, missing in [("", True), (marker, False)]:
+        calibration = "transient ownership calibration passed: hidden allocation detected; entry/exit agree"
+        for output, missing, missing_calibration in [
+            ("", True, True), (marker, False, True), (marker + "\n" + calibration, False, False)
+        ]:
             failures = []
             run = Mock(return_value=subprocess.CompletedProcess([], 0, output, ""))
             # Exercise interpretation only; the timeout control and native
@@ -124,6 +127,8 @@ class AllocationInterpretation(unittest.TestCase):
             self.assertIn((("wide-left-join-shape", "wide-left-join-path384", 384), {}), run.call_args_list)
             self.assertEqual(sum(message.startswith("incomplete wide left join ownership checks:")
                                  for message in failures), 2 if missing else 0)
+            self.assertEqual(sum(message.startswith("incomplete transient ownership calibration:")
+                                 for message in failures), 2 if missing_calibration else 0)
             self.assertEqual(sum(message.startswith("incomplete wide set allocation checks:")
                                  for message in failures), 2 if missing else 0)
             self.assertEqual(sum(message.startswith("incomplete analytic allocation checks:")

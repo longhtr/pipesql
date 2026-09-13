@@ -1126,9 +1126,15 @@ pub(super) fn wide_set_shapes(
     Ok(())
 }
 
+pub(super) enum WideJoinControl {
+    Healthy,
+    WrongAttribution,
+    DisabledObserver,
+}
+
 pub(super) fn wide_left_join_shape(
     root: &Path,
-    wrong_attribution: bool,
+    control: WideJoinControl,
 ) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir(root)?;
     let path = root.join("database");
@@ -1237,7 +1243,9 @@ pub(super) fn wide_left_join_shape(
     let memory = db.reserved_memory_bytes();
     let query = db.prepare("FROM left_rows AS l |> LEFT JOIN right_rows AS r ON l.key=r.key")?;
     assert_eq!(query.result_column_count(), 64);
-    let mut result = db.execute(&query, &cancel)?;
+    let observer =
+        super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
+    let mut result = observer.during(|| db.execute(&query, &cancel))?;
     let mut seen = [false; 11];
     let mut finished = false;
     let mut steps = 0;
@@ -1254,7 +1262,8 @@ pub(super) fn wide_left_join_shape(
             heap.requested as u64 <= charge,
             "wide left join requested admission"
         );
-        let attributed = heap.usable as u128 + u128::from(wrong_attribution) * u128::from(charge);
+        let attributed = heap.usable as u128
+            + u128::from(matches!(control, WideJoinControl::WrongAttribution)) * u128::from(charge);
         minimum_headroom = minimum_headroom.min(i128::from(charge) - attributed as i128);
         peak_temp = peak_temp.max(db.reserved_temp_bytes());
         if finished {
@@ -1262,7 +1271,7 @@ pub(super) fn wide_left_join_shape(
         }
         steps += 1;
         assert!(steps < 200_000, "wide left join did not finish");
-        match result.step() {
+        match observer.during(|| result.step()) {
             QueryStep::Progress => (),
             QueryStep::Finished => finished = true,
             QueryStep::Failed(error) => panic!("wide left join: {error}"),
@@ -1311,6 +1320,20 @@ pub(super) fn wide_left_join_shape(
     assert_eq!(Live::now(), before);
     assert_eq!(db.reserved_memory_bytes(), memory);
     assert_eq!(db.reserved_temp_bytes(), 0);
+    let samples = observer.samples();
+    println!("wide left join transient: {samples:?}");
+    assert!(
+        samples.allocations > 0 && samples.frees > 0,
+        "missing transient join events"
+    );
+    assert!(
+        samples.requested_headroom >= 0 && samples.usable_headroom >= 0,
+        "wide left join transient ownership: {samples:?}"
+    );
+    super::transient_ownership::check_calibration(
+        &db,
+        matches!(control, WideJoinControl::DisabledObserver),
+    );
     db.close()?;
     println!(
         "wide left join rows=11 steps={steps} minimum-usable-headroom={minimum_headroom} temporary={peak_temp} release=complete"
