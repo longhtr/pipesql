@@ -7,7 +7,7 @@ use crate::execution::{QueryResult, QueryStep, State};
 use crate::frontend::DataType;
 use crate::{AppendLimits, ColumnDeclaration, ColumnInput, ColumnValues, Config};
 
-const QUERY: &str = "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> SELECT l.v,r.v";
+const QUERY: &str = "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> SELECT l.v, r.v";
 const STEPS: usize = 100_000;
 
 fn database(directory: &Directory) -> Database {
@@ -696,7 +696,7 @@ fn disjoint_inputs_merge_seven_runs_and_finish_in_both_orientations() {
     for (left, right) in [("facts", "peers"), ("peers", "facts")] {
         let query = db
             .prepare(&format!(
-                "FROM {left} AS l |> JOIN {right} AS r ON l.k = r.k |> SELECT l.v,r.v"
+                "FROM {left} AS l |> JOIN {right} AS r ON l.k = r.k |> SELECT l.v, r.v"
             ))
             .unwrap();
         let mut result = db.execute(&query, &cancel).unwrap();

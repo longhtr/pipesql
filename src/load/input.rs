@@ -63,7 +63,7 @@ pub(super) fn inspect_input(
     effects: &mut Effects,
 ) -> Result<InputSource, Error> {
     validate_requested_path(path).map_err(|_| Error::Input {
-        message: "input path must be absolute,bounded,and contain no dot components",
+        message: "input path must be absolute, bounded, and contain no dot components",
         byte_offset: 0,
     })?;
     effects.before(Effect::Load(LoadEffect::InspectInput))?;

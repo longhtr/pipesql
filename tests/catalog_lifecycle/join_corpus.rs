@@ -142,7 +142,7 @@ fn generated_join_compositions_match_independent_multisets() {
                     ("b", "a", &rows[1], &rows[0]),
                 ] {
                     let context = format!(
-                        "keys={keys},null_keys={null_keys},null_values={null_values},left={left}"
+                        "keys={keys}, null_keys={null_keys}, null_values={null_values}, left={left}"
                     );
                     let joined = pairs(l, r);
                     observed_empty |= joined.is_empty();
@@ -155,10 +155,10 @@ fn generated_join_compositions_match_independent_multisets() {
                     // range renaming and duplicated physical output positions.
                     for prefix in [
                         format!(
-                            "FROM {left} AS l |> JOIN {right} AS r ON l.k = r.k |> SELECT r.v,l.v,l.v"
+                            "FROM {left} AS l |> JOIN {right} AS r ON l.k = r.k |> SELECT r.v, l.v, l.v"
                         ),
                         format!(
-                            "FROM {left} |> SELECT v AS value,k AS key |> AS x |> JOIN {right} AS y ON y.k = x.key |> SELECT y.v,x.value,x.value"
+                            "FROM {left} |> SELECT v AS value, k AS key |> AS x |> JOIN {right} AS y ON y.k = x.key |> SELECT y.v, x.value, x.value"
                         ),
                     ] {
                         check(&db, &prefix, expected.clone(), &context);
@@ -171,7 +171,7 @@ fn generated_join_compositions_match_independent_multisets() {
                     check(
                         &db,
                         &format!(
-                            "FROM {left} AS l |> WHERE l.v >= 0 |> JOIN {right} AS r ON r.k = l.k |> WHERE r.v < 8 |> SELECT l.v,r.v"
+                            "FROM {left} AS l |> WHERE l.v >= 0 |> JOIN {right} AS r ON r.k = l.k |> WHERE r.v < 8 |> SELECT l.v, r.v"
                         ),
                         filtered
                             .iter()
@@ -185,7 +185,7 @@ fn generated_join_compositions_match_independent_multisets() {
                     check(
                         &db,
                         &format!(
-                            "FROM {left} AS l |> JOIN {right} AS r ON l.k = r.k |> AGGREGATE SUM(l.v) AS total,COUNT(*) AS n |> SELECT n,total"
+                            "FROM {left} AS l |> JOIN {right} AS r ON l.k = r.k |> AGGREGATE SUM(l.v) AS total, COUNT(*) AS n |> SELECT n, total"
                         ),
                         vec![vec![Cell::Integer(joined.len() as i64), total]],
                         &context,
@@ -198,7 +198,7 @@ fn generated_join_compositions_match_independent_multisets() {
                     check(
                         &db,
                         &format!(
-                            "FROM {left} AS l |> JOIN {right} AS r ON l.k = r.k |> AGGREGATE SUM(l.v) AS total,COUNT(*) AS n GROUP BY r.v |> WHERE n > 1 |> SELECT total,v,n"
+                            "FROM {left} AS l |> JOIN {right} AS r ON l.k = r.k |> AGGREGATE SUM(l.v) AS total, COUNT(*) AS n GROUP BY r.v |> WHERE n > 1 |> SELECT total, v, n"
                         ),
                         groups
                             .iter()
@@ -229,7 +229,7 @@ fn generated_join_compositions_match_independent_multisets() {
                     check(
                         &db,
                         &format!(
-                            "FROM {left} |> AGGREGATE SUM(v) AS total GROUP BY k |> AS g |> JOIN {right} AS r ON g.k = r.k |> SELECT r.v,g.total"
+                            "FROM {left} |> AGGREGATE SUM(v) AS total GROUP BY k |> AS g |> JOIN {right} AS r ON g.k = r.k |> SELECT r.v, g.total"
                         ),
                         expected,
                         &context,
@@ -241,7 +241,7 @@ fn generated_join_compositions_match_independent_multisets() {
                     ] {
                         check(
                             &db,
-                            &(prefix + " |> AGGREGATE SUM(l.v) AS total,COUNT(*) AS n"),
+                            &(prefix + " |> AGGREGATE SUM(l.v) AS total, COUNT(*) AS n"),
                             vec![vec![Cell::Null, Cell::Integer(0)]],
                             &context,
                         );
@@ -306,7 +306,7 @@ fn joins_and_ordering_preserve_aggregate_demand_and_overflow_boundaries() {
     // or replacement ordering. An unused aggregate still remains undemanded.
     for expression in ["v", "v+1"] {
         let prefix =
-            format!("FROM a |> AGGREGATE SUM({expression}) AS total,COUNT(*) AS n GROUP BY k");
+            format!("FROM a |> AGGREGATE SUM({expression}) AS total, COUNT(*) AS n GROUP BY k");
         check(
             &db,
             &(prefix.clone() + " |> ORDER BY k |> SELECT n"),
@@ -329,11 +329,11 @@ fn joins_and_ordering_preserve_aggregate_demand_and_overflow_boundaries() {
     // when the aggregate's other outputs cross a join boundary.
     for expression in ["v", "v+1"] {
         let prefix = format!(
-            "FROM a |> AGGREGATE SUM({expression}) AS total,COUNT(*) AS n GROUP BY k |> AS g |> JOIN b AS r ON g.k = r.k"
+            "FROM a |> AGGREGATE SUM({expression}) AS total, COUNT(*) AS n GROUP BY k |> AS g |> JOIN b AS r ON g.k = r.k"
         );
         check(
             &db,
-            &(prefix.clone() + " |> SELECT r.v,g.n"),
+            &(prefix.clone() + " |> SELECT r.v, g.n"),
             vec![
                 vec![Cell::Integer(0), Cell::Integer(2)],
                 vec![Cell::Integer(1), Cell::Integer(2)],
@@ -345,7 +345,7 @@ fn joins_and_ordering_preserve_aggregate_demand_and_overflow_boundaries() {
     }
     check(
         &db,
-        "FROM a |> AGGREGATE SUM(v) AS total,AVG(v) AS mean GROUP BY k |> AS g |> JOIN b AS r ON g.k = r.k |> SELECT r.v,g.mean",
+        "FROM a |> AGGREGATE SUM(v) AS total, AVG(v) AS mean GROUP BY k |> AS g |> JOIN b AS r ON g.k = r.k |> SELECT r.v, g.mean",
         vec![
             vec![Cell::Integer(0), Cell::Number((i64::MAX as f64).to_bits())],
             vec![Cell::Integer(1), Cell::Number((i64::MAX as f64).to_bits())],
@@ -359,7 +359,7 @@ fn joins_and_ordering_preserve_aggregate_demand_and_overflow_boundaries() {
     );
     check(
         &db,
-        "FROM a |> AGGREGATE SUM(v) AS total,COUNT(*) AS n GROUP BY k |> WHERE n < 0 |> AS g |> JOIN b AS r ON g.total = r.k |> SELECT r.v",
+        "FROM a |> AGGREGATE SUM(v) AS total, COUNT(*) AS n GROUP BY k |> WHERE n < 0 |> AS g |> JOIN b AS r ON g.total = r.k |> SELECT r.v",
         vec![],
         "group rejected before final narrowing and join key",
     );
@@ -367,19 +367,19 @@ fn joins_and_ordering_preserve_aggregate_demand_and_overflow_boundaries() {
     // Five pairs reach the aggregate. Only the key-1 pair survives v < 2.
     check(
         &db,
-        &format!("{joined} |> WHERE l.v < 2 |> AGGREGATE SUM(l.v+1) AS total,COUNT(*) AS n"),
+        &format!("{joined} |> WHERE l.v < 2 |> AGGREGATE SUM(l.v+1) AS total, COUNT(*) AS n"),
         vec![vec![Cell::Integer(2), Cell::Integer(1)]],
         "join filter suppresses scalar argument",
     );
     check(
         &db,
-        &format!("{joined} |> WHERE r.v < 0 |> AGGREGATE SUM(l.v+1) AS total,COUNT(*) AS n"),
+        &format!("{joined} |> WHERE r.v < 0 |> AGGREGATE SUM(l.v+1) AS total, COUNT(*) AS n"),
         vec![vec![Cell::Null, Cell::Integer(0)]],
         "empty join selection suppresses scalar argument",
     );
     check(
         &db,
-        &format!("{joined} |> AGGREGATE SUM(l.v+1) AS total,COUNT(*) AS n |> SELECT n"),
+        &format!("{joined} |> AGGREGATE SUM(l.v+1) AS total, COUNT(*) AS n |> SELECT n"),
         vec![vec![Cell::Integer(5)]],
         "unused argument after join",
     );
@@ -411,7 +411,7 @@ fn joins_and_ordering_preserve_aggregate_demand_and_overflow_boundaries() {
         &db,
         &format!("{multiplied} |> WHERE r.v < 2 |> AGGREGATE SUM(l.v) AS total"),
     );
-    let aggregated = format!("{joined} |> AGGREGATE SUM(l.v) AS total,COUNT(*) AS n");
+    let aggregated = format!("{joined} |> AGGREGATE SUM(l.v) AS total, COUNT(*) AS n");
     check(
         &db,
         &format!("{aggregated} |> WHERE n < 0 |> WHERE total > 0 |> SELECT n"),

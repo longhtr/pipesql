@@ -198,11 +198,11 @@ fn public_distinct_scalar_equivalence_empty_input_and_composition() {
     // In contrast, a dropped expression after DISTINCT is never demanded.
     unordered(
         &db,
-        "FROM facts |> DISTINCT |> SELECT i,i+1 AS unused |> SELECT i",
+        "FROM facts |> DISTINCT |> SELECT i, i+1 AS unused |> SELECT i",
         expected.iter().map(|row| vec![row[1].clone()]).collect(),
     );
     for sql in [
-        "FROM facts |> SELECT i,i+1 AS overflow |> DISTINCT |> SELECT i",
+        "FROM facts |> SELECT i, i+1 AS overflow |> DISTINCT |> SELECT i",
         "FROM facts |> WHERE i > 0 |> AGGREGATE SUM(i) AS overflow |> DISTINCT |> SELECT 1 AS constant",
     ] {
         let baseline = db.reserved_memory_bytes();
@@ -317,7 +317,7 @@ fn public_distinct_preserves_visible_ranges_and_duplicate_outputs() {
     let (_directory, db) = join_fixture();
     order::query(
         &db,
-        "FROM facts AS f |> DISTINCT |> SELECT f.k AS k,f.k AS duplicate |> DISTINCT |> AS d |> ORDER BY d.k |> SELECT d.k,d.duplicate",
+        "FROM facts AS f |> DISTINCT |> SELECT f.k AS k, f.k AS duplicate |> DISTINCT |> AS d |> ORDER BY d.k |> SELECT d.k, d.duplicate",
         vec![
             vec![Cell::Null, Cell::Null],
             vec![Cell::Integer(1), Cell::Integer(1)],

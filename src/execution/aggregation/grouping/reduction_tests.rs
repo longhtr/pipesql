@@ -31,7 +31,7 @@ fn evaluated_sorted_arguments_use_the_existing_aggregate_kernel() {
             &cancel,
         )
         .unwrap();
-    let query = database.prepare("FROM facts |> AGGREGATE COUNT(*) AS nrows,SUM(n) AS ns,AVG(n) AS na,SUM(d) AS ds,AVG(d) AS da,SUM(2) AS twos").unwrap();
+    let query = database.prepare("FROM facts |> AGGREGATE COUNT(*) AS nrows, SUM(n) AS ns, AVG(n) AS na, SUM(d) AS ds, AVG(d) AS da, SUM(2) AS twos").unwrap();
     let semantic = query.plan.aggregates.first().unwrap();
     let demand = query.plan.aggregate_demand(0);
     assert!(

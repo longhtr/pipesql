@@ -17,10 +17,10 @@ fn legacy_extrema_use_fixed_text_admission_and_preserve_typed_results() {
     let (_fixture, database) = loaded(47);
     let cancel = CancellationToken::new();
     let date = crate::DateValue::from_days_since_unix_epoch(8766).unwrap();
-    let aggregate = "FROM lineitem |> AGGREGATE MIN(l_returnflag) AS lo,MAX(l_returnflag) AS hi,MIN(l_quantity) AS qlo,MAX(l_quantity) AS qhi,MIN(l_shipdate) AS dlo,MAX(l_shipdate) AS dhi";
+    let aggregate = "FROM lineitem |> AGGREGATE MIN(l_returnflag) AS lo, MAX(l_returnflag) AS hi, MIN(l_quantity) AS qlo, MAX(l_quantity) AS qhi, MIN(l_shipdate) AS dlo, MAX(l_shipdate) AS dhi";
     for grouped in [false, true] {
         let sql = if grouped {
-            format!("{aggregate} GROUP AND ORDER BY l_returnflag,l_linestatus")
+            format!("{aggregate} GROUP AND ORDER BY l_returnflag, l_linestatus")
         } else {
             aggregate.to_owned()
         };
@@ -94,7 +94,7 @@ fn legacy_extrema_use_fixed_text_admission_and_preserve_typed_results() {
         assert_eq!(database.reserved_memory_bytes(), baseline);
         assert_eq!(database.reserved_temp_bytes(), 0);
     }
-    let query = database.prepare("FROM lineitem |> AGGREGATE MIN(l_returnflag) AS lo,MAX(l_linestatus) AS hi GROUP BY l_returnflag |> AGGREGATE MIN(lo) AS lo,MAX(hi) AS hi").unwrap();
+    let query = database.prepare("FROM lineitem |> AGGREGATE MIN(l_returnflag) AS lo, MAX(l_linestatus) AS hi GROUP BY l_returnflag |> AGGREGATE MIN(lo) AS lo, MAX(hi) AS hi").unwrap();
     let baseline = database.reserved_memory_bytes();
     let mut result = database.execute(&query, &cancel).unwrap();
     let mut rows = 0;
@@ -137,19 +137,19 @@ fn legacy_count_arguments_preserve_types_filters_and_repeated_aggregation() {
     let cancel = CancellationToken::new();
     for (sql, expected) in [
         (
-            "FROM lineitem |> AGGREGATE COUNT(l_quantity) AS q,COUNT(l_returnflag) AS f,COUNT(l_shipdate) AS d",
+            "FROM lineitem |> AGGREGATE COUNT(l_quantity) AS q, COUNT(l_returnflag) AS f, COUNT(l_shipdate) AS d",
             vec![47, 47, 47],
         ),
         (
-            "FROM lineitem |> WHERE l_quantity < 3 |> AGGREGATE COUNT(l_quantity*2) AS q,COUNT(l_returnflag) AS f,COUNT(l_shipdate) AS d",
+            "FROM lineitem |> WHERE l_quantity < 3 |> AGGREGATE COUNT(l_quantity*2) AS q, COUNT(l_returnflag) AS f, COUNT(l_shipdate) AS d",
             vec![6, 6, 6],
         ),
         (
-            "FROM lineitem |> WHERE l_quantity < 0 |> AGGREGATE COUNT(l_returnflag) AS f,COUNT(l_shipdate) AS d",
+            "FROM lineitem |> WHERE l_quantity < 0 |> AGGREGATE COUNT(l_returnflag) AS f, COUNT(l_shipdate) AS d",
             vec![0, 0],
         ),
         (
-            "FROM lineitem |> AGGREGATE COUNT(l_shipdate) AS n GROUP BY l_returnflag |> AGGREGATE COUNT(n) AS nkeys,SUM(n) AS n",
+            "FROM lineitem |> AGGREGATE COUNT(l_shipdate) AS n GROUP BY l_returnflag |> AGGREGATE COUNT(n) AS nkeys, SUM(n) AS n",
             vec![1, 47],
         ),
     ] {
@@ -333,7 +333,7 @@ fn scalar_width_shrinks_to_one_before_typed_admission_failure() {
 #[test]
 fn source_occurrences_do_not_split_shared_aggregate_state() {
     let (_fixture, database) = loaded(1);
-    let sql = "FROM lineitem |> AGGREGATE SUM(l_quantity*2) AS total,AVG(l_quantity*2) AS mean";
+    let sql = "FROM lineitem |> AGGREGATE SUM(l_quantity*2) AS total, AVG(l_quantity*2) AS mean";
     let query = database.prepare(sql).unwrap();
     let semantic = query.plan.aggregates.first().unwrap();
     assert_ne!(semantic.entries[0].span, semantic.entries[1].span);
@@ -704,7 +704,7 @@ fn aggregate_workspace_and_mappings_are_independently_checked() {
 #[test]
 fn post_aggregate_mapping_and_demand_are_independently_checked() {
     let (_fixture, database) = loaded(3);
-    let query = database.prepare("FROM lineitem |> AGGREGATE SUM(l_quantity*2) AS s,AVG(l_quantity) AS a,COUNT(*) AS n GROUP BY l_returnflag |> WHERE n > 0 |> SELECT a AS n,a AS again").unwrap();
+    let query = database.prepare("FROM lineitem |> AGGREGATE SUM(l_quantity*2) AS s, AVG(l_quantity) AS a, COUNT(*) AS n GROUP BY l_returnflag |> WHERE n > 0 |> SELECT a AS n, a AS again").unwrap();
     let namespace =
         inspect_namespace(database.path(), &database.memory, &mut Effects::default()).unwrap();
     for mutation in 0..10 {
@@ -796,8 +796,8 @@ fn post_aggregate_mapping_and_demand_are_independently_checked() {
 fn aggregate_cancellation_at_every_public_step_releases_owners() {
     let (_fixture, database) = loaded(17);
     for sql in [
-        "FROM lineitem |> AGGREGATE SUM(l_quantity) AS total,COUNT(*) AS n",
-        "FROM lineitem |> AGGREGATE COUNT(*) AS n GROUP BY l_returnflag,l_linestatus",
+        "FROM lineitem |> AGGREGATE SUM(l_quantity) AS total, COUNT(*) AS n",
+        "FROM lineitem |> AGGREGATE COUNT(*) AS n GROUP BY l_returnflag, l_linestatus",
         "FROM lineitem |> WHERE l_quantity < -1 |> AGGREGATE COUNT(*) AS n",
     ] {
         let query = database.prepare(sql).unwrap();
@@ -841,7 +841,7 @@ fn aggregate_cancellation_at_every_public_step_releases_owners() {
 #[test]
 fn aggregate_effect_cuts_release_all_owners_before_output() {
     let (_fixture, database) = loaded(BLOCK_ROWS + 1);
-    let query = database.prepare("FROM lineitem |> WHERE l_shipdate BETWEEN DATE '1994-01-01' AND DATE '1994-12-31' AND l_quantity < 31 |> AGGREGATE SUM(l_quantity) AS total, AVG(l_quantity) AS mean, COUNT(*) AS n GROUP AND ORDER BY l_returnflag,l_linestatus |> WHERE n > 0 |> SELECT mean,total,n").unwrap();
+    let query = database.prepare("FROM lineitem |> WHERE l_shipdate BETWEEN DATE '1994-01-01' AND DATE '1994-12-31' AND l_quantity < 31 |> AGGREGATE SUM(l_quantity) AS total, AVG(l_quantity) AS mean, COUNT(*) AS n GROUP AND ORDER BY l_returnflag, l_linestatus |> WHERE n > 0 |> SELECT mean, total, n").unwrap();
     let cancellation = CancellationToken::new();
     let mut control = Effects::default();
     let mut result = database

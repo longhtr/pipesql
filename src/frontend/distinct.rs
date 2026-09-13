@@ -151,7 +151,7 @@ mod tests {
             &cancel,
         )
         .unwrap();
-        let sql = "FROM facts |> ORDER BY b |> SELECT a,a AS duplicate |> DISTINCT |> AS d |> SELECT d.duplicate,d.a";
+        let sql = "FROM facts |> ORDER BY b |> SELECT a, a AS duplicate |> DISTINCT |> AS d |> SELECT d.duplicate, d.a";
         let baseline = db.reserved_memory_bytes();
         for mutation in 0..11 {
             let mut query = db.prepare(sql).unwrap();
@@ -194,7 +194,7 @@ mod tests {
         for sql in [
             "FROM facts |> DISTINCT a",
             "FROM facts |> DISTINCT BY a",
-            "FROM facts |> SELECT a AS x,a AS x |> DISTINCT |> SELECT x",
+            "FROM facts |> SELECT a AS x, a AS x |> DISTINCT |> SELECT x",
             "FROM facts |> SELECT a |> DISTINCT |> SELECT b",
         ] {
             assert!(db.prepare(sql).is_err(), "{sql}");

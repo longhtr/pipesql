@@ -135,7 +135,7 @@ fn mixed_typed_rows_survive_memory_and_disk_result_spooling() {
         let resident = db.reserved_memory_bytes();
         let query = db
             .prepare(
-                "FROM typed |> AGGREGATE COUNT(*) AS n GROUP BY i,d,day,s |> SELECT s,day,d,i,n,s",
+                "FROM typed |> AGGREGATE COUNT(*) AS n GROUP BY i, d, day, s |> SELECT s, day, d, i, n, s",
             )
             .unwrap();
         let mut result = db.execute(&query, &cancel).unwrap();

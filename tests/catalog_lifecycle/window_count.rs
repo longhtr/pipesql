@@ -9,7 +9,7 @@ fn count_without_input_values_runs_with_no_temporary_space() {
     for (sql, expected) in [
         ("FROM facts |> SELECT COUNT(*) OVER () AS n", 4),
         (
-            "FROM facts |> SELECT 9223372036854775807+1 AS unused,COUNT(*) OVER () AS n |> SELECT n",
+            "FROM facts |> SELECT 9223372036854775807+1 AS unused, COUNT(*) OVER () AS n |> SELECT n",
             4,
         ),
         (
@@ -26,20 +26,20 @@ fn count_without_input_values_runs_with_no_temporary_space() {
     );
     query(
         &db,
-        "FROM facts |> SELECT 9223372036854775807+1 AS bad,COUNT(*) OVER () AS n |> LIMIT 0",
+        "FROM facts |> SELECT 9223372036854775807+1 AS bad, COUNT(*) OVER () AS n |> LIMIT 0",
         vec![],
     );
     query(
         &db,
-        "FROM facts |> SELECT COUNT(*) OVER () AS n,'x' AS s,DATE '1970-01-01' AS d |> LIMIT 1",
+        "FROM facts |> SELECT COUNT(*) OVER () AS n, 'x' AS s, DATE '1970-01-01' AS d |> LIMIT 1",
         vec![vec![Cell::Integer(4), Cell::Text("x".into()), Cell::Day(0)]],
     );
     for (sql, arithmetic) in [
         (
-            "FROM facts |> SELECT 9223372036854775807+1 AS bad,COUNT(*) OVER () AS n |> LIMIT 1",
+            "FROM facts |> SELECT 9223372036854775807+1 AS bad, COUNT(*) OVER () AS n |> LIMIT 1",
             true,
         ),
-        ("FROM facts |> SELECT v,COUNT(*) OVER () AS n", false),
+        ("FROM facts |> SELECT v, COUNT(*) OVER () AS n", false),
     ] {
         let baseline = db.reserved_memory_bytes();
         let prepared = db.prepare(sql).unwrap();
@@ -122,14 +122,14 @@ fn full_partition_count_preserves_rows_and_composes_with_producers() {
     );
     query(
         &db,
-        "FROM facts |> SELECT v+1 AS next,COUNT(*) OVER () AS n,COUNT(*) OVER () AS other |> ORDER BY next",
+        "FROM facts |> SELECT v+1 AS next, COUNT(*) OVER () AS n, COUNT(*) OVER () AS other |> ORDER BY next",
         [11, 21, 31, 41]
             .map(|v| vec![Cell::Integer(v), Cell::Integer(4), Cell::Integer(4)])
             .to_vec(),
     );
     query(
         &db,
-        "FROM facts AS f |> EXTEND COUNT(*) OVER () AS n |> WHERE n=4 |> SELECT f.v,n+1 AS next |> ORDER BY v",
+        "FROM facts AS f |> EXTEND COUNT(*) OVER () AS n |> WHERE n=4 |> SELECT f.v, n+1 AS next |> ORDER BY v",
         [10, 20, 30, 40]
             .map(|v| vec![Cell::Integer(v), Cell::Integer(5)])
             .to_vec(),
@@ -171,7 +171,7 @@ fn full_partition_count_preserves_rows_and_composes_with_producers() {
     );
     query(
         &db,
-        "FROM facts |> EXTEND COUNT(*) OVER () AS n |> WHERE v<30 |> SELECT COUNT(*) OVER () AS m,n |> ORDER BY n",
+        "FROM facts |> EXTEND COUNT(*) OVER () AS n |> WHERE v<30 |> SELECT COUNT(*) OVER () AS m, n |> ORDER BY n",
         vec![vec![Cell::Integer(2), Cell::Integer(4)]; 2],
     );
 }
@@ -181,16 +181,16 @@ fn analytic_emission_preserves_demanded_errors_and_original_scope() {
     let (_directory, db) = join_fixture();
     query(
         &db,
-        "FROM facts |> SELECT 9223372036854775797+v AS overflow,COUNT(*) OVER () AS n |> LIMIT 1",
+        "FROM facts |> SELECT 9223372036854775797+v AS overflow, COUNT(*) OVER () AS n |> LIMIT 1",
         vec![vec![Cell::Integer(i64::MAX), Cell::Integer(4)]],
     );
     query(
         &db,
-        "FROM facts |> SELECT 9223372036854775797+v AS overflow,COUNT(*) OVER () AS n |> SELECT n",
+        "FROM facts |> SELECT 9223372036854775797+v AS overflow, COUNT(*) OVER () AS n |> SELECT n",
         integers(&[4, 4, 4, 4]),
     );
     for sql in [
-        "FROM facts |> SELECT 9223372036854775797+v AS overflow,COUNT(*) OVER () AS n |> LIMIT 2",
+        "FROM facts |> SELECT 9223372036854775797+v AS overflow, COUNT(*) OVER () AS n |> LIMIT 2",
         "FROM facts |> EXTEND 9223372036854775797+v AS overflow |> WHERE overflow>0 |> SELECT COUNT(*) OVER () AS n |> LIMIT 1",
     ] {
         let prepared = db.prepare(sql).unwrap();
@@ -212,8 +212,8 @@ fn analytic_emission_preserves_demanded_errors_and_original_scope() {
         assert!(failed, "{sql}");
     }
     for sql in [
-        "FROM facts |> SELECT COUNT(*) OVER () AS n,n+1 AS next",
-        "FROM facts |> EXTEND COUNT(*) OVER () AS n,n+1 AS next",
+        "FROM facts |> SELECT COUNT(*) OVER () AS n, n+1 AS next",
+        "FROM facts |> EXTEND COUNT(*) OVER () AS n, n+1 AS next",
         "FROM facts |> SET v=COUNT(*) OVER ()",
         "FROM facts |> SELECT COUNT(v) OVER ()",
         "FROM facts |> SELECT COUNT(*) OVER (ORDER BY v)",
@@ -233,7 +233,7 @@ fn analytic_snapshot_retains_typed_rows_across_append_and_reclamation() {
     .unwrap();
     let cancel = CancellationToken::new();
     db.declare_table("facts", &declarations(), &cancel).unwrap();
-    let sql = "FROM facts |> SELECT note,amount,number,day,COUNT(*) OVER () AS n";
+    let sql = "FROM facts |> SELECT note, amount, number, day, COUNT(*) OVER () AS n";
     let empty = db.prepare(sql).unwrap();
     let note = ["雪", "", "ignored"];
     let amount = [i64::MIN, i64::MAX, 0];
@@ -383,7 +383,7 @@ fn analytic_spill_preserves_nullable_text_and_all_row_values() {
         .unwrap();
     append.commit(&cancel).unwrap();
     let prepared = db
-        .prepare("FROM facts |> EXTEND COUNT(*) OVER () AS n |> SELECT id,note,n")
+        .prepare("FROM facts |> EXTEND COUNT(*) OVER () AS n |> SELECT id, note, n")
         .unwrap();
     let baseline = db.reserved_memory_bytes();
     let mut result = db.execute(&prepared, &cancel).unwrap();

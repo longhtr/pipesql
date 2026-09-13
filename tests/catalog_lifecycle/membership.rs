@@ -58,8 +58,8 @@ fn membership_checks_types_and_composes_with_producers() {
     let baseline = db.reserved_memory_bytes();
     for predicate in [
         "id IN ()",
-        "id IN (1,)",
-        "id IN (,1)",
+        "id IN (1, )",
+        "id IN (, 1)",
         "id IN (1 2)",
         "id IN (1",
         "id IN (1))",
@@ -154,8 +154,8 @@ fn membership_matches_independent_nullable_set_model() {
     };
     for (list, candidates) in [
         ("7", vec![Some(7)]),
-        ("NULL,7,7", vec![None, Some(7), Some(7)]),
-        ("0,7", vec![Some(0), Some(7)]),
+        ("NULL, 7, 7", vec![None, Some(7), Some(7)]),
+        ("0, 7", vec![Some(0), Some(7)]),
         ("NULL", vec![None]),
     ] {
         for form in 0..6 {
@@ -200,19 +200,19 @@ fn membership_preserves_conditional_demand_and_release() {
     let (_directory, db) = super::null_predicate::fixture().unwrap();
     for (sql, expected) in [
         (
-            "FROM facts |> SELECT id,id*9223372036854775807 AS bad |> WHERE id IN (2,3) OR bad IN (0,9223372036854775807) |> ORDER BY id |> SELECT id",
+            "FROM facts |> SELECT id, id*9223372036854775807 AS bad |> WHERE id IN (2, 3) OR bad IN (0, 9223372036854775807) |> ORDER BY id |> SELECT id",
             vec![0, 1, 2, 3],
         ),
         (
-            "FROM facts |> SELECT id,i,id*9223372036854775807 AS bad |> WHERE id=2 |> WHERE NOT (i IN (0,NULL) OR bad IN (0)) |> SELECT id",
+            "FROM facts |> SELECT id, i, id*9223372036854775807 AS bad |> WHERE id=2 |> WHERE NOT (i IN (0, NULL) OR bad IN (0)) |> SELECT id",
             vec![],
         ),
         (
-            "FROM facts |> SELECT id,i,id*9223372036854775807 AS bad |> WHERE i IN (NULL) AND bad IN (0) |> SELECT id",
+            "FROM facts |> SELECT id, i, id*9223372036854775807 AS bad |> WHERE i IN (NULL) AND bad IN (0) |> SELECT id",
             vec![],
         ),
         (
-            "FROM facts |> AGGREGATE SUM(9223372036854775807) AS s,COUNT(*) AS n |> WHERE n IN (4) OR s IN (0) |> SELECT n",
+            "FROM facts |> AGGREGATE SUM(9223372036854775807) AS s, COUNT(*) AS n |> WHERE n IN (4) OR s IN (0) |> SELECT n",
             vec![4],
         ),
     ] {
@@ -220,10 +220,10 @@ fn membership_preserves_conditional_demand_and_release() {
     }
     for predicate in [
         "bad IN (0) OR id IN (2)",
-        "NOT (i IN (0,NULL) AND bad IN (0))",
+        "NOT (i IN (0, NULL) AND bad IN (0))",
     ] {
         let sql = format!(
-            "FROM facts |> SELECT id,i,id*9223372036854775807 AS bad |> WHERE id=2 |> WHERE {predicate} |> SELECT id"
+            "FROM facts |> SELECT id, i, id*9223372036854775807 AS bad |> WHERE id=2 |> WHERE {predicate} |> SELECT id"
         );
         let baseline = db.reserved_memory_bytes();
         let prepared = db.prepare(&sql).unwrap();
@@ -254,17 +254,17 @@ fn membership_retains_stage_bounds_cancellation_and_early_drop() {
     let (_directory, db) = super::null_predicate::fixture().unwrap();
     let at_limit = format!(
         "FROM facts |> SELECT id |> WHERE id IN ({})",
-        ["0"; 15].join(",")
+        ["0"; 15].join(", ")
     );
     query(&db, &at_limit, integers(&[0]));
     let over_limit = format!(
         "FROM facts |> SELECT id |> WHERE id IN ({})",
-        ["0"; 16].join(",")
+        ["0"; 16].join(", ")
     );
     assert!(matches!(db.prepare(&over_limit), Err(Error::Parse { .. })));
     let baseline = db.reserved_memory_bytes();
     let prepared = db
-        .prepare("FROM facts |> WHERE id IN (NULL,1,3) |> ORDER BY id |> SELECT id")
+        .prepare("FROM facts |> WHERE id IN (NULL, 1, 3) |> ORDER BY id |> SELECT id")
         .unwrap();
     let parked = db.reserved_memory_bytes();
     for cancel_after in [0, 1] {

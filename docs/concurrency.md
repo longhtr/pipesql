@@ -118,7 +118,7 @@ cancellation cannot overwrite commit truth; the operation completes or returns
 
 ## Target scheduler state
 
-A scheduler task is `Ready`, `Running`, `Blocked(reason,wakeup)`, `Finished`,
+A scheduler task is `Ready`, `Running`, `Blocked(reason, wakeup)`, `Finished`,
 `Cancelled`, or `Failed`. One step advances a declared row/byte/chunk/effect
 cursor, blocks, finishes, or fails. Queues, workers, and wakeups are bounded.
 Scheduler fairness and healthy-resource premises are stated separately from

@@ -195,7 +195,7 @@ fn values(running: &mut QueryResult<'_, '_>) -> (Option<i64>, Option<i64>, u64, 
 }
 
 const QUERY: &str =
-    "FROM facts |> AGGREGATE SUM(k) AS key,SUM(n) AS total,AVG(d) AS average,COUNT(*) AS nrows";
+    "FROM facts |> AGGREGATE SUM(k) AS key, SUM(n) AS total, AVG(d) AS average, COUNT(*) AS nrows";
 
 fn check_controller_account(general: &General<'_>) {
     fn bytes<T>(values: &Vec<T>) -> usize {

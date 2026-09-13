@@ -181,7 +181,7 @@ mod tests {
         let baseline = db.reserved_memory_bytes();
         for mode in ["ALL", "DISTINCT"] {
             let sql =
-                format!("FROM l |> SELECT a AS x,a AS y |> UNION {mode} (FROM r |> SELECT b,c)");
+                format!("FROM l |> SELECT a AS x, a AS y |> UNION {mode} (FROM r |> SELECT b, c)");
             for mutation in 0..12 {
                 let mut query = db.prepare(&sql).unwrap();
                 let union = &query.plan.unions[0];

@@ -99,7 +99,7 @@ fn public_text_predicates_preserve_literal_values_and_composed_inputs() {
     }
     for sql in [
         "FROM texts |> ORDER BY id DESC |> WHERE category BETWEEN 'a' AND 'e' |> SELECT id",
-        "FROM texts |> ORDER BY id DESC |> SELECT category AS c,id |> WHERE c >= 'a' AND c <= 'e' |> SELECT id",
+        "FROM texts |> ORDER BY id DESC |> SELECT category AS c, id |> WHERE c >= 'a' AND c <= 'e' |> SELECT id",
         "FROM (FROM texts |> ORDER BY id DESC |> LIMIT 10) |> WHERE category >= 'a' AND category <= 'e' |> ORDER BY id DESC |> SELECT id",
     ] {
         query(&db, sql, integers(&[9, 1]));

@@ -13,7 +13,7 @@ fn declared_tables_append_and_snapshot_queries_survive_reopen() {
     ));
     db.declare_table("facts", &declarations(), &cancel).unwrap();
     db.declare_table("other", &declarations(), &cancel).unwrap();
-    let sql = "FROM facts |> SELECT note,amount,number,day";
+    let sql = "FROM facts |> SELECT note, amount, number, day";
     let empty = db.prepare(sql).unwrap();
     let mut text = String::from("雪");
     let integers = [9_007_199_254_740_993, i64::MAX];

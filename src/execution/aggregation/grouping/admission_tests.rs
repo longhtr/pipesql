@@ -110,7 +110,7 @@ fn accumulator_requirement_matches_typed_arrays_under_exact_pressure() {
             )
             .unwrap();
         let prepared = database.prepare(&format!(
-            "FROM {table} |> AGGREGATE SUM(v) AS a,AVG(v) AS b,SUM(d) AS c,AVG(d) AS e,COUNT(*) AS n,SUM(v+(v*(v+1))) AS f"
+            "FROM {table} |> AGGREGATE SUM(v) AS a, AVG(v) AS b, SUM(d) AS c, AVG(d) AS e, COUNT(*) AS n, SUM(v+(v*(v+1))) AS f"
         )).unwrap();
         let semantic = prepared.plan.aggregates.first().unwrap();
         let baseline = database.reserved_memory_bytes();
@@ -205,7 +205,7 @@ fn hash_capacity_accounts_for_every_extremum_before_admission() {
         )
         .unwrap();
     let query = database.prepare(
-        "FROM facts |> AGGREGATE MIN(n) AS a,MAX(n) AS b,MIN(n+1) AS c,MAX(n+1) AS d,MIN(n+2) AS e,MAX(n+2) AS f,MIN(n+3) AS g,MAX(n+3) AS h,MIN(n+4) AS i GROUP BY k"
+        "FROM facts |> AGGREGATE MIN(n) AS a, MAX(n) AS b, MIN(n+1) AS c, MAX(n+1) AS d, MIN(n+2) AS e, MAX(n+2) AS f, MIN(n+3) AS g, MAX(n+3) AS h, MIN(n+4) AS i GROUP BY k"
     ).unwrap();
     let semantic = query.plan.aggregates.first().unwrap();
     let aggregate = AggregateState::new(

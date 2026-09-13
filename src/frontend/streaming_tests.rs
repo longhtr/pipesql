@@ -18,7 +18,7 @@ fn projection_ranges_are_complete_disjoint_and_bounded() {
     database
         .declare_table("wide", &schema, &crate::CancellationToken::new())
         .unwrap();
-    let stage = format!(" |> SELECT {}", names.join(","));
+    let stage = format!(" |> SELECT {}", names.join(", "));
     let query = format!("FROM wide{}", stage.repeat(7));
     let prepared = database.prepare(&query).unwrap();
     assert_eq!(prepared.result_column_count(), 10);
@@ -91,7 +91,7 @@ fn semantic_plan_mutations_refuse() {
         assert!(validate(&query.plan).is_err(), "mutation {mutation}");
     }
     for mutation in 0..14 {
-        let mut query = database.prepare("FROM lineitem |> AGGREGATE SUM(l_quantity) AS s,AVG(l_quantity) AS a,COUNT(*) AS n |> WHERE n > 0 |> SELECT a AS n").unwrap();
+        let mut query = database.prepare("FROM lineitem |> AGGREGATE SUM(l_quantity) AS s, AVG(l_quantity) AS a, COUNT(*) AS n |> WHERE n > 0 |> SELECT a AS n").unwrap();
         assert_eq!(
             query.result_column(0),
             Some(ResultColumn {
@@ -180,7 +180,7 @@ fn semantic_plan_mutations_refuse() {
     }
     for mutation in 0..4 {
         let mut query = database
-            .prepare("FROM lineitem |> WHERE l_quantity IN (1,NULL,3)")
+            .prepare("FROM lineitem |> WHERE l_quantity IN (1, NULL, 3)")
             .unwrap();
         validate(&query.plan).unwrap();
         let filter = query

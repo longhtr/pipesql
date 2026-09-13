@@ -68,7 +68,7 @@ fn extrema_nan_does_not_suppress_later_demanded_errors() {
             assert_eq!(db.reserved_memory_bytes(), baseline);
             assert_eq!(db.reserved_temp_bytes(), 0);
         }
-        let sql = format!("FROM values |> AGGREGATE {call} AS unused,COUNT(*) AS n |> SELECT n");
+        let sql = format!("FROM values |> AGGREGATE {call} AS unused, COUNT(*) AS n |> SELECT n");
         let query = db.prepare(&sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         let mut result = db.execute(&query, &cancel).unwrap();
@@ -101,7 +101,7 @@ fn text_extrema_preserve_nulls_empty_text_and_unicode_order() {
         &cancel,
     )
     .unwrap();
-    let sql = "FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi,COUNT(word) AS n";
+    let sql = "FROM words |> AGGREGATE MIN(word) AS lo, MAX(word) AS hi, COUNT(word) AS n";
     let empty = db.prepare(sql).unwrap();
     assert_eq!(
         collect(&mut db.execute(&empty, &cancel).unwrap()),
@@ -132,7 +132,7 @@ fn text_extrema_preserve_nulls_empty_text_and_unicode_order() {
             vec![Cell::Integer(1), Cell::Text("z".into()), Cell::Text("é".into()), Cell::Integer(2)],
             vec![Cell::Integer(2), Cell::Text("".into()), Cell::Text("a".into()), Cell::Integer(2)],
         ]),
-        ("FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi GROUP BY k |> AGGREGATE MIN(lo) AS lo,MAX(hi) AS hi".to_owned(),
+        ("FROM words |> AGGREGATE MIN(word) AS lo, MAX(word) AS hi GROUP BY k |> AGGREGATE MIN(lo) AS lo, MAX(hi) AS hi".to_owned(),
             vec![vec![Cell::Text("".into()), Cell::Text("é".into())]]),
     ];
     for (sql, expected) in cases {
@@ -169,7 +169,7 @@ fn date_extrema_preserve_type_nulls_and_repeated_aggregation() {
         &cancel,
     )
     .unwrap();
-    let sql = "FROM dates |> AGGREGATE MIN(day) AS lo,MAX(day) AS hi,COUNT(day) AS n";
+    let sql = "FROM dates |> AGGREGATE MIN(day) AS lo, MAX(day) AS hi, COUNT(day) AS n";
     let empty = db.prepare(sql).unwrap();
     assert_eq!(
         collect(&mut db.execute(&empty, &cancel).unwrap()),
@@ -196,21 +196,21 @@ fn date_extrema_preserve_type_nulls_and_repeated_aggregation() {
         .unwrap();
     append.commit(&cancel).unwrap();
     for (sql, expected) in [
-        (sql.to_owned(), vec![vec![Cell::Day(-719162),Cell::Day(2932896),Cell::Integer(4)]]),
+        (sql.to_owned(), vec![vec![Cell::Day(-719162), Cell::Day(2932896), Cell::Integer(4)]]),
         (format!("{sql} GROUP AND ORDER BY k"), vec![
-            vec![Cell::Integer(0),Cell::Null,Cell::Null,Cell::Integer(0)],
-            vec![Cell::Integer(1),Cell::Day(-719162),Cell::Day(2932896),Cell::Integer(2)],
-            vec![Cell::Integer(2),Cell::Day(-1),Cell::Day(-1),Cell::Integer(2)],
+            vec![Cell::Integer(0), Cell::Null, Cell::Null, Cell::Integer(0)],
+            vec![Cell::Integer(1), Cell::Day(-719162), Cell::Day(2932896), Cell::Integer(2)],
+            vec![Cell::Integer(2), Cell::Day(-1), Cell::Day(-1), Cell::Integer(2)],
         ]),
-        ("FROM dates |> AGGREGATE MIN(day) AS lo,MAX(day) AS hi GROUP BY k |> AGGREGATE MIN(lo) AS lo,MAX(hi) AS hi".to_owned(), vec![vec![Cell::Day(-719162),Cell::Day(2932896)]]),
+        ("FROM dates |> AGGREGATE MIN(day) AS lo, MAX(day) AS hi GROUP BY k |> AGGREGATE MIN(lo) AS lo, MAX(hi) AS hi".to_owned(), vec![vec![Cell::Day(-719162), Cell::Day(2932896)]]),
     ] {
         let query=db.prepare(&sql).unwrap();
         let baseline=db.reserved_memory_bytes();
-        let mut result=db.execute(&query,&cancel).unwrap();
-        assert_eq!(collect(&mut result),expected,"{sql}");
+        let mut result=db.execute(&query, &cancel).unwrap();
+        assert_eq!(collect(&mut result), expected, "{sql}");
         drop(result);
-        assert_eq!(db.reserved_memory_bytes(),baseline);
-        assert_eq!(db.reserved_temp_bytes(),0);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
     }
     db.close().unwrap();
 }
@@ -242,7 +242,7 @@ fn numeric_extrema_preserve_nulls_special_values_and_shared_aggregation() {
         &cancel,
     )
     .unwrap();
-    let sql = "FROM metrics |> AGGREGATE MIN(n) AS lo,MAX(n) AS hi,COUNT(n) AS present,MIN(d) AS dlo,MAX(d) AS dhi";
+    let sql = "FROM metrics |> AGGREGATE MIN(n) AS lo, MAX(n) AS hi, COUNT(n) AS present, MIN(d) AS dlo, MAX(d) AS dhi";
     let empty = db.prepare(sql).unwrap();
     assert_eq!(
         collect(&mut db.execute(&empty, &cancel).unwrap()),
@@ -291,8 +291,8 @@ fn numeric_extrema_preserve_nulls_special_values_and_shared_aggregation() {
             vec![Cell::Integer(1), Cell::Integer(i64::MIN), Cell::Integer(i64::MAX), Cell::Integer(2), Cell::Number((-0.0_f64).to_bits()), Cell::Number(0.0_f64.to_bits())],
             vec![Cell::Integer(2), Cell::Integer(7), Cell::Integer(9), Cell::Integer(2), Cell::Number(f64::NEG_INFINITY.to_bits()), Cell::Number(f64::INFINITY.to_bits())],
         ]),
-        ("FROM metrics |> AGGREGATE MIN(n) AS lo,MAX(n) AS hi,COUNT(n) AS present,SUM(n) AS total,AVG(n) AS mean".to_owned(), vec![vec![Cell::Integer(i64::MIN), Cell::Integer(i64::MAX), Cell::Integer(4), Cell::Integer(15), Cell::Number(3.75_f64.to_bits())]]),
-        ("FROM metrics |> AGGREGATE MIN(n) AS lo,MAX(n) AS hi GROUP BY k |> AGGREGATE MIN(lo) AS lo,MAX(hi) AS hi".to_owned(), vec![vec![Cell::Integer(i64::MIN), Cell::Integer(i64::MAX)]]),
+        ("FROM metrics |> AGGREGATE MIN(n) AS lo, MAX(n) AS hi, COUNT(n) AS present, SUM(n) AS total, AVG(n) AS mean".to_owned(), vec![vec![Cell::Integer(i64::MIN), Cell::Integer(i64::MAX), Cell::Integer(4), Cell::Integer(15), Cell::Number(3.75_f64.to_bits())]]),
+        ("FROM metrics |> AGGREGATE MIN(n) AS lo, MAX(n) AS hi GROUP BY k |> AGGREGATE MIN(lo) AS lo, MAX(hi) AS hi".to_owned(), vec![vec![Cell::Integer(i64::MIN), Cell::Integer(i64::MAX)]]),
     ] {
         let query = db.prepare(&sql).unwrap();
         let baseline = db.reserved_memory_bytes();
@@ -349,23 +349,23 @@ fn aggregates_follow_repeated_derived_and_joined_inputs() {
     // left-side values are present. Key 2 contributes one present row.
     for (sql, expected) in [
         (
-            "FROM facts AS f |> JOIN facts AS d ON f.k = d.k |> AGGREGATE MIN(f.v) AS lo,MAX(d.v) AS hi,COUNT(f.v) AS present,COUNT(*) AS n",
+            "FROM facts AS f |> JOIN facts AS d ON f.k = d.k |> AGGREGATE MIN(f.v) AS lo, MAX(d.v) AS hi, COUNT(f.v) AS present, COUNT(*) AS n",
             vec![vec![10, 30, 3, 5]],
         ),
         (
-            "FROM facts AS f |> JOIN facts AS d ON f.k = d.k |> AGGREGATE MIN(f.v) AS lo,MAX(d.v) AS hi GROUP AND ORDER BY f.k",
+            "FROM facts AS f |> JOIN facts AS d ON f.k = d.k |> AGGREGATE MIN(f.v) AS lo, MAX(d.v) AS hi GROUP AND ORDER BY f.k",
             vec![vec![1, 10, 10], vec![2, 30, 30]],
         ),
         (
-            "FROM (FROM facts |> AGGREGATE MIN(v) AS lo,MAX(v) AS hi GROUP BY k) AS g |> AGGREGATE MIN(g.lo) AS lo,MAX(g.hi) AS hi",
+            "FROM (FROM facts |> AGGREGATE MIN(v) AS lo, MAX(v) AS hi GROUP BY k) AS g |> AGGREGATE MIN(g.lo) AS lo, MAX(g.hi) AS hi",
             vec![vec![10, 30]],
         ),
         (
-            "FROM facts |> SELECT v*2 AS doubled |> AGGREGATE MIN(doubled) AS lo,MAX(doubled) AS hi",
+            "FROM facts |> SELECT v*2 AS doubled |> AGGREGATE MIN(doubled) AS lo, MAX(doubled) AS hi",
             vec![vec![20, 60]],
         ),
         (
-            "FROM facts AS f |> JOIN facts AS d ON f.k = d.k |> AGGREGATE COUNT(f.v) AS present,COUNT(*) AS n",
+            "FROM facts AS f |> JOIN facts AS d ON f.k = d.k |> AGGREGATE COUNT(f.v) AS present, COUNT(*) AS n",
             vec![vec![3, 5]],
         ),
         (
@@ -373,7 +373,7 @@ fn aggregates_follow_repeated_derived_and_joined_inputs() {
             vec![vec![1, 2], vec![2, 1]],
         ),
         (
-            "FROM facts |> AGGREGATE COUNT(v) AS n GROUP BY k |> AGGREGATE COUNT(n) AS present,SUM(n) AS total",
+            "FROM facts |> AGGREGATE COUNT(v) AS n GROUP BY k |> AGGREGATE COUNT(n) AS present, SUM(n) AS total",
             vec![vec![2, 2]],
         ),
         (
@@ -423,7 +423,7 @@ fn count_arguments_count_present_values_without_summing_them() {
         &cancel,
     )
     .unwrap();
-    let sql = "FROM facts |> AGGREGATE COUNT(*) AS nrows,COUNT(note) AS notes,COUNT(amount) AS amounts,COUNT(number) AS numbers,COUNT(day) AS days";
+    let sql = "FROM facts |> AGGREGATE COUNT(*) AS nrows, COUNT(note) AS notes, COUNT(amount) AS amounts, COUNT(number) AS numbers, COUNT(day) AS days";
     let empty = db.prepare(sql).unwrap();
     assert_eq!(
         collect(&mut db.execute(&empty, &cancel).unwrap()),
@@ -508,7 +508,7 @@ fn count_arguments_count_present_values_without_summing_them() {
     );
     drop(grouped);
     let hidden = db
-        .prepare("FROM facts |> AGGREGATE COUNT(amount*2) AS bad,COUNT(*) AS n |> SELECT n")
+        .prepare("FROM facts |> AGGREGATE COUNT(amount*2) AS bad, COUNT(*) AS n |> SELECT n")
         .unwrap();
     assert_eq!(
         collect(&mut db.execute(&hidden, &cancel).unwrap()),
@@ -643,7 +643,7 @@ fn declared_global_aggregates_preserve_types_null_counts_and_pinned_inputs() {
     let baseline = db.reserved_memory_bytes();
     assert_eq!(collect(&mut db.execute(&query, &cancel).unwrap()), expected);
     assert_eq!(db.reserved_memory_bytes(), baseline);
-    let filtered = db.prepare("FROM facts |> SELECT n AS amount |> WHERE amount > 0 |> AGGREGATE SUM(amount) AS total, COUNT(*) AS nrows |> WHERE total = 9007199254741000 |> SELECT nrows,total").unwrap();
+    let filtered = db.prepare("FROM facts |> SELECT n AS amount |> WHERE amount > 0 |> AGGREGATE SUM(amount) AS total, COUNT(*) AS nrows |> WHERE total = 9007199254741000 |> SELECT nrows, total").unwrap();
     assert_eq!(
         collect(&mut db.execute(&filtered, &cancel).unwrap()),
         vec![vec![Cell::Integer(3), Cell::Integer(LARGE + 7)]]
@@ -689,7 +689,7 @@ fn declared_global_aggregates_preserve_types_null_counts_and_pinned_inputs() {
         )
         .unwrap();
     writer.commit(&cancel).unwrap();
-    let nulls = db.prepare("FROM empty_values |> AGGREGATE COUNT(*) AS nrows,SUM(n) AS total,AVG(n) AS mean,SUM(d) AS ds,AVG(d) AS dm").unwrap();
+    let nulls = db.prepare("FROM empty_values |> AGGREGATE COUNT(*) AS nrows, SUM(n) AS total, AVG(n) AS mean, SUM(d) AS ds, AVG(d) AS dm").unwrap();
     assert_eq!(
         collect(&mut db.execute(&nulls, &cancel).unwrap()),
         vec![vec![
@@ -784,17 +784,17 @@ fn declared_integer_sum_overflow_is_final_and_demanded() {
             "addition",
         ),
         (
-            "# 雪\nFROM facts |> AGGREGATE SUM(n+1) AS unused,AVG(n+1) AS mean |> SELECT mean",
+            "# 雪\nFROM facts |> AGGREGATE SUM(n+1) AS unused, AVG(n+1) AS mean |> SELECT mean",
             "AVG(n+1)",
             "addition",
         ),
         (
-            "FROM facts |> AGGREGATE AVG(n) AS mean,SUM(n) AS total |> ORDER BY total |> LIMIT 1 |> SELECT mean",
+            "FROM facts |> AGGREGATE AVG(n) AS mean, SUM(n) AS total |> ORDER BY total |> LIMIT 1 |> SELECT mean",
             "SUM(n)",
             "SUM",
         ),
         (
-            "FROM facts |> AGGREGATE SUM(n) AS safe,SUM(n*2) AS bad |> ORDER BY bad |> LIMIT 1 |> SELECT safe",
+            "FROM facts |> AGGREGATE SUM(n) AS safe, SUM(n*2) AS bad |> ORDER BY bad |> LIMIT 1 |> SELECT safe",
             "SUM(n*2)",
             "multiplication",
         ),
@@ -823,7 +823,7 @@ fn declared_integer_sum_overflow_is_final_and_demanded() {
         drop(result);
         assert_eq!(db.reserved_memory_bytes(), baseline);
     }
-    let query = db.prepare("FROM facts |> AGGREGATE SUM(n) AS total, AVG(n) AS mean, COUNT(*) AS nrows |> SELECT mean,nrows").unwrap();
+    let query = db.prepare("FROM facts |> AGGREGATE SUM(n) AS total, AVG(n) AS mean, COUNT(*) AS nrows |> SELECT mean, nrows").unwrap();
     assert_eq!(
         collect(&mut db.execute(&query, &cancel).unwrap()),
         vec![vec![
@@ -858,7 +858,7 @@ fn declared_nullable_double_aggregates_preserve_exceptional_values() {
         (
             [f64::MAX, f64::NAN, f64::MAX, f64::INFINITY],
             5,
-            "FROM facts |> AGGREGATE SUM(v) AS total,AVG(v) AS mean |> SELECT mean",
+            "FROM facts |> AGGREGATE SUM(v) AS total, AVG(v) AS mean |> SELECT mean",
             f64::MAX,
         ),
         (
@@ -971,7 +971,7 @@ fn short_text_extrema_keep_256_groups_in_memory_at_four_megabytes() {
         Config::new(4_000_000, 4_000_000).unwrap(),
     )
     .unwrap();
-    let query = db.prepare("FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi,COUNT(*) AS n GROUP AND ORDER BY k").unwrap();
+    let query = db.prepare("FROM words |> AGGREGATE MIN(word) AS lo, MAX(word) AS hi, COUNT(*) AS n GROUP AND ORDER BY k").unwrap();
     let baseline = db.reserved_memory_bytes();
     let mut result = db.execute(&query, &cancel).unwrap();
     let mut seen = 0;

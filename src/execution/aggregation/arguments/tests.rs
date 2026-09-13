@@ -105,7 +105,7 @@ fn count_only_arguments_own_counters_and_share_numeric_work_when_needed() {
     for (sql, shared) in [
         ("FROM facts |> AGGREGATE COUNT(n) AS c", false),
         (
-            "FROM facts |> AGGREGATE COUNT(n) AS c,SUM(n) AS s,AVG(n) AS a",
+            "FROM facts |> AGGREGATE COUNT(n) AS c, SUM(n) AS s, AVG(n) AS a",
             true,
         ),
     ] {
@@ -182,7 +182,7 @@ fn extrema_capture_keeps_values_and_validation_rejects_misdirected_slots() {
         )
         .unwrap();
     let query = database
-        .prepare("FROM facts |> AGGREGATE MIN(n) AS lo,MAX(n) AS hi,COUNT(n) AS c")
+        .prepare("FROM facts |> AGGREGATE MIN(n) AS lo, MAX(n) AS hi, COUNT(n) AS c")
         .unwrap();
     let semantic = query.plan.aggregates.first().unwrap();
     let demand = query.plan.aggregate_demand(0);
@@ -280,7 +280,7 @@ fn key_mapping_uses_the_bound_semantic_identity() {
         crate::Config::new(2_000_000, 1).unwrap(),
     )
     .unwrap();
-    let query = database.prepare("FROM lineitem |> SELECT l_linestatus AS status, l_returnflag AS flag |> AGGREGATE COUNT(*) AS n,SUM(1) AS s,AVG(2.0) AS a GROUP BY flag,status").unwrap();
+    let query = database.prepare("FROM lineitem |> SELECT l_linestatus AS status, l_returnflag AS flag |> AGGREGATE COUNT(*) AS n, SUM(1) AS s, AVG(2.0) AS a GROUP BY flag, status").unwrap();
     let inputs: Vec<_> = query.plan.input_columns().collect();
     let keys = grouping::key_layout(query.plan.aggregates.first().unwrap(), &inputs).unwrap();
     let aggregate = AggregateState::new(
@@ -348,7 +348,7 @@ fn argument_batches_preserve_demand_and_refuse_before_publication() {
         )
         .unwrap();
     let query = database
-        .prepare("FROM facts |> AGGREGATE SUM(n*2) AS bad,COUNT(*) AS nrows |> SELECT nrows")
+        .prepare("FROM facts |> AGGREGATE SUM(n*2) AS bad, COUNT(*) AS nrows |> SELECT nrows")
         .unwrap();
     let mut aggregate = AggregateState::new(
         &database.memory,
@@ -392,7 +392,7 @@ fn argument_batches_preserve_demand_and_refuse_before_publication() {
     aggregate.cells.clear_group(0);
     assert_eq!(aggregate.value(0, 1).unwrap(), Value::Int64(0));
     let query = database
-        .prepare("FROM facts |> AGGREGATE SUM(n*2) AS bad,SUM(d) AS ds")
+        .prepare("FROM facts |> AGGREGATE SUM(n*2) AS bad, SUM(d) AS ds")
         .unwrap();
     let mut aggregate = AggregateState::new(
         &database.memory,
@@ -480,7 +480,7 @@ fn text_extrema_reuse_owned_slots_for_growing_and_shrinking_values() {
         )
         .unwrap();
     let query = database
-        .prepare("FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi")
+        .prepare("FROM words |> AGGREGATE MIN(word) AS lo, MAX(word) AS hi")
         .unwrap();
     let columns: Vec<_> = query.plan.input_columns().collect();
     let semantic = query.plan.aggregates.first().unwrap();
@@ -577,7 +577,7 @@ fn text_capture_and_replay_stop_at_byte_capacity_before_row_capacity() {
         )
         .unwrap();
     let query = database
-        .prepare("FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi,COUNT(word) AS n")
+        .prepare("FROM words |> AGGREGATE MIN(word) AS lo, MAX(word) AS hi, COUNT(word) AS n")
         .unwrap();
     let semantic = query.plan.aggregates.first().unwrap();
     let baseline = database.reserved_memory_bytes();

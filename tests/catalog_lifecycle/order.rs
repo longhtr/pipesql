@@ -49,25 +49,25 @@ pub(super) fn integers(values: &[i64]) -> Vec<Vec<Cell>> {
 fn public_order_preserves_hidden_keys_aliases_and_composed_producers() {
     let (_directory, db) = join_fixture();
     for sql in [
-        "FROM facts |> ORDER BY k DESC NULLS FIRST,v DESC |> SELECT v",
-        "FROM facts |> SELECT v AS k,k AS v |> ORDER BY 2 DESC NULLS FIRST,1 DESC |> SELECT k",
-        "FROM facts |> ORDER BY k DESC NULLS FIRST,k ASC NULLS LAST,v DESC |> SELECT v",
+        "FROM facts |> ORDER BY k DESC NULLS FIRST, v DESC |> SELECT v",
+        "FROM facts |> SELECT v AS k, k AS v |> ORDER BY 2 DESC NULLS FIRST, 1 DESC |> SELECT k",
+        "FROM facts |> ORDER BY k DESC NULLS FIRST, k ASC NULLS LAST, v DESC |> SELECT v",
     ] {
         query(&db, sql, integers(&[40, 30, 20, 10]));
     }
     query(
         &db,
-        "FROM facts |> ORDER BY k DESC NULLS FIRST,v DESC |> SELECT v |> WHERE v != 20",
+        "FROM facts |> ORDER BY k DESC NULLS FIRST, v DESC |> SELECT v |> WHERE v != 20",
         integers(&[40, 30, 10]),
     );
     query(
         &db,
-        "FROM facts |> ORDER BY v DESC |> ORDER BY k ASC NULLS LAST,v ASC |> SELECT v",
+        "FROM facts |> ORDER BY v DESC |> ORDER BY k ASC NULLS LAST, v ASC |> SELECT v",
         integers(&[10, 20, 30, 40]),
     );
     query(
         &db,
-        "FROM facts |> AGGREGATE SUM(v) AS total GROUP BY k |> ORDER BY total DESC,k ASC NULLS LAST |> SELECT k,total",
+        "FROM facts |> AGGREGATE SUM(v) AS total GROUP BY k |> ORDER BY total DESC, k ASC NULLS LAST |> SELECT k, total",
         vec![
             vec![Cell::Null, Cell::Integer(40)],
             vec![Cell::Integer(1), Cell::Integer(30)],
@@ -76,14 +76,14 @@ fn public_order_preserves_hidden_keys_aliases_and_composed_producers() {
     );
     query(
         &db,
-        "FROM facts |> ORDER BY v DESC |> AGGREGATE SUM(v) AS total,COUNT(*) AS n",
+        "FROM facts |> ORDER BY v DESC |> AGGREGATE SUM(v) AS total, COUNT(*) AS n",
         vec![vec![Cell::Integer(100), Cell::Integer(4)]],
     );
     for prefix in ["FROM facts AS f", "FROM facts |> ORDER BY v DESC |> AS f"] {
         query(
             &db,
             &format!(
-                "{prefix} |> JOIN dimensions AS d ON f.k = d.k |> ORDER BY f.v DESC,d.label |> SELECT f.v,d.label"
+                "{prefix} |> JOIN dimensions AS d ON f.k = d.k |> ORDER BY f.v DESC, d.label |> SELECT f.v, d.label"
             ),
             [(30, "c"), (20, "a"), (20, "b"), (10, "a"), (10, "b")]
                 .map(|(v, s)| vec![Cell::Integer(v), Cell::Text(s.to_owned())])
@@ -173,12 +173,12 @@ fn public_order_covers_scalar_domains_directions_nulls_and_raw_values() {
     writer.commit(&cancel).unwrap();
     query(
         &db,
-        "FROM facts |> ORDER BY id |> LIMIT 1 OFFSET 8 |> SELECT payload,payload AS duplicate",
+        "FROM facts |> ORDER BY id |> LIMIT 1 OFFSET 8 |> SELECT payload, payload AS duplicate",
         vec![vec![Cell::Text(long.clone()), Cell::Text(long.clone())]],
     );
     query(
         &db,
-        "FROM facts |> ORDER BY id DESC |> LIMIT 1 |> SELECT number,day,text",
+        "FROM facts |> ORDER BY id DESC |> LIMIT 1 |> SELECT number, day, text",
         vec![vec![Cell::Null, Cell::Null, Cell::Null]],
     );
     // Independent semantic ranks: all NaNs tie below negative infinity;
@@ -216,7 +216,7 @@ fn public_order_covers_scalar_domains_directions_nulls_and_raw_values() {
                 query(
                     &db,
                     &format!(
-                        "FROM facts |> ORDER BY {name} {} NULLS {},id |> SELECT id,number,payload",
+                        "FROM facts |> ORDER BY {name} {} NULLS {}, id |> SELECT id, number, payload",
                         if descending { "DESC" } else { "ASC" },
                         if nulls_last { "LAST" } else { "FIRST" }
                     ),
@@ -227,12 +227,12 @@ fn public_order_covers_scalar_domains_directions_nulls_and_raw_values() {
     }
     query(
         &db,
-        "FROM facts |> ORDER BY number,id |> SELECT id",
+        "FROM facts |> ORDER BY number, id |> SELECT id",
         integers(&[9, 2, 7, 4, 6, 1, 5, 3, 8, 0]),
     );
     query(
         &db,
-        "FROM facts |> ORDER BY number DESC,id |> SELECT id",
+        "FROM facts |> ORDER BY number DESC, id |> SELECT id",
         integers(&[0, 8, 3, 1, 5, 6, 4, 2, 7, 9]),
     );
     db.close().unwrap();
@@ -255,8 +255,8 @@ fn public_order_rejects_unsupported_and_ambiguous_keys_without_retaining_owners(
         "FROM facts |> ORDER BY 18446744073709551616",
         "FROM facts |> SELECT v |> ORDER BY 2",
         "FROM facts |> ORDER BY missing",
-        "FROM facts |> SELECT k AS x,v AS x |> ORDER BY x",
-        "FROM facts |> SELECT k,k |> ORDER BY k",
+        "FROM facts |> SELECT k AS x, v AS x |> ORDER BY x",
+        "FROM facts |> SELECT k, k |> ORDER BY k",
         "FROM facts |> ORDER BY k |> SELECT v |> ORDER BY k",
         "FROM facts AS a |> ORDER BY b.k",
     ] {
@@ -273,7 +273,7 @@ fn public_order_rejects_unsupported_and_ambiguous_keys_without_retaining_owners(
     // An ordinal disambiguates duplicate display names.
     query(
         &db,
-        "FROM facts |> SELECT v AS x,v AS x |> ORDER BY 2 DESC",
+        "FROM facts |> SELECT v AS x, v AS x |> ORDER BY 2 DESC",
         [40, 30, 20, 10]
             .map(|v| vec![Cell::Integer(v), Cell::Integer(v)])
             .to_vec(),
@@ -322,7 +322,7 @@ fn public_order_admits_all_visible_keys_and_refuses_excess_query_work() {
     let keys = (1..=64)
         .map(|n| n.to_string())
         .collect::<Vec<_>>()
-        .join(",");
+        .join(", ");
     query(
         &db,
         &format!("FROM wide |> ORDER BY {keys}"),
@@ -330,7 +330,7 @@ fn public_order_admits_all_visible_keys_and_refuses_excess_query_work() {
     );
     let baseline = db.reserved_memory_bytes();
     for sql in [
-        format!("FROM wide |> ORDER BY {}", ["1"; 81].join(",")),
+        format!("FROM wide |> ORDER BY {}", ["1"; 81].join(", ")),
         format!("FROM wide{}", " |> ORDER BY 1".repeat(17)),
         "FROM wide |> ORDER BY 65".to_owned(),
     ] {

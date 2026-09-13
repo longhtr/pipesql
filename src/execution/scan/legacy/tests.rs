@@ -831,7 +831,7 @@ fn check_shared_query_threads(small_stack: bool) {
             drop(result);
             drop(query);
             assert_eq!(database.reserved_memory_bytes(), database.path_memory_bytes());
-            let query = database.prepare("FROM lineitem |> AGGREGATE SUM(l_quantity) AS s,AVG(l_quantity) AS a,COUNT(*) AS n GROUP AND ORDER BY l_returnflag,l_linestatus |> SELECT n AS count,a AS mean |> WHERE count > 0 |> SELECT mean").unwrap();
+            let query = database.prepare("FROM lineitem |> AGGREGATE SUM(l_quantity) AS s, AVG(l_quantity) AS a, COUNT(*) AS n GROUP AND ORDER BY l_returnflag, l_linestatus |> SELECT n AS count, a AS mean |> WHERE count > 0 |> SELECT mean").unwrap();
             let mut result = database.execute(&query, &cancellation).unwrap();
             let mut finished = false;
             for _ in 0..4096 {
@@ -847,7 +847,7 @@ fn check_shared_query_threads(small_stack: bool) {
             drop(query);
             assert_eq!(database.reserved_memory_bytes(), database.path_memory_bytes());
             for sql in [
-                "FROM lineitem |> SELECT l_quantity*2 AS q,l_returnflag AS k |> AGGREGATE SUM(q) AS s,COUNT(*) AS n GROUP BY k |> SELECT s+1 AS x,n |> WHERE n > 0 |> SELECT x",
+                "FROM lineitem |> SELECT l_quantity*2 AS q, l_returnflag AS k |> AGGREGATE SUM(q) AS s, COUNT(*) AS n GROUP BY k |> SELECT s+1 AS x, n |> WHERE n > 0 |> SELECT x",
                 "FROM lineitem |> SELECT l_quantity AS q |> SELECT q+q AS q |> SELECT q+q AS q |> SELECT q+q AS q |> SELECT q+q AS q |> SELECT q+q AS q |> SELECT q+q AS q |> AGGREGATE SUM(q) AS s |> SELECT s+1 AS x",
             ] {
                 let query = database.prepare(sql).unwrap();

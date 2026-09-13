@@ -13,7 +13,7 @@ fn shared_scaled_average_matches_independent_intervals() {
     let path = std::env::temp_dir().join(format!("pipesql-shared-mean-{}", std::process::id()));
     let database = Database::create(&path, crate::Config::new(2_000_000, 1).unwrap()).unwrap();
     let query = database
-        .prepare("FROM lineitem |> AGGREGATE SUM(l_quantity) AS s,AVG(l_quantity) AS a")
+        .prepare("FROM lineitem |> AGGREGATE SUM(l_quantity) AS s, AVG(l_quantity) AS a")
         .unwrap();
     let semantic = query.plan.aggregates.first().unwrap();
     let mut checked = 0;

@@ -94,7 +94,7 @@ fn public_null_predicates_distinguish_all_types_and_compose() {
     );
     query(
         &db,
-        "FROM facts |> AGGREGATE COUNT(*) AS n GROUP AND ORDER BY s |> WHERE s IS NOT NULL |> SELECT s,n",
+        "FROM facts |> AGGREGATE COUNT(*) AS n GROUP AND ORDER BY s |> WHERE s IS NOT NULL |> SELECT s, n",
         ["", "present", "é"]
             .map(|s| vec![Cell::Text(s.to_owned()), Cell::Integer(1)])
             .to_vec(),
@@ -122,7 +122,7 @@ fn public_null_predicates_distinguish_all_types_and_compose() {
         "FROM facts |> WHERE s IS NOT NOT NULL",
         "FROM facts |> WHERE missing IS NULL",
         "FROM facts |> WHERE s = NULL",
-        "FROM facts |> SELECT s AS x,i AS x |> WHERE x IS NULL",
+        "FROM facts |> SELECT s AS x, i AS x |> WHERE x IS NULL",
         "FROM (FROM facts) |> WHERE facts.s IS NULL",
     ] {
         assert!(
@@ -169,7 +169,7 @@ fn null_tests_preserve_demanded_errors_and_prior_predicate_order() {
     }
     query(
         &db,
-        "FROM facts |> SELECT id,id*9223372036854775807 AS x |> WHERE id<2 AND x IS NOT NULL |> ORDER BY id |> SELECT id",
+        "FROM facts |> SELECT id, id*9223372036854775807 AS x |> WHERE id<2 AND x IS NOT NULL |> ORDER BY id |> SELECT id",
         integers(&[0, 1]),
     );
     query(

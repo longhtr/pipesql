@@ -226,7 +226,7 @@ fn public_grouping_faults_release_the_complete_query_owner() {
         ],
     );
     let query = database.prepare(
-        "FROM facts |> AGGREGATE SUM(n) AS total,AVG(d) AS mean,COUNT(*) AS nrows GROUP AND ORDER BY k",
+        "FROM facts |> AGGREGATE SUM(n) AS total, AVG(d) AS mean, COUNT(*) AS nrows GROUP AND ORDER BY k",
     ).unwrap();
     let baseline = database.reserved_memory_bytes();
     let cancel = CancellationToken::new();

@@ -12,7 +12,7 @@ const GROUPS: usize = 4096;
 const BATCH_ROWS: usize = 256;
 const TEMP_BYTES: u64 = 8_000_000;
 const QUERY: &str = "FROM sales AS s |> JOIN sales AS copies ON s.region = copies.region \
-     |> AGGREGATE COUNT(*) AS n,COUNT(s.amount) AS present,SUM(s.amount) AS total \
+     |> AGGREGATE COUNT(*) AS n, COUNT(s.amount) AS present, SUM(s.amount) AS total \
      GROUP BY s.region |> ORDER BY region DESC";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

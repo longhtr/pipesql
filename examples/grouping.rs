@@ -12,7 +12,7 @@ use std::time::Instant;
 const ROWS_PER_PASS: usize = 4096;
 const BATCH_ROWS: usize = 256;
 const TEMP_BYTES: u64 = 8_000_000;
-const QUERY: &str = "FROM sales |> AGGREGATE COUNT(*) AS n,SUM(amount) AS total,MIN(amount) AS smallest,MAX(amount) AS largest GROUP AND ORDER BY region";
+const QUERY: &str = "FROM sales |> AGGREGATE COUNT(*) AS n, SUM(amount) AS total, MIN(amount) AS smallest, MAX(amount) AS largest GROUP AND ORDER BY region";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);

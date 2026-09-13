@@ -2,7 +2,7 @@
 use super::*;
 
 const GROUPING_QUERY: &str =
-    "FROM sales |> AGGREGATE COUNT(*) AS n,SUM(amount) AS total GROUP AND ORDER BY region";
+    "FROM sales |> AGGREGATE COUNT(*) AS n, SUM(amount) AS total GROUP AND ORDER BY region";
 
 #[test]
 fn ordered_grouping_preserves_few_many_and_skewed_groups_across_memory_budgets() {
@@ -157,7 +157,7 @@ fn nullable_count_preserves_presence_through_spill_and_cancellation() {
     }
 }
 
-const PRESENCE_QUERY: &str = "FROM sales |> AGGREGATE COUNT(amount*2) AS numbers,COUNT(note) AS texts,COUNT(day) AS days,COUNT(*) AS n GROUP AND ORDER BY region";
+const PRESENCE_QUERY: &str = "FROM sales |> AGGREGATE COUNT(amount*2) AS numbers, COUNT(note) AS texts, COUNT(day) AS days, COUNT(*) AS n GROUP AND ORDER BY region";
 
 // Admits the rounded region, amount, and day payloads while leaving insufficient
 // hash capacity for 4,096 groups. Both low-memory scenarios must reach real spill.
@@ -354,7 +354,7 @@ fn declared_grouping_preserves_nullable_text_float_and_date_keys() {
     let db = Database::create_empty(&directory.database(), config()).unwrap();
     let cancel = CancellationToken::new();
     db.declare_table("facts", &declarations(), &cancel).unwrap();
-    let sql = "FROM facts |> AGGREGATE COUNT(*) AS n,SUM(amount) AS total,AVG(amount) AS mean GROUP AND ORDER BY note,number,day";
+    let sql = "FROM facts |> AGGREGATE COUNT(*) AS n, SUM(amount) AS total, AVG(amount) AS mean GROUP AND ORDER BY note, number, day";
     let empty = db.prepare(sql).unwrap();
     let days = [DateValue::from_days_since_unix_epoch(0).unwrap(); 6];
     let nan = f64::from_bits(0x7ff8_0000_0000_0123);
@@ -431,7 +431,7 @@ fn declared_grouping_preserves_nullable_text_float_and_date_keys() {
         ]
     );
     assert_eq!(db.reserved_memory_bytes(), baseline);
-    let hidden = db.prepare("FROM facts |> SELECT note AS key,amount |> AGGREGATE SUM(amount*2) AS bad,COUNT(*) AS n GROUP BY key |> WHERE n > 1 |> SELECT n,key").unwrap();
+    let hidden = db.prepare("FROM facts |> SELECT note AS key, amount |> AGGREGATE SUM(amount*2) AS bad, COUNT(*) AS n GROUP BY key |> WHERE n > 1 |> SELECT n, key").unwrap();
     assert_eq!(
         collect(&mut db.execute(&hidden, &cancel).unwrap()),
         vec![
@@ -441,7 +441,7 @@ fn declared_grouping_preserves_nullable_text_float_and_date_keys() {
     );
     assert!(matches!(
         db.prepare(
-            "FROM facts |> SELECT note AS a,note AS b |> AGGREGATE COUNT(*) AS n GROUP BY a,b"
+            "FROM facts |> SELECT note AS a, note AS b |> AGGREGATE COUNT(*) AS n GROUP BY a, b"
         ),
         Err(Error::Bind { .. })
     ));
@@ -471,7 +471,9 @@ fn declared_grouping_admits_nine_distinct_keys_with_typed_output() {
     writer.write(&inputs, &cancel).unwrap();
     writer.commit(&cancel).unwrap();
     let query = db
-        .prepare("FROM facts |> AGGREGATE COUNT(*) AS n GROUP AND ORDER BY a,b,c,d,e,f,g,h,i")
+        .prepare(
+            "FROM facts |> AGGREGATE COUNT(*) AS n GROUP AND ORDER BY a, b, c, d, e, f, g, h, i",
+        )
         .unwrap();
     assert_eq!(query.result_column_count(), 10);
     let mut result = db.execute(&query, &cancel).unwrap();

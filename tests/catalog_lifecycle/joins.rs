@@ -42,7 +42,7 @@ fn joins_compose_with_further_joins_filters_and_aggregation() {
     assert_query_rows(
         "FROM facts AS f |> JOIN dimensions AS d ON f.k = d.k \
          |> JOIN facts AS g ON d.k = g.k |> WHERE g.v >= 20 \
-         |> SELECT f.v,g.v,d.label",
+         |> SELECT f.v, g.v, d.label",
         [
             (10, 20, "a"),
             (10, 20, "b"),
@@ -69,7 +69,7 @@ fn joins_compose_with_further_joins_filters_and_aggregation() {
     }
     assert_query_rows(
         "FROM facts AS f |> JOIN dimensions AS d ON d.k = f.k \
-         |> AGGREGATE SUM(f.v) AS total,COUNT(*) AS n GROUP BY d.label",
+         |> AGGREGATE SUM(f.v) AS total, COUNT(*) AS n GROUP BY d.label",
         [("a", 30, 2), ("b", 30, 2), ("c", 30, 1)]
             .map(|(label, total, n)| {
                 vec![
@@ -279,7 +279,7 @@ fn typed_join_matches_an_independent_row_oracle_through_spill() {
         let baseline = db.reserved_memory_bytes();
         for key in ["k", "day", "s"] {
             let sql = format!(
-                "FROM typed AS l |> JOIN typed AS r ON r.{key} = l.{key} |> SELECT r.s,l.id,r.id,l.k,r.day,l.s"
+                "FROM typed AS l |> JOIN typed AS r ON r.{key} = l.{key} |> SELECT r.s, l.id, r.id, l.k, r.day, l.s"
             );
             let query = db.prepare(&sql).unwrap();
             if cap == 3_000_000 {

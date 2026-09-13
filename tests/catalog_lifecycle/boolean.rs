@@ -73,28 +73,28 @@ fn boolean_filters_preserve_conditional_computed_demand() {
     ] {
         query(
             &db,
-            &format!("FROM facts |> SELECT n,id*9223372036854775807 AS bad |> WHERE {predicate}"),
+            &format!("FROM facts |> SELECT n, id*9223372036854775807 AS bad |> WHERE {predicate}"),
             vec![],
         );
     }
     query(
         &db,
-        "FROM facts |> SELECT id,i,id*9223372036854775807 AS bad |> WHERE id=2 |> WHERE NOT (i>0 OR bad>0) |> SELECT id",
+        "FROM facts |> SELECT id, i, id*9223372036854775807 AS bad |> WHERE id=2 |> WHERE NOT (i>0 OR bad>0) |> SELECT id",
         vec![],
     );
     query(
         &db,
-        "FROM facts |> SELECT id,id*9223372036854775807 AS bad |> WHERE id>=2 OR bad>=0 |> ORDER BY id |> SELECT id",
+        "FROM facts |> SELECT id, id*9223372036854775807 AS bad |> WHERE id>=2 OR bad>=0 |> ORDER BY id |> SELECT id",
         integers(&[0, 1, 2, 3]),
     );
     query(
         &db,
-        "FROM facts |> AGGREGATE SUM(9223372036854775807) AS s,COUNT(*) AS n |> WHERE n>0 OR s>0 |> SELECT n",
+        "FROM facts |> AGGREGATE SUM(9223372036854775807) AS s, COUNT(*) AS n |> WHERE n>0 OR s>0 |> SELECT n",
         integers(&[4]),
     );
     let baseline = db.reserved_memory_bytes();
-    let failures = ["bad>0 AND n<0", "n<0 OR bad>0", "NOT (i>0 AND bad>0)"].map(|predicate| format!("FROM facts |> SELECT id,n,i,id*9223372036854775807 AS bad |> WHERE id=2 |> WHERE {predicate} |> SELECT id"));
-    for sql in failures.iter().map(String::as_str).chain(["FROM facts |> AGGREGATE SUM(9223372036854775807) AS s,COUNT(*) AS n |> WHERE n<0 OR s>0 |> SELECT n"]) {
+    let failures = ["bad>0 AND n<0", "n<0 OR bad>0", "NOT (i>0 AND bad>0)"].map(|predicate| format!("FROM facts |> SELECT id, n, i, id*9223372036854775807 AS bad |> WHERE id=2 |> WHERE {predicate} |> SELECT id"));
+    for sql in failures.iter().map(String::as_str).chain(["FROM facts |> AGGREGATE SUM(9223372036854775807) AS s, COUNT(*) AS n |> WHERE n<0 OR s>0 |> SELECT n"]) {
         let prepared = db.prepare(sql).unwrap();
         let cancel = CancellationToken::new();
         let mut result = db.execute(&prepared, &cancel).unwrap();
@@ -271,7 +271,7 @@ fn check_boolean_scan_scratch(small_stack: bool) {
                     for (index, predicate) in [
                         format!("{column}>=0 AND {column}<=3"),
                         format!("{column}=0 OR {column}=1"),
-                        format!("{column} IN (0,NULL,1)"),
+                        format!("{column} IN (0, NULL, 1)"),
                     ]
                     .iter()
                     .enumerate()

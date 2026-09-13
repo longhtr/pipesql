@@ -269,7 +269,7 @@ fn catalog_streaming_append_reuses_inputs_and_publishes_once() {
             &mut Effects::default(),
         )
         .unwrap();
-    let old = crate::frontend::prepare_catalog(&db, "FROM facts |> SELECT note,amount").unwrap();
+    let old = crate::frontend::prepare_catalog(&db, "FROM facts |> SELECT note, amount").unwrap();
     let mut append = db
         .catalog_writer()
         .unwrap()
@@ -331,7 +331,7 @@ fn catalog_streaming_append_reuses_inputs_and_publishes_once() {
         db.resolve_catalog(token, &mut Effects::default()).unwrap(),
         crate::CommitResolution::Durable(commit)
     );
-    let query = crate::frontend::prepare_catalog(&db, "FROM facts |> SELECT note,amount").unwrap();
+    let query = crate::frontend::prepare_catalog(&db, "FROM facts |> SELECT note, amount").unwrap();
     let mut reader = db.execute(&query, &cancel).unwrap();
     let mut rows = Vec::new();
     let mut finished = false;

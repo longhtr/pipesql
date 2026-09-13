@@ -159,7 +159,7 @@ fn check_complete_declared_schema(small_stack: bool) {
             let baseline = db.reserved_memory_bytes();
             for sql in [
                 "FROM wide".to_owned(),
-                format!("FROM wide |> SELECT {}", names.join(",")),
+                format!("FROM wide |> SELECT {}", names.join(", ")),
             ] {
                 let q = db.prepare(&sql).unwrap();
                 assert_eq!(q.result_column_count(), 64);
@@ -170,7 +170,7 @@ fn check_complete_declared_schema(small_stack: bool) {
                 assert_eq!(collect(&mut result), expected);
             }
             let q = db
-                .prepare("FROM wide |> WHERE c60 >= 6001 |> SELECT c63 AS last,c60,c61,c62")
+                .prepare("FROM wide |> WHERE c60 >= 6001 |> SELECT c63 AS last, c60, c61, c62")
                 .unwrap();
             let mut result = db.execute(&q, &cancel).unwrap();
             let mut selected: Vec<Vec<Cell>> = expected
@@ -192,7 +192,7 @@ fn check_complete_declared_schema(small_stack: bool) {
             drop(q);
             order::query(
                 &db,
-                "FROM wide |> SELECT c60+1 AS x,c61*2 AS y |> WHERE x >= 6002 |> ORDER BY x",
+                "FROM wide |> SELECT c60+1 AS x, c61*2 AS y |> WHERE x >= 6002 |> ORDER BY x",
                 vec![
                     vec![Cell::Integer(6002), Cell::Null],
                     vec![Cell::Integer(6003), Cell::Number(123.0_f64.to_bits())],
@@ -216,12 +216,15 @@ fn check_complete_declared_schema(small_stack: bool) {
             );
             drop(q);
             assert!(matches!(
-                db.prepare(&format!("FROM wide |> SELECT {}", vec!["c0"; 65].join(","))),
+                db.prepare(&format!(
+                    "FROM wide |> SELECT {}",
+                    vec!["c0"; 65].join(", ")
+                )),
                 Err(Error::Parse { .. })
             ));
             let grouped = format!(
                 "FROM wide |> AGGREGATE COUNT(*) AS n GROUP BY c60 |> SELECT {}",
-                vec!["c60"; 64].join(",")
+                vec!["c60"; 64].join(", ")
             );
             let q = db.prepare(&grouped).unwrap();
             assert_eq!(
@@ -307,7 +310,7 @@ fn ordering_retains_original_values_beyond_visible_row_width() {
     // Sorting needs all 64 visible keys plus the original c0 requested later.
     let sql = format!(
         "FROM wide AS w |> SET c0=c0+1 |> ORDER BY {} |> SELECT w.c0",
-        names.join(",")
+        names.join(", ")
     );
     order::query(&db, &sql, order::integers(&[1, 2]));
 }

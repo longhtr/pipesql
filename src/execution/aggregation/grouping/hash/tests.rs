@@ -191,7 +191,7 @@ fn memory_groups_match_sorted_reduction_without_owning_its_reservation() {
     let directory = Directory::new();
     let database = database(&directory);
     let cancel = CancellationToken::new();
-    let query = database.prepare("FROM facts |> AGGREGATE COUNT(*) AS nrows,SUM(n) AS ns,AVG(n) AS na,SUM(d) AS ds,AVG(d) AS da,SUM(2) AS twos").unwrap();
+    let query = database.prepare("FROM facts |> AGGREGATE COUNT(*) AS nrows, SUM(n) AS ns, AVG(n) AS na, SUM(d) AS ds, AVG(d) AS da, SUM(2) AS twos").unwrap();
     let semantic = query.plan.aggregates.first().unwrap();
     let mut keys = schema(&[(DataType::Double, true)]);
     keys.columns[0].input = 2;
@@ -704,7 +704,9 @@ fn compact_text_growth_preserves_values_and_releases_both_buffers_on_cancellatio
         )
         .unwrap();
     let query = database
-        .prepare("FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi,COUNT(*) AS n GROUP BY k")
+        .prepare(
+            "FROM words |> AGGREGATE MIN(word) AS lo, MAX(word) AS hi, COUNT(*) AS n GROUP BY k",
+        )
         .unwrap();
     let mut aggregate = AggregateState::new(
         &database.memory,
@@ -875,7 +877,7 @@ fn hash_state_padding_is_allocated_without_extending_logical_lanes() {
     let directory = Directory::new();
     let database = database(&directory);
     let query = database
-        .prepare("FROM facts |> AGGREGATE SUM(n) AS a,SUM(n+1) AS b,SUM(n+2) AS c")
+        .prepare("FROM facts |> AGGREGATE SUM(n) AS a, SUM(n+1) AS b, SUM(n+2) AS c")
         .unwrap();
     let aggregate = AggregateState::new(
         &database.memory,

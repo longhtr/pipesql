@@ -11,7 +11,7 @@ use std::time::Instant;
 
 const TEMP_BYTES: u64 = 128_000_000;
 const QUERY: &str =
-    "FROM words |> AGGREGATE MIN(word) AS lo,MAX(word) AS hi,COUNT(*) AS n GROUP AND ORDER BY k";
+    "FROM words |> AGGREGATE MIN(word) AS lo, MAX(word) AS hi, COUNT(*) AS n GROUP AND ORDER BY k";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);

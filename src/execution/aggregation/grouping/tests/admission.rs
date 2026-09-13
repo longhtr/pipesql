@@ -140,7 +140,7 @@ fn public_grouping_admits_the_exact_complete_minimum_before_io() {
         ],
     );
     let cancel = CancellationToken::new();
-    let query = database.prepare("FROM facts |> AGGREGATE SUM(n) AS total,AVG(d) AS mean,COUNT(*) AS nrows GROUP AND ORDER BY k").unwrap();
+    let query = database.prepare("FROM facts |> AGGREGATE SUM(n) AS total, AVG(d) AS mean, COUNT(*) AS nrows GROUP AND ORDER BY k").unwrap();
     let baseline = database.reserved_memory_bytes();
     let result = database.execute(&query, &cancel).unwrap();
     assert_eq!(
@@ -373,7 +373,7 @@ fn repeated_grouping_admits_combined_minimum_before_io() {
 #[test]
 fn derived_join_admits_both_external_aggregates_at_combined_minimum() {
     check_combined_grouping_minimum(
-        "FROM (FROM facts |> AGGREGATE SUM(n) AS total GROUP BY k) AS a |> JOIN (FROM facts |> AGGREGATE SUM(n) AS total GROUP BY k) AS b ON a.k = b.k |> SELECT a.total,b.total",
+        "FROM (FROM facts |> AGGREGATE SUM(n) AS total GROUP BY k) AS a |> JOIN (FROM facts |> AGGREGATE SUM(n) AS total GROUP BY k) AS b ON a.k = b.k |> SELECT a.total, b.total",
         &[vec![Some(3), Some(3)], vec![Some(9), Some(9)]],
         false,
     );

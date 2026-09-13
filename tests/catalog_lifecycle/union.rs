@@ -201,7 +201,7 @@ fn check_union_width() {
         .take(64)
         .map(String::as_str)
         .collect::<Vec<_>>()
-        .join(",");
+        .join(", ");
     let expected: Vec<Vec<Cell>> = [0, 100]
         .into_iter()
         .map(|base| {
@@ -227,7 +227,7 @@ fn check_union_width() {
     for sql in [
         "FROM left_rows |> UNION ALL (FROM too_wide)".to_owned(),
         "FROM left_rows |> UNION DISTINCT (FROM too_wide)".to_owned(),
-        format!("FROM left_rows |> UNION ALL (FROM right_rows) |> SELECT {columns},c0"),
+        format!("FROM left_rows |> UNION ALL (FROM right_rows) |> SELECT {columns}, c0"),
     ] {
         assert!(
             matches!(
@@ -255,7 +255,7 @@ fn public_union_distinct_compares_complete_positional_rows() {
             ],
         ),
         (
-            "FROM facts |> SELECT k,v |> UNION DISTINCT (FROM facts |> SELECT k,v) |> SELECT k |> ORDER BY k NULLS FIRST",
+            "FROM facts |> SELECT k, v |> UNION DISTINCT (FROM facts |> SELECT k, v) |> SELECT k |> ORDER BY k NULLS FIRST",
             vec![
                 vec![Cell::Null],
                 vec![Cell::Integer(1)],
@@ -296,8 +296,8 @@ fn public_union_distinct_demands_projected_away_fields_before_limit() {
     let (_directory, db) = join_fixture();
     let baseline = db.reserved_memory_bytes();
     for sql in [
-        "FROM facts |> SELECT v,v*9223372036854775807 AS unused |> UNION DISTINCT (FROM facts |> SELECT v,1 AS unused) |> SELECT v |> LIMIT 1",
-        "FROM facts |> SELECT v,1 AS unused |> UNION DISTINCT (FROM facts |> SELECT v,v*9223372036854775807 AS unused) |> SELECT v |> LIMIT 1",
+        "FROM facts |> SELECT v, v*9223372036854775807 AS unused |> UNION DISTINCT (FROM facts |> SELECT v, 1 AS unused) |> SELECT v |> LIMIT 1",
+        "FROM facts |> SELECT v, 1 AS unused |> UNION DISTINCT (FROM facts |> SELECT v, v*9223372036854775807 AS unused) |> SELECT v |> LIMIT 1",
     ] {
         let cancel = CancellationToken::new();
         let prepared = db.prepare(sql).unwrap();
@@ -365,7 +365,7 @@ fn public_union_streams_positional_duplicates_and_composed_branches() {
             integers(&[31, 31, 41, 41]),
         ),
         (
-            "FROM facts |> SELECT v AS x,v AS y |> UNION ALL (FROM facts |> SELECT v,k) |> SELECT y |> ORDER BY y",
+            "FROM facts |> SELECT v AS x, v AS y |> UNION ALL (FROM facts |> SELECT v, k) |> SELECT y |> ORDER BY y",
             [vec![Cell::Null]]
                 .into_iter()
                 .chain(integers(&[1, 1, 2, 10, 20, 30, 40]))
@@ -385,11 +385,11 @@ fn public_union_limits_preserve_branch_demand_and_join_composition() {
             integers(&[10]),
         ),
         (
-            "FROM facts |> SELECT v,v*9223372036854775807 AS unused |> UNION ALL (FROM facts |> SELECT v,v*9223372036854775807 AS unused) |> SELECT v |> ORDER BY v",
+            "FROM facts |> SELECT v, v*9223372036854775807 AS unused |> UNION ALL (FROM facts |> SELECT v, v*9223372036854775807 AS unused) |> SELECT v |> ORDER BY v",
             integers(&[10, 10, 20, 20, 30, 30, 40, 40]),
         ),
         (
-            "FROM facts |> SELECT k,v |> UNION ALL (FROM facts |> SELECT k,v) |> AS u |> JOIN dimensions AS d ON u.k=d.k |> SELECT u.v |> ORDER BY v",
+            "FROM facts |> SELECT k, v |> UNION ALL (FROM facts |> SELECT k, v) |> AS u |> JOIN dimensions AS d ON u.k=d.k |> SELECT u.v |> ORDER BY v",
             integers(&[10, 10, 10, 10, 20, 20, 20, 20, 30, 30]),
         ),
         (
@@ -519,7 +519,8 @@ fn public_union_keeps_typed_bytes_and_one_snapshot_across_branches() {
     for name in ["first", "second"] {
         db.declare_table(name, &declarations(), &cancel).unwrap();
     }
-    let sql = "FROM first |> UNION ALL (FROM second |> SELECT note AS renamed,amount,number,day)";
+    let sql =
+        "FROM first |> UNION ALL (FROM second |> SELECT note AS renamed, amount, number, day)";
     let empty = db.prepare(sql).unwrap();
     let dates = [
         DateValue::from_days_since_unix_epoch(-719_162).unwrap(),

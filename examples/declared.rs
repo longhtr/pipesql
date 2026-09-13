@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let db = Database::open(&path, config)?;
     let query =
-        db.prepare("FROM sales |> AGGREGATE SUM(amount) AS total,COUNT(*) AS n,COUNT(amount) AS present GROUP AND ORDER BY region")?;
+        db.prepare("FROM sales |> AGGREGATE SUM(amount) AS total, COUNT(*) AS n, COUNT(amount) AS present GROUP AND ORDER BY region")?;
     let mut result = db.execute(&query, &cancel)?;
     let stdout = std::io::stdout();
     let mut output = stdout.lock();

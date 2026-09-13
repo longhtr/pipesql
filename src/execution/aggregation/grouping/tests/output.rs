@@ -303,7 +303,7 @@ fn projected_maximum_text_keys_fit_the_reserved_result_frame() {
         let query = database
             .prepare(&format!(
                 "FROM facts |> AGGREGATE COUNT(*) AS n GROUP AND ORDER BY k |> SELECT {}",
-                vec!["k"; width].join(",")
+                vec!["k"; width].join(", ")
             ))
             .unwrap();
         let baseline = database.reserved_memory_bytes();
@@ -518,7 +518,7 @@ fn derived_inputs_bind_and_execute_independent_scopes() {
         "FROM (FROM facts) |> SELECT facts.n",
         "FROM facts AS a |> JOIN (FROM facts |> WHERE a.k = 1) AS b ON a.k = b.k",
         "FROM facts AS a |> JOIN (FROM facts) AS a ON a.k = a.k",
-        "FROM (FROM facts |> SELECT k AS x,n AS x) |> SELECT x",
+        "FROM (FROM facts |> SELECT k AS x, n AS x) |> SELECT x",
     ] {
         assert!(
             matches!(database.prepare(sql), Err(Error::Bind { .. })),

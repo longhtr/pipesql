@@ -35,7 +35,7 @@ fn every_admitted_key_pair_survives_public_load_reopen_scan_and_grouping() {
     let database = Database::open(&path, config()).unwrap();
     let resident = database.reserved_memory_bytes();
     for (sql, ordered) in [
-        ("FROM lineitem |> SELECT l_returnflag,l_linestatus", false),
+        ("FROM lineitem |> SELECT l_returnflag, l_linestatus", false),
         (Q1, true),
     ] {
         let query = database.prepare(sql).unwrap();
@@ -116,7 +116,7 @@ fn legacy_limit_composes_across_batches_and_empty_aggregation() {
                 None,
             ),
             (
-                "FROM lineitem |> SELECT l_returnflag,l_quantity |> LIMIT 3 |> SELECT l_quantity,l_returnflag |> AGGREGATE COUNT(*) AS n GROUP BY l_returnflag |> LIMIT 1 |> SELECT n",
+                "FROM lineitem |> SELECT l_returnflag, l_quantity |> LIMIT 3 |> SELECT l_quantity, l_returnflag |> AGGREGATE COUNT(*) AS n GROUP BY l_returnflag |> LIMIT 1 |> SELECT n",
                 if loaded { Some(3) } else { None },
             ),
         ] {
@@ -151,7 +151,7 @@ fn legacy_limit_composes_across_batches_and_empty_aggregation() {
         }
         // SUM must resolve the consumer's schema after LIMIT and projection,
         // rather than reusing the scan's opposite physical column order.
-        let sql = "FROM lineitem |> SELECT l_extendedprice,l_quantity |> LIMIT 3 |> SELECT l_quantity,l_extendedprice |> AGGREGATE SUM(l_quantity) AS total,SUM(l_extendedprice) AS total_price |> LIMIT 1 |> SELECT total_price,total";
+        let sql = "FROM lineitem |> SELECT l_extendedprice, l_quantity |> LIMIT 3 |> SELECT l_quantity, l_extendedprice |> AGGREGATE SUM(l_quantity) AS total, SUM(l_extendedprice) AS total_price |> LIMIT 1 |> SELECT total_price, total";
         let query = database.prepare(sql).unwrap();
         let mut result = database.execute(&query, &cancel).unwrap();
         let mut rows = 0;
@@ -206,7 +206,7 @@ fn legacy_text_constants_survive_batches_grouping_and_extrema() {
     let baseline = database.reserved_memory_bytes();
     for (sql, expected) in [
         (
-            "FROM lineitem |> SELECT '雪' AS label,DATE '1970-01-02' AS day",
+            "FROM lineitem |> SELECT '雪' AS label, DATE '1970-01-02' AS day",
             vec![("雪".to_owned(), 1); 600],
         ),
         (
@@ -214,15 +214,15 @@ fn legacy_text_constants_survive_batches_grouping_and_extrema() {
             vec![("雪".to_owned(), 600)],
         ),
         (
-            "FROM lineitem |> EXTEND '雪' AS label |> AGGREGATE MIN(label) AS label,COUNT(*) AS n",
+            "FROM lineitem |> EXTEND '雪' AS label |> AGGREGATE MIN(label) AS label, COUNT(*) AS n",
             vec![("雪".to_owned(), 600)],
         ),
         (
-            "FROM lineitem |> AGGREGATE COUNT(*) AS n |> EXTEND '雪' AS label |> SELECT label,n",
+            "FROM lineitem |> AGGREGATE COUNT(*) AS n |> EXTEND '雪' AS label |> SELECT label, n",
             vec![("雪".to_owned(), 600)],
         ),
         (
-            "FROM lineitem |> SELECT '雪' AS label,DATE '1970-01-02' AS day |> LIMIT 2",
+            "FROM lineitem |> SELECT '雪' AS label, DATE '1970-01-02' AS day |> LIMIT 2",
             vec![("雪".to_owned(), 1); 2],
         ),
     ] {
@@ -282,7 +282,7 @@ fn legacy_window_count_selects_storage_and_preserves_empty_cardinality() {
                 false,
             ),
             (
-                "FROM lineitem |> EXTEND COUNT(*) OVER () AS n |> SELECT n,l_returnflag,DATE '1970-01-01' AS day,'label' AS label",
+                "FROM lineitem |> EXTEND COUNT(*) OVER () AS n |> SELECT n, l_returnflag, DATE '1970-01-01' AS day, 'label' AS label",
                 false,
                 4,
                 true,
@@ -294,7 +294,7 @@ fn legacy_window_count_selects_storage_and_preserves_empty_cardinality() {
                 false,
             ),
             (
-                "FROM lineitem |> LIMIT 600 |> SELECT 600 AS n,l_returnflag,DATE '1970-01-01' AS day,'label' AS label",
+                "FROM lineitem |> LIMIT 600 |> SELECT 600 AS n, l_returnflag, DATE '1970-01-01' AS day, 'label' AS label",
                 false,
                 4,
                 false,
@@ -322,7 +322,7 @@ fn legacy_window_count_selects_storage_and_preserves_empty_cardinality() {
                             );
                             if width == 4 {
                                 assert!(
-                                    matches!(batch.value(row,1), Some(Value::String(v)) if v.as_str()=="R")
+                                    matches!(batch.value(row, 1), Some(Value::String(v)) if v.as_str()=="R")
                                 );
                                 assert_eq!(
                                     batch.value(row, 2),
@@ -331,7 +331,7 @@ fn legacy_window_count_selects_storage_and_preserves_empty_cardinality() {
                                     ))
                                 );
                                 assert!(
-                                    matches!(batch.value(row,3), Some(Value::String(v)) if v.as_str()=="label")
+                                    matches!(batch.value(row, 3), Some(Value::String(v)) if v.as_str()=="label")
                                 );
                             }
                             rows += 1;
@@ -377,23 +377,23 @@ fn legacy_safe_divide_preserves_typed_null_predicates_and_counts() {
         let baseline = database.reserved_memory_bytes();
         for (sql, expected) in [
             (
-                "FROM lineitem |> WHERE l_quantity>SAFE_DIVIDE(1,0) |> AGGREGATE COUNT(*) AS n",
+                "FROM lineitem |> WHERE l_quantity>SAFE_DIVIDE(1, 0) |> AGGREGATE COUNT(*) AS n",
                 0,
             ),
             (
-                "FROM lineitem |> WHERE NOT(l_quantity=SAFE_DIVIDE(1,0)) |> AGGREGATE COUNT(*) AS n",
+                "FROM lineitem |> WHERE NOT(l_quantity=SAFE_DIVIDE(1, 0)) |> AGGREGATE COUNT(*) AS n",
                 0,
             ),
             (
-                "FROM lineitem |> WHERE l_quantity=SAFE_DIVIDE(1,0) OR l_quantity>0 |> AGGREGATE COUNT(*) AS n",
+                "FROM lineitem |> WHERE l_quantity=SAFE_DIVIDE(1, 0) OR l_quantity>0 |> AGGREGATE COUNT(*) AS n",
                 if loaded { 257 } else { 0 },
             ),
             (
-                "FROM lineitem |> SELECT SAFE_DIVIDE(l_quantity,0) AS ratio |> AGGREGATE COUNT(ratio) AS n",
+                "FROM lineitem |> SELECT SAFE_DIVIDE(l_quantity, 0) AS ratio |> AGGREGATE COUNT(ratio) AS n",
                 0,
             ),
             (
-                "FROM lineitem |> WHERE l_quantity=SAFE_DIVIDE(1,1) |> AGGREGATE COUNT(*) AS n",
+                "FROM lineitem |> WHERE l_quantity=SAFE_DIVIDE(1, 1) |> AGGREGATE COUNT(*) AS n",
                 if loaded { 257 } else { 0 },
             ),
         ] {

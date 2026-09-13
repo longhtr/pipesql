@@ -96,7 +96,7 @@ pub(super) fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     .collect();
                 let sql = format!(
                     "FROM facts |> AGGREGATE {} GROUP AND ORDER BY note",
-                    expressions.join(",")
+                    expressions.join(", ")
                 );
                 println!("mixed SQL budget={budget}: {sql}");
                 let before = live();

@@ -49,7 +49,7 @@ def parse_rows(stdout):
 
 
 GLOBAL_SQL = "FROM lineitem |> AGGREGATE SUM(l_quantity) AS s, AVG(l_quantity) AS a, COUNT(*) AS n"
-GROUPED_SQL = "FROM lineitem |> AGGREGATE SUM(l_quantity) AS qs, AVG(l_quantity) AS qa, SUM(l_extendedprice) AS ps, AVG(l_extendedprice) AS pa, SUM(l_discount) AS ds, AVG(l_discount) AS da, SUM(l_tax) AS ts, COUNT(*) AS n GROUP AND ORDER BY l_returnflag,l_linestatus"
+GROUPED_SQL = "FROM lineitem |> AGGREGATE SUM(l_quantity) AS qs, AVG(l_quantity) AS qa, SUM(l_extendedprice) AS ps, AVG(l_extendedprice) AS pa, SUM(l_discount) AS ds, AVG(l_discount) AS da, SUM(l_tax) AS ts, COUNT(*) AS n GROUP AND ORDER BY l_returnflag, l_linestatus"
 OVERFLOW_EXPRESSION = "l_quantity*(9223372036854775807+1)"
 MAX_DOUBLE = sys.float_info.max
 EPOCH = datetime.date(1970, 1, 1)
@@ -264,7 +264,7 @@ def check_grouping(queries, rows):
     )
     queries.aggregate(
         "alias-swap",
-        "FROM lineitem |> SELECT l_quantity AS price,l_extendedprice AS qty,l_returnflag AS flag |> AGGREGATE SUM(qty) AS total,AVG(price) AS mean GROUP AND ORDER BY flag",
+        "FROM lineitem |> SELECT l_quantity AS price, l_extendedprice AS qty, l_returnflag AS flag |> AGGREGATE SUM(qty) AS total, AVG(price) AS mean GROUP AND ORDER BY flag",
         rows,
         [4],
         [("sum", 1), ("avg", 0)],
@@ -286,7 +286,7 @@ def check_grouping(queries, rows):
     )
     queries.aggregate(
         "duplicate-input",
-        "FROM lineitem |> SELECT l_quantity AS q,l_quantity AS other |> AGGREGATE SUM(other) AS s,SUM(q) AS again,AVG(q) AS a",
+        "FROM lineitem |> SELECT l_quantity AS q, l_quantity AS other |> AGGREGATE SUM(other) AS s, SUM(q) AS again, AVG(q) AS a",
         rows,
         [],
         [("sum", 0), ("sum", 0), ("avg", 0)],
@@ -294,7 +294,7 @@ def check_grouping(queries, rows):
 
 
 def check_expressions_and_reference_queries(queries, rows):
-    q1 = "FROM lineitem |> AGGREGATE SUM(l_quantity) AS sum_qty,SUM(l_extendedprice) AS sum_base_price,SUM(l_extendedprice*(1-l_discount)) AS sum_disc_price,SUM(l_extendedprice*(1-l_discount)*(1+l_tax)) AS sum_charge,AVG(l_quantity) AS avg_qty,AVG(l_extendedprice) AS avg_price,AVG(l_discount) AS avg_disc,COUNT(*) AS count_order GROUP AND ORDER BY l_returnflag,l_linestatus"
+    q1 = "FROM lineitem |> AGGREGATE SUM(l_quantity) AS sum_qty, SUM(l_extendedprice) AS sum_base_price, SUM(l_extendedprice*(1-l_discount)) AS sum_disc_price, SUM(l_extendedprice*(1-l_discount)*(1+l_tax)) AS sum_charge, AVG(l_quantity) AS avg_qty, AVG(l_extendedprice) AS avg_price, AVG(l_discount) AS avg_disc, COUNT(*) AS count_order GROUP AND ORDER BY l_returnflag, l_linestatus"
     q1_entries = [
         ("sum", 0),
         ("sum", 1),
@@ -306,7 +306,7 @@ def check_expressions_and_reference_queries(queries, rows):
         ("count", 0),
     ]
     deep = "l_quantity" + "".join("+(" + "1" for _ in range(15)) + ")" * 15
-    deep_sql = f"FROM lineitem |> AGGREGATE SUM({deep}) AS complex,SUM(l_quantity) AS q,SUM(l_extendedprice) AS p,SUM(l_discount) AS d,SUM(l_tax) AS t GROUP AND ORDER BY l_returnflag,l_linestatus"
+    deep_sql = f"FROM lineitem |> AGGREGATE SUM({deep}) AS complex, SUM(l_quantity) AS q, SUM(l_extendedprice) AS p, SUM(l_discount) AS d, SUM(l_tax) AS t GROUP AND ORDER BY l_returnflag, l_linestatus"
     queries.aggregate(
         "deep-expression-under-cap",
         deep_sql,
@@ -416,19 +416,19 @@ def check_dates_and_predicates(queries, work, encoder, rows):
             [("count", 0)],
         )
     date_cases = [
-        ("DATE_ADD(DATE '2020-01-31',INTERVAL 1 MONTH)", datetime.date(2020, 2, 29)),
-        ("DATE_ADD(DATE '2020-02-29',INTERVAL 1 YEAR)", datetime.date(2021, 2, 28)),
-        ("DATE_SUB(DATE '1995-01-01',INTERVAL 1 DAY)", datetime.date(1994, 12, 31)),
-        ("DATE_ADD(DATE '1995-01-01',INTERVAL -1 DAY)", datetime.date(1994, 12, 31)),
-        ("DATE_SUB(DATE '1993-12-31',INTERVAL -1 DAY)", datetime.date(1994, 1, 1)),
+        ("DATE_ADD(DATE '2020-01-31', INTERVAL 1 MONTH)", datetime.date(2020, 2, 29)),
+        ("DATE_ADD(DATE '2020-02-29', INTERVAL 1 YEAR)", datetime.date(2021, 2, 28)),
+        ("DATE_SUB(DATE '1995-01-01', INTERVAL 1 DAY)", datetime.date(1994, 12, 31)),
+        ("DATE_ADD(DATE '1995-01-01', INTERVAL -1 DAY)", datetime.date(1994, 12, 31)),
+        ("DATE_SUB(DATE '1993-12-31', INTERVAL -1 DAY)", datetime.date(1994, 1, 1)),
         (
-            "DATE_SUB(DATE_ADD(DATE '2020-02-29',INTERVAL 1 YEAR),INTERVAL 1 YEAR)",
+            "DATE_SUB(DATE_ADD(DATE '2020-02-29', INTERVAL 1 YEAR), INTERVAL 1 YEAR)",
             datetime.date(2020, 2, 28),
         ),
         ("DATE '0001-01-01'", datetime.date.min),
         ("DATE '9999-12-31'", datetime.date.max),
         (
-            "DATE_ADD(" * 8 + "DATE '1994-01-01'" + ",INTERVAL 0 DAY)" * 8,
+            "DATE_ADD(" * 8 + "DATE '1994-01-01'" + ", INTERVAL 0 DAY)" * 8,
             datetime.date(1994, 1, 1),
         ),
     ]
@@ -466,12 +466,12 @@ def check_dates_and_predicates(queries, work, encoder, rows):
         "DATE '1900-02-29'",
         "DATE '0000-01-01'",
         "DATE '9999-13-01'",
-        "DATE_ADD(DATE '9999-12-31',INTERVAL 1 DAY)",
-        "DATE_SUB(DATE '0001-01-01',INTERVAL 1 MONTH)",
-        "DATE_ADD(DATE '1970-01-01',INTERVAL 9223372036854775807 YEAR)",
-        "DATE_ADD(DATE '1970-01-01',INTERVAL 1.5 DAY)",
-        "DATE_ADD(DATE '1970-01-01',INTERVAL 1 HOUR)",
-        "DATE_ADD(" * 9 + "DATE '1994-01-01'" + ",INTERVAL 0 DAY)" * 9,
+        "DATE_ADD(DATE '9999-12-31', INTERVAL 1 DAY)",
+        "DATE_SUB(DATE '0001-01-01', INTERVAL 1 MONTH)",
+        "DATE_ADD(DATE '1970-01-01', INTERVAL 9223372036854775807 YEAR)",
+        "DATE_ADD(DATE '1970-01-01', INTERVAL 1.5 DAY)",
+        "DATE_ADD(DATE '1970-01-01', INTERVAL 1 HOUR)",
+        "DATE_ADD(" * 9 + "DATE '1994-01-01'" + ", INTERVAL 0 DAY)" * 9,
     ]:
         call = queries.run(
             "empty",
@@ -616,7 +616,7 @@ def check_numeric_failures(queries, work, encoder):
     )
     for sql in [
         "FROM lineitem |> AGGREGATE SUM(l_quantity) AS value",
-        "FROM lineitem |> AGGREGATE AVG(l_quantity) AS mean,SUM(l_quantity) AS total",
+        "FROM lineitem |> AGGREGATE AVG(l_quantity) AS mean, SUM(l_quantity) AS total",
     ]:
         call = queries.run("mean-only", sql)
         assert (
@@ -646,8 +646,8 @@ def check_numeric_failures(queries, work, encoder):
     for database, expected in [("empty", 0), ("mean-only", 2), ("late-nan", 3)]:
         queries.composed(
             f"count-typed-arguments-{database}",
-            "FROM lineitem |> AGGREGATE COUNT(l_quantity) AS n,"
-            "COUNT(l_returnflag) AS flags,COUNT(l_shipdate) AS dates",
+            "FROM lineitem |> AGGREGATE COUNT(l_quantity) AS n, "
+            "COUNT(l_returnflag) AS flags, COUNT(l_shipdate) AS dates",
             [[encoded(expected)] * 3],
             database,
         )
@@ -684,7 +684,7 @@ def check_derived_queries(queries, work, encoder):
     )
     queries.composed(
         "derived-duplicate-outputs",
-        "FROM (FROM lineitem |> AGGREGATE COUNT(*) AS n |> SELECT n AS x,n AS x)",
+        "FROM (FROM lineitem |> AGGREGATE COUNT(*) AS n |> SELECT n AS x, n AS x)",
         [[encoded(3), encoded(3)]],
         "repeated",
     )
@@ -710,7 +710,7 @@ def check_derived_queries(queries, work, encoder):
     for sql in [
         "FROM (FROM lineitem AS hidden) |> SELECT hidden.l_quantity",
         "FROM (FROM lineitem) |> SELECT lineitem.l_quantity",
-        "FROM (FROM lineitem |> SELECT l_quantity AS x,l_quantity AS x) |> SELECT x",
+        "FROM (FROM lineitem |> SELECT l_quantity AS x, l_quantity AS x) |> SELECT x",
         "FROM (SELECT l_quantity FROM lineitem)",
         "FROM (FROM lineitem;)",
     ]:
@@ -730,14 +730,14 @@ def check_derived_queries(queries, work, encoder):
 
 
 def check_text_null_and_boolean_filters(queries):
-    # Independent repeated rows are (10,A), (20,A), (90,B), all on 1970-01-01.
+    # Independent repeated rows are (10, A), (20, A), (90, B), all on 1970-01-01.
     for predicate, total in [
-        ("l_quantity IN (10,90,10)", 100.0),
-        ("NOT l_quantity IN (10,NULL)", None),
+        ("l_quantity IN (10, 90, 10)", 100.0),
+        ("NOT l_quantity IN (10, NULL)", None),
         ("l_quantity IN (NULL)", None),
-        ("l_returnflag IN ('B',NULL)", 90.0),
+        ("l_returnflag IN ('B', NULL)", 90.0),
         ("NOT l_returnflag IN ('A')", 90.0),
-        ("l_shipdate IN (NULL,DATE '1970-01-01')", 120.0),
+        ("l_shipdate IN (NULL, DATE '1970-01-01')", 120.0),
         ("NOT l_shipdate IN (NULL)", None),
     ]:
         queries.composed(
@@ -825,7 +825,7 @@ def check_text_null_and_boolean_filters(queries):
         ("l_quantity<15 OR l_quantity>50 AND l_returnflag='A'", 10.0),
         ("(l_quantity<15 OR l_quantity>50) AND l_returnflag='A'", 10.0),
     ]:
-        # The retained repeated fixture has quantities 10, 20, 90 and flags A,A,B.
+        # The retained repeated fixture has quantities 10, 20, 90 and flags A, A, B.
         queries.composed(
             "legacy-boolean-filter",
             f"FROM lineitem |> WHERE {predicate} |> AGGREGATE SUM(l_quantity) AS total",
@@ -838,7 +838,7 @@ def check_text_null_and_boolean_filters(queries):
         )
         queries.composed(
             "boolean-skipped-computation",
-            f"FROM lineitem |> SELECT l_quantity,l_quantity*1e308 AS x |> WHERE {predicate} |> SELECT l_quantity",
+            f"FROM lineitem |> SELECT l_quantity, l_quantity*1e308 AS x |> WHERE {predicate} |> SELECT l_quantity",
             expected,
             "repeated",
         )
@@ -846,12 +846,12 @@ def check_text_null_and_boolean_filters(queries):
 
 
 def check_column_transforms(queries):
-    # The independently encoded rows have quantities 10, 20, 90 and flags A,A,B.
+    # The independently encoded rows have quantities 10, 20, 90 and flags A, A, B.
     for label, sql, expected, database in [
         (
             "extend-original-range",
             "FROM lineitem AS t |> EXTEND t.l_quantity+1 AS x"
-            " |> SELECT t.l_quantity,x",
+            " |> SELECT t.l_quantity, x",
             [[encoded(v), encoded(v + 1)] for v in [10.0, 20.0, 90.0]],
             "repeated",
         ),
@@ -878,7 +878,7 @@ def check_column_transforms(queries):
         (
             "set-original-range",
             "FROM lineitem AS t |> SET l_quantity=l_quantity+1"
-            " |> SELECT l_quantity,t.l_quantity",
+            " |> SELECT l_quantity, t.l_quantity",
             [[encoded(v + 1), encoded(v)] for v in [10.0, 20.0, 90.0]],
             "repeated",
         ),
@@ -898,7 +898,7 @@ def check_column_transforms(queries):
         (
             "rename-original-range",
             "FROM lineitem AS t |> RENAME l_quantity AS quantity"
-            " |> SELECT quantity,t.l_quantity",
+            " |> SELECT quantity, t.l_quantity",
             [[encoded(v), encoded(v)] for v in [10.0, 20.0, 90.0]],
             "repeated",
         ),
@@ -917,7 +917,7 @@ def check_column_transforms(queries):
         ),
     ]:
         queries.composed(label, sql, expected, database)
-    for expression in ["l_quantity AS x,x+1 AS y", "SUM(l_quantity)", "*"]:
+    for expression in ["l_quantity AS x, x+1 AS y", "SUM(l_quantity)", "*"]:
         call = queries.run("repeated", "FROM lineitem |> EXTEND " + expression)
         assert call.returncode == 1 and not parse_rows(call.stdout), (
             expression, call.stdout, call.stderr
@@ -950,7 +950,7 @@ def check_repeated_aggregation(queries):
     )
     queries.composed(
         "empty-group-input-to-global",
-        GROUP_SUM_SQL + " |> WHERE total < 0 |> AGGREGATE SUM(total) AS total,COUNT(*) AS n",
+        GROUP_SUM_SQL + " |> WHERE total < 0 |> AGGREGATE SUM(total) AS total, COUNT(*) AS n",
         [[encoded(None), encoded(0)]],
         "repeated",
     )
@@ -1003,19 +1003,19 @@ def check_post_aggregate_demand(queries, rows):
     )
     queries.composed(
         "swap-aggregate-aliases",
-        GLOBAL_SQL + " |> SELECT a AS s,n AS a |> SELECT a,s,s",
+        GLOBAL_SQL + " |> SELECT a AS s, n AS a |> SELECT a, s, s",
         [[encoded(2), encoded(MAX_DOUBLE), encoded(MAX_DOUBLE)]],
         "mean-only",
     )
     queries.composed(
         "drop-overflowing-argument",
-        f"FROM lineitem |> AGGREGATE SUM({OVERFLOW_EXPRESSION}) AS s,COUNT(*) AS n |> SELECT n",
+        f"FROM lineitem |> AGGREGATE SUM({OVERFLOW_EXPRESSION}) AS s, COUNT(*) AS n |> SELECT n",
         [[encoded(len(rows))]],
     )
     queries.composed(
         "drop-key-output-retains-order",
         GROUPED_SQL
-        + " |> SELECT n,l_linestatus AS status,l_returnflag AS flag |> WHERE n > 7 |> SELECT flag,n",
+        + " |> SELECT n, l_linestatus AS status, l_returnflag AS flag |> WHERE n > 7 |> SELECT flag, n",
         [
             [f"string:{key[0]:02x}", encoded(count)]
             for key, count in sorted(
@@ -1046,19 +1046,19 @@ def check_post_aggregate_demand(queries, rows):
         )
     queries.composed(
         "exact-int64-sum",
-        "FROM lineitem |> AGGREGATE SUM(9007199254740993) AS s,AVG(9007199254740993) AS a",
+        "FROM lineitem |> AGGREGATE SUM(9007199254740993) AS s, AVG(9007199254740993) AS a",
         [[encoded(18014398509481986), encoded(float(9007199254740993))]],
         "mean-only",
     )
     queries.composed(
         "empty-int64-sum",
-        "FROM lineitem |> AGGREGATE SUM(1) AS s,AVG(1) AS a,COUNT(*) AS n",
+        "FROM lineitem |> AGGREGATE SUM(1) AS s, AVG(1) AS a, COUNT(*) AS n",
         [[encoded(None), encoded(None), encoded(0)]],
         "empty",
     )
     queries.composed(
         "empty-count-zero",
-        GLOBAL_SQL + " |> WHERE n = 0 |> SELECT a,n",
+        GLOBAL_SQL + " |> WHERE n = 0 |> SELECT a, n",
         [[encoded(None), encoded(0)]],
         "empty",
     )
@@ -1082,7 +1082,7 @@ def check_post_aggregate_demand(queries, rows):
     )
     queries.composed(
         "post-between-and",
-        GLOBAL_SQL + " |> WHERE n BETWEEN 1 AND 3 AND a > 0 |> SELECT a,n",
+        GLOBAL_SQL + " |> WHERE n BETWEEN 1 AND 3 AND a > 0 |> SELECT a, n",
         [[encoded(MAX_DOUBLE), encoded(2)]],
         "mean-only",
     )
@@ -1132,12 +1132,12 @@ def check_post_aggregate_demand(queries, rows):
         )
     for sql in [
         GLOBAL_SQL + " |> SELECT l_quantity",
-        GLOBAL_SQL + " |> SELECT n AS a,a AS a |> WHERE a > 0",
-        GLOBAL_SQL + " |> SELECT a AS x,a AS x |> SELECT x",
+        GLOBAL_SQL + " |> SELECT n AS a, a AS a |> WHERE a > 0",
+        GLOBAL_SQL + " |> SELECT a AS x, a AS x |> SELECT x",
         GLOBAL_SQL + " |> SELECT n |> WHERE a > 0",
         GLOBAL_SQL + " |> WHERE n < DATE '2000-01-01' |> SELECT a",
-        "FROM lineitem |> AGGREGATE SUM(missing) AS s,COUNT(*) AS n |> SELECT n",
-        "FROM lineitem |> AGGREGATE SUM(l_shipdate) AS s,COUNT(*) AS n |> SELECT n",
+        "FROM lineitem |> AGGREGATE SUM(missing) AS s, COUNT(*) AS n |> SELECT n",
+        "FROM lineitem |> AGGREGATE SUM(l_shipdate) AS s, COUNT(*) AS n |> SELECT n",
     ]:
         call = queries.run("empty", sql)
         assert (
@@ -1238,7 +1238,7 @@ def check_positional_unions(queries, work):
     for mode, count in [("ALL", 8), ("DISTINCT", 4)]:
         queries.composed(
             "positional-union-" + mode.lower(),
-            f"FROM facts |> UNION {mode} (FROM facts |> SELECT note AS text,amount AS value) |> AGGREGATE COUNT(*) AS n",
+            f"FROM facts |> UNION {mode} (FROM facts |> SELECT note AS text, amount AS value) |> AGGREGATE COUNT(*) AS n",
             [[encoded(count)]],
             "declared",
             limits=limits,
@@ -1246,7 +1246,7 @@ def check_positional_unions(queries, work):
     for label, sql, expected in [
         (
             "union-distinct-complete-row",
-            "FROM facts |> SELECT note,1 AS n |> UNION DISTINCT (FROM facts |> SELECT note,1 AS n) |> SELECT n",
+            "FROM facts |> SELECT note, 1 AS n |> UNION DISTINCT (FROM facts |> SELECT note, 1 AS n) |> SELECT n",
             [[encoded(1)]] * 4,
         ),
         (

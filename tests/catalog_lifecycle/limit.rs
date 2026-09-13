@@ -16,7 +16,7 @@ fn public_limit_constants_prefixes_and_predicate_boundaries() {
             query(
                 &db,
                 &format!(
-                    "FROM facts |> ORDER BY k DESC NULLS FIRST,v DESC |> SELECT v |> LIMIT {count} OFFSET {offset}"
+                    "FROM facts |> ORDER BY k DESC NULLS FIRST, v DESC |> SELECT v |> LIMIT {count} OFFSET {offset}"
                 ),
                 integers(&expected),
             );
@@ -49,11 +49,11 @@ fn public_limit_constants_prefixes_and_predicate_boundaries() {
             vec![],
         ),
         (
-            "FROM facts AS f |> JOIN dimensions AS d ON f.k = d.k |> ORDER BY f.v DESC,d.label |> LIMIT 2 OFFSET 1 |> SELECT f.v",
+            "FROM facts AS f |> JOIN dimensions AS d ON f.k = d.k |> ORDER BY f.v DESC, d.label |> LIMIT 2 OFFSET 1 |> SELECT f.v",
             integers(&[20, 20]),
         ),
         (
-            "FROM facts |> ORDER BY v |> LIMIT 2 |> AS f |> JOIN dimensions AS d ON f.k = d.k |> ORDER BY f.v,d.label |> SELECT f.v",
+            "FROM facts |> ORDER BY v |> LIMIT 2 |> AS f |> JOIN dimensions AS d ON f.k = d.k |> ORDER BY f.v, d.label |> SELECT f.v",
             integers(&[10, 10, 20, 20]),
         ),
     ] {
@@ -92,7 +92,7 @@ fn public_limit_preserves_demanded_failures_and_releases_early_owners() {
     let baseline = db.reserved_memory_bytes();
     for (count, offset, fails) in [(0, 0, false), (1, 0, true), (0, 1, true)] {
         let sql = format!(
-            "FROM facts |> AGGREGATE SUM(v * 9223372036854775807) AS doomed,COUNT(*) AS n |> ORDER BY doomed |> LIMIT {count} OFFSET {offset} |> SELECT n"
+            "FROM facts |> AGGREGATE SUM(v * 9223372036854775807) AS doomed, COUNT(*) AS n |> ORDER BY doomed |> LIMIT {count} OFFSET {offset} |> SELECT n"
         );
         let query = db.prepare(&sql).unwrap();
         let cancel = CancellationToken::new();

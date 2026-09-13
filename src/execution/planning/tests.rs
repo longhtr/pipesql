@@ -34,7 +34,7 @@ fn membership_literals_and_decisions_match_the_semantic_plan() {
     )
     .unwrap();
     let query = db
-        .prepare("FROM facts |> WHERE NOT a IN (1,NULL,3)")
+        .prepare("FROM facts |> WHERE NOT a IN (1, NULL, 3)")
         .unwrap();
     for mutation in 0..5 {
         let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
@@ -76,7 +76,7 @@ fn union_branch_positions_and_demands_are_validated_independently() {
         &CancellationToken::new(),
     )
     .unwrap();
-    let query = db.prepare("FROM facts |> SELECT a AS x,a AS y |> UNION ALL (FROM facts |> SELECT b,a) |> SELECT y |> WHERE y>0").unwrap();
+    let query = db.prepare("FROM facts |> SELECT a AS x, a AS y |> UNION ALL (FROM facts |> SELECT b, a) |> SELECT y |> WHERE y>0").unwrap();
     for mutation in 0..9 {
         let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
         assert_eq!(plan.pipelines.len(), 3);
@@ -125,7 +125,7 @@ fn union_branch_positions_and_demands_are_validated_independently() {
     drop(query);
     // UNION DISTINCT must retain both comparison fields even when its final
     // projection needs only x. Its DISTINCT producer cannot bypass the union.
-    let query = db.prepare("FROM facts |> SELECT a AS x,b AS y |> UNION DISTINCT (FROM facts |> SELECT b,a) |> SELECT x").unwrap();
+    let query = db.prepare("FROM facts |> SELECT a AS x, b AS y |> UNION DISTINCT (FROM facts |> SELECT b, a) |> SELECT x").unwrap();
     for mutation in 0..4 {
         let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
         assert_eq!(plan.pipelines.len(), 4);
@@ -179,7 +179,7 @@ fn distinct_input_coverage_and_fresh_output_mapping_are_validated() {
     )
     .unwrap();
     let query = db
-        .prepare("FROM facts |> SELECT a,a AS duplicate,b |> DISTINCT |> SELECT a |> WHERE a > 0")
+        .prepare("FROM facts |> SELECT a, a AS duplicate, b |> DISTINCT |> SELECT a |> WHERE a > 0")
         .unwrap();
     for mutation in 0..8 {
         let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
@@ -229,7 +229,7 @@ fn limit_inputs_bounds_positions_and_filter_placement_are_validated() {
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
-    let query = db.prepare("FROM lineitem |> SELECT l_discount,l_quantity |> LIMIT 2 OFFSET 1 |> SELECT l_quantity,l_discount |> WHERE l_quantity > 0").unwrap();
+    let query = db.prepare("FROM lineitem |> SELECT l_discount, l_quantity |> LIMIT 2 OFFSET 1 |> SELECT l_quantity, l_discount |> WHERE l_quantity > 0").unwrap();
     let different = db.prepare("FROM lineitem |> LIMIT 3").unwrap();
     let Stage::Limit(other_bounds) = different.plan.nodes()[0].stage else {
         unreachable!();
@@ -289,7 +289,7 @@ fn ordering_positions_flags_and_hidden_demand_are_independently_validated() {
             &crate::CancellationToken::new(),
         )
         .unwrap();
-    let query = database.prepare("FROM facts |> SELECT v AS x,k AS y |> ORDER BY 2 DESC NULLS FIRST,1 |> SELECT x |> WHERE x > 0").unwrap();
+    let query = database.prepare("FROM facts |> SELECT v AS x, k AS y |> ORDER BY 2 DESC NULLS FIRST, 1 |> SELECT x |> WHERE x > 0").unwrap();
     for mutation in 0..10 {
         let mut plan = lower(
             &database,
@@ -388,7 +388,7 @@ fn join_pipelines_bind_both_inputs_and_validate_positions_independently() {
         .prepare(
             "FROM lineitem AS a |> WHERE a.l_quantity < 20 |> SELECT a.l_quantity AS q |> AS p \
          |> JOIN lineitem AS b ON p.q = b.l_quantity \
-         |> WHERE b.l_extendedprice > 10 |> SELECT b.l_extendedprice,p.q",
+         |> WHERE b.l_extendedprice > 10 |> SELECT b.l_extendedprice, p.q",
         )
         .unwrap();
     let before = database.reserved_memory_bytes();
@@ -630,7 +630,7 @@ fn typed_copy_slots_preserve_fresh_identity_without_numeric_storage() {
     )
     .unwrap();
     let query = db
-        .prepare("FROM facts AS f |> SET a=b |> ORDER BY a |> SELECT a,f.a")
+        .prepare("FROM facts AS f |> SET a=b |> ORDER BY a |> SELECT a, f.a")
         .unwrap();
     for mutation in 0..5 {
         let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
@@ -673,7 +673,7 @@ fn constant_slots_preserve_identity_across_materialization() {
     )
     .unwrap();
     let query = db
-        .prepare("FROM facts |> SELECT '雪' AS label,DATE '1970-01-02' AS day |> ORDER BY label")
+        .prepare("FROM facts |> SELECT '雪' AS label, DATE '1970-01-02' AS day |> ORDER BY label")
         .unwrap();
     for mutation in 0..5 {
         let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
@@ -717,7 +717,7 @@ fn analytic_input_slots_and_evaluation_boundary_are_validated() {
     )
     .unwrap();
     let query = db
-        .prepare("FROM facts |> SELECT a+1 AS next,COUNT(*) OVER () AS n |> WHERE n>0 |> LIMIT 1")
+        .prepare("FROM facts |> SELECT a+1 AS next, COUNT(*) OVER () AS n |> WHERE n>0 |> LIMIT 1")
         .unwrap();
     for mutation in 0..7 {
         let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();

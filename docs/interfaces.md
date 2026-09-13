@@ -210,10 +210,10 @@ The public path supports:
 1. create a database at an explicit local path with memory/temp limits;
 2. bulk-load the [16-field lineitem input](storage.md#construction-and-publication) in one
    transaction, retaining its seven supported columns;
-3. return `Commit { transaction,generation }` only after durable success; return
+3. return `Commit { transaction, generation }` only after durable success; return
    ordinary pre-publication errors only after definite rollback,
    `CleanupRequired` when rollback is incomplete, or
-   `CommitAmbiguous { transaction,source }` after root publication may have begun;
+   `CommitAmbiguous { transaction, source }` after root publication may have begun;
 4. close and reopen;
 5. prepare the composition manifest through ordinary pipe source text;
 6. execute scans, filters, projections, LIMIT, and repeated aggregates, including Q1/Q6;

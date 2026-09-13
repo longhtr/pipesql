@@ -6,7 +6,7 @@ fn select_materializes_owned_string_and_date_constants() {
     let (_directory, db) = super::null_predicate::fixture().unwrap();
     query(
         &db,
-        "FROM facts |> SELECT '雪' AS label,DATE '1970-01-02' AS day",
+        "FROM facts |> SELECT '雪' AS label, DATE '1970-01-02' AS day",
         vec![vec![Cell::Text("雪".into()), Cell::Day(1)]; 4],
     );
 }
@@ -16,7 +16,7 @@ fn extend_constants_preserve_input_values_and_row_count() {
     let (_directory, db) = super::null_predicate::fixture().unwrap();
     query(
         &db,
-        "FROM facts |> EXTEND 'source' AS label,DATE_ADD(DATE '1970-01-01',INTERVAL 1 DAY) AS day |> ORDER BY id |> SELECT id,label,day",
+        "FROM facts |> EXTEND 'source' AS label, DATE_ADD(DATE '1970-01-01', INTERVAL 1 DAY) AS day |> ORDER BY id |> SELECT id, label, day",
         (0..4)
             .map(|id| vec![Cell::Integer(id), Cell::Text("source".into()), Cell::Day(1)])
             .collect(),
@@ -28,7 +28,7 @@ fn set_constants_preserve_original_range_values() {
     let (_directory, db) = super::null_predicate::fixture().unwrap();
     query(
         &db,
-        "FROM facts AS f |> SET s='replacement',d=DATE '1969-12-31' |> ORDER BY id |> SELECT f.s,s,d",
+        "FROM facts AS f |> SET s='replacement', d=DATE '1969-12-31' |> ORDER BY id |> SELECT f.s, s, d",
         [
             Cell::Text("present".into()),
             Cell::Null,
@@ -46,7 +46,7 @@ fn constants_compose_with_filters_grouping_and_union() {
     let (_directory, db) = super::null_predicate::fixture().unwrap();
     query(
         &db,
-        "FROM facts |> SELECT '雪' AS label,DATE '1970-01-02' AS day |> WHERE label IN ('雪',NULL) AND day = DATE '1970-01-02' |> AGGREGATE COUNT(*) AS n GROUP BY label,day |> SELECT label,day,n",
+        "FROM facts |> SELECT '雪' AS label, DATE '1970-01-02' AS day |> WHERE label IN ('雪', NULL) AND day = DATE '1970-01-02' |> AGGREGATE COUNT(*) AS n GROUP BY label, day |> SELECT label, day, n",
         vec![vec![
             Cell::Text("雪".into()),
             Cell::Day(1),
@@ -63,7 +63,7 @@ fn constants_compose_with_filters_grouping_and_union() {
     );
     query(
         &db,
-        "FROM facts |> SELECT ('') AS label,(DATE_SUB(DATE '2000-03-01',INTERVAL 1 DAY)) AS day |> AGGREGATE MIN(label) AS lo,MAX(day) AS hi",
+        "FROM facts |> SELECT ('') AS label, (DATE_SUB(DATE '2000-03-01', INTERVAL 1 DAY)) AS day |> AGGREGATE MIN(label) AS lo, MAX(day) AS hi",
         vec![vec![Cell::Text("".into()), Cell::Day(11016)]],
     );
 }
@@ -74,9 +74,9 @@ fn malformed_constants_fail_preparation_even_when_undemanded() {
     let baseline = db.reserved_memory_bytes();
     for constant in [
         "DATE '2023-02-29'",
-        "DATE_ADD(DATE '9999-12-31',INTERVAL 1 DAY)",
-        "DATE_ADD(DATE '2000-01-01',INTERVAL 1 WEEK)",
-        "DATE_ADD(DATE '2000-01-01',INTERVAL 9223372036854775808 DAY)",
+        "DATE_ADD(DATE '9999-12-31', INTERVAL 1 DAY)",
+        "DATE_ADD(DATE '2000-01-01', INTERVAL 1 WEEK)",
+        "DATE_ADD(DATE '2000-01-01', INTERVAL 9223372036854775808 DAY)",
         "'123456789012345678901234567890123'", // 33 source bytes
         "'\\uD800'",
         "NULL",
@@ -94,7 +94,7 @@ fn prepared_constants_outlive_source_and_release_on_early_drop() {
     let baseline = db.reserved_memory_bytes();
     let prepared = {
         let source =
-            String::from("FROM facts |> SELECT '\\u96EA' AS label,DATE '0001-01-01' AS day");
+            String::from("FROM facts |> SELECT '\\u96EA' AS label, DATE '0001-01-01' AS day");
         db.prepare(&source).unwrap()
     };
     let cancel = CancellationToken::new();
@@ -157,9 +157,9 @@ fn maximum_literal_and_output_width_are_materialized() {
     let columns = vec![format!("'{literal}'"); 64];
     query(
         &db,
-        &format!("FROM facts |> SELECT {}", columns.join(",")),
+        &format!("FROM facts |> SELECT {}", columns.join(", ")),
         vec![vec![Cell::Text(literal.into()); 64]; 512],
     );
-    let too_wide = format!("FROM facts |> SELECT {},''", columns.join(","));
+    let too_wide = format!("FROM facts |> SELECT {}, ''", columns.join(", "));
     assert!(db.prepare(&too_wide).is_err());
 }

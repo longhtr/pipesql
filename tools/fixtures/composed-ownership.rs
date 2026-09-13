@@ -83,12 +83,12 @@ pub(super) fn analytic_shapes(
     append.commit(&cancel)?;
     let repeated = format!(
         "FROM facts |> SELECT {}",
-        vec!["COUNT(*) OVER ()"; 19].join(",")
+        vec!["COUNT(*) OVER ()"; 19].join(", ")
     );
     // Four stage tokens plus seven per call and separators admit nineteen.
     let rejected = format!(
         "FROM facts |> SELECT {}",
-        vec!["COUNT(*) OVER ()"; 20].join(",")
+        vec!["COUNT(*) OVER ()"; 20].join(", ")
     );
     let rejected_heap = Heap::now();
     let rejected_memory = db.reserved_memory_bytes();
@@ -96,14 +96,14 @@ pub(super) fn analytic_shapes(
     assert_eq!(Heap::now(), rejected_heap);
     assert_eq!(db.reserved_memory_bytes(), rejected_memory);
     let wide = format!(
-        "FROM facts |> SELECT {},COUNT(*) OVER () AS n",
-        vec!["t"; 63].join(",")
+        "FROM facts |> SELECT {}, COUNT(*) OVER () AS n",
+        vec!["t"; 63].join(", ")
     );
     let queries = [
         "FROM empty |> SELECT COUNT(*) OVER () AS n",
         "FROM facts |> SELECT COUNT(*) OVER () AS n",
         &repeated,
-        "FROM facts |> SELECT v,d,t,COUNT(*) OVER () AS n",
+        "FROM facts |> SELECT v, d, t, COUNT(*) OVER () AS n",
         &wide,
         "FROM facts |> SELECT COUNT(*) OVER () AS n |> EXTEND COUNT(*) OVER () AS second",
         "FROM facts |> EXTEND COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total GROUP BY v |> AGGREGATE SUM(total) AS total",
@@ -277,7 +277,7 @@ pub(super) fn prepared_aggregate_shapes(
         for &width in &partition {
             let entries: Vec<_> = (0..width).map(|i| format!("COUNT(*) AS n{i}")).collect();
             sql.push_str(" |> AGGREGATE ");
-            sql.push_str(&entries.join(","));
+            sql.push_str(&entries.join(", "));
         }
         let before = Heap::now();
         if partition[0] > 10 {
@@ -374,7 +374,7 @@ pub(super) fn legacy_constant_shapes(
         for width in [1, 64] {
             let sql = format!(
                 "FROM lineitem |> SELECT {}",
-                vec![expression; width].join(",")
+                vec![expression; width].join(", ")
             );
             let prepared =
                 prepare_observed(&db, &sql, "legacy-text", 1 + usize::from(computed), false)?;
@@ -454,7 +454,7 @@ pub(super) fn legacy_constant_shapes(
                 ""
             };
             let sql = format!(
-                "FROM lineitem |> SELECT {expression} AS label |> AGGREGATE MIN(label) AS lo,MAX(label) AS hi,COUNT(*) AS n{suffix}"
+                "FROM lineitem |> SELECT {expression} AS label |> AGGREGATE MIN(label) AS lo, MAX(label) AS hi, COUNT(*) AS n{suffix}"
             );
             let prepared = prepare_observed(&db, &sql, "legacy-extrema", 4, false)?;
             let before = Heap::now();
@@ -947,7 +947,7 @@ pub(super) fn joined_shapes(
         let memory = db.reserved_memory_bytes();
         let query = db.prepare(
             "FROM sales AS s |> JOIN sales AS copies ON s.region = copies.region \
-             |> AGGREGATE COUNT(*) AS n,COUNT(s.amount) AS present,SUM(s.amount) AS total \
+             |> AGGREGATE COUNT(*) AS n, COUNT(s.amount) AS present, SUM(s.amount) AS total \
              GROUP BY s.region |> ORDER BY region DESC",
         )?;
         let mut result = db.execute(&query, &cancel)?;

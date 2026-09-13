@@ -452,7 +452,7 @@ fn check_catalog_text_queries(small_stack: bool) {
         .unwrap()
         .append(table, &columns, &cancel, &mut Effects::default())
         .unwrap();
-    let query = crate::frontend::prepare_catalog(&db, "FROM facts |> SELECT amount,note").unwrap();
+    let query = crate::frontend::prepare_catalog(&db, "FROM facts |> SELECT amount, note").unwrap();
     let before = db.reserved_memory_bytes();
     let held = db
         .reserve_memory(
@@ -708,7 +708,7 @@ fn catalog_query_typed_nulls_cross_row_quanta() {
         .unwrap()
         .append(table, &columns, &cancel, &mut Effects::default())
         .unwrap();
-    let query = crate::frontend::prepare_catalog(&db, "FROM typed |> WHERE n > 9007199254740993 |> WHERE day >= DATE '2000-01-01' |> SELECT amount,note,n,day").unwrap();
+    let query = crate::frontend::prepare_catalog(&db, "FROM typed |> WHERE n > 9007199254740993 |> WHERE day >= DATE '2000-01-01' |> SELECT amount, note, n, day").unwrap();
     let mut result = db.execute(&query, &cancel).unwrap();
     let mut observed = Vec::new();
     let mut finished = false;
