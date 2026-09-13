@@ -7,7 +7,7 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `5f769c5` pass on matching frozen macOS and GNU
+The complete 24-stage gates for `60bf34d` pass on matching frozen macOS and GNU
 arm64 Linux inputs: 629 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
@@ -25,47 +25,24 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Active: transient allocation ownership in wide LEFT JOIN
+## Completed: transient allocation ownership in wide LEFT JOIN
 
-Extend the existing public allocator caller to observe requested and usable
-allocations inside execute/step calls for the retained 64-column nullable STRING
-LEFT JOIN. Current step-boundary checks cannot see an allocation created and
-freed within one call. Preserve their literal eleven-pair oracle, both pathname
-lengths, false-attribution control and complete release checks.
+`60bf34d` observes live requested/usable Rust allocations inside public execute
+and step calls for the retained 64-column nullable STRING LEFT JOIN. The
+[transient ownership record](evidence.md#transient-ownership-in-wide-left-join)
+retains event counts, headroom, calibration, independent controls and limits.
+No engine accounting defect was exposed; production owners and admission
+allowances remain unchanged.
 
-The ownership/observer trace completed within its 30-minute budget. The public
-memory report is an atomic load. The caller now samples after allocation and
-before physical free inside execute/step, using a scoped observer borrowed from
-the database. Caller storage stays fixed while armed; aggregate deltas do not
-assign each pointer to an engine account. Independent checkpoint equations and
-all existing controls remain.
-
-Focused ownership checks pass at both pathname lengths: 371 allocations and 371
-frees, with minimum requested/usable headroom of 6,992/4,296 bytes on macOS. An
-uncharged allocation created and freed inside a call is detected despite equal
-entry/exit totals. A separate free-only calibration observes the still-live
-owner, and disabling observation is rejected. The supervisor also rejects
-missing calibration output. No engine accounting defect was exposed.
-
-Complete both sequential frozen platform gates, discovery/evidence reconciliation,
-cleanup and local commits. Whole-process/RSS, arbitrary allocators and concurrent
-allocation histories remain outside this observation. Publication restrictions
-are unchanged.
-
-## Completed: natural logarithms for analytical scales
-
-`5f769c5` implements one-argument LN through the existing scalar owners. The
-[logarithm record](evidence.md#natural-logarithms-for-analytical-scales) retains
-pinned semantics, the resolved negative-infinity case, independent numerical
-answers, demand and error spans, resource/failure coverage, and the learning path.
-
-Matching frozen 24-stage macOS/GNU/Linux gates pass sequentially, with 629 ordinary
-Rust tests per platform. Fresh log-transform examples complete on both platforms
-after both gates finish. Discovery, manifests and retained controls are reconciled;
-owned outputs are removed while pre-existing build artifacts are preserved.
-No allocation owner, format or admission allowance changed. Native logarithm
-precision remains explicitly approximate. Publication and broader qualifications
-remain unresolved.
+Both complete 24-stage macOS/GNU/Linux gates pass on matching frozen inputs.
+Discovery, ordered allocation schedules and semantic records are reconciled.
+Fresh LEFT JOIN examples pass sequentially on both platforms after both gates.
+Owned outputs are removed while pre-existing artifacts and toolchains remain.
+Completed language work, including [natural logarithms](evidence.md#natural-logarithms-for-analytical-scales),
+remains closed. Arbitrary allocator histories, concurrent allocation observation,
+whole-process/RSS, Windows and broader durability remain unfinished. Publication
+restrictions are unchanged. Reassess README's decision order before activating
+the next bounded milestone.
 
 ## Next engineering priorities
 
