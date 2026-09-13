@@ -1254,13 +1254,7 @@ fn extend_preserves_input_identity_ranges_and_input_only_alias_scope() {
         db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS n |> SELECT t.n")
             .is_err()
     );
-    for unsupported in [
-        "*",
-        "SUM(l_quantity)",
-        "1 OVER ()",
-        "'text'+1",
-        "COALESCE(l_quantity, 0)",
-    ] {
+    for unsupported in ["*", "SUM(l_quantity)", "1 OVER ()", "'text'+1"] {
         assert!(
             db.prepare(&format!("FROM lineitem |> EXTEND {unsupported}"))
                 .is_err()
@@ -1822,5 +1816,48 @@ fn div_keeps_integer_identity_and_bounded_call_admission() {
     }
     check_scope_preparation(
         "FROM facts |> SELECT k, DIV(n, 3) AS quotient |> WHERE quotient>DIV(3, 3) |> AGGREGATE SUM(quotient) AS total GROUP BY k",
+    );
+}
+
+#[test]
+fn coalesce_validates_both_branches_and_nullable_result_identity() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    for (arguments, kind, nullable) in [
+        ("1, 2", DataType::Int64, false),
+        ("1, 2.0", DataType::Double, false),
+        ("SAFE_DIVIDE(1, 0), 2", DataType::Double, false),
+        (
+            "SAFE_DIVIDE(1, 0), SAFE_DIVIDE(2, 0)",
+            DataType::Double,
+            true,
+        ),
+    ] {
+        let mut query = db
+            .prepare(&format!(
+                "FROM lineitem |> SELECT COALESCE({arguments}) AS n"
+            ))
+            .unwrap();
+        let output = query.result_column(0).unwrap();
+        assert_eq!((output.data_type, output.nullable), (kind, nullable));
+        validate(&query.plan).unwrap();
+        let column = query.plan.computed[0].column;
+        query.plan.computed[0].column =
+            SemanticColumn::new(column.identity().value(), kind, !nullable);
+        assert!(validate(&query.plan).is_err());
+    }
+    for expression in [
+        "COALESCE(1, missing)",
+        "COALESCE(1, l_returnflag)",
+        "COALESCE(1, 9223372036854775808)",
+    ] {
+        assert!(
+            db.prepare(&format!("FROM lineitem |> SELECT {expression}"))
+                .is_err()
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k, COALESCE(n, k) AS value |> WHERE value>COALESCE(1, 0) |> AGGREGATE SUM(value) AS total GROUP BY k",
     );
 }

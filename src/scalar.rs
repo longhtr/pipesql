@@ -5,6 +5,9 @@ use crate::frontend::{DataType, MAX_ROW_VALUES, SemanticColumn};
 use crate::{Error, SourceSpan};
 use std::ops::Range;
 
+mod evaluation;
+pub(crate) use evaluation::Evaluation;
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum ArithmeticFailure {
     Add,
@@ -144,6 +147,7 @@ pub(crate) enum Op {
     Multiply,
     Divide,
     SafeDivide,
+    Coalesce,
     Mod,
     IntegerDivide,
     Negate,
@@ -165,9 +169,47 @@ impl Expression {
     };
 
     pub(crate) fn nullable(&self) -> bool {
-        self.ops[..usize::from(self.len)].iter().any(|op| {
-            *op == Op::SafeDivide || matches!(op, Op::Column(column) if column.nullable())
-        })
+        // Validators also inspect NULLability before checking program shape.
+        // Invalid structure is conservative here and rejected by infer().
+        if self.len == 0 || usize::from(self.len) > MAX_OPS {
+            return true;
+        }
+        let mut nullable = [false; MAX_OPS];
+        let mut depth = 0;
+        for op in &self.ops[..usize::from(self.len)] {
+            match *op {
+                Op::Column(column) => {
+                    nullable[depth] = column.nullable();
+                    depth += 1;
+                }
+                Op::Integer(_) | Op::Double(_) => {
+                    nullable[depth] = false;
+                    depth += 1;
+                }
+                Op::Negate | Op::Abs => {
+                    if depth == 0 {
+                        return true;
+                    }
+                }
+                Op::Empty => return true,
+                _ => {
+                    if depth < 2 {
+                        return true;
+                    }
+                    depth -= 1;
+                    nullable[depth - 1] = match op {
+                        Op::Coalesce => nullable[depth - 1] && nullable[depth],
+                        Op::SafeDivide => true,
+                        _ => nullable[depth - 1] || nullable[depth],
+                    };
+                }
+            }
+        }
+        depth != 1 || nullable[0]
+    }
+
+    pub(crate) fn has_coalesce(&self) -> bool {
+        self.ops[..usize::from(self.len)].contains(&Op::Coalesce)
     }
 
     pub(crate) fn infer(&self, visible: &[SemanticColumn]) -> Result<DataType, InferenceFailure> {
@@ -211,6 +253,7 @@ impl Expression {
                 | Op::Multiply
                 | Op::Divide
                 | Op::SafeDivide
+                | Op::Coalesce
                 | Op::Mod
                 | Op::IntegerDivide => {
                     if depth < 2 {
@@ -273,6 +316,7 @@ impl Expression {
                 | Op::Multiply
                 | Op::Divide
                 | Op::SafeDivide
+                | Op::Coalesce
                 | Op::Mod
                 | Op::IntegerDivide => {
                     depth = depth.checked_sub(1).expect("validated binary inputs")
@@ -320,6 +364,9 @@ impl Expression {
                     "scalar inputs have unique identities"
                 );
             }
+        }
+        if self.has_coalesce() {
+            return self.evaluate_conditional(columns, range, scratch);
         }
         let mut valid = [[u64::MAX; VALID_WORDS]; MAX_OPS];
         let mut types = [DataType::Int64; MAX_OPS];
@@ -461,6 +508,7 @@ impl Expression {
                         types[depth - 1] = DataType::Double;
                     }
                 }
+                Op::Coalesce => unreachable!("conditional program uses demand evaluation"),
                 Op::Empty => unreachable!("validated scalar program"),
             }
         }

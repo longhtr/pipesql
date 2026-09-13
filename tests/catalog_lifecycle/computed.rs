@@ -1345,3 +1345,92 @@ fn public_div_composes_and_preserves_argument_demand() {
     assert_eq!(output.data_type, DataType::Int64);
     assert!(output.nullable);
 }
+
+#[test]
+fn public_coalesce_selects_defaults_and_skips_unused_dependencies() {
+    let (_directory, db) = join_fixture();
+    for (sql, expected) in [
+        (
+            "FROM facts |> SELECT COALESCE(k, 9) AS n |> ORDER BY n",
+            integers(&[1, 1, 2, 9]),
+        ),
+        (
+            "FROM facts |> SELECT COALESCE(v, 9223372036854775807+1) AS n |> ORDER BY n",
+            integers(&[10, 20, 30, 40]),
+        ),
+        (
+            "FROM facts |> EXTEND 9223372036854775807+1 AS bad |> SELECT COALESCE(v, bad) AS n |> ORDER BY n",
+            integers(&[10, 20, 30, 40]),
+        ),
+        (
+            "FROM facts |> EXTEND 9223372036854775807+1 AS bad |> EXTEND bad+1 AS worse |> SELECT COALESCE(v, worse) AS n |> ORDER BY n",
+            integers(&[10, 20, 30, 40]),
+        ),
+        (
+            "FROM facts |> AGGREGATE SUM(9223372036854775807) AS bad, COUNT(*) AS n |> SELECT COALESCE(n, bad)",
+            integers(&[4]),
+        ),
+        (
+            "FROM facts AS f |> LEFT JOIN dimensions AS d ON f.k=d.k |> SELECT COALESCE(d.k, 9) AS n |> ORDER BY n",
+            integers(&[1, 1, 1, 1, 2, 9]),
+        ),
+        (
+            "FROM facts |> AGGREGATE SUM(COALESCE(k, 9)) AS s",
+            integers(&[13]),
+        ),
+        (
+            "FROM facts |> WHERE v > 100 |> AGGREGATE SUM(v) AS s |> SELECT COALESCE(s, 9)",
+            integers(&[9]),
+        ),
+        (
+            "FROM facts |> EXTEND COALESCE(k, 9) AS n |> WHERE n > 2 |> SELECT v",
+            integers(&[40]),
+        ),
+        (
+            "FROM facts |> SELECT COALESCE(SAFE_DIVIDE(1, 0), 2) AS n |> ORDER BY n",
+            vec![vec![Cell::Number(2.0_f64.to_bits())]; 4],
+        ),
+    ] {
+        query(&db, sql, expected);
+    }
+    let prepared = db
+        .prepare("FROM facts |> SELECT COALESCE(k, v), COALESCE(k, k), COALESCE(k, 0.5)")
+        .unwrap();
+    assert!(!prepared.result_column(0).unwrap().nullable);
+    assert!(prepared.result_column(1).unwrap().nullable);
+    assert!(!prepared.result_column(2).unwrap().nullable);
+    assert_eq!(
+        prepared.result_column(0).unwrap().data_type,
+        DataType::Int64
+    );
+    assert_eq!(
+        prepared.result_column(2).unwrap().data_type,
+        DataType::Double
+    );
+    drop(prepared);
+    for (sql, operation, expression) in [
+        (
+            "FROM facts |> SELECT COALESCE(k, 9223372036854775807+1)",
+            "addition",
+            "COALESCE(k, 9223372036854775807+1)",
+        ),
+        (
+            "FROM facts |> EXTEND 9223372036854775807+1 AS bad |> SELECT COALESCE(k, bad)",
+            "addition",
+            "9223372036854775807+1",
+        ),
+        (
+            "FROM facts |> SELECT COALESCE(9223372036854775807+1, v)",
+            "addition",
+            "COALESCE(9223372036854775807+1, v)",
+        ),
+        (
+            "FROM facts |> AGGREGATE SUM(9223372036854775807) AS bad |> SELECT COALESCE(bad, 0)",
+            "SUM",
+            "SUM(9223372036854775807)",
+        ),
+    ] {
+        failure(&db, sql, operation, expression);
+    }
+    query(&db, "FROM facts |> AGGREGATE COUNT(*) AS n", integers(&[4]));
+}

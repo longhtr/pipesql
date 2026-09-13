@@ -1,7 +1,7 @@
 //! Demand evaluation inside a producer, without crossing materialization boundaries.
 use super::{Error, Pipeline, Value};
 use crate::frontend::{Computation, DataType, MAX_COLUMNS, MAX_COMPUTED, MAX_ROW_VALUES};
-use crate::scalar::{MAX_OPS, NumericInput, NumericValues, Op};
+use crate::scalar::{Evaluation, MAX_OPS, Number, NumericInput, NumericValues, Op};
 
 // One live producer step owns these fixed arrays. The result reserves their
 // explicit payload while computed row producers are live; native call frames
@@ -13,7 +13,9 @@ pub(super) const ROW_SCRATCH_BYTES: u64 =
         + std::mem::size_of::<[Option<NumericInput<'static>>; MAX_OPS]>()
         + 3 * std::mem::size_of::<[u64; MAX_OPS]>()
         + std::mem::size_of::<[[u64; 4]; MAX_OPS]>()
-        + std::mem::size_of::<[DataType; MAX_OPS]>()) as u64;
+        + std::mem::size_of::<[DataType; MAX_OPS]>()
+        + Evaluation::SCRATCH_BYTES
+        + std::mem::size_of::<[u8; MAX_COMPUTED]>()) as u64;
 
 pub(super) struct RowValues<'a, 'query, F> {
     plan: &'a Pipeline<'query>,
@@ -55,6 +57,9 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
             .ok_or(Error::Corrupt("computed value slot"))?;
         if let Computation::Constant(value) = &definition.expression {
             return Ok(value.value());
+        }
+        if self.plan.has_conditional_work() {
+            return self.conditional_value(target);
         }
         let cache = self.cache.get_or_insert([None; MAX_COMPUTED]);
         let needed = self.plan.dependencies(&[slot])?;
@@ -131,6 +136,83 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
         number(
             cache[target].ok_or(Error::Corrupt("computed value absent"))?,
             definition.column.data_type(),
+        )
+    }
+
+    fn conditional_value<'row>(&mut self, target: usize) -> Result<Value<'row>, Error>
+    where
+        F: FnMut(u8) -> Result<Value<'row>, Error>,
+        'query: 'row,
+    {
+        let cache = self.cache.get_or_insert([None; MAX_COMPUTED]);
+        let mut pending = [0_u8; MAX_COMPUTED];
+        pending[0] = target as u8;
+        let mut depth = 1;
+        while depth != 0 {
+            let index = usize::from(pending[depth - 1]);
+            if cache[index].is_some() {
+                depth -= 1;
+                continue;
+            }
+            let definition = &self.plan.computed[index];
+            if matches!(definition.expression, Computation::WindowCount) {
+                let count = self
+                    .partition_count
+                    .ok_or(Error::Corrupt("analytic count outside its producer"))?;
+                cache[index] = Some(Some(
+                    i64::try_from(count)
+                        .map_err(|_| Error::Corrupt("analytic count exceeds INT64"))?
+                        as u64,
+                ));
+                continue;
+            }
+            let expression = definition.expression.numeric()?;
+            let mut evaluation = Evaluation::new(expression);
+            let mut dependency = None;
+            while let Some(column) = evaluation
+                .next_column()
+                .map_err(|failure| failure.into_error(definition.span))?
+            {
+                let slot = usize::from(self.plan.slots[column.identity().value() as usize]);
+                let value = if slot < MAX_ROW_VALUES {
+                    (self.raw)(slot as u8)?
+                } else {
+                    let input = slot - MAX_ROW_VALUES;
+                    if input >= index {
+                        return Err(Error::Corrupt(
+                            "computed dependency must precede definition",
+                        ));
+                    }
+                    if let Some(bits) = cache[input] {
+                        number(bits, column.data_type())?
+                    } else {
+                        dependency = Some(input);
+                        break;
+                    }
+                };
+                evaluation.supply(match (value, column.data_type()) {
+                    (Value::Null, _) => Number::Null,
+                    (Value::Int64(value), DataType::Int64) => Number::Integer(value),
+                    (Value::Double(value), DataType::Double) => Number::Double(value),
+                    _ => return Err(Error::Corrupt("computed input type")),
+                });
+            }
+            if let Some(input) = dependency {
+                // Each descent names an earlier definition. Once it is cached,
+                // retry this bounded program; no expression or input is recursive.
+                pending[depth] = input as u8;
+                depth += 1;
+                continue;
+            }
+            cache[index] = Some(match evaluation.value() {
+                Number::Null => None,
+                Number::Integer(value) => Some(value as u64),
+                Number::Double(value) => Some(value.to_bits()),
+            });
+        }
+        number(
+            cache[target].expect("completed computed target"),
+            self.plan.computed[target].column.data_type(),
         )
     }
 
@@ -221,6 +303,12 @@ impl Pipeline<'_> {
             .fold(0, |mask, (slot, needed)| {
                 mask | (u64::from(*needed) << slot)
             }))
+    }
+
+    fn has_conditional_work(&self) -> bool {
+        self.computed.iter().any(|definition| {
+            matches!(&definition.expression, Computation::Numeric(expression) if expression.has_coalesce())
+        })
     }
 
     pub(super) fn has_computed_work(&self) -> bool {
@@ -350,6 +438,9 @@ impl BatchScratch {
         }
         self.rows = selection.len();
         self.ready.fill(false);
+        if plan.has_conditional_work() {
+            return self.evaluate_conditional(plan, targets, selection, raw);
+        }
         let mut computed = [0; MAX_ROW_VALUES];
         let mut count = 0;
         for &slot in targets {
@@ -450,6 +541,48 @@ impl BatchScratch {
                 }
             }
             self.ready[slot] = true;
+        }
+        Ok(())
+    }
+
+    fn evaluate_conditional<'row>(
+        &mut self,
+        plan: &Pipeline,
+        targets: &[u8],
+        selection: &[u32],
+        mut raw: impl FnMut(u8, usize) -> Result<Value<'row>, Error>,
+    ) -> Result<(), Error> {
+        for (lane, &row) in selection.iter().enumerate() {
+            let mut values = RowValues::new(plan, |slot| raw(slot, row as usize));
+            for &slot in targets {
+                if usize::from(slot) < MAX_ROW_VALUES {
+                    continue;
+                }
+                let value = values.value(slot)?;
+                if matches!(
+                    plan.computed[usize::from(slot) - MAX_ROW_VALUES].expression,
+                    Computation::Constant(_)
+                ) {
+                    self.ready[usize::from(slot)] = true;
+                    continue;
+                }
+                let offset = usize::from(self.layout.mapping[usize::from(slot)]) * WORDS_PER_COLUMN;
+                let mask = 1 << (lane % 64);
+                self.data[offset + ROWS + lane / 64] &= !mask;
+                self.data[offset + lane] = match value {
+                    Value::Null => 0,
+                    Value::Int64(value) => {
+                        self.data[offset + ROWS + lane / 64] |= mask;
+                        value as u64
+                    }
+                    Value::Double(value) => {
+                        self.data[offset + ROWS + lane / 64] |= mask;
+                        value.to_bits()
+                    }
+                    _ => return Err(Error::Corrupt("computed batch output type")),
+                };
+                self.ready[usize::from(slot)] = true;
+            }
         }
         Ok(())
     }

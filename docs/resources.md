@@ -166,6 +166,19 @@ arithmetic without a floating-point intermediate. Zero-denominator and overflow
 errors retain inline
 source spans and release query ownership through the ordinary failure path.
 
+COALESCE retains the same prepared expression and operation bound. A bounded
+row cursor derives fallback endpoints and result types from validated postfix
+subtrees and reuses the checked arithmetic primitives. Conditional batches reuse
+the admitted payload scratch; programs without COALESCE retain vector evaluation.
+Computed conditional output uses the existing batch buffers and a per-row cache.
+Pending computed dependencies always precede their consumer. A cached dependency
+can cause a bounded program to restart, but each restart follows completion of
+an earlier definition; it adds no recursion or allocation. The result's
+`ROW_SCRATCH_BYTES` includes the cursor, pending-definition indices and control
+construction arrays in addition to the existing scratch. Native stack bounds
+still require execution checks; charged bytes do not establish a process cap.
+
+
 ## Runtime and result admission
 
 Runtime admission reserves an exact-capacity node vector before aggregate sizing

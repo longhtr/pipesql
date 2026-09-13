@@ -377,6 +377,16 @@ expression width adapts from 256 down to one lane under the same memory
 authority; insufficient room for one lane returns typed resource refusal before
 effects.
 
+COALESCE uses the [numeric demand cursor](../src/scalar/evaluation.rs) to request
+only columns on the selected path. Each fallback is a contiguous postfix subtree;
+a present first argument skips it and coerces the chosen value to the call's
+validated result type. The computed-row resolver suspends an expression when it
+needs an uncached earlier definition, evaluates that dependency, then retries
+with the cached value. This keeps dependency traversal iterative and leaves
+unselected aggregate finalization untouched. Scans with conditional computations
+fill their existing batch buffers through this row resolver. Aggregate arguments
+use the same cursor over their already materialized inputs.
+
 ### Dense aggregation
 
 Legacy grouping directly indexes the complete domain of zero, one or two

@@ -68,23 +68,42 @@ argument is not a NULL value. Existing unsupported NULL literal syntax remains
 outside the numeric profile; nullable columns and SAFE_DIVIDE supply NULL values.
 Research resolved these semantics within the timebox.
 
-The parser now retains a COALESCE operation after its two ordered argument
-subtrees, using the existing binary-call frames and shared operation arena.
-Focused tests cover nested ordering, complete expression spans, malformed arity
-and the 32-operation boundary. All 11 parser tests and the existing binding rejection selection pass in macOS
-release mode; Clippy passes for all workspace targets with warnings denied.
-Public binding remains fail-closed until execution is implemented; no passing
-COALESCE feature verification is claimed.
+The parser retains COALESCE after its two ordered argument subtrees in the
+existing arena. Binding now enables it after independent type validation.
+`scalar::Evaluation` derives fallback endpoints and result types from validated
+postfix structure, requests only selected columns, and shares checked arithmetic
+primitives with the vector kernel. It adds no prepared descriptor or allocation.
+Conditional batches use this bounded row cursor; ordinary programs retain their
+vector path. Result scratch accounts for the cursor and construction arrays.
 
-The trace found two eager boundaries to repair: `scalar::Expression::evaluate_batch`
-evaluates postfix operations, and `execution::computed` gathers dependencies
-before evaluation. Aggregate input capture calls the same scalar kernel, while
-aggregate finalization is accessed through the row-value resolver. The retained
-semantic and physical demand walks conservatively admit all potential inputs;
-runtime demand must skip unused fallbacks within a producer without moving
-materialization boundaries. Choose the bounded branch representation together
-with row and batch dependency scheduling before enabling binding. Preserve the
-existing scalar operation and stack limits and account for any added scratch.
+Computed row resolution now evaluates only requested dependencies. An explicit
+pending stack descends to earlier definitions; after caching a dependency, the
+consumer restarts its bounded expression. Conditional scans write through the
+same row resolver into their existing batch buffers. Conservative semantic and
+physical demand still admit potential inputs and preserve materialization
+boundaries. NULLability inference combines COALESCE operands with AND and remains
+safe when independent validators inspect malformed programs before shape checks.
+
+Focused macOS release verification passes all 21 scalar tests, the COALESCE
+binding/admission test and all 26 public computed-expression tests. These include
+skipped versus demanded overflow in nested dependencies and aggregate finalization,
+LEFT JOIN defaults, empty aggregate defaults, exact INT64 values, mixed coercion,
+signed zero, nullable lanes across word boundaries and buffer reuse, and malformed
+program/result facts. Clippy passes all workspace targets with warnings denied.
+The fresh fact/dimension example and stock default-region query return the
+documented schema and rows `(0, 90, 2)`, `(1, 30, 2)`, `(2, 30, 1)` on macOS.
+
+Remaining work is finite:
+- Extend retained composition, stack, admission, cancellation and forced-replay
+  cases to exercise COALESCE, including nonfinite values, exact arity/nesting
+  limits and repeated terminal failure. Review complete-query cost of conditional
+  dependency scheduling against a representative ordinary/defaulting workload.
+- Exercise COALESCE in retained allocation and native failure callers without
+  removing their independent controls; reconcile their observed schedules.
+- Verify the example on GNU/Linux, run both complete matching frozen platform
+  gates, reconcile discovery/manifests and update final evidence within budget.
+- Complete navigation and diff review, remove owned outputs and commit the
+  completed milestone locally. These focused checks are not full-gate evidence.
 Preserve spaced comma separators, existing platform/resource limits and the
 publication restrictions below.
 

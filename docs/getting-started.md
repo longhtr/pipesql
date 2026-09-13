@@ -490,6 +490,20 @@ Change LEFT JOIN to JOIN to see those two facts disappear. A later
 `WHERE r.name IS NULL` would retain only unmatched rows; placing a filter inside
 the right input instead changes which dimension rows can match. See the
 [execution trace](execution.md#equality-joins) for matching and duplicate replay.
+The [default-region query](../examples/default-region.sql) uses
+`COALESCE(r.id, 0)` to put unmatched facts in region 0. Run it against the same
+database:
+
+```sh
+cargo run --release --offline --locked -- query --database "$pipesql_left_join_dir/facts" \
+  --query-file examples/default-region.sql --memory-limit-bytes 8000000 --temp-limit-bytes 4000000
+```
+
+The query reports required INT64 `region`, nullable INT64 `total`, and required
+INT64 `n`. Its rows are `(0, 90, 2)`, `(1, 30, 2)` and `(2, 30, 1)`, followed by
+`row_count=3` and `status=queried`. COALESCE evaluates its fallback only when the
+first value is NULL; the default is part of the SQL result.
+
 Remove this example's database when finished:
 
 ```sh
