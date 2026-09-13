@@ -7,7 +7,7 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `2096d2f` pass on matching frozen macOS and GNU
+The complete 24-stage gates for `667983f` pass on matching frozen macOS and GNU
 arm64 Linux inputs: 623 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
@@ -41,33 +41,18 @@ retain that distinction. Prior language, testing/tooling and resource milestones
 remain complete unless a concrete counterexample or new workload changes their
 scope. Publication and broader qualification restrictions remain unresolved.
 
-## Active: wide LEFT JOIN allocation ownership
+## Completed: wide LEFT JOIN allocation ownership
 
-The retained joined ownership workload reduces a narrow nullable INT64 self-join
-to four aggregate columns. Wide set ownership covers another producer boundary.
-Neither directly measures a wide LEFT JOIN's STRING payloads and null extension.
+`667983f` adds a 64-column nullable STRING LEFT JOIN to the existing ownership
+caller. Both pathname lengths pass on macOS and GNU/Linux with all 11 expected
+pairs, step-boundary attribution and complete release. The false-attribution
+control rejects. No deficit, production change or allowance increase is indicated.
+The [ownership record](evidence.md#wide-left-join-allocation-ownership) retains the
+trace, independent oracle, observations and limits.
 
-1. Tracing resolved before implementation within 30 minutes. Null-extension
-   descriptors retain fresh nullable identities; unmatched rows reuse the join
-   output batch while both sorted inputs keep separate buffers and charges.
-   Select three left columns and 61 right columns, six source rows per side,
-   nullable 65,536-byte STRING cells and an explicit 11-pair output oracle. The
-   pairs cover 2-by-3 and 1-by-2 duplicate groups, unmatched keys and NULL keys.
-   Check every output field without relying on equal-key output order.
-2. Extend the existing ownership caller at short and 384-byte paths. Sample
-   requested/usable bytes against charges through execute, every step and final
-   release; require external storage and the existing wrong-attribution control.
-   Focused macOS runs pass both paths: 11 pairs, 624 steps, 11,866,809 temporary
-   bytes and minimum sampled usable headroom of 7,608 bytes. The false-attribution
-   control rejects after rows and release. No deficit or admission change is
-   indicated. The complete existing macOS ownership selection also passes,
-   preserving narrow join, wide-set and other owner controls. Maintenance passes
-   96 tooling tests, 44 independent codec fixtures and 639 local links.
-3. Update affected resource/tool maps, run focused controls and matching frozen
-   macOS/GNU/Linux full gates, reconcile discovery and manifests, retain concise
-   evidence, remove owned outputs and commit locally. Run the gates sequentially
-   after the observed overlapping-run timeout, with resource monitoring and the
-   existing build limits. Broader qualifications remain unresolved.
+Matching frozen 24-stage full gates pass sequentially, preserving the narrow join,
+wide-set and other semantic, allocation and native controls. Input manifests and
+discovery agree; owned outputs are removed. Broader qualifications remain unresolved.
 
 ## Next engineering priorities
 

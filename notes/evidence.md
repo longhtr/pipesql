@@ -7,20 +7,20 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 705 frozen inputs retained in `2096d2f`
+Both complete 24-stage gates verify the 705 frozen inputs retained in `667983f`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `2252a7a1add4d4a22467a9d7cb0e062abcc1771fa66fddc6e71a8c8c7119472a`.
+gates: `86b09d1f90f5dece9627bf60a342c72e9b82e29d0812d85b53bd8c0df1d8d3ce`.
 Finalization changes only the two notes files. The other 703 inputs retain
-fingerprint `2e9e9c7e3e1b5644def2279ca3eccf8f61db601935492fb6d3bedfa5456bfb0c`;
+fingerprint `a1ce3f97defba9d22d114465b2fe8c01f3695cc66743340fd7d97e64c05c645b`;
 all manifested inputs are tracked. Final local-link verification passes.
 
 Each platform executes 623 ordinary Rust tests, including all 135 public catalog
 tests, plus the separate lease subprocess. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 632 local links.
+passes 96 tooling tests, 44 independent codec fixtures and 639 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311
 scenarios. Their complete records agree across platforms after excluding ambient
 database paths and composition stdout digests. Those digests are not portable
@@ -35,30 +35,52 @@ independent graph checks. All 43 graph cases, two oracle controls, three CLI
 limits, genesis, lease contention and independent column order pass. Linux
 retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,741.161 seconds
-on macOS and 857.614 seconds on Linux. Receipt SHA-256 values are respectively
-`ec2f38a2e2f8bff5cdd69b5f9fd2155f20c29909465008aad0942ee283b2b005` and
-`30f1708b21cd4cfbbd3c2b555f08d017b01c4df085085913c791e20ac1d34041`.
-An earlier overlapping macOS run with one Cargo job timed out at the unchanged
-600-second Rust-stage deadline; it is not a complete passing gate. Its inputs
-remained unchanged and cleanup succeeded. After Linux completed, a standalone
-macOS retry with two jobs compiled tests in 59.42 seconds instead of 124 seconds
-and completed the Rust stage in 416.345 seconds. No deadline or test was weakened.
+Both receipts have zero finalization errors. The full gates run sequentially;
+stage times total 1,639.261 seconds on macOS and 477.497 seconds on Linux. Receipt
+SHA-256 values are respectively
+`62ce33165ad46f70080642f4a6fb240084e6cfc9fe90d35cde35c0d0f87309b4` and
+`0211fa45f15201201109100077805f9ec8e4394d44f3d531db00c509cdef4f95`.
 These runs are verification observations, not performance benchmarks.
 
-Ninety-four resource samples observed normal/warning memory pressure on an 8 GiB
-host and 2,374.00–4,155.12 MiB of swap use. The last sample remained at warning
-pressure with 2,452.50 MiB of swap. Docker used one CPU, one build job and a 2 GiB
-container limit; sampled CPU peaked at 101.82% and memory at 1.204 GiB. Networking
-was disabled and sampled network traffic was zero. Sampled free disk stayed above
-183.4 GiB. These observations do not qualify engine physical-memory bounds.
+Seventy-two resource samples observed normal/warning memory pressure on an 8 GiB
+host and 1,587.94–2,528.56 MiB of swap use. The last sample remained at warning
+pressure with 2,499.88 MiB of swap. macOS used at most two Cargo jobs. Docker used
+one CPU, one build job and a 2 GiB container limit; sampled CPU peaked at 100.34%
+and memory at 1.238 GiB. Networking was disabled and sampled network traffic was
+zero. Sampled free disk stayed above 185.3 GiB. These observations do not qualify
+engine physical-memory bounds.
 
-The fresh rounding tutorial runs sequentially on both platforms after both Rust
-test stages. Its complete typed output agrees, including NULL and exact DOUBLE
-bits. Owned gate outputs, source exports, logs, monitors, tutorial databases,
-build outputs and the verification container are removed. The existing image and
-toolchains remain. Windows, broader durability, physical-memory and sanitizer
-qualification remain unfinished.
+No example or production API changed in this ownership milestone. The preceding
+rounding tutorial remains qualified by its fresh runs on both platforms. Owned
+gate outputs, source exports, logs, monitors, databases, build outputs and the
+verification container are removed. The existing image and toolchains remain.
+Windows, broader durability, physical-memory and sanitizer qualification remain
+unfinished.
+
+### Wide LEFT JOIN allocation ownership
+
+`667983f` extends the existing [public ownership caller](../tools/fixtures/composed-ownership.rs)
+with a 64-column LEFT JOIN at short and 384-byte database paths. Tracing resolved
+within 30 minutes: null extension retains fresh nullable column identities,
+both sorted inputs own separate buffers, and unmatched rows reuse the ordinary
+output batch. No production code, admission allowance or persistent format changed.
+
+Six rows per side contain nullable keys and STRING cells, including empty,
+embedded-NUL UTF-8 and 65,536-byte values. Eleven literal expected pairs specify
+unequal duplicate groups, unmatched left rows and nonmatching NULL keys. Every
+output field is checked without assuming equal-key order, including NULL extension
+of the right side's required id and all its STRING fields. The case requires
+external storage and measures requested/allocator-usable bytes against actual
+prepared/result charges after execute and every returned step through Finished.
+Dropping both owners restores heap, descriptors, memory and temporary charges.
+
+Both pathname lengths on both platforms return 11 pairs in 624 steps and use
+11,866,809 temporary bytes. Minimum sampled usable headroom is 7,608 bytes on
+macOS and 8,888 bytes on GNU/Linux. The existing false-attribution mechanism fails
+the same usable-byte guard after complete rows and release. Runner tests also
+reject missing completion markers. Narrow joined, wide-set and other ownership
+cases remain in the full campaign. No deficit was observed; transient allocations
+inside a step, other workloads and whole-process/RSS bounds remain unqualified.
 
 ### Numeric rounding for analytical buckets
 
@@ -95,6 +117,14 @@ The [rounding example](../examples/rounding.sql) and
 groups: NULL with count one, bucket zero with total 15/count two, and bucket one
 with total 20/count one. Both platforms verify schema, exact DOUBLE bits, complete
 rows, successful exit and `status=queried` on fresh databases.
+
+The preceding `2096d2f` checkpoint passed complete matching gates and fresh
+rounding tutorials on both platforms. Its initial overlapping macOS run with one
+Cargo job timed out at the unchanged 600-second Rust-stage deadline; unchanged
+inputs and successful cleanup did not make it a passing gate. After Linux
+completed, a standalone two-job macOS retry compiled tests in 59.42 seconds
+instead of 124 seconds and completed the Rust stage in 416.345 seconds. No deadline
+or test was weakened. That observation motivates sequential full gates.
 
 ### Wide positional set allocation ownership
 
