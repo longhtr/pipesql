@@ -749,6 +749,9 @@ impl Binder<'_, '_> {
     fn bind_stage(&mut self, index: usize, syntax: ParsedStage) -> Result<Node, Error> {
         let mut input = RelationId(u8::try_from(index).expect("stage capacity"));
         let stage = match syntax {
+            ParsedStage::ExceptDistinct(span) => {
+                return Err(bind_error("EXCEPT DISTINCT is not implemented", span));
+            }
             ParsedStage::UnionAll(span) => self.bind_union(index, span, &mut input)?,
             ParsedStage::Distinct(span) => self.bind_distinct(span)?,
             ParsedStage::Derived(alias) => {

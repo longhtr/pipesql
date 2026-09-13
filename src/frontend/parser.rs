@@ -22,6 +22,7 @@ pub(super) enum ParsedStage {
     Alias(SourceSpan),
     Derived(SourceSpan),
     UnionAll(SourceSpan),
+    ExceptDistinct(SourceSpan),
     Join {
         kind: JoinKind,
         left: SourceSpan,
@@ -352,17 +353,24 @@ impl Parsed {
     }
 }
 
-// Closing a child either introduces a derived relation or combines a union
+// Closing a child either introduces a derived relation or combines a set
 // argument. The frame owns the continuation, not the child's table name scope.
 #[derive(Clone, Copy)]
 enum ChildCompletion {
     Derived {
         join: Option<(SourceSpan, JoinKind)>,
     },
-    Union {
+    Set {
         pipe: SourceSpan,
-        distinct: bool,
+        operator: SetOperator,
     },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SetOperator {
+    UnionAll,
+    UnionDistinct,
+    ExceptDistinct,
 }
 
 struct Parser<'a> {
@@ -844,12 +852,12 @@ impl Parser<'_> {
         parsed.push_stage(ParsedStage::Join { kind, left, right }, span)
     }
 
-    fn union_argument(
+    fn set_argument(
         &mut self,
         frames: &mut [ChildCompletion; MAX_STAGES],
         depth: &mut usize,
         pipe: SourceSpan,
-        distinct: bool,
+        operator: SetOperator,
     ) -> Result<(), Error> {
         let open = self.take(Kind::LeftParen)?;
         if *depth == frames.len() {
@@ -858,7 +866,7 @@ impl Parser<'_> {
                 span: open,
             });
         }
-        frames[*depth] = ChildCompletion::Union { pipe, distinct };
+        frames[*depth] = ChildCompletion::Set { pipe, operator };
         *depth += 1;
         self.take(Kind::From)?;
         Ok(())
@@ -936,12 +944,17 @@ impl Parser<'_> {
                             self.join_condition(&mut parsed, pipe, kind)?;
                         }
                     }
-                    ChildCompletion::Union { pipe, distinct } => {
-                        parsed.push_stage(ParsedStage::UnionAll(pipe), close)?;
+                    ChildCompletion::Set { pipe, operator } => {
+                        let stage = if operator == SetOperator::ExceptDistinct {
+                            ParsedStage::ExceptDistinct(pipe)
+                        } else {
+                            ParsedStage::UnionAll(pipe)
+                        };
+                        parsed.push_stage(stage, close)?;
                         if self.peek() == Kind::Comma {
                             self.take(Kind::Comma)?;
                             if self.peek() == Kind::LeftParen {
-                                self.union_argument(&mut frames, &mut depth, pipe, distinct)?;
+                                self.set_argument(&mut frames, &mut depth, pipe, operator)?;
                                 need_source = true;
                                 continue;
                             }
@@ -949,7 +962,7 @@ impl Parser<'_> {
                         // Deduplicate the complete argument list once, through the
                         // ordinary DISTINCT binder, demand pass, and sorter. This
                         // extra stage consumes the same shared stage budget.
-                        if distinct {
+                        if operator == SetOperator::UnionDistinct {
                             parsed.push_stage(ParsedStage::Distinct(pipe), close)?;
                         }
                     }
@@ -969,14 +982,21 @@ impl Parser<'_> {
             let stage = match self.peek() {
                 Kind::Reserved if self.is_word("UNION") => {
                     self.word("UNION")?;
-                    let distinct = if self.peek() == Kind::Distinct {
+                    let operator = if self.peek() == Kind::Distinct {
                         self.take(Kind::Distinct)?;
-                        true
+                        SetOperator::UnionDistinct
                     } else {
                         self.word("ALL")?;
-                        false
+                        SetOperator::UnionAll
                     };
-                    self.union_argument(&mut frames, &mut depth, pipe, distinct)?;
+                    self.set_argument(&mut frames, &mut depth, pipe, operator)?;
+                    need_source = true;
+                    continue;
+                }
+                Kind::Reserved if self.is_word("EXCEPT") => {
+                    self.word("EXCEPT")?;
+                    self.take(Kind::Distinct)?;
+                    self.set_argument(&mut frames, &mut depth, pipe, SetOperator::ExceptDistinct)?;
                     need_source = true;
                     continue;
                 }
@@ -1421,6 +1441,75 @@ mod tests {
         assert!(matches!(parsed.stages[2], ParsedStage::UnionAll(_)));
         assert!(matches!(parsed.stages[3], ParsedStage::Distinct(_)));
         assert!(matches!(parsed.stages[4], ParsedStage::UnionAll(_)));
+    }
+
+    #[test]
+    fn except_distinct_preserves_left_association_and_nested_set_modes() {
+        let sql = "FROM a |> EXCEPT DISTINCT (FROM b), (FROM c |> UNION DISTINCT (FROM d)), |> AS remaining";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.source_count, 4);
+        let stages = &parsed.stages[..usize::from(parsed.len)];
+        assert!(matches!(
+            stages,
+            [
+                ParsedStage::Source(1),
+                ParsedStage::ExceptDistinct(_),
+                ParsedStage::Source(2),
+                ParsedStage::Source(3),
+                ParsedStage::UnionAll(_),
+                ParsedStage::Distinct(_),
+                ParsedStage::ExceptDistinct(_),
+                ParsedStage::Alias(_),
+            ]
+        ));
+        for index in [1, 6] {
+            let ParsedStage::ExceptDistinct(span) = stages[index] else {
+                unreachable!();
+            };
+            assert_eq!(usize::from(span.start), sql.find("|>").unwrap());
+            assert_eq!(text(sql, span), "|>");
+        }
+        let parsed =
+            parse_query("FROM a |> UNION DISTINCT (FROM b |> EXCEPT DISTINCT (FROM c))").unwrap();
+        assert!(matches!(
+            &parsed.stages[..usize::from(parsed.len)],
+            [
+                ParsedStage::Source(1),
+                ParsedStage::Source(2),
+                ParsedStage::ExceptDistinct(_),
+                ParsedStage::UnionAll(_),
+                ParsedStage::Distinct(_),
+            ]
+        ));
+    }
+
+    #[test]
+    fn except_distinct_keeps_argument_and_normalized_stage_bounds() {
+        for sql in [
+            "FROM a |> EXCEPT (FROM b)",
+            "FROM a |> EXCEPT ALL (FROM b)",
+            "FROM a |> EXCEPT DISTINCT",
+            "FROM a |> EXCEPT DISTINCT ()",
+            "FROM a |> EXCEPT DISTINCT FROM b",
+            "FROM a |> EXCEPT DISTINCT TABLE b",
+            "FROM a |> EXCEPT DISTINCT BY NAME (FROM b)",
+            "FROM a |> EXCEPT DISTINCT (FROM b),,",
+        ] {
+            assert!(
+                matches!(parse_query(sql), Err(Error::Parse { .. })),
+                "{sql}"
+            );
+        }
+        let arguments = ["(FROM b)"; MAX_STAGES / 2].join(", ");
+        let sql = format!("FROM a |> EXCEPT DISTINCT {arguments}");
+        assert_eq!(usize::from(parse_query(&sql).unwrap().len), MAX_STAGES);
+        assert!(matches!(
+            parse_query(&format!("{sql}, (FROM b)")),
+            Err(Error::Parse {
+                message: "normalized stage limit exceeded",
+                ..
+            })
+        ));
     }
 
     #[test]

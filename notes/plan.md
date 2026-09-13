@@ -36,7 +36,7 @@ gates pass on matching frozen inputs. Equality LEFT JOIN and the earlier
 remain complete. Keep comma separators spaced in code and SQL, preserving
 literal data and intentional fixtures.
 
-## Next: positional EXCEPT DISTINCT
+## Current: positional EXCEPT DISTINCT
 
 Add bounded positional set difference for declared-table analytical queries,
 allowing callers to compare complete result rows across two snapshot-pinned
@@ -57,6 +57,49 @@ Keep EXCEPT ALL, name matching, new data types, correlated inputs, parallelism
 and persistent-format changes outside this milestone. Monitor relevant host and
 verification resources and reduce build concurrency when measured pressure
 warrants it. Publication restrictions below remain in force.
+
+The pinned [pipe syntax](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/pipe-syntax.md#except_pipe_operator)
+and [set rules](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/query-syntax.md#except)
+retain a left row once exactly when no equivalent right row exists. Multiple
+arguments combine from left to right; nested parentheses retain their own scope.
+The [parser grammar](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/parser/googlesql.tm)
+also permits a trailing comma. The
+[analyzer fixtures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/analyzer/testdata/pipe_set_operation.test)
+protect positional width, first-input names and isolated input scopes.
+PipeSQL retains its existing identical-type restriction rather than adding the
+upstream common-supertype coercions in this milestone. Since each result is a
+left-input value, output NULLability follows the left column; this is an inference
+from set difference, not an upstream NULLability metadata promise.
+
+The pinned [reference lowering](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/reference_impl/algebrizer.cc)
+implements EXCEPT through complete-row grouping and branch-presence counts.
+The [grouping rules](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/data-types.md#grouping-with-floating-point-types)
+make NULLs, NaNs and signed zeros equivalent within their respective groups.
+Retain the existing unspecified order and representative choice, preserving the
+selected left value's stored bits. A requested result demands comparison fields
+in both branches, including fields later projected away; consume both branches
+before emitting rows, even if the left branch is empty. LIMIT zero can remain
+undemanded under the existing execution contract. Research resolved these choices
+within the 30-minute timebox.
+
+Implementation worklist:
+1. Extend the existing child-continuation parser for EXCEPT DISTINCT, preserving
+   UNION ALL/DISTINCT grouping and the shared argument/stage limits. Binding
+   remains fail-closed until the semantic and execution path is complete.
+   The parser checkpoint passes all 13 focused release tests, including nested
+   set modes, source spans, trailing commas and the exact stage boundary. All-target
+   release Clippy also passes with warnings denied; build concurrency was two
+   jobs and sampled host memory pressure remained normal.
+2. Add positional semantic mapping and independent physical validation/demand.
+   Trace all existing union consumers before sharing the mapping owner. Output
+   values come only from the left, while comparison demands cover both inputs.
+3. Implement a bounded merge difference over two existing sorted-input owners.
+   Retain each side's own nullable layout when decoding/comparing rows. Deduplicate
+   left rows without join cross products or another heap index; reuse checked
+   runs, merge buffers and replay. Cover the complete result/failure/admission
+   cases above with independent literal and reference results.
+4. Finish the example, contracts/maps, focused and complete platform verification,
+   manifest/discovery audit, concise evidence, cleanup and clean local commits.
 
 ## Next engineering priorities
 
