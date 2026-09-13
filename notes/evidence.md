@@ -7,24 +7,23 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 683 frozen inputs retained in `0ea0040`
+Both complete 24-stage gates verify the 684 frozen inputs retained in `a889528`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with read-only source. Input manifests match before/after and across gates:
-`dc8915f0b40361b53e33dc7b9dcd124c4f0a58709931a5e1ecaa0fff41aec7c6`.
-Only the two notes files and a punctuation correction in `docs/language.md`
-change during finalization. The other 680 inputs retain fingerprint
-`7b56ff3b01819c6f6113b8c3eaa58367f0a5371ce8c711d3e76d022f253841e3`;
-all inputs remain tracked. Final documentation verification passes 536 local links.
+`e2f8eee81509df9e30c324aa39d7b2eb13ad9e8befdad9d20f1fdef198916bc6`.
+Only the two notes files change during finalization. The other 682 inputs retain
+fingerprint `b98d2d1fc079bdd868d326bf84a418c4e44723ecce6100dce30ea0c1ef94560c`;
+all inputs remain tracked. Final documentation verification passes 540 local links.
 
-Each platform executes 562 ordinary Rust tests, including all 105 public catalog
-tests and all four ABS tests, plus the separate lease subprocess.
+Each platform executes 567 ordinary Rust tests, including all 107 public catalog
+tests and all five MOD tests, plus the separate lease subprocess.
 No ordinary test is ignored or filtered; the selected lease child reports six
 filtered siblings. Maintenance passes 96 tooling tests, 44 independent codec
-fixtures and 536 local links. Independent aggregate semantics pass 24 cases and
-composition passes 311 cases. Both allocation campaigns retain positions 0–981
-and healthy control 982 at each pathname length; the ordered lists were
+fixtures and 540 local links. Independent aggregate semantics pass 24 cases and
+composition passes 311 cases. Both allocation campaigns retain positions 0–982
+and healthy control 983 at each pathname length; the ordered lists were
 reconciled explicitly. The caller ceiling remains 1,000; no engine allowance
 increased. Native initialization passes 30 macOS and 80 GNU/Linux cells;
 synchronization passes 241 cells and I/O passes 1,196 cells per platform.
@@ -33,14 +32,45 @@ graph checks. All 43 graph cases, two oracle controls, three CLI limits, genesis
 lease contention and independent column order pass. Linux retains the two Darwin
 ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,730.612 seconds
-on macOS and 810.461 seconds on Linux; overlapping verification runs are not
+Both receipts have zero finalization errors. Stage times total 1,786.275 seconds
+on macOS and 903.400 seconds on Linux; overlapping verification runs are not
 performance benchmarks. Receipt SHA-256 values are respectively
-`6edc26c62b4d67b09a2410ef1c8217368a009ba73bb1c32ded0f9a4ece923e09` and
-`72bc12166d43318e85dc17ad2f0ffd983b053b098c2dd6705add0899418837bc`.
+`6d21413b2d914828301edcd07efc3c8d17338d1ced9208cb753ecb862b5ac0f2` and
+`ad42e328a2c1ec62a526a682f849d5c9f7d3da93899ad38c8043a5ffbe3ea1ed`.
 Owned gate/control outputs, source exports, logs and containers are removed.
 The existing verification image and toolchains remain. Windows, broader
 durability, physical-memory and sanitizer qualification remain unfinished.
+
+### Integer remainder
+
+`a889528` adds INT64 MOD through the existing bounded parser, binder, independent
+validators and scalar evaluator. It shares two-argument call frames with
+SAFE_DIVIDE and the existing integer lane, without another allocation owner or
+persistent format. Either NULL argument yields NULL; otherwise zero raises a
+source-spanned division-by-zero error. Nonzero remainders have the dividend's
+sign, and minimum INT64 modulo -1 is zero. The [language owner](../docs/language.md)
+retains the immutable signature, fixture, primitive and NULL-evaluation sources.
+Binding distinguishes unsupported argument types from malformed internal
+programs; independent validation rejects both invalid forms.
+
+Five new tests retain literal signed/extreme results, NULLs across validity words
+and buffer reuse, malformed calls/programs, INT64-only binding, identity mutation,
+15/16-call bounds and composition through projection, predicates, SET, subqueries,
+union, grouping and analytic count. Retained tests check UTF-8 source spans,
+argument failure through SAFE_DIVIDE, repeated terminal failure, cancellation,
+early drop and healthy reuse. Exact/one-byte-short preparation and sorted
+execution admission pass; forced grouping fallback replays MOD with literal
+expected totals. Both full gates execute these checks.
+
+The catalog allocation caller demands exact oddness above 2^53 while preserving
+its count-two oracle. Its census increases from 982 to 983 within the unchanged
+1,000 ceiling; both pathname sweeps cover every refusal prefix and healthy control.
+Native I/O retains total nine while applying MOD to count-only output, preserving
+its 1,196 failure cells without another query or runner. The documented remainder
+example executes on fresh sales databases on both platforms: nullable INT64
+remainder and total, required INT64 n, rows NULL/1/NULL, 0/2/30 and 5/1/5. Exact
+schema, three rows and successful completion match. DOUBLE MOD, NUMERIC types and
+other new scalar calls remain outside this milestone.
 
 ### Absolute value
 

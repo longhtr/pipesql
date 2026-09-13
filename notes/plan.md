@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `0ea0040` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 562 ordinary Rust tests per platform and 311 composition
+The complete 24-stage gates for `a889528` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 567 ordinary Rust tests per platform and 311 composition
 cases, plus the applicable allocation and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
 controls and limits. Linux retains two Darwin ACL exclusions. The
@@ -24,52 +24,15 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Current: INT64 remainder for analytical grouping
+## Completed: INT64 remainder for analytical grouping
 
-ABS is complete at `0ea0040`; the
-[absolute-value record](evidence.md#absolute-value) retains verified behavior,
-coverage and limitations. Add INT64 MOD for grouping integer values by remainder
-through the existing bounded numeric program. The completed semantic and resource
-repairs remain closed without a new counterexample. This milestone makes no new
-platform or physical-memory qualification claim.
-
-1. Pin the INT64 signature, result sign, NULL, zero-divisor and minimum-integer
-   divided by minus-one behavior at the language owner's immutable revision.
-   Reassess unresolved research after 30 minutes; leave disputed forms unsupported.
-2. Extend the bounded call parser, binding, independent validation and scalar
-   evaluator. Preserve argument errors, source spans, demand, resource admission
-   and release without another frontend, allocation owner or persistent format.
-3. Cover literal independent results, integer extremes, signed operands, nullable
-   batches, malformed calls/programs and composition. Extend existing admission,
-   replay, cancellation and failure cases where they protect a distinct boundary.
-4. Add a runnable grouping example and update contract, learning and test/tool
-   maps. Run focused checks and both complete frozen platform gates; reconcile
-   discovery and manifests, record concise evidence, remove owned outputs and
-   commit locally under the publication restrictions.
-
-The [language owner](../docs/language.md) now pins the INT64 signature, signed
-and extreme fixtures, zero/minimum-integer handling and NULL evaluation at the
-existing immutable GoogleSQL revision. MOD shares bounded two-argument parser
-frames with SAFE_DIVIDE and uses the existing INT64 lane. Inference distinguishes
-user argument-type failures from malformed internal programs; binding retains
-source spans while independent validation rejects both invalid forms.
-
-Five focused MOD tests pass, covering signed extremes, NULL validity words and
-reuse, malformed programs/calls, integer-only binding, identity mutations,
-15/16-call bounds and public composition. Retained zero-divisor/argument-error
-spans, terminal failure, cancellation/early drop, exact/short admission and forced
-grouping replay pass. All-target Clippy and maintenance pass. Catalog allocation
-controls retain count two while demanding exact oddness above 2^53; their census
-is 983 at both pathname lengths, below the unchanged 1,000 ceiling. Full refusal
-sweeps remain required. Native I/O retains total nine while evaluating MOD.
-
-The documented remainder example passes on a fresh macOS sales database with
-three expected groups, NULLs, schema and successful completion. Its initial
-reserved alias was corrected to `n`. The implementation and maps are ready for
-frozen verification. Both full gates, GNU/Linux example execution, final discovery,
-manifests/receipts, evidence, cleanup and local commits remain. DOUBLE MOD, NUMERIC
-types and other new scalar calls remain outside this milestone. No publication
-is authorized.
+INT64 MOD is complete at `a889528`. The [remainder record](evidence.md#integer-remainder)
+retains its pinned semantics, independent results, resource/failure coverage and
+both-platform example. Both frozen full gates pass with matching input manifests.
+The shared bounded call parser adds no allocation owner or persistent format.
+DOUBLE MOD and NUMERIC types remain unsupported. Completed semantic and resource
+repairs remain closed without a new counterexample; no new platform or physical
+memory qualification is claimed. No publication is authorized.
 
 ## Next engineering priorities
 
