@@ -7,50 +7,97 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 694 frozen inputs retained in `5146e72`
+Both complete 24-stage gates verify the 696 frozen inputs retained in `f832a21`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `29259d9fd0105a5371c9c4b73888cb07fb04b8d7044b70bdb2c41d93a962187e`.
-Only the two notes files change during finalization. The other 692 inputs retain
-fingerprint `3d7807d693a7a00355611560e5f8787f23571146f618faadf2725cb8f18c7f86`;
-all inputs remain tracked. Final documentation verification passes 569 local links.
+gates: `c30222999126a1c13ae83c67d5975c553737ff0f34db2c85b7dc568a6c839e19`.
+Only the two notes files change during finalization. The other 694 inputs retain
+fingerprint `e17868f3b61c9b14efec314422c772c1670dc4cf730f9f576a4ef89bc506ec3a`;
+all inputs remain tracked. Final documentation verification passes 578 local links.
 
-Each platform executes 595 ordinary Rust tests, including all 119 public catalog
-tests and all six EXCEPT tests, plus the separate lease subprocess. No ordinary
-test is ignored or filtered; the selected lease child reports six filtered
-siblings. Maintenance passes 96 tooling tests, 44 independent codec fixtures and 566
-local links.
-Independent aggregate semantics pass 24 cases and composition passes 311 cases.
+Each platform executes 600 ordinary Rust tests, including all 123 public catalog
+tests and the five INTERSECT/shared-demand checks, plus the separate lease
+subprocess. No ordinary test is ignored or filtered; the selected lease child
+reports six filtered siblings. Maintenance passes 96 tooling tests,
+44 independent codec fixtures and 573 local links. Independent aggregate
+semantics pass 24 cases and composition passes 311 scenarios. Composition
+scenario descriptors and outcomes agree across platforms; stdout digests include
+database paths and are not portable semantic hashes.
+
 Both allocation campaigns retain positions 0–1055 and healthy control 1056 at
-each pathname length; all four ordered lists and EXCEPT phase outcomes were
-reconciled explicitly. The caller's work ceiling is 1,100. Native initialization
-passes 30 macOS and 80 GNU/Linux cells; synchronization passes 241 cells and I/O
-passes 1,346 cells per platform. Interruption retains 76 append cuts, 46 recovery
-cuts and 249 independent graph checks. All 43 graph cases, two oracle controls,
-three CLI limits, genesis, lease contention and independent column order pass.
-Linux retains the two Darwin ACL exclusions.
+each pathname length; all four ordered lists were reconciled explicitly. The
+caller's work ceiling remains 1,100. Native initialization passes 30 macOS and
+80 GNU/Linux cells; synchronization passes 241 cells and I/O passes 1,346 cells
+per platform. Interruption retains 76 append cuts, 46 recovery cuts and 249
+independent graph checks. All 43 graph cases, two oracle controls, three CLI
+limits, genesis, lease contention and independent column order pass. Linux
+retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,877.347 seconds
-on macOS and 1,033.884 seconds on Linux. Receipt SHA-256 values are respectively
-`cf30969d611eb4cc953f8efd078b7754d1c2518067bc03f8a4398ba6c65319d5` and
-`84fa41c08b6e56a9da8db1603733beedd632d8b27bf61881523513671d0a553e`.
-Overlapping verification runs are not performance benchmarks. Ninety-seven
-resource samples observed normal/warning host memory pressure and 1,374.75–1,914.94
-MiB of swap use; pressure was normal at completion. Cargo used two build jobs.
-Docker was capped at two CPUs, then one after warning pressure; its sampled
-memory peaked at about 1.342 GiB and network traffic remained below 2 kB.
-Sampled free disk space stayed above 185 GiB.
-These host observations do not qualify engine physical-memory bounds. Owned
-gate/control outputs, source exports, logs, example databases, monitors and the
+Both receipts have zero finalization errors. Stage times total 1,848.666 seconds
+on macOS and 1,035.392 seconds on Linux. Receipt SHA-256 values are respectively
+`a55a8bc22e721f5041a36dc77d4b91d11fc736fe4f20254560661ea9048ec22c` and
+`b7f0a1c4d5f00fd068cf3a766a4700a6d5783e54c75e9cb2b6b89d4cd01ba68d`.
+Overlapping verification runs are not performance benchmarks. Sixty-three
+resource samples observed normal/warning host memory pressure and 1,563.56–2,024.75
+MiB of swap use; pressure was normal at completion. Cargo used two build jobs;
+the separate GNU example used one. Docker was capped at two CPUs, then one after
+warning pressure; sampled container memory peaked at 1.549 GiB and network
+traffic remained below 2 kB. Sampled free disk space stayed above 185 GiB.
+These observations do not qualify engine physical-memory bounds. Owned gate and
+control outputs, source exports, logs, example databases, monitors and the
 verification container are removed. The existing verification image and toolchains
 remain. Windows, broader durability, physical-memory and sanitizer qualification
 remain unfinished.
 
+### Positional INTERSECT DISTINCT
+
+`f832a21` adds complete-row intersection using the existing bounded parser,
+positional descriptor, independent semantic/physical validators and scheduler.
+The [language contract](../docs/language.md#intersect-distinct) pins the accepted
+GoogleSQL profile. Research resolved the profile within its 30-minute bound.
+Each output has the left name and a fresh identity; NULLability requires both
+input columns to be nullable. That inference and eager complete-input error
+demand are explicit PipeSQL contracts. Original left representative bits survive;
+selection among equivalent representatives and incidental output order remain
+unspecified. ALL, name matching, coercions and correlated inputs stay unsupported.
+
+The [sorted-set owner](../src/execution/blocking/sorted_set.rs) now handles EXCEPT
+and INTERSECT through the same two sorted inputs, inline position maps, checked
+cursors, admission and replay. Only the merge selection changes. No new buffers,
+index, frontend, persistent format or allowance inflation are introduced.
+The former EXCEPT owner tests moved with this owner. All four schedules now run
+both operations, including exact/one-byte-short admission, spills on both sides,
+replay after a prefix, all 17 cancellation phases, corruption, truncated input,
+read failures, temporary refusal and healthy reuse. Independent validators retain
+malformed-plan controls. Full-width and small-stack checks exercise both empty
+and nonempty intersection outputs; grouping fallback proves retained replay.
+
+Five [public checks](../tests/catalog_lifecycle/intersect.rs) include 50 independent
+standard-library set comparisons, all current scalar types and typed NULLs,
+NaN/signed-zero equality with original-bit checks, exact large INT64 values,
+names/NULLability, repeated positions, empty and nested inputs, joins, aggregation
+and pinned snapshots. The moved demanded-error check runs EXCEPT and INTERSECT,
+including a hidden failing field, empty left input, original spans, repeated
+failure, healthy reuse and the LIMIT 0 exception. No protected EXCEPT check was
+removed. The allocation-prefix and native-I/O campaigns cover the unchanged
+shared constructors and effect owners. The independent ownership campaign also
+runs INTERSECT through analytic count at both pathname lengths: 256 rows,
+11,072 steps, 115,832 temporary bytes and minimum allocator-usable headroom of
+11,600 bytes on macOS and 12,984 on GNU/Linux, with complete release. Existing
+attribution and result negative controls remain effective.
+
+The fresh [shared-regions example](../examples/shared-regions.sql) produces
+required INT64 `region`, rows `1` and `2`, `row_count=2` and `status=queried` on
+both platforms. Its [tutorial](../docs/getting-started.md#retain-facts-with-missing-dimensions)
+uses the actual LEFT JOIN example database and explains why the result is required.
+The full gates above reconcile discovery and retained campaign coverage.
+
 ### Positional EXCEPT DISTINCT
 
-`950b5fe` and `5146e72` add bounded positional EXCEPT DISTINCT. The
+`950b5fe` and `5146e72` add bounded positional EXCEPT DISTINCT; its dedicated
+full-gate checkpoint is retained in `fb1061c`. The
 [language contract](../docs/language.md#except-distinct) pins syntax, positional
 typing, NULL/NaN/signed-zero equivalence, left association and complete-input
 error demand at the existing immutable GoogleSQL revision. Research resolved
