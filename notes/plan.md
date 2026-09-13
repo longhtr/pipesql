@@ -7,7 +7,7 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `6823ba6` pass on matching frozen macOS and GNU
+The complete 24-stage gates for `99c8755` pass on matching frozen macOS and GNU
 arm64 Linux inputs: 621 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
@@ -25,48 +25,24 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: numeric sign classification
+## Completed: wide positional set allocation ownership
 
-SIGN is implemented in `670e7bc`, with execution-boundary coverage in `6823ba6`.
-Matching complete macOS/GNU/Linux gates pass all 621 ordinary Rust tests per
-platform and the retained independent semantic, resource and failure campaigns.
-The [SIGN record](evidence.md#numeric-sign-classification) retains pinned semantics,
-independent expected results, demand/error spans, admission, mutation controls,
-replay, cancellation and cleanup evidence. The fresh tutorial returns all four
-documented classification groups on both platforms.
+`99c8755` adds six cases to the existing ownership caller, combining compact
+STRING source demand with repeated logical positions and separately stored wide
+columns. Both pathname lengths pass on macOS and GNU/Linux, including complete
+rows, external storage, requested/usable charges, negative controls and final
+release. No allocation deficit was found; production admission remains unchanged.
+The [ownership record](evidence.md#wide-positional-set-allocation-ownership)
+retains the workload, exact observations and qualification limits.
 
-Prior predicate, scalar, set, join, testing/tooling and resource milestones remain
-complete unless a concrete counterexample reopens their affected boundary. Comma
-spacing is preserved. Verification used at most two Cargo jobs, one Docker CPU
-and one GNU/Linux build job; examples compiled after both Rust test stages.
-Monitoring observed normal/warning memory pressure, with warning pressure in the
-last sample. Owned outputs are removed. Publication and the broader qualifications
-below remain unresolved.
-
-## Active: wide positional set allocation ownership
-
-The selected boundary expands one left STRING source into 61 logical comparison
-positions against 61 separately stored right STRING columns. Including ids, the
-two sources reach the 64-source-column bound and produce 62-column results.
-Selection and tracing resolved within 30 minutes; token/source bounds remain
-unchanged. There is no reproduced allocation deficit.
-
-1. Traced the set controller, both SortedInput owners and their record/run/merge
-   buffers, runtime output admission and compact source mapping.
-2. Added six UNION/EXCEPT/INTERSECT cases to the existing ownership caller with
-   literal complete-row expectations, NULL/empty/UTF-8/maximum STRING cells,
-   step-level requested/usable/charged observations and final release. Focused
-   macOS short/384-byte paths pass, with minimum sampled usable headroom of
-   7,608 bytes. UNION ALL uses no temporary storage; sorted forms use it. The
-   attribution negative control fails the intended guard. Runner interpretation
-   checks pass. Full cross-platform verification remains pending.
-3. Verify focused behavior and the required frozen macOS/GNU/Linux gates; update
-   affected contracts/maps, reconcile inputs and discovery, retain concise evidence,
-   remove owned outputs and commit locally. These observations cannot establish
-   arbitrary-allocator, transient-peak or whole-process/RSS bounds.
-
-Use at most two Cargo jobs and one Docker CPU/build job on this host. Monitor
-resources and compile examples after both platform Rust test stages.
+Matching complete 24-stage gates pass all 621 ordinary Rust tests per platform
+and the retained semantic, allocation and native campaigns. Finalization moves
+one existing comment back to its owner without changing executable code. Owned
+outputs are removed. Prior language, testing/tooling and resource milestones
+remain complete unless a concrete counterexample reopens their affected boundary.
+Comma spacing is preserved. Verification used at most two Cargo jobs and one
+Docker CPU/build job; resource monitoring observed normal/warning pressure.
+Publication and the broader qualifications below remain unresolved.
 
 ## Next engineering priorities
 

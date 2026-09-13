@@ -955,8 +955,6 @@ pub(super) fn append_shapes(root: &Path) -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
-// The workload matches the learning example; expected values below follow the
-// literal two source rows per key, independently of the sorter and hash layout.
 // Repeated logical positions expand one source STRING into 61 sorted fields.
 // Maximum cells force multiple external runs; short and NULL cells reuse them.
 pub(super) fn wide_set_shapes(
@@ -1128,6 +1126,8 @@ pub(super) fn wide_set_shapes(
     Ok(())
 }
 
+// The workload matches the learning example; expected values below follow the
+// literal two source rows per key, independently of the sorter and hash layout.
 pub(super) fn joined_shapes(
     root: &Path,
     wrong_attribution: bool,

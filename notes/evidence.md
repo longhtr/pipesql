@@ -7,22 +7,25 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 704 frozen inputs retained in `6823ba6`
+Both complete 24-stage gates verify the 704 frozen inputs retained in `99c8755`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `43ee2c47495154012bb0e1fcbdd06c99217a5400568dc460020d304122f51884`.
-Only the two notes files change during finalization. The other 702 inputs retain
-fingerprint `0d07ab68e70b21f176ce196f3cf9545b7b26a9d2af4ddfaaa7cfb11796287e35`;
-all inputs remain tracked. Final documentation verification passes 623 local links.
+gates: `ac3505b98baaefcc5737dfc2ea50dc98c224151993a68ecb227fe2fabb804b7e`.
+Finalization updates the two notes files and moves an existing two-line comment
+back beside `joined_shapes` in the ownership fixture. Removing that exact comment
+from the before/after fixture gives identical bytes. No executable code changes.
+The other 701 inputs retain fingerprint
+`ccf2888b175a5b1aa59347465f4db91cc10b7aca91817179a0012e2f9228410b`;
+all inputs remain tracked. Final documentation verification passes 628 local links.
 
 Each platform executes 621 ordinary Rust tests, including all 134 public catalog
-tests, plus the separate lease subprocess. The SIGN scalar, public, unary
-admission, NULLability mutation, cancellation, wide/small-stack and forced replay
-checks execute on both platforms. No ordinary test is ignored or filtered; the
-selected lease child reports six filtered siblings. Maintenance passes 96 tooling tests,
-44 independent codec fixtures and 616 local links. Independent aggregate semantics
+tests, plus the separate lease subprocess. Existing independent validators,
+set semantics, demand, cancellation, replay and cleanup checks remain unchanged.
+No ordinary test is ignored or filtered; the selected lease child reports six
+filtered siblings. Maintenance passes 96 tooling tests,
+44 independent codec fixtures and 625 local links. Independent aggregate semantics
 pass 24 cases and composition passes 311 scenarios. Expected results agree across
 platforms after excluding ambient database paths and stdout digests; these
 digests are not portable semantic hashes.
@@ -36,22 +39,59 @@ independent graph checks. All 43 graph cases, two oracle controls, three CLI
 limits, genesis, lease contention and independent column order pass. Linux
 retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,924.879 seconds
-on macOS and 1,158.218 seconds on Linux. Receipt SHA-256 values are respectively
-`c281383c0badd59bfcf61933c5d266f1f9996f427e400b41b6cbe813b918771b` and
-`452533a7d0f3f28d02d52e64f5f09f730164880ab48efc455f9633094fa77c7b`.
-Overlapping verification runs are not performance benchmarks. Sixty-four
+Both receipts have zero finalization errors. Stage times total 2,085.724 seconds
+on macOS and 1,322.522 seconds on Linux. Receipt SHA-256 values are respectively
+`4ed0931ea133eb9a8733fb370cc193e2b47bd76093cfdaa978aed5ed1ad01776` and
+`a7de7b9b737b3a41cc6049f1ddd7eb2fca93eec7b446f1901b5e7637cc3d40f3`.
+Overlapping verification runs are not performance benchmarks. Sixty-eight
 resource samples observed normal/warning host memory pressure on an 8 GiB host,
-with 1,423.00–2,206.19 MiB of swap use. The last sample remained at warning
-pressure with 2,089.69 MiB of swap. macOS Cargo used at most two build jobs;
-Docker used one CPU and one build job throughout. Examples used one job and ran
-sequentially after both platform Rust test stages. Sampled container CPU peaked
-at 100.58% and memory at 1.213 GiB. The container had networking disabled and
-zero network traffic. Sampled free disk stayed above 185 GiB. These observations
-do not qualify engine physical-memory bounds. Owned gate outputs, source exports,
-logs, example databases, monitors and the verification container are removed.
-The existing image and toolchains remain. Windows, broader durability,
-physical-memory and sanitizer qualification remain unfinished.
+with 1,734.38–2,590.00 MiB of swap use. The last sample remained at warning
+pressure with 2,550.00 MiB of swap. macOS Cargo used at most two build jobs;
+Docker used one CPU and one build job throughout. No example changed or required
+another run. Sampled container CPU peaked at 101.85% and memory at 1.223 GiB.
+The container had networking disabled and zero network traffic. Sampled free
+disk stayed above 184.9 GiB. These observations do not qualify engine
+physical-memory bounds. Owned gate outputs, source exports, logs, monitors and
+the verification container are removed. The existing image and toolchains remain.
+Windows, broader durability, physical-memory and sanitizer qualification remain
+unfinished.
+
+### Wide positional set allocation ownership
+
+`99c8755` extends the existing [public ownership caller](../tools/fixtures/composed-ownership.rs)
+with six set-operation cases at short and 384-byte database paths. Tracing and
+workload selection resolved within 30 minutes. Two source columns on the left
+and 62 on the right reach the existing 64-source-column bound. The left projection
+repeats one STRING into 61 logical positions; the right stores each separately.
+The input fits the existing token bound. No production code, allocation allowance,
+format or admission limit changed. The cases reuse the existing runner.
+
+Literal expected id sequences establish all duplicate multiplicities for UNION,
+EXCEPT and INTERSECT, with ALL and DISTINCT. Every returned STRING position is
+checked, including NULL, empty, embedded-NUL UTF-8 and 65,536-byte cells. The
+expanded records exercise external sorting while compact source demand and
+62-column output retain their separate owners. The observer samples requested
+and usable Rust allocations against prepared/result charges after execute and
+every returned step, including Finished. Each case restores heap, descriptors,
+memory and temporary charges after dropping both owners. A nonexistent measured
+owner fails the same usable-byte guard; runner tests reject a missing completion
+marker even when the process reports success.
+
+Both pathname lengths pass on both platforms. UNION ALL returns 24 rows without
+temporary storage; UNION DISTINCT returns eight and peaks at 39,994,742 temporary
+bytes. EXCEPT DISTINCT, INTERSECT DISTINCT, EXCEPT ALL and INTERSECT ALL return
+2, 4, 7 and 5 rows respectively and each peaks at 31,995,362 temporary bytes.
+Step counts agree across platforms: 918, 1,316, 1,205, 1,207, 1,205 and 1,203 in
+that order. Minimum sampled usable headroom is 7,608 bytes on macOS and 8,888 on
+GNU/Linux; UNION DISTINCT has 11,648 and 12,984 bytes respectively. No deficit
+was observed, so no admission repair was justified. All cells fit the existing
+20-second subprocess deadline.
+
+The [resource contract](../docs/resources.md#except-distinct-admission) and
+[tool map](../tools/README.md) describe the boundary and invocation. These cases
+establish neither transient allocation peaks between steps nor arbitrary
+allocator, foreign-allocation or whole-process/RSS bounds. The retained failure,
+cancellation, replay and corruption campaigns pass with unchanged schedules.
 
 ### Numeric sign classification
 
