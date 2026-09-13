@@ -4,9 +4,9 @@ use crate::scalar::MAX_OPS;
 mod boolean;
 use super::lexer::{Kind, Tokens, ZERO_SPAN, lex};
 use super::{
-    AggregateKind, Comparison, Direction, Error, FilterControl, MAX_AGGREGATE_COLUMNS, MAX_COLUMNS,
-    MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_STAGES, MAX_TOKENS, NullPlacement, SourceSpan,
-    bind_error, parse, span, text,
+    AggregateKind, Comparison, Direction, Error, FilterControl, JoinKind, MAX_AGGREGATE_COLUMNS,
+    MAX_COLUMNS, MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_STAGES, MAX_TOKENS, NullPlacement,
+    SourceSpan, bind_error, parse, span, text,
 };
 
 #[derive(Clone, Copy)]
@@ -23,6 +23,7 @@ pub(super) enum ParsedStage {
     Derived(SourceSpan),
     UnionAll(SourceSpan),
     Join {
+        kind: JoinKind,
         left: SourceSpan,
         right: SourceSpan,
     },
@@ -352,8 +353,13 @@ impl Parsed {
 // argument. The frame owns the continuation, not the child's table name scope.
 #[derive(Clone, Copy)]
 enum ChildCompletion {
-    Derived { join: Option<SourceSpan> },
-    Union { pipe: SourceSpan, distinct: bool },
+    Derived {
+        join: Option<(SourceSpan, JoinKind)>,
+    },
+    Union {
+        pipe: SourceSpan,
+        distinct: bool,
+    },
 }
 
 struct Parser<'a> {
@@ -819,12 +825,17 @@ impl Parser<'_> {
         Ok(aggregate)
     }
 
-    fn join_condition(&mut self, parsed: &mut Parsed, span: SourceSpan) -> Result<(), Error> {
+    fn join_condition(
+        &mut self,
+        parsed: &mut Parsed,
+        span: SourceSpan,
+        kind: JoinKind,
+    ) -> Result<(), Error> {
         self.word("ON")?;
         let left = self.column()?;
         self.take(Kind::Compare(Comparison::Equal))?;
         let right = self.column()?;
-        parsed.push_stage(ParsedStage::Join { left, right }, span)
+        parsed.push_stage(ParsedStage::Join { kind, left, right }, span)
     }
 
     fn union_argument(
@@ -903,8 +914,8 @@ impl Parser<'_> {
                     parsed.push_stage(ParsedStage::Source(index as u8), table)?;
                 }
                 need_source = false;
-                if let Some(pipe) = pending_join.take() {
-                    self.join_condition(&mut parsed, pipe)?;
+                if let Some((pipe, kind)) = pending_join.take() {
+                    self.join_condition(&mut parsed, pipe, kind)?;
                 }
                 continue;
             }
@@ -915,8 +926,8 @@ impl Parser<'_> {
                     ChildCompletion::Derived { join } => {
                         let alias = self.source_alias(ZERO_SPAN)?;
                         parsed.push_stage(ParsedStage::Derived(alias), close)?;
-                        if let Some(pipe) = join {
-                            self.join_condition(&mut parsed, pipe)?;
+                        if let Some((pipe, kind)) = join {
+                            self.join_condition(&mut parsed, pipe, kind)?;
                         }
                     }
                     ChildCompletion::Union { pipe, distinct } => {
@@ -968,9 +979,19 @@ impl Parser<'_> {
                     self.take(Kind::As)?;
                     ParsedStage::Alias(self.take(Kind::Identifier)?)
                 }
+                Kind::Reserved if self.is_word("LEFT") => {
+                    self.word("LEFT")?;
+                    if self.is_word("OUTER") {
+                        self.word("OUTER")?;
+                    }
+                    self.take(Kind::Join)?;
+                    pending_join = Some((pipe, JoinKind::Left));
+                    need_source = true;
+                    continue;
+                }
                 Kind::Join => {
                     self.take(Kind::Join)?;
-                    pending_join = Some(pipe);
+                    pending_join = Some((pipe, JoinKind::Inner));
                     need_source = true;
                     continue;
                 }
@@ -1358,11 +1379,54 @@ mod tests {
         assert!(matches!(parsed.stages[2], ParsedStage::Derived(_)));
         assert!(matches!(parsed.stages[3], ParsedStage::UnionAll(_)));
         assert!(matches!(parsed.stages[4], ParsedStage::Derived(_)));
-        let ParsedStage::Join { left, right } = parsed.stages[5] else {
+        let ParsedStage::Join { kind, left, right } = parsed.stages[5] else {
             panic!("outer join continuation absent");
         };
+        assert_eq!(kind, JoinKind::Inner);
         assert_eq!(text(sql, left), "a.x");
         assert_eq!(text(sql, right), "r.x");
+    }
+
+    #[test]
+    fn left_join_kind_survives_nested_input_completion() {
+        for modifier in ["LEFT", "LEFT OUTER"] {
+            let sql =
+                format!("FROM a |> {modifier} JOIN (FROM b |> JOIN c ON b.x=c.x) AS r ON a.x=r.x");
+            let parsed = parse_query(&sql).unwrap();
+            assert_eq!(parsed.len, 5);
+            assert!(matches!(
+                parsed.stages[2],
+                ParsedStage::Join {
+                    kind: JoinKind::Inner,
+                    ..
+                }
+            ));
+            let ParsedStage::Join { kind, left, right } = parsed.stages[4] else {
+                panic!("left join continuation absent");
+            };
+            assert_eq!(kind, JoinKind::Left);
+            assert_eq!(text(&sql, left), "a.x");
+            assert_eq!(text(&sql, right), "r.x");
+            let direct = format!("FROM a |> {modifier} JOIN b ON a.x=b.x");
+            assert!(matches!(
+                parse_query(&direct).unwrap().stages[1],
+                ParsedStage::Join {
+                    kind: JoinKind::Left,
+                    ..
+                }
+            ));
+        }
+        for sql in [
+            "FROM a |> LEFT b ON a.x=b.x",
+            "FROM a |> LEFT OUTER OUTER JOIN b ON a.x=b.x",
+            "FROM a |> LEFT JOIN b USING (x)",
+            "FROM a |> LEFT JOIN b ON a.x>b.x",
+            "FROM a |> LEFT JOIN b ON a.x=b.x AND a.y=b.y",
+            "FROM a |> RIGHT JOIN b ON a.x=b.x",
+            "FROM a |> FULL JOIN b ON a.x=b.x",
+        ] {
+            assert!(parse_query(sql).is_err(), "accepted {sql}");
+        }
     }
 
     #[test]

@@ -546,6 +546,12 @@ impl LimitBounds {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum JoinKind {
+    Inner,
+    Left,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Stage {
     Empty,
     Limit(LimitBounds),

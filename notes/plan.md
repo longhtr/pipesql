@@ -48,7 +48,37 @@ join. Completed repairs remain closed without a concrete new counterexample.
    discovery and manifests, retain concise evidence, remove owned outputs and
    commit locally under the publication restrictions.
 
-Semantic research and implementation remain. RIGHT/FULL joins, USING, compound
+The semantic profile is pinned at GoogleSQL revision
+`0e7d7073ed0360be587a5efa0fa78abeee00f17b`:
+[pipe JOIN](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/pipe-syntax.md#join_pipe_operator),
+[LEFT JOIN](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/query-syntax.md#left_join),
+[ON](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/query-syntax.md#on_clause) and
+[pipe WHERE](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/pipe-syntax.md#where_pipe_operator).
+Accept `LEFT JOIN` and `LEFT OUTER JOIN` with the existing equality-key profile.
+Each matching pair contributes a row, including duplicate cross products. An
+unmatched left row contributes one row whose right columns are NULL; a NULL ON
+condition does not match. ON outputs retain left columns followed by right
+columns. A following WHERE filters that result, so rejecting all matched rows
+must not manufacture an unmatched row. Right output facts must permit NULL
+without changing the independent right producer's input facts.
+
+Parsing now carries the join kind through direct and nested input continuations;
+binding still explicitly refuses LEFT JOIN until nullable output identities and
+execution are implemented. All 56 frontend tests pass on macOS, including the
+new parser case (348 unrelated library tests filtered). Parser storage remains
+4,452 bytes. The next implementation must remap both visible right outputs and
+range-only right columns: `available_columns` includes both, while
+`relation_columns` describes only the visible row. `column_type` supplies
+canonical facts globally, so changing source NULLability would corrupt the input
+contract. Add a bounded descriptor of fresh nullable right identities, translate
+backward demand to its original inputs, and translate physical positions in both
+lowering and the independent validator. Semantic validation must check descriptor
+capacity, canonical input facts, consecutive identities and the remapped range
+scope. The independent aggregate-demand walk also needs this translation.
+Retain the current right-group bookmark and replay schedule for matching rows;
+add bounded unmatched-left emission for exhausted right input and lesser or
+nonmatching NULL/NaN keys. Full implementation and verification remain.
+RIGHT/FULL joins, USING, compound
 or non-equality ON predicates, correlated inputs and parallelism remain outside
 this milestone. Keep comma separators spaced in code and SQL, preserving literal
 data and intentional fixtures. No new platform or physical-memory qualification

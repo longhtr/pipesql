@@ -768,7 +768,12 @@ impl Binder<'_, '_> {
                 Stage::Alias
             }
             ParsedStage::Source(occurrence) => self.bind_source(occurrence, &mut input)?,
-            ParsedStage::Join { left, right } => self.bind_join(index, left, right, &mut input)?,
+            ParsedStage::Join { kind, left, right } => {
+                if kind == super::JoinKind::Left {
+                    return Err(bind_error("LEFT JOIN binding is not implemented", left));
+                }
+                self.bind_join(index, left, right, &mut input)?
+            }
             ParsedStage::Limit {
                 count,
                 offset,
