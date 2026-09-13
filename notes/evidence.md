@@ -7,25 +7,26 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 698 frozen inputs retained in `4ae3a67`
+Both complete 24-stage gates verify the 700 frozen inputs retained in `0e13c43`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `a8c6c7a783586835e96f5a577e6c79930f1b51cb2e4d7e35df7151f24e892fdc`.
-Only the two notes files change during finalization. The other 696 inputs retain
-fingerprint `501533279f060a627d6466af4c00217e615047c1c971cdbdc26d40a50ba7105f`;
-all inputs remain tracked. Final documentation verification passes 588 local links.
+gates: `b5ed9948b8de24b04784c7d08091f0ed02edbb25590acb1c87c749a6354fb2fc`.
+Only the two notes files change during finalization. The other 698 inputs retain
+fingerprint `3a7e1be17ffcb329c1df0dc2684be4ef33a62c2e36d785d90705278c72ec30b4`;
+all inputs remain tracked. Final documentation verification passes.
 
-Each platform executes 604 ordinary Rust tests, including all 126 public catalog
-tests, plus the separate lease subprocess. The three multiset tests, nested ALL
-parser test, shared demanded-error test and both width/small-stack tests execute
-on both platforms. No ordinary test is ignored or filtered; the selected lease
-child reports six filtered siblings. Maintenance passes 96 tooling tests,
-44 independent codec fixtures and 584 local links. Independent aggregate
-semantics pass 24 cases and composition passes 311 scenarios. Composition
-scenario descriptors and outcomes agree across platforms; stdout digests include
-database paths and are not portable semantic hashes.
+Each platform executes 611 ordinary Rust tests, including all 129 public catalog
+tests, plus the separate lease subprocess. All three public NULLIF tests, its
+three scalar tests, binding/admission check, shared parser limits, forced grouping
+replay and both width/small-stack tests execute on both platforms. No ordinary
+test is ignored or filtered; the selected lease child reports six filtered
+siblings. Maintenance passes 96 tooling tests, 44 independent codec fixtures and
+591 local links. Independent aggregate semantics pass 24 cases and composition
+passes 311 scenarios. Expected results agree across platforms after excluding
+ambient database paths and stdout digests; these digests are not portable
+semantic hashes.
 
 Both allocation campaigns retain positions 0–1055 and healthy control 1056 at
 each pathname length; all four ordered lists were reconciled explicitly. The
@@ -36,21 +37,59 @@ independent graph checks. All 43 graph cases, two oracle controls, three CLI
 limits, genesis, lease contention and independent column order pass. Linux
 retains the two Darwin ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,894.357 seconds
-on macOS and 1,097.950 seconds on Linux. Receipt SHA-256 values are respectively
-`2a1f2081a190a89c9df7bf4a94c96a4c890e95d3a8084cb3b10acf310adb76d0` and
-`a7d0ab745a49e795232eba1baa00a4a0388ebe176f6a58118415ee418c42a4e2`.
-Overlapping verification runs are not performance benchmarks. Sixty-five
-resource samples observed normal/warning host memory pressure and 1,427.31–2,192.94
-MiB of swap use; pressure was normal at completion. Cargo used two build jobs;
-the separate GNU example used one. Docker was capped at two CPUs, then one after
-warning pressure; sampled container memory peaked at 1.298 GiB and network
-traffic remained below 2 kB. Sampled free disk space stayed above 185 GiB.
+Both receipts have zero finalization errors. Stage times total 1,950.196 seconds
+on macOS and 907.800 seconds on Linux. Receipt SHA-256 values are respectively
+`f17b7c328f997a6d080494e99bea36f58e686a2379977308e2374b853f5f5b1a` and
+`b74cc55828624fd3dddbaf5171a3e32a079209779229242c912ed0869834b433`.
+Overlapping verification runs are not performance benchmarks. All 66 resource
+samples observed normal host memory pressure, with 1,355.31–1,371.31 MiB of swap
+use. Cargo used two build jobs; the separate GNU example used one. Docker was
+capped at two CPUs, with sampled CPU use at most 200.62%, container memory at
+most 1.501 GiB and network traffic 1.75 kB received/126 bytes sent. Sampled free
+disk space stayed above 185 GiB. No concurrency reduction was needed.
 These observations do not qualify engine physical-memory bounds. Owned gate and
 control outputs, source exports, logs, example databases, monitors and the
 verification container are removed. The existing verification image and toolchains
 remain. Windows, broader durability, physical-memory and sanitizer qualification
 remain unfinished.
+
+### Numeric NULLIF sentinel normalization
+
+`0e13c43` adds two-argument numeric NULLIF through the existing bounded scalar
+program. The [language contract](../docs/language.md#current-public-query-manifest)
+pins numeric common typing, conservative NULLability and ordinary numeric
+equality. Research resolved within its 30-minute bound. The
+[demand cursor](../src/scalar/evaluation.rs) evaluates both arguments in order,
+including the second when the first is NULL, and retains the first coerced value
+unless equality is TRUE. Its existing static type table handles a NULL DOUBLE
+argument. An outer COALESCE can still skip the whole call. No new frontend,
+expression representation, allocation owner, buffer or admission allowance was
+introduced.
+
+Independent literal cases check exact INT64 values above 2^53, mixed rounded
+equality, typed NULL coercion, NaNs, infinities and signed-zero bits. Validity
+word boundaries and reused scratch lanes retain independent expected values.
+The [public tests](../tests/catalog_lifecycle/nullif.rs) check sentinel aggregates,
+empty inputs, nesting, joins, ordering and set composition; they preserve stored
+NaN payloads and signed-zero outcomes across snapshots and reopen. Distinct
+error controls require the first arithmetic failure before a later computed
+dependency's failure and require a second-argument error even after a NULL first
+value. Hidden expressions, outer COALESCE and LIMIT 0 preserve demand boundaries,
+original spans and terminal cleanup.
+
+Shared independent program mutations reject malformed NULLIF programs and
+incorrect metadata. Exact/short admission, parser bounds, wide/small-stack
+execution and forced grouping replay pass. The public allocation query retains
+a present ratio when NULLIF's second value is NULL. Native I/O converts COALESCE
+defaults back to NULL and requires COUNT zero, while retaining all existing
+failure and healthy-reuse schedules. The full allocation census remains 1,056.
+
+The fresh [sentinel query](../examples/sentinel-amounts.sql) and its
+[tutorial](../docs/getting-started.md#exclude-a-sentinel-from-an-aggregate) return
+`(130, 4, 5)` on both platforms: nullable INT64 total, required INT64 measured and
+nrows, one row, successful process exit and `status=queried`. Source inspection,
+focused checks and the complete gates above preserve the existing COALESCE,
+arithmetic, storage, replay, cancellation and publication contracts.
 
 ### Positional EXCEPT ALL and INTERSECT ALL
 

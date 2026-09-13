@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `4ae3a67` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 604 ordinary Rust tests per platform, 24 independent aggregate
+The complete 24-stage gates for `0e13c43` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 611 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
@@ -25,85 +25,21 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: positional multiset difference and intersection
+## Completed: numeric NULLIF for sentinel normalization
 
-EXCEPT ALL and INTERSECT ALL are implemented in `4ae3a67` and verified by matching
-complete macOS/GNU/Linux gates. The [multiset record](evidence.md#positional-except-all-and-intersect-all)
-retains pinned semantics, independent counts and original-bit results, validators,
-resource admission, spill/replay, failure schedules and the runnable example.
-All 604 ordinary Rust tests per platform and the retained campaigns pass.
+Numeric NULLIF is implemented in `0e13c43` and verified by matching complete
+macOS/GNU/Linux gates. The [NULLIF record](evidence.md#numeric-nullif-sentinel-normalization)
+retains pinned semantics, independent numeric results, ordered demanded errors,
+snapshots, parser/admission bounds, width/stack, forced replay and failure
+campaigns. The fresh sentinel example returns `(130, 4, 5)` on both platforms.
+All 611 ordinary Rust tests per platform and the retained campaigns pass.
+
 The prior set, join, scalar, testing/tooling and resource milestones remain
 complete unless a concrete counterexample reopens their affected boundary.
-
-Comma spacing is preserved in code and SQL. Resource monitoring reduced the
-Docker CPU quota after warning pressure; host pressure was normal at completion.
+Comma spacing is preserved. All resource samples observed normal host memory
+pressure; verification retained two Cargo jobs and a two-CPU Docker cap.
 Owned scratch outputs are removed. Publication remains unauthorized, and the
 platform, durability and physical-memory qualifications below remain unfinished.
-
-## Current: numeric NULLIF for sentinel normalization
-
-Add two-argument numeric NULLIF to the existing scalar profile so queries can
-exclude sentinel amounts from aggregates without dropping their complete rows.
-COALESCE already provides numeric conditional demand; NULLIF needs its own pinned
-equality and evaluation contract. The completed multiset and resource milestones
-have no new counterexample and remain closed.
-
-1. Pin arity, numeric common typing, NULLability, NULL/NaN/signed-zero equality,
-   original bits, evaluation order and demanded errors at the existing immutable
-   GoogleSQL revision. Reassess unresolved research after 30 minutes.
-2. Trace the scalar program, binding, independent validators, demand evaluator,
-   row/batch consumers and aggregate arguments. Reuse their bounded owners;
-   preserve COALESCE, spans, admission, replay, failure and cleanup.
-3. Add independent numeric cases, conditional-error controls, malformed-program
-   checks and relevant composed/resource/failure boundaries. Keep SQL and expected
-   results visible and reuse unchanged owner campaigns.
-4. Add a runnable sentinel example, update contracts/maps, run focused checks and
-   matching frozen macOS/GNU/Linux gates, reconcile evidence, remove owned outputs
-   and commit locally. Preserve resource monitoring and comma spacing.
-
-Pinned research is resolved. The existing revision's
-[NULLIF rules](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/conditional_expressions.md#nullif)
-and [signature](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/common/builtin_function_internal_3.cc#L851)
-require two comparable arguments and their common result type. Retain INT64 for
-two integer arguments; otherwise compare and return DOUBLE after coercion.
-The [lowering](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/reference_impl/algebrizer.cc#L1280)
-evaluates the first argument once, then compares it with the second. The
-[call evaluator](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/reference_impl/value_expr.cc#L1350)
-evaluates the second argument even when the first is NULL. Only a TRUE equality
-produces NULL; FALSE/UNKNOWN returns the first coerced value. Numeric SQL equality
-makes NaNs unequal and signed zeros equal. Preserve original DOUBLE bits when
-returning the first value; declare NULLIF results conservatively nullable.
-
-The current demand evaluator can preserve this order without a new program
-representation. Route NULLIF through it even without a surrounding COALESCE;
-eagerly collecting computed inputs could otherwise expose the wrong error first.
-Its operation result-type table must drive coercion when a typed DOUBLE argument
-is NULL. Ordinary NULL-propagating arithmetic cannot implement NULLIF because a
-NULL second argument must retain a present first value.
-
-Consumer and admission tracing is complete. The first implementation adds one
-opcode, conservative NULLability and ordered evaluation through the existing
-cursor. Focused checks pass: two scalar NULLIF tests, 23 scalar regressions,
-public composition and error-order tests, numeric binding/metadata/exact-short
-admission, parser limits and the public COALESCE demand regression. No additional
-allocation owner or expression representation was introduced.
-
-Focused verification passes for stored exceptional DOUBLE bits and prepared
-snapshots across reopen, validity word boundaries and scratch reuse, wide/small
-stack execution and forced grouping replay. Independent malformed-program checks
-cover NULLIF as well as arithmetic. Shared public allocation and native-I/O
-queries now exercise NULLIF's retained-value and equal-to-NULL outcomes without
-adding another runner. Clippy, maintenance checks and the fresh sentinel example
-pass; the example returns `(130, 4, 5)` as documented.
-
-Freeze the reviewed source for matching complete macOS/GNU/Linux gates. Reconcile
-discovery, failure schedules, input manifests and concise evidence, then remove
-owned temporary outputs and commit the final checkpoint. Host memory pressure
-is normal; verification uses two Cargo jobs and a bounded Docker CPU quota.
-
-Exclude text/DATE/Boolean-valued NULLIF, new types, general CASE/IF, unrelated
-coercions and persistent-format changes. Research precedes implementation;
-publication and broader qualification restrictions remain unchanged.
 
 ## Next engineering priorities
 
