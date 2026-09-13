@@ -378,7 +378,8 @@ authority; insufficient room for one lane returns typed resource refusal before
 effects.
 
 COALESCE uses the [numeric demand cursor](../src/scalar/evaluation.rs) to request
-only columns on the selected path. Each fallback is a contiguous postfix subtree;
+only columns on the selected path. Each supplied value must match its declared
+type and NULLability before branch selection. Each fallback is a contiguous postfix subtree;
 a present first argument skips it and coerces the chosen value to the call's
 validated result type. The computed-row resolver suspends an expression when it
 needs an uncached earlier definition, evaluates that dependency, then retries

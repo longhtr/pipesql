@@ -111,10 +111,22 @@ impl<'a> Evaluation<'a> {
         Ok(None)
     }
 
-    pub(crate) fn supply(&mut self, value: Number) {
-        assert!(matches!(self.expression.ops[self.position], Op::Column(_)));
+    pub(crate) fn supply(&mut self, value: Number) -> Result<(), Error> {
+        let Op::Column(column) = self.expression.ops[self.position] else {
+            unreachable!("numeric cursor must request an input before receiving it");
+        };
+        match (value, column.data_type()) {
+            (Number::Null, _) if !column.nullable() => {
+                return Err(Error::Corrupt("nonnull scalar input contains NULL"));
+            }
+            (Number::Null, _)
+            | (Number::Integer(_), DataType::Int64)
+            | (Number::Double(_), DataType::Double) => (),
+            _ => return Err(Error::Corrupt("scalar input type or row extent")),
+        }
         self.push(value);
         self.position += 1;
+        Ok(())
     }
 
     fn push(&mut self, value: Number) {
@@ -198,7 +210,9 @@ impl Expression {
                         }
                     }
                 };
-                evaluation.supply(value);
+                evaluation
+                    .supply(value)
+                    .expect("validated borrowed numeric input");
             }
             scratch[lane] = match evaluation.value() {
                 Number::Null => 0,
@@ -240,7 +254,9 @@ mod tests {
         expression.validate(&[left, right]).unwrap();
         let mut evaluation = Evaluation::new(&expression);
         assert_eq!(evaluation.next_column().unwrap(), Some(left));
-        evaluation.supply(Number::Integer(9_007_199_254_740_993));
+        evaluation
+            .supply(Number::Integer(9_007_199_254_740_993))
+            .unwrap();
         assert_eq!(evaluation.next_column().unwrap(), None);
         assert!(matches!(
             evaluation.value(),
@@ -249,9 +265,9 @@ mod tests {
 
         let mut evaluation = Evaluation::new(&expression);
         assert_eq!(evaluation.next_column().unwrap(), Some(left));
-        evaluation.supply(Number::Null);
+        evaluation.supply(Number::Null).unwrap();
         assert_eq!(evaluation.next_column().unwrap(), Some(right));
-        evaluation.supply(Number::Integer(1));
+        evaluation.supply(Number::Integer(1)).unwrap();
         assert!(matches!(
             evaluation.next_column(),
             Err(ArithmeticFailure::DivideByZero)
@@ -261,13 +277,31 @@ mod tests {
         expression.ops[4] = Op::Add;
         let mut evaluation = Evaluation::new(&expression);
         assert_eq!(evaluation.next_column().unwrap(), Some(left));
-        evaluation.supply(Number::Integer(7));
+        evaluation.supply(Number::Integer(7)).unwrap();
         assert_eq!(evaluation.next_column().unwrap(), Some(right));
-        evaluation.supply(Number::Integer(1));
+        evaluation.supply(Number::Integer(1)).unwrap();
         assert!(matches!(
             evaluation.next_column(),
             Err(ArithmeticFailure::DivideByZero)
         ));
+        let required = SemanticColumn::new(3, DataType::Int64, false);
+        expression.ops.fill(Op::Empty);
+        expression.ops[..3].copy_from_slice(&[Op::Column(required), Op::Integer(0), Op::Coalesce]);
+        expression.len = 3;
+        expression.validate(&[required]).unwrap();
+        let mut evaluation = Evaluation::new(&expression);
+        assert_eq!(evaluation.next_column().unwrap(), Some(required));
+        assert!(matches!(
+            evaluation.supply(Number::Null),
+            Err(Error::Corrupt("nonnull scalar input contains NULL"))
+        ));
+        assert!(matches!(
+            evaluation.supply(Number::Double(7.0)),
+            Err(Error::Corrupt("scalar input type or row extent"))
+        ));
+        evaluation.supply(Number::Integer(7)).unwrap();
+        assert_eq!(evaluation.next_column().unwrap(), None);
+        assert!(matches!(evaluation.value(), Number::Integer(7)));
     }
 
     #[test]

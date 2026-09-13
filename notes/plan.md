@@ -115,9 +115,19 @@ nullable sales table. `FROM sales |> SELECT amount+0 AS base |> SELECT base+0 AS
 next |> AGGREGATE SUM(next) AS total` and the same query with
 `COALESCE(amount, 0)` replacing `amount+0` both return literal sum 11,264. Seven
 alternating runs per query, including open/prepare/execute/close, have medians
-10.659 ms and 11.541 ms; the first ordinary run took 667.398 ms. Native verification
-was concurrent. These observations do not establish a speed ranking or justify
-another scheduling/ownership change.
+13.625 ms and 9.535 ms after the input-validation repair.
+These short local observations include process startup and do not establish a
+speed ranking or justify another scheduling/ownership change.
+
+Final review found that the row cursor initially lacked the previous input
+constructor's rejection of NULL for a required column. `Evaluation::supply` now
+checks type and NULLability before changing cursor state; the row resolver
+propagates its corruption error. A negative control rejects both NULL and a
+wrong numeric type, then verifies a valid retry. Focused cursor, public computed
+and observed small-stack checks pass after the repair. Both first frozen gates
+were deliberately terminated during Rust tests (status 143), with clean
+finalization; they are not complete-gate evidence. Their owned outputs and
+interrupted test directories were removed before fresh verification.
 
 Remaining work is finite:
 - Verify the example on GNU/Linux and run both complete matching frozen platform

@@ -195,7 +195,7 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
                     (Value::Int64(value), DataType::Int64) => Number::Integer(value),
                     (Value::Double(value), DataType::Double) => Number::Double(value),
                     _ => return Err(Error::Corrupt("computed input type")),
-                });
+                })?;
             }
             if let Some(input) = dependency {
                 // Each descent names an earlier definition. Once it is cached,
