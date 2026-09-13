@@ -68,6 +68,24 @@ Discovery and manifests are reconciled; owned outputs are removed. Decimal-posit
 and rounding-mode arguments remain unsupported. Publication and broader platform,
 durability, sanitizer and physical-memory qualifications remain unresolved.
 
+## Active: square roots for analytical magnitudes
+
+SQRT is absent from the accepted profile. Add one numeric argument through the
+existing scalar owners to support magnitude and root-mean-square calculations.
+
+1. Bound initial semantic research and tracing to 30 minutes. Check the pinned
+   GoogleSQL result types, negative-input errors, NULL, signed zero and nonfinite
+   behavior before implementation. Trace typed arithmetic failures through batch
+   and demanded row evaluation so negative inputs retain truthful source spans.
+2. Add literal boundary oracles and public stored-value, composition, demand,
+   cancellation/replay, admission and cleanup coverage in existing tests/campaigns.
+   Reuse fixed expression bounds and scratch; avoid a new framework or allowance.
+3. Update the language contract and a runnable example. Verify focused checks,
+   matching frozen sequential macOS/GNU/Linux full gates and fresh examples after
+   both Rust stages. Monitor resources, reconcile discovery/manifests, retain
+   concise evidence, remove owned outputs and commit locally. Publication and
+   broader qualification restrictions remain unchanged.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
