@@ -24,16 +24,35 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: INT64 quotient and comma spacing
+## Current: equality LEFT JOIN for analytical facts
 
-INT64 DIV is complete at `8c28a1f`; `6d2b7d5` records the separate comma-spacing
-cleanup. The [quotient record](evidence.md#integer-quotient-and-comma-spacing)
-retains pinned semantics, independent results, resource/failure coverage and the
-both-platform example. Both fresh frozen full gates pass with matching manifests.
-No allocation owner, persistent format or admission allowance changes. DOUBLE DIV
-and NUMERIC types remain unsupported. Completed semantic and resource repairs
-remain closed without a new counterexample; no new platform or physical-memory
-qualification is claimed. No publication is authorized.
+INT64 DIV and comma spacing are complete at `8c28a1f` and `6d2b7d5`; the
+[quotient record](evidence.md#integer-quotient-and-comma-spacing) retains their
+verification and limitations. Add equality LEFT JOIN so a fact remains visible
+when its dimension key has no match, using the existing bounded shared-sorter
+join. Completed repairs remain closed without a concrete new counterexample.
+
+1. Pin pipe syntax, duplicate multiplicity, NULL keys, right-output NULLability
+   and post-join filtering at the language owner's immutable revision. Reassess
+   unresolved research after 30 minutes; leave disputed forms unsupported.
+2. Trace parsing, binding, independent validation, demand, physical planning,
+   join transitions and admission. Repair any concrete prerequisite defect before
+   extending its owner. Preserve inner joins and bounded failure behavior.
+3. Implement unmatched-left output through the existing join. Cover empty inputs,
+   duplicates, NULL/unmatched keys, supported types, derived/repeated producers,
+   downstream composition and malformed plans with independent expected results.
+   Verify exact/short admission, spill, replay, cancellation, allocation refusal,
+   interruption and cleanup without another join framework or persistent format.
+4. Add a runnable fact/dimension example and update contract, learning and test/tool
+   maps. Run focused checks and both complete frozen platform gates; reconcile
+   discovery and manifests, retain concise evidence, remove owned outputs and
+   commit locally under the publication restrictions.
+
+Semantic research and implementation remain. RIGHT/FULL joins, USING, compound
+or non-equality ON predicates, correlated inputs and parallelism remain outside
+this milestone. Keep comma separators spaced in code and SQL, preserving literal
+data and intentional fixtures. No new platform or physical-memory qualification
+is claimed. No publication is authorized.
 
 ## Next engineering priorities
 
