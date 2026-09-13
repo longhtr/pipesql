@@ -24,13 +24,37 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: numeric ABS for analytical deviations
+## Current: INT64 remainder for analytical grouping
 
-`0ea0040` implements INT64/DOUBLE ABS through the existing bounded numeric
-program. Both complete frozen platform gates, examples, discovery, manifests and
-receipts are verified. The [absolute-value record](evidence.md#absolute-value)
-retains behavior, coverage and limitations. Owned outputs are removed; publication
-remains unauthorized. Select the next bounded milestone using the priorities below.
+ABS is complete at `0ea0040`; the
+[absolute-value record](evidence.md#absolute-value) retains verified behavior,
+coverage and limitations. Add INT64 MOD for grouping integer values by remainder
+through the existing bounded numeric program. The completed semantic and resource
+repairs remain closed without a new counterexample. This milestone makes no new
+platform or physical-memory qualification claim.
+
+1. Pin the INT64 signature, result sign, NULL, zero-divisor and minimum-integer
+   divided by minus-one behavior at the language owner's immutable revision.
+   Reassess unresolved research after 30 minutes; leave disputed forms unsupported.
+2. Extend the bounded call parser, binding, independent validation and scalar
+   evaluator. Preserve argument errors, source spans, demand, resource admission
+   and release without another frontend, allocation owner or persistent format.
+3. Cover literal independent results, integer extremes, signed operands, nullable
+   batches, malformed calls/programs and composition. Extend existing admission,
+   replay, cancellation and failure cases where they protect a distinct boundary.
+4. Add a runnable grouping example and update contract, learning and test/tool
+   maps. Run focused checks and both complete frozen platform gates; reconcile
+   discovery and manifests, record concise evidence, remove owned outputs and
+   commit locally under the publication restrictions.
+
+DOUBLE MOD, NUMERIC types and other new scalar calls remain outside this
+milestone. The pinned
+[signature](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/common/builtin_function_internal_3.cc#L2430)
+accepts two INT64 arguments and returns INT64. The
+[primitive](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/arithmetics.h#L369)
+rejects zero and returns zero for divisor minus one before the native remainder
+operation, avoiding the minimum-integer trap. Compliance fixtures and NULL
+handling still need review before implementation; no MOD source change is retained.
 
 ## Next engineering priorities
 
