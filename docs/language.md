@@ -289,7 +289,8 @@ and [reference kernel](https://github.com/google/googlesql/blob/0e7d7073ed0360be
 own these rules. The argument follows ordinary demand: its errors propagate when
 needed, while an unused expression or skipped COALESCE fallback remains unevaluated.
 STRING, DATE, untyped NULL and other arities remain rejected. The shared numeric
-operation and parser bounds apply; SIGN uses the existing scalar buffers and iterative evaluation.
+operation and parser bounds apply. SIGN uses the existing scalar buffers and
+iterative evaluation.
 
 `ABS(value)` accepts one INT64 or DOUBLE expression and preserves its type and
 NULLability. NULL yields NULL. Minimum INT64 has no positive INT64 counterpart

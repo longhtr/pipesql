@@ -44,9 +44,9 @@ the broader qualifications below remain unresolved.
 
 ## Active: numeric sign classification
 
-Add `SIGN(value)` for INT64 and DOUBLE expressions so queries can classify and
-group negative, zero and positive measurements. The current scalar manifest does
-not admit SIGN; the existing unary numeric program is the candidate owner.
+`SIGN(value)` is implemented in `670e7bc` for INT64 and DOUBLE expressions so
+queries can classify and group negative, zero and positive measurements. It uses
+the existing unary numeric program; completion requires the verification below.
 
 1. Semantics pinned before implementation at GoogleSQL
    `0e7d7073ed0360be587a5efa0fa78abeee00f17b`: mathematical_functions.md SIGN
@@ -54,14 +54,16 @@ not admit SIGN; the existing unary numeric program is the candidate owner.
    zero, returns NaN unchanged, and maps nonzero values (including infinities and
    integer extremes) to signed one. Research resolved within 30 minutes.
 2. The parser, typed scalar program and row/batch evaluators now implement SIGN.
-   Independent scalar bit expectations and a public classification/demand test
-   pass, as does warnings-denied all-target Clippy. No buffer or allocation owner
-   was added. Complete stored-value public coverage, type/NULLability mutation,
-   operation/stack and exact/short admission checks, then affected shared
-   cancellation, failure and replay cases.
-3. Add a runnable classification example and update current contracts/navigation.
-   Run focused checks and matching frozen macOS/GNU/Linux full gates, reconcile
-   coverage and inputs, retain concise evidence, clean owned outputs and commit.
+   Independent scalar bits, public classification/demand, stored DOUBLE bits
+   across producers/reopen, unary NULLability mutation, operation bounds,
+   exact/short admission, cancellation, forced replay and width/small-stack
+   checks pass. Clippy and maintenance pass. Catalog healthy controls retain
+   the 1,056-allocation census at both pathname lengths; this is not a sweep.
+   No buffer or allocation owner was added.
+3. The classification example and current contracts/navigation are updated.
+   Matching frozen macOS/GNU/Linux full gates and fresh tutorial runs remain
+   pending, followed by coverage/input reconciliation, concise evidence,
+   owned-output cleanup and the final local checkpoint.
 
 Monitor resources with at most two Cargo jobs. Compile examples after platform
 Rust builds and reduce Docker concurrency when memory pressure warrants it.

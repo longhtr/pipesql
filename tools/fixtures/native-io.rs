@@ -34,7 +34,7 @@ fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
     // to AVG; key 2 has a NULL right total and is skipped by AVG.
     let queries = std::iter::once((sql, Value::Double(60.0)))
         .chain(derived.then_some((
-            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(DIV(MOD(n, 4), 2)) AS total",
+            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(SIGN(DIV(MOD(n, 4), 2))) AS total",
             Value::Int64(3),
         )))
         .chain(derived.then_some((

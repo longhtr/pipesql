@@ -152,10 +152,11 @@ campaign's derived LEFT JOIN retains four matching pairs and one unmatched row,
 with an expected count of five. The separate inner-join ordering query retains
 its eight-pair check. Its negated NOT IN list retains the same NULL-aware
 membership result. Native I/O selects the right key with NOT BETWEEN, retaining
-the expected mean of 60. Native I/O also checks a DIV/MOD total of
-three over three count-only rows and an ABS/division aggregate of 4.5. Catalog allocation phases
+the expected mean of 60. Native I/O checks a total of three after SIGN of each
+positive DIV/MOD quotient over three count-only rows. Its ABS/division aggregate
+remains 4.5. Catalog allocation phases
 separately prepare, execute and consume a nullable division/filter query with
-count two after ABS of the negated ratio and an exact oddness check on INT64
+count two after ABS of the negated ratio and SIGN of an exact oddness check on INT64
 amounts above 2^53. DIV by one must preserve the first amount exactly before
 filtering. COALESCE must select that exact value without evaluating its failing
 fallback. A demanded SAFE_DIVIDE result must be NULL without losing its row;

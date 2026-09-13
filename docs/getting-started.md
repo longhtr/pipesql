@@ -154,6 +154,33 @@ the existing forward decisions retain branch demand without a separate membershi
 execution engine. The [membership contract](language.md#literal-list-membership)
 owns type and size limits.
 
+## Classify measurements by sign
+
+Run [examples/sign.sql](../examples/sign.sql) against the same sales database:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/sign.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+SIGN classifies each amount relative to 10: -1 below, zero equal, and +1 above.
+NULL remains a separate group. The result is:
+
+| direction | total | n |
+| ---: | ---: | ---: |
+| NULL | NULL | 1 |
+| -1 | 5 | 1 |
+| 0 | 10 | 1 |
+| 1 | 20 | 1 |
+
+Require `status=queried` and successful exit. Follow `Op::Sign` in the
+[scalar program](../src/scalar.rs) and [demand cursor](../src/scalar/evaluation.rs)
+to see the same numeric rule used by batch and row evaluation. The
+[language contract](language.md#current-public-query-manifest) owns type,
+exceptional-value and argument-demand rules.
+
 ## Combine pipeline results
 
 Run [examples/union.sql](../examples/union.sql) against the same database:

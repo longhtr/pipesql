@@ -775,13 +775,14 @@ fn public_division_composes_with_set_union_grouping_and_boolean_demand() {
 }
 
 #[test]
-fn public_division_cancellation_and_early_drop_release_owners() {
+fn public_numeric_cancellation_and_early_drop_release_owners() {
     let (_directory, db) = join_fixture();
     let baseline = db.reserved_memory_bytes();
     for sql in [
         "FROM facts |> SELECT v/2 AS ratio |> ORDER BY ratio",
         "FROM facts |> SELECT SAFE_DIVIDE(v, k-1) AS ratio |> ORDER BY ratio",
         "FROM facts |> SELECT ABS(v-25) AS deviation |> ORDER BY deviation",
+        "FROM facts |> SELECT SIGN(v-25) AS direction |> ORDER BY direction",
         "FROM facts |> SELECT MOD(v, 3) AS remainder |> ORDER BY remainder",
         "FROM facts |> SELECT DIV(v, 15) AS quotient |> ORDER BY quotient",
         "FROM facts |> SELECT COALESCE(k, v) AS chosen |> ORDER BY chosen",
@@ -1517,6 +1518,22 @@ fn public_sign_preserves_types_classification_and_demand() {
         "absolute value",
         "SIGN(ABS(-9223372036854775808))",
     );
+    query(
+        &db,
+        "FROM facts |> EXTEND SIGN(v/(k-1)) AS direction |> WHERE k=1 OR direction>0 |> SELECT k |> ORDER BY k",
+        integers(&[1, 1, 2]),
+    );
+    query(
+        &db,
+        "FROM facts |> EXTEND SIGN(v*9223372036854775807) AS unused |> DROP unused |> SELECT v |> ORDER BY v",
+        integers(&[10, 20, 30, 40]),
+    );
+    failure(
+        &db,
+        "FROM facts |> SELECT SIGN(v*9223372036854775807) AS direction",
+        "multiplication",
+        "SIGN(v*9223372036854775807)",
+    );
     let baseline = db.reserved_memory_bytes();
     for expression in [
         "SIGN()",
@@ -1535,4 +1552,87 @@ fn public_sign_preserves_types_classification_and_demand() {
         );
         assert_eq!(db.reserved_memory_bytes(), baseline);
     }
+}
+
+#[test]
+fn public_sign_preserves_stored_double_bits_across_producers_and_reopen() {
+    let directory = Directory::new();
+    let path = directory.database();
+    let mut db = Database::create_empty(&path, config()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "samples",
+        &[
+            ColumnDeclaration {
+                name: "id",
+                data_type: DataType::Int64,
+                nullable: false,
+            },
+            ColumnDeclaration {
+                name: "value",
+                data_type: DataType::Double,
+                nullable: true,
+            },
+        ],
+        &cancel,
+    )
+    .unwrap();
+    let mut append = db.begin_append("samples", limits(), &cancel).unwrap();
+    append
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::Int64(&[0, 1, 2, 3, 4, 5, 6, 7, 8]),
+                    validity: &[255, 1],
+                },
+                ColumnInput {
+                    values: ColumnValues::Double(&[
+                        -0.0,
+                        0.0,
+                        -f64::from_bits(1),
+                        f64::from_bits(1),
+                        f64::NEG_INFINITY,
+                        f64::INFINITY,
+                        f64::from_bits(0xfff8_0000_0000_0042),
+                        -7.0,
+                        999.0,
+                    ]),
+                    validity: &[255, 0],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    append.commit(&cancel).unwrap();
+    for reopened in [false, true] {
+        if reopened {
+            db.close().unwrap();
+            db = Database::open(&path, config()).unwrap();
+        }
+        for source in [
+            "FROM samples",
+            "FROM (FROM samples)",
+            "FROM samples |> ORDER BY id DESC",
+            "FROM samples |> UNION ALL (FROM samples |> LIMIT 0)",
+        ] {
+            query(
+                &db,
+                &format!("{source} |> ORDER BY id |> SELECT SIGN(value) AS direction"),
+                [
+                    Some(0.0_f64),
+                    Some(0.0),
+                    Some(-1.0),
+                    Some(1.0),
+                    Some(-1.0),
+                    Some(1.0),
+                    Some(f64::from_bits(0xfff8_0000_0000_0042)),
+                    Some(-1.0),
+                    None,
+                ]
+                .map(|value| vec![value.map_or(Cell::Null, |v| Cell::Number(v.to_bits()))])
+                .to_vec(),
+            );
+        }
+    }
+    db.close().unwrap();
 }
