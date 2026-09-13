@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `60bf34d` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 629 ordinary Rust tests per platform, 24 independent aggregate
+The complete 24-stage gates for `22a62bf` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 632 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
@@ -25,53 +25,24 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Active: exponential transforms and geometric means
+## Completed: exponential transforms and geometric means
 
-Add one-argument EXP for INT64/DOUBLE through the existing bounded numeric
-program, parser, binder, independent validators, batch scratch and demand cursor.
-This makes log-scale aggregates usable in their original units: the learning
-example will average LN of positive amounts, then apply EXP in a later pipe
-stage to obtain their geometric mean.
+`22a62bf` adds one-argument EXP through the existing bounded expression owners.
+The [exponential record](evidence.md#exponential-transforms-and-geometric-means)
+retains pinned semantics, independent numerical and complete-row answers,
+exceptional values, demand/error spans, resource/failure checks and the learning
+path. No allocation owner, persistent format or admission allowance changed.
 
-The semantic and ownership trace completed within its 30-minute budget. Pinned GoogleSQL
-signatures, compliance cases and the reference kernel agree on DOUBLE promotion,
-NULL propagation, finite overflow errors, positive infinity and negative-infinity
-zero. Preserve input NaN bits as a PipeSQL choice. Retain representable subnormal
-results; results too small to remain nonzero become positive zero. Finite
-exponentials use the native approximate primitive without a universal precision
-or repeated/cross-platform bit-identity promise.
-
-Implementation and focused checks pass through both batch and demand paths.
-Independent Decimal answers cover normal, subnormal, zero and overflow boundaries;
-public checks retain finite-overflow spans after source/plan teardown, constant
-predicate failures, integer-child errors, both SAFE_DIVIDE argument positions,
-skipped COALESCE/Boolean branches, empty geometric means, exact/short admission,
-stored bits/reopen, cancellation and 32 replay variants. The catalog census stays
-at 1,056 allocations on both pathname lengths, and eight derived I/O controls
-pass; these controls alone do not constitute failure campaigns. Three nearby
-SQRT/LN source-link anchors were corrected against the pinned revision without
-changing their semantics.
-
-Complete both sequential frozen platform gates, fresh examples, discovery and
-semantic/allocation reconciliation, evidence, cleanup and coherent local commits.
-Broader qualification and publication restrictions remain unchanged.
-
-## Completed: transient allocation ownership in wide LEFT JOIN
-
-`60bf34d` observes live requested/usable Rust allocations inside public execute
-and step calls for the retained 64-column nullable STRING LEFT JOIN. The
-[transient ownership record](evidence.md#transient-ownership-in-wide-left-join)
-retains event counts, headroom, calibration, independent controls and limits.
-No engine accounting defect was exposed; production owners and admission
-allowances remain unchanged.
-
-Both complete 24-stage macOS/GNU/Linux gates pass on matching frozen inputs.
-Discovery, ordered allocation schedules and semantic records are reconciled.
-Fresh LEFT JOIN examples pass sequentially on both platforms after both gates.
+Both complete 24-stage macOS/GNU/Linux gates pass on matching frozen inputs,
+with 632 ordinary Rust tests per platform. Discovery, ordered allocation
+schedules and semantic records are reconciled. Fresh declared-table and
+geometric-mean examples pass sequentially on both platforms after both gates.
 Owned outputs are removed while pre-existing artifacts and toolchains remain.
-Completed language work, including [natural logarithms](evidence.md#natural-logarithms-for-analytical-scales),
-remains closed. Arbitrary allocator histories, concurrent allocation observation,
-whole-process/RSS, Windows and broader durability remain unfinished. Publication
+
+The [transient join observation](evidence.md#transient-ownership-in-wide-left-join)
+and prior language work remain closed. Approximate finite transcendental results,
+arbitrary allocator histories, concurrent allocation observation, whole-process/RSS,
+Windows and broader durability retain their documented limits. Publication
 restrictions are unchanged. Reassess README's decision order before activating
 the next bounded milestone.
 

@@ -7,21 +7,21 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 709 frozen inputs retained in `60bf34d`
+Both complete 24-stage gates verify the 710 frozen inputs retained in `22a62bf`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `b76621de8cd71d89d5ed0cd0d688eed8916ba161c82287b63af5e5d7911fdbf0`.
-Finalization changes only the two notes files. The other 707 inputs retain
-fingerprint `5b2b3dbfdda6c95ae62ab65e96a565237857889de1e7d104209d3adf71ec31ef`;
+gates: `db28d674ff90347c70dca0eb0dbc68b602cbbc0bd098433d6f956e4561085e84`.
+Finalization changes only the two notes files. The other 708 inputs retain
+fingerprint `25b9dcee29cc231a940888843589505b7eb35c3a7779b39ff2c6d21c0766e1c0`;
 all manifested inputs are tracked. Final local-link verification passes.
 
-Each platform executes 629 ordinary Rust tests, including all 138 public catalog
+Each platform executes 632 ordinary Rust tests, including all 140 public catalog
 tests, plus the separate lease subprocess. Discovery independently lists those
-629 tests across thirteen targets per platform. No ordinary test is ignored or
+632 tests across thirteen targets per platform. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 656 local links.
+passes 96 tooling tests, 44 independent codec fixtures and 663 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311
 scenarios. Their complete records agree across platforms after excluding ambient
 database paths and composition stdout digests. Those digests are not portable
@@ -38,34 +38,83 @@ contention and independent column order pass. Linux retains the two Darwin ACL
 repair-rename exclusions, one at each pathname length.
 
 Both receipts have zero finalization errors. The full gates run sequentially;
-stage times total 1,605.351 seconds on macOS and 486.185 seconds on Linux. Receipt
+stage times total 1,609.948 seconds on macOS and 449.873 seconds on Linux. Receipt
 SHA-256 values are respectively
-`98cab90a4103750ec2a8b0cc6f9b962d617b79ebffc2db3519ca6655c8030715` and
-`1fa60758e9a66774e447d70f9e3b3b5e8ce36891e7a31fe1c2b2a321e39c4868`.
+`4057f1a988e676a41aab9aedc639a24a90644b1c8c95046e72995c0816a87f3c` and
+`710dd5c66632a3db11f0ab8fd372bbc69cb37fd33912e66328b1607250c7a37b`.
 These runs are verification observations, not performance benchmarks.
 
-Eighty-one periodic resource samples observed normal/warning memory pressure on
-an 8 GiB host and 1,078.62–1,895.56 MiB of swap use. The last sample remained at
-warning pressure with 1,887.56 MiB of swap. macOS used at most two Cargo jobs;
-the fresh example used one. Docker used one CPU, one build job and a 2 GiB
-container limit. Periodic CPU peaked at 101.66% and memory at 1.267 GiB; an
-additional compilation sample observed 1.276 GiB. Networking was disabled and
-sampled container network traffic was zero. Host disk samples ranged from 0.01
-to 200.66 MB/s; free disk stayed above 187.26 GiB. Host process, disk and network
-observations include unrelated applications. No container OOM kill occurred.
-These observations do not qualify engine admission, usable-heap limits or
-whole-process/RSS bounds.
+Ninety-six periodic resource samples observed normal memory pressure on an 8 GiB
+host and 961.75–1,788.88 MiB of swap use; the last sample recorded 961.75 MiB.
+macOS used at most two Cargo jobs, with one for focused checks and the fresh
+example. Docker used one CPU, one build job and a 2 GiB container limit.
+Periodic CPU peaked at 100.58% and memory at 1.207 GiB; an additional compilation
+sample observed 1.302 GiB. Networking was disabled and sampled container network
+traffic was zero. Host disk samples ranged from zero to 174.30 MB/s; free disk
+stayed above 187.44 GiB. Host process, disk and network observations include
+unrelated applications. No container OOM kill occurred. These observations do
+not qualify engine admission, usable-heap limits or whole-process/RSS bounds.
 
 The Linux image remains `pipesql-verification-rust:1.98.1-time`, digest
 `sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
-Fresh LEFT JOIN examples run sequentially on both platforms after both complete
-gates. Each creates and reopens a native-storage database, prints exactly
-`unmatched total=90 rows=2`, `north total=30 rows=2` and `south total=30 rows=1`,
-and exits successfully. Owned gate outputs, source exports, logs, monitor,
-databases, isolated build outputs and the verification container are removed.
-Pre-existing target artifacts, the image and installed toolchains remain.
-Windows, broader durability, physical-memory and sanitizer qualification remain
-unfinished.
+Fresh declared-table and geometric-mean examples run sequentially on both
+platforms after both complete gates. Creation/reopen produces the two literal
+region rows; the new query returns one nullable DOUBLE and completes with
+`status=queried`. Both runs observe 10.000000000000002, bits `4024000000000001`.
+Owned gate outputs, source exports, logs, monitor, databases, isolated build
+outputs and the verification container are removed. Pre-existing target
+artifacts, the image and installed toolchains remain. Windows, broader
+durability, physical-memory and sanitizer qualification remain unfinished.
+
+### Exponential transforms and geometric means
+
+`22a62bf` adds one-argument EXP through the existing bounded parser, binder,
+independent validators, batch scratch and demand cursor. The semantic and owner
+trace completed within the 30-minute budget against the language guide's pinned
+GoogleSQL signatures, compliance cases and reference kernel. This is source
+inspection, not an executed upstream conformance run. Three neighboring SQRT/LN
+source-link anchors were corrected against that revision; their semantics remain
+unchanged. The [language contract](../docs/language.md#current-public-query-manifest)
+owns promotion, exceptional values, overflow and approximate precision limits.
+
+Independent Decimal exponentials at precision 100 supply rounded binary64
+answers for fourteen finite inputs, including near-zero values, normal/subnormal
+results and the finite side of the overflow boundary. Both evaluation paths
+allow two ULPs for these particular answers; this is not a universal accuracy
+bound. Eleven further cases check exact tiny/zero transitions, zeros, infinities
+and NaN bits. Four finite inputs, including the adjacent value beyond the finite
+overflow boundary, must return exponential overflow in both paths. A NULL batch
+payload containing 1000 must remain unevaluated, and the cursor preserves NULL.
+
+Public cases cover INT64/DOUBLE promotion, very negative integer underflow,
+empty/NULL input, grouped results, LEFT JOIN, DISTINCT, union, skipped Boolean
+and COALESCE branches, malformed arity/type, and integer-child overflow. EXP
+failures in either SAFE_DIVIDE argument remain visible. Constant predicates can
+fail during preparation. Demanded overflow preserves its UTF-8 byte span after
+source and prepared-plan teardown, including an enclosing SUM. Shared checks
+retain exact/short admission, independent NULLability validation, the 31/32-call
+bound, cancellation, early drop, stored exceptional bits through producers and
+reopen, and 32 forced sort/group replay variants. The ordinary and bounded-thread
+Boolean scenarios execute LN and EXP through a computed dependency and aggregate.
+
+The public geometric-mean answer for 10, 20, 30 and 40 comes from two successive
+Decimal square roots of 240,000, with an eight-ULP regression threshold for the
+composed result. The [runnable query](../examples/geometric_mean.sql) instead uses
+the tutorial's positive amounts 5, 10 and 20: AVG consumes their logarithms, then
+EXP in a later pipe stage restores the original units. The mathematical answer
+is exactly 10. Both fresh native runs are one ULP above it; those matching bits
+do not establish repeated or cross-platform bit identity. The
+[learning path](../docs/getting-started.md#compute-a-geometric-mean) explains the
+NULL behavior, complete result and implementation owners.
+
+Catalog allocation still requires count two, preserving the original 1.75 ratio
+and exact large integer before EXP restores the rounded/logged fallback to one.
+Native I/O retains total nine with EXP(LN(n/n))-1 contributing zero. Fixed-buffer
+formatting checks exponential overflow and its captured cause under allocation
+denial. Both complete campaigns retain their fault schedules and healed outcomes.
+The prior transient join observer also retains 371 allocations/frees and its
+nonnegative headroom at both pathname lengths on both platforms. No allocation
+owner, expression framework, persistent format or admission allowance changed.
 
 ### Transient ownership in wide LEFT JOIN
 
