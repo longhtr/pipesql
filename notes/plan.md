@@ -43,6 +43,28 @@ Monitoring observed normal/warning memory pressure, with warning pressure in the
 last sample. Owned outputs are removed. Publication and the broader qualifications
 below remain unresolved.
 
+## Active: wide positional set allocation ownership
+
+The current analytic ownership cases include EXCEPT/INTERSECT and composed UNION,
+but use a narrow payload and return count output. Select a distinct wide,
+nullable-STRING set workload before adding coverage; this is not evidence of an
+existing deficit.
+
+1. Trace set controllers, both sorted inputs, source and output admission.
+   Timebox this selection to 30 minutes and identify the uncovered width,
+   payload or allocation-history boundary.
+2. Extend the existing public ownership caller with independent complete-row
+   expectations, step-level requested/usable/charged observations, an attribution
+   negative control, forced spill and final memory/temporary release. Repair any
+   reproduced deficit at its owner without weakening the observation.
+3. Verify focused behavior and the required frozen macOS/GNU/Linux gates; update
+   affected contracts/maps, reconcile inputs and discovery, retain concise evidence,
+   remove owned outputs and commit locally. These observations cannot establish
+   arbitrary-allocator, transient-peak or whole-process/RSS bounds.
+
+Use at most two Cargo jobs and one Docker CPU/build job on this host. Monitor
+resources and compile examples after both platform Rust test stages.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
