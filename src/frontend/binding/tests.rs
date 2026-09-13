@@ -186,7 +186,8 @@ fn check_scope_preparation(sql: &str) {
         + 2 * PREPARED_ALLOCATION_ALLOWANCE) as u64;
     assert_eq!(scopes._reservation.bytes(), physical);
     let binding_peak = retained + physical;
-    let catalog_peak = crate::catalog::SNAPSHOT_SCRATCH_BYTES as u64;
+    // Independent public preparation peak: buffer plus two bounded read paths.
+    let catalog_peak = crate::catalog::SNAPSHOT_SCRATCH_BYTES as u64 + 2 * 4_096;
     let peak = binding_peak.max(catalog_peak);
     let refusal_owner = if catalog_peak > binding_peak {
         "query catalog binding"
@@ -196,6 +197,26 @@ fn check_scope_preparation(sql: &str) {
     drop(scopes);
     drop(query);
     assert_eq!(db.reserved_memory_bytes(), baseline);
+    for available in [0, 2 * 4_096 - 1] {
+        let pressure = db
+            .reserve_memory(
+                db.config().memory_limit_bytes() - baseline - available,
+                "catalog path admission pressure",
+            )
+            .unwrap();
+        let pressured = db.reserved_memory_bytes();
+        assert!(matches!(
+            db.prepare(sql),
+            Err(Error::Resource {
+                owner: "query catalog paths",
+                required,
+                ..
+            }) if required == pressured + 8_192
+        ));
+        assert_eq!(db.reserved_memory_bytes(), pressured);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        drop(pressure);
+    }
     for shortfall in [0, 1] {
         let pressure = db
             .reserve_memory(

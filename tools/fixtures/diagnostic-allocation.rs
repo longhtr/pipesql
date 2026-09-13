@@ -267,11 +267,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if mode == "wide-left-join-shape"
         || mode == "wide-left-join-attribution-negative"
         || mode == "wide-left-join-observer-negative"
+        || mode == "wide-left-join-lifecycle-negative"
     {
         let control = if mode == "wide-left-join-attribution-negative" {
             ownership::WideJoinControl::WrongAttribution
         } else if mode == "wide-left-join-observer-negative" {
             ownership::WideJoinControl::DisabledObserver
+        } else if mode == "wide-left-join-lifecycle-negative" {
+            ownership::WideJoinControl::MissingPreparation
         } else {
             ownership::WideJoinControl::Healthy
         };

@@ -217,7 +217,8 @@ Finished and release. The existing false-attribution mechanism must reject a
 nonexistent owner after the complete rows and release have been checked.
 
 [`transient-ownership.rs`](fixtures/transient-ownership.rs) additionally arms a
-borrowed, thread-local observer only inside this workload's execute/step calls.
+borrowed, thread-local observer inside this workload's preparation, execute,
+step and release calls.
 The allocator samples live requested/usable increments after allocation and
 before physical free against the current database charge. Caller setup, row
 checks and reporting run outside the scope. The caller prints event counts and
@@ -226,9 +227,17 @@ headroom, and preserves the independent checkpoint equations. Calibration
 detects an uncharged 65,536-byte allocation created and freed within one call
 despite unchanged entry/exit counters; a second case observes only its free and
 must still detect the live owner. `wide-left-join-observer-negative` disables
-observation and must fail calibration. These checks cover the exercised
-single-threaded Rust allocation events, excluding foreign allocations, allocator
-metadata/retained pages, other process mappings and RSS.
+calibration observation and must fail calibration. Separate phase samples require
+preparation allocation/free events and prepared-plan free events. Two repetitions
+abandon the result immediately after execute and after Progress with live
+temporary storage; each requires observed frees and full heap, descriptor and
+reservation restoration. A finished result has already released its heap inside
+step, so its drop is checked for charge release without requiring heap events.
+`wide-left-join-lifecycle-negative` leaves preparation unobserved and must fail
+phase coverage; the supervisor also rejects missing lifecycle completion output.
+These checks cover the exercised single-threaded Rust allocation events, excluding
+foreign allocations, allocator metadata/retained pages, other process mappings
+and RSS.
 
 The same selection runs the nullable self-join, aggregation, and ordering workload
 at 2.2 MB and 12 MB. `joined_shapes` in

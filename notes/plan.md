@@ -36,6 +36,12 @@ oracles. Require phase coverage on both pathname lengths and a negative control
 that rejects a missing lifecycle observation. Repair a concrete deficit at its
 owner if one appears, without padding admission allowances.
 
+The initial trace exposed uncharged catalog-read pathnames during preparation:
+two paths overlap the fully allocated scratch buffer. Reserve their existing
+4,096-byte bounds before I/O and release them before binding. Extend the exact
+preparation peak and refusal checks independently; retain the new lifecycle
+observer as the physical counterexample regression.
+
 Complete focused checks, matching frozen sequential macOS/GNU arm64 Linux gates,
 discovery and evidence reconciliation, then fresh relevant examples sequentially.
 Document the ownership flow and precise limits, remove owned outputs, review

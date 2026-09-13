@@ -1130,6 +1130,7 @@ pub(super) enum WideJoinControl {
     Healthy,
     WrongAttribution,
     DisabledObserver,
+    MissingPreparation,
 }
 
 pub(super) fn wide_left_join_shape(
@@ -1241,7 +1242,14 @@ pub(super) fn wide_left_join_shape(
     println!("wide left join: 64 columns, unequal duplicate groups and nullable maximum STRING");
     let before = Live::now();
     let memory = db.reserved_memory_bytes();
-    let query = db.prepare("FROM left_rows AS l |> LEFT JOIN right_rows AS r ON l.key=r.key")?;
+    const SOURCE: &str = "FROM left_rows AS l |> LEFT JOIN right_rows AS r ON l.key=r.key";
+    let preparation =
+        super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
+    let query = if matches!(control, WideJoinControl::MissingPreparation) {
+        db.prepare(SOURCE)?
+    } else {
+        preparation.during(|| db.prepare(SOURCE))?
+    };
     assert_eq!(query.result_column_count(), 64);
     let observer =
         super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
@@ -1315,8 +1323,18 @@ pub(super) fn wide_left_join_shape(
     }
     assert!(seen.into_iter().all(|seen| seen), "missing joined pair");
     assert!(peak_temp > 0, "wide left join must use external storage");
-    drop(result);
-    drop(query);
+    let finished_release =
+        super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
+    finished_release.during(|| drop(result));
+    // Finished already destroyed the runtime and physical plan inside step().
+    // This handle has only an inline reservation left; no heap event is required.
+    assert_eq!(
+        db.reserved_memory_bytes(),
+        memory + query.accounted_memory_bytes()
+    );
+    let prepared_release =
+        super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
+    prepared_release.during(|| drop(query));
     assert_eq!(Live::now(), before);
     assert_eq!(db.reserved_memory_bytes(), memory);
     assert_eq!(db.reserved_temp_bytes(), 0);
@@ -1330,6 +1348,81 @@ pub(super) fn wide_left_join_shape(
         samples.requested_headroom >= 0 && samples.usable_headroom >= 0,
         "wide left join transient ownership: {samples:?}"
     );
+    check_join_phase("preparation", preparation.samples(), true);
+    check_join_phase("prepared release", prepared_release.samples(), false);
+    let finished_samples = finished_release.samples();
+    assert!(finished_samples.requested_headroom >= 0 && finished_samples.usable_headroom >= 0);
+    println!(
+        "wide left join finished release: allocations={} frees={}; charge released",
+        finished_samples.allocations, finished_samples.frees
+    );
+    // Repeat with a result abandoned before stepping and with external storage
+    // live. Each scope starts from the same caller heap and resident charge.
+    for external in [false, true] {
+        let preparation =
+            super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
+        let query = preparation.during(|| db.prepare(SOURCE))?;
+        let execution =
+            super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
+        let mut result = execution.during(|| db.execute(&query, &cancel))?;
+        if external {
+            let mut steps = 0;
+            loop {
+                steps += 1;
+                assert!(
+                    steps < 200_000,
+                    "wide left join did not reach external storage"
+                );
+                match execution.during(|| result.step()) {
+                    QueryStep::Progress => (),
+                    _ => panic!("wide left join must reach external storage before rows"),
+                }
+                if db.reserved_temp_bytes() > 0 {
+                    break;
+                }
+            }
+        }
+        assert_eq!(
+            db.reserved_memory_bytes(),
+            memory + query.accounted_memory_bytes() + result.accounted_memory_bytes()
+        );
+        let release =
+            super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
+        release.during(|| drop(result));
+        assert_eq!(
+            db.reserved_memory_bytes(),
+            memory + query.accounted_memory_bytes()
+        );
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        let prepared_release =
+            super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
+        prepared_release.during(|| drop(query));
+        assert_eq!(Live::now(), before);
+        assert_eq!(db.reserved_memory_bytes(), memory);
+        check_join_phase("abandoned preparation", preparation.samples(), true);
+        let executed = execution.samples();
+        assert!(
+            executed.allocations > 0
+                && executed.requested_headroom >= 0
+                && executed.usable_headroom >= 0,
+            "abandoned execution: {executed:?}"
+        );
+        check_join_phase(
+            if external {
+                "external abandonment"
+            } else {
+                "immediate abandonment"
+            },
+            release.samples(),
+            false,
+        );
+        check_join_phase(
+            "abandoned prepared release",
+            prepared_release.samples(),
+            false,
+        );
+    }
+    println!("wide left join lifecycle passed: preparation, finished release, two abandonments");
     super::transient_ownership::check_calibration(
         &db,
         matches!(control, WideJoinControl::DisabledObserver),
@@ -1344,6 +1437,19 @@ pub(super) fn wide_left_join_shape(
     );
     println!("wide left join passed: 64 columns, 11 pairs; rows, ownership and release");
     Ok(())
+}
+
+// Phase counts reject an accidentally unarmed scope independently of headroom.
+fn check_join_phase(phase: &str, samples: super::transient_ownership::Samples, allocates: bool) {
+    println!("wide left join {phase}: {samples:?}");
+    assert!(
+        samples.frees > 0 && (!allocates || samples.allocations > 0),
+        "missing transient join lifecycle events: {phase}"
+    );
+    assert!(
+        samples.requested_headroom >= 0 && samples.usable_headroom >= 0,
+        "wide left join lifecycle ownership: {phase}: {samples:?}"
+    );
 }
 
 // The workload matches the learning example; expected values below follow the

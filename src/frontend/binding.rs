@@ -1631,6 +1631,13 @@ pub(crate) fn prepare_catalog<'db>(
     let parsed = parse_query(source)?;
     let snapshot = database.catalog_snapshot()?;
     let generation = snapshot.generation();
+    // Catalog and schema reads overlap a units pathname with one object pathname.
+    // Scratch accounts only for its buffer. Admit both bounded paths before I/O,
+    // and keep this charge until all read paths have been physically released.
+    let paths = database.reserve_memory(
+        (2 * crate::path::MAX_PATH_BYTES) as u64,
+        "query catalog paths",
+    )?;
     let mut scratch = crate::catalog::Scratch::new(&database.memory, "query catalog binding")?;
     let (catalog_bytes, schema_bytes) = scratch.bytes().split_at_mut(crate::catalog::MAX_BYTES);
     let cancel = crate::CancellationToken::new();
@@ -1690,6 +1697,7 @@ pub(crate) fn prepare_catalog<'db>(
     }
     drop(objects);
     drop(scratch);
+    drop(paths);
     let mut query = bind_plan(database, source, &parsed, sources, generation)?;
     query.snapshot = Some(snapshot);
     Ok(query)

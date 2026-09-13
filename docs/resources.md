@@ -116,8 +116,11 @@ includes a 4,096-byte allocator allowance. Running queries borrow that plan.
 `memory_requirement_bytes()` is a conservative bound, not an exact query
 minimum. Parser stacks and caller source remain separately bounded and observed.
 
-Query preparation releases catalog scratch before binding the semantic plan. Its
-peak is the larger of catalog scratch and retained-plan plus transient-scope
+Query preparation admits two 4,096-byte pathname bounds before catalog I/O:
+one units directory and one overlapping catalog/schema object path. Catalog
+scratch charges only its buffer. The read paths and scratch drop before their
+reservations and before semantic binding. The preparation peak is the larger of
+catalog scratch plus 8,192 pathname bytes and retained-plan plus transient-scope
 charges. Queries with multiple source occurrences reserve two exact-capacity
 scope vectors before binding, including a 4,096-byte allowance per allocation.
 Their capacities follow the shared source, projection and aggregate pools;
@@ -430,11 +433,18 @@ to the measured prepared/result ownership. Complete-row checks accompany each
 returned-step sample and final release; the [tool map](../tools/README.md) owns
 invocation and the false-attribution control. For this workload, the allocator
 caller also samples after each successful Rust allocation and immediately before
-each physical free inside execute and step. It compares live requested/usable
-increments from the pre-preparation baseline with the contemporaneous database
+each physical free during preparation, execute, step and release, including
+abandonment before stepping and with live temporary storage. It compares live
+requested/usable increments from the pre-preparation baseline with the contemporaneous database
 charge above its resident baseline. Caller heap storage stays fixed while armed;
 the public charge read is an atomic load. The observer borrows the database and
 uses a scoped thread-local pointer without allocating or taking a lock.
+Prepared plans, catalog scratch, saved binder scopes, physical pipelines and
+runtime vectors declare their data before the reservation that pays for it;
+[field destruction](https://doc.rust-lang.org/reference/destructors.html#destructors.operation)
+therefore frees that data before releasing its charge.
+Finishing a result destroys runtime and physical-plan storage inside the final
+step; dropping its remaining handle only releases the inline result charge.
 
 These event samples cover temporary allocations that disappear before a public
 call returns, including old/new buffer overlap during allocation-based growth.
