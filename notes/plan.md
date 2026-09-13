@@ -130,7 +130,16 @@ finalization; they are not complete-gate evidence. Their owned outputs and
 interrupted test directories were removed before fresh verification.
 
 Remaining work is finite:
-- Verify the example on GNU/Linux and run both complete matching frozen platform
+- The repaired example's exact schema and rows pass on GNU/Linux. The next GNU
+  gate passed stages 1–17, then rejected the analytic ownership equation because
+  it omitted the conditional cursor's 744-byte explicit scratch payload. The
+  independent fixture now accounts for the cursor fields, construction arrays
+  and pending indices individually. Its equality and negative controls remain.
+  The matching macOS gate was terminated at allocation checks (status 143);
+  both receipts retained unchanged inputs and clean finalization. Neither run
+  establishes a complete gate. The corrected focused ownership campaign passes
+  on both targets, including every attribution and result negative control.
+- Run both complete matching frozen platform
   gates, including every allocation-refusal prefix and applicable native campaign.
 - Reconcile discovery and manifests, complete final navigation/diff review,
   retain concise evidence within budget, remove owned outputs and commit locally.

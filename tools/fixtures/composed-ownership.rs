@@ -15,8 +15,14 @@ const TEMP: u64 = 8_000_000;
 // Row-evaluation payload on the qualified 64-bit targets: 80 optional nullable
 // values (16 bytes), 208 demand flags, 32 optional column identities (8 bytes),
 // 32 optional numeric inputs (48 bytes), three 32-word arrays, 32 four-word
-// vectors and 32 type tags. This equation does not call engine admission code.
-const ANALYTIC_ROW_SCRATCH: usize = 80 * 16 + 208 + 32 * 8 + 32 * 48 + 3 * 32 * 8 + 32 * 32 + 32;
+// vectors and 32 type tags. Conditional evaluation adds a cursor with one
+// borrowed expression, two 32-byte control arrays, 32 tagged numeric values
+// (16 bytes each) and two word-sized positions; construction uses two further
+// 32-byte arrays, and dependency traversal uses 80 byte-sized indices.
+// This equation does not call engine admission code.
+const CONDITIONAL_ROW_SCRATCH: usize = 8 + 2 * 32 + 32 * 16 + 2 * 8 + 2 * 32 + 80;
+const ANALYTIC_ROW_SCRATCH: usize =
+    80 * 16 + 208 + 32 * 8 + 32 * 48 + 3 * 32 * 8 + 32 * 32 + 32 + CONDITIONAL_ROW_SCRATCH;
 
 pub(super) fn analytic_shapes(
     root: &Path,
