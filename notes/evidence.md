@@ -7,21 +7,21 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 688 frozen inputs retained in `b2236a6`
+Both complete 24-stage gates verify the 690 frozen inputs retained in `2d41739`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with read-only source. Input manifests match before/after and across gates:
-`db276f2b369bf02f500968393df075fc8a8c5f1c93b3a04ce854dca80bb9fd01`.
-Only the two notes files change during finalization. The other 686 inputs retain
-fingerprint `74a6efab1e2307f9ea96528d69686207529192542b373fa95ccd50a433b117ca`;
-all inputs remain tracked. Final documentation verification passes 552 local links.
+`5ed9054ba12166782a615e93c2d88a2fe6191e965e7d6d24534027ae1a9220c6`.
+Only the two notes files change during finalization. The other 688 inputs retain
+fingerprint `963a85a7d3a4d6e4eb855428296717a95856bc9cd3da805c365c0b67370b93bc`;
+all inputs remain tracked. Final documentation verification passes 557 local links.
 
-Each platform executes 577 ordinary Rust tests, including all 112 public catalog
-tests and the six new LEFT JOIN tests, plus the separate lease subprocess.
+Each platform executes 583 ordinary Rust tests, including all 113 public catalog
+tests and all six new COALESCE tests, plus the separate lease subprocess.
 No ordinary test is ignored or filtered; the selected lease child reports six
 filtered siblings. Maintenance passes 96 tooling tests, 44 independent codec
-fixtures and 549 local links. Independent aggregate semantics pass 24 cases and
+fixtures and 554 local links. Independent aggregate semantics pass 24 cases and
 composition passes 311 cases. The Rust join corpus separately checks 648 cases.
 Both allocation campaigns retain positions 0–984 and healthy control 985 at each
 pathname length; the ordered lists were reconciled explicitly. The caller ceiling
@@ -32,14 +32,68 @@ graph checks. All 43 graph cases, two oracle controls, three CLI limits, genesis
 lease contention and independent column order pass. Linux retains the two Darwin
 ACL exclusions.
 
-Both receipts have zero finalization errors. Stage times total 1,818.142 seconds
-on macOS and 1,002.320 seconds on Linux; overlapping verification runs are not
-performance benchmarks. Receipt SHA-256 values are respectively
-`a24faa80a7f705aae1e85e7ef52e2ae98929366d6184b6da3a5999509df0c6e2` and
-`842af5ccc991ad87e638928616584690937c27291068d922f03fdf68fea8ada0`.
+Both receipts have zero finalization errors. Stage times total 1,967.956 seconds
+on macOS and 1,339.058 seconds on Linux. Receipt SHA-256 values are respectively
+`3eab12523340abcfeacb40649576c88a31f04c3819c7e505bb849edcc477c282` and
+`776593688463c0186df4e95f2481798dae78ed2a69e36e823b8fb228cf08ffbc`.
+Overlapping verification runs are not performance benchmarks. Resource sampling
+observed normal/warning host memory pressure and 1,650–2,093 MiB of swap use.
+A compiler burst used about nine container CPU cores and 1.76 GiB; the container
+was subsequently capped at two CPUs. Container network traffic remained about
+2 kB. These host observations do not qualify engine physical-memory bounds.
 Owned gate/control outputs, source exports, logs, example databases and containers
 are removed. The existing verification image and toolchains remain. Windows,
 broader durability, physical-memory and sanitizer qualification remain unfinished.
+
+### Numeric COALESCE defaults
+
+`4d0550e`, `df7d912`, `1c46016`, `f9a0da1` and `2d41739` implement and verify
+two-argument numeric COALESCE. The [language contract](../docs/language.md)
+pins first-non-NULL selection, common INT64/DOUBLE typing, NULLability and
+left-to-right short-circuit evaluation. Both branches still bind, and a first
+argument error propagates. The existing postfix representation gains one binary
+operation; a bounded cursor derives conditional edges without a second expression
+arena or prepared descriptor. Computed dependencies descend only to earlier
+definitions and use the existing row cache and output buffers. Conservative
+admission and materialization boundaries remain intact.
+
+Independent literal results cover NULL combinations, exact INT64 extremes and
+values beyond DOUBLE's exact range, mixed coercion, signed zero, nonfinite bits,
+word-boundary validity and scratch reuse. Tests distinguish skipped and demanded
+arithmetic/dependency/aggregate-finalization errors, retain diagnostic spans and
+repeated terminal errors, and exercise malformed types, NULLability, arity and the
+32-operation bound. LEFT JOIN defaults pass exact/one-byte-short admission,
+20 cancellation phases and forced grouping replay alongside unchanged inner-join
+and NULL-extended controls. Ordinary and observed small-stack queries pass.
+Catalog allocation and native I/O callers demand defaults and skip faulting
+fallbacks while retaining their literal result oracles.
+
+Final review repaired a missing rejection of NULL for a required cursor input.
+Type and NULLability are now checked before cursor state changes; negative
+controls reject invalid inputs and then complete a valid retry. The independent
+ownership equation was also missing the new cursor payload. It now accounts for
+744 bytes through the cursor's fields, construction arrays and pending indices,
+without importing admission constants or changing its equality/negative controls.
+The first two gates were deliberately interrupted for the input repair. A later
+GNU gate rejected the stale ownership equation; its matching macOS run was
+stopped before changing inputs. One subsequent GNU run ended when Docker was
+accidentally stopped, with exit 137 and OOMKilled=false. None of these incomplete
+runs supplies complete-gate evidence; the matching full passes above supersede
+them. An initial native fixture used a function on WHERE's unsupported left side;
+explicit projection repaired the fixture without widening the language profile.
+
+The [default-region query](../examples/default-region.sql) and its
+[tutorial](../docs/getting-started.md) run from fresh native databases on both
+platforms. The result has required INT64 region/count, nullable INT64 total and
+literal rows `(0, 90, 2)`, `(1, 30, 2)`, `(2, 30, 1)`.
+A complete-CLI observation on the composed example's 8,192-row nullable sales
+table compares `FROM sales |> SELECT amount+0 AS base |> SELECT base+0 AS next
+|> AGGREGATE SUM(next) AS total` with `COALESCE(amount, 0)` replacing `amount+0`.
+Both return literal sum 11,264. Seven alternating runs per query have medians
+13.625 ms and 9.535 ms, including process startup and open/prepare/execute/close.
+This short local sample establishes no speed ranking or reason to change owners.
+Variadic forms, other data types, NULL literals, CASE, IF and IFNULL remain outside
+this milestone. No persistent representation changes.
 
 ### Equality left joins
 
