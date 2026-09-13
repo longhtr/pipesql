@@ -25,6 +25,29 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
+## Active: transient allocation ownership in wide LEFT JOIN
+
+Extend the existing public allocator caller to observe requested and usable
+allocations inside execute/step calls for the retained 64-column nullable STRING
+LEFT JOIN. Current step-boundary checks cannot see an allocation created and
+freed within one call. Preserve their literal eleven-pair oracle, both pathname
+lengths, false-attribution control and complete release checks.
+
+The initial ownership/observer trace has a 30-minute budget. The public memory
+report is an atomic load. A scoped observer can compare live heap increments
+with the contemporaneous database charge after allocation and before freeing,
+without an engine hook or allocation in the observer. Keep caller storage fixed
+while armed and tie pointer access to the database borrow. Reconcile baseline
+owners independently; this does not assign each pointer to an engine account.
+
+The cheapest falsifier is an intentionally uncharged allocation that is created
+and freed inside one observed call while entry/exit heap totals agree. Require
+its detection and reject a disabled observer. Then exercise the real join and
+repair any exposed admission or release defect. Complete focused controls, both
+sequential frozen platform gates, documentation, evidence, cleanup and local
+commits. Whole-process/RSS, arbitrary allocators and concurrent allocation
+histories remain outside this observation. Publication restrictions are unchanged.
+
 ## Completed: natural logarithms for analytical scales
 
 `5f769c5` implements one-argument LN through the existing scalar owners. The
