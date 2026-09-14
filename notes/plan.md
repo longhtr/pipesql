@@ -76,7 +76,7 @@ quality work is not deferred to the final gate.
 
 ### Ordered checkpoint goals
 
-The active goal is **8. Measure and teach the complete workflow**.
+The active goal is **9. Verify the frozen internal checkpoint**.
 
 The [cost and learning checkpoint](evidence.md#report-cost-and-complete-learning-path)
 `14de33c` adds opt-in phase measurements and completes the setup-to-cleanup
