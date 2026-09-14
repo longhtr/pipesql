@@ -618,6 +618,139 @@ def check_oracle_controls(baseline):
         raise AssertionError("wrong receipt expectation accepted")
 
 
+
+
+def report_payload(mutation, column, edit, repair_checksum=False):
+    """Edit the first event unit, optionally re-anchoring valid encoded bytes."""
+    unit_name = g.object_id(g.uint(mutation.indexbytes, 64, 8),
+                            g.uint(mutation.indexbytes, 72))
+    path = mutation.path / "units" / unit_name
+    unit = bytearray(path.read_bytes())
+    metadata = 64 + 32 * g.uint(unit, 12)
+    descriptor = next(at for at in range(64, metadata, 32) if g.uint(unit, at) == column)
+    begin, length = g.uint(unit, descriptor + 8, 8), g.uint(unit, descriptor + 16)
+    edit(unit, begin)
+    if repair_checksum:
+        put(unit, descriptor + 20, g.crc32c(unit[begin:begin + length]))
+    path.write_bytes(unit)
+    if repair_checksum:
+        put(mutation.indexbytes, 84, g.crc32c(unit[:metadata]))
+        (mutation.path / "units" / mutation.index.name).write_bytes(mutation.indexbytes)
+        put(mutation.catalog, 152, g.crc32c(mutation.indexbytes))
+        mutation.save_catalog()
+
+
+def check_report_corruption(work, driver):
+    """Distinguish full graph validation from the report's payload demand."""
+    def public(path, mode):
+        before = None
+        if mode in ("report-version-reject", "report-corrupt-reject"):
+            before = {p.relative_to(path): p.read_bytes() for p in path.rglob("*") if p.is_file()}
+        call = run_process([str(driver), str(path), mode], capture_output=True,
+                           text=True, timeout=30, cwd=ROOT)
+        assert call.returncode == 0 and not call.stderr, (mode, call.stdout, call.stderr)
+        assert "report corruption check passed" in call.stdout.splitlines(), call.stdout
+        if before is not None:
+            after = {p.relative_to(path): p.read_bytes() for p in path.rglob("*") if p.is_file()}
+            assert after == before, (mode, "failed admission modified the namespace")
+
+    seed = work / "report-seed"
+    public(seed, "report-setup")
+    baseline = g.inspect(seed)
+    assert [(table["name"], len(table["rows"])) for table in baseline["tables"]] == [
+        ("events", 16), ("dimensions", 4),
+    ]
+    records = []
+    for label, mode, reason in [
+        ("measurement", "report-measurement-reject", "payload checksum"),
+        ("version", "report-version-reject", "unsupported authoritative version"),
+    ]:
+        path = work / ("report-" + label)
+        shutil.copytree(seed, path)
+        mutation = Mutation(path)
+        if label == "measurement":
+            report_payload(mutation, 5, lambda data, at: put(data, at, data[at] ^ 1, 1))
+        else:
+            mutation.roots(lambda data: put(data, 8, 8))
+        try:
+            g.inspect(path)
+        except g.Invalid as error:
+            assert reason in str(error), (label, str(error))
+        else:
+            raise AssertionError((label, "independent checker accepted corruption"))
+        public(path, mode)
+        records.append(dict(case="report-" + label, independent_rejection=reason,
+                            public_mode=mode))
+    # A newer authoritative graph cannot be hidden behind a valid older root.
+    path = work / "report-newer-corrupt"
+    shutil.copytree(seed, path)
+    role = (path / "ROOT.B").read_bytes()[32]
+    shutil.copyfile(seed.with_suffix(".older-root"), path / "ROOT.B")
+    change_root(path / "ROOT.B", lambda data: put(data, 32, role, 1))
+    assert g.inspect(path)["tables"] == baseline["tables"]
+    older_path = work / "report-older-valid"
+    shutil.copytree(seed, older_path)
+    older_root = seed.with_suffix(".older-root").read_bytes()
+
+    def select_older(data):
+        # Preserve each slot's size and role; select the same issued snapshot.
+        data[40:80] = older_root[40:80]
+        data[112:176] = older_root[112:176]
+
+    Mutation(older_path).roots(select_older)
+    older_tables = g.inspect(older_path)["tables"]
+    assert older_tables[0]["rows"] == baseline["tables"][0]["rows"][:8]
+    assert older_tables[1] == baseline["tables"][1]
+    mutation = Mutation(path)
+    catalog_path = path / "units" / mutation.cat.name
+    original = catalog_path.read_bytes()
+    damage(catalog_path, 64)
+    try:
+        g.inspect(path)
+    except g.Invalid as error:
+        assert "object checksum" in str(error), str(error)
+    else:
+        raise AssertionError("accepted damaged newer report catalog")
+    public(path, "report-corrupt-reject")
+    catalog_path.write_bytes(original)
+    public(path, "report-healthy")
+    assert g.inspect(path)["tables"] == baseline["tables"]
+    records.append(dict(case="report-newer-corrupt", outcome="refused-and-restored"))
+
+    # A repairable root plus denied directory writes must expose recovery debt.
+    path = work / "report-failed-recovery"
+    shutil.copytree(seed, path)
+    damage(path / "ROOT.A", 108)
+    assert not g.inspect(path)["roots_settled"]
+    permissions = path.stat().st_mode & 0o777
+    path.chmod(0o555)
+    try:
+        public(path, "report-recovery-reject")
+    finally:
+        path.chmod(permissions)
+    public(path, "report-healthy")
+    healed = g.inspect(path)
+    assert healed["roots_settled"] and healed["tables"] == baseline["tables"]
+    records.append(dict(case="report-failed-recovery", outcome="refused-and-healed"))
+    # A checksum-valid changed amount is structurally valid but has a wrong
+    # report answer. The public literal oracle must detect that distinction.
+    path = work / "report-wrong-answer-control"
+    shutil.copytree(seed, path)
+    report_payload(Mutation(path), 4, lambda data, at: put(data, at + 1, 11, 8),
+                   repair_checksum=True)
+    changed = g.inspect(path)
+    assert changed["tables"][0]["rows"][0][3] == 11
+    call = run_process([str(driver), str(path), "report-healthy"],
+                       capture_output=True, text=True, timeout=30, cwd=ROOT)
+    assert call.returncode != 0 and "report group history" in call.stderr, (
+        call.returncode, call.stdout, call.stderr,
+    )
+    public(seed, "report-healthy")
+    records.append(dict(case="report-wrong-answer-control", outcome="rejected"))
+    (work / "report-cases.json").write_text(json.dumps(records, indent=2) + "\n")
+    return records
+
+
 def write_report(work, source, driver, records):
     assert (
         source
@@ -633,6 +766,7 @@ def write_report(work, source, driver, records):
         base=source_revision(ROOT),
         cases=len(records),
         oracle_controls=2,
+        report_oracle_controls=1,
         cli_limits=3,
         genesis=True,
         lease_contention=True,
@@ -674,6 +808,7 @@ def campaign(work, *, seed_only=False):
     check_namespace_and_authority(check)
     check_cli_limits(seed)
     check_oracle_controls(baseline)
+    checks.records.extend(check_report_corruption(work, driver))
     write_report(work, source, driver, checks.records)
 
 

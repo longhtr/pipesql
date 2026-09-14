@@ -228,9 +228,16 @@ fn check_rows(db: &Database, cancel: &CancellationToken) {
     drop(query);
 }
 
+#[path = "catalog-report-corruption.rs"]
+mod report_corruption;
+
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     assert_eq!(args.len(), 3);
+    if args[2].starts_with("report-") {
+        report_corruption::run(std::path::Path::new(&args[1]), &args[2]);
+        return;
+    }
     let config = Config::new(4_000_000, 8_000_000).unwrap();
     let cancel = CancellationToken::new();
     if args[2] == "reject" {

@@ -227,6 +227,36 @@ power loss, discarded writes or torn storage; the
 [persistence contract](verification.md#persistence-and-recovery-evidence) defines
 those limits.
 
+## Follow corrupt data and failed recovery
+
+The [report corruption caller](../tools/fixtures/catalog-report-corruption.rs)
+uses the same sixteen events to separate payload demand from namespace admission.
+The [graph campaign](../tools/check-catalog-graph.py) damages a measurement payload
+without updating its checksum. Full independent graph inspection rejects it.
+The grouped report still succeeds because it does not read measurement; a direct
+measurement projection fails with `Corrupt`. After dropping that failed cursor,
+the grouped report succeeds again and query reservations are released.
+
+Authoritative metadata has a different boundary. A checksum-valid unsupported
+root version fails during open. A damaged newer catalog also fails even when an
+adjacent older root and its referenced graph are valid. Neither refusal modifies
+the fixture's file contents or removes files. Restoring the deliberately damaged
+catalog permits a healthy report; this test restoration is not database recovery
+of lost data.
+
+For recoverable root damage, the campaign denies directory writes to force
+`RecoveryRequired`. After restoring directory permissions, reopening repairs the
+root and returns the complete report. This exercises one filesystem-permission
+failure, alongside the existing process-cut history; it does not qualify every
+possible recovery failure.
+
+Finally, the campaign changes an amount and recomputes the full checksum chain.
+Independent structural validation accepts those valid bytes, but the literal
+report oracle rejects the changed total. Checksums establish byte integrity, not
+agreement with the intended input. Run these mutations only in the campaign's
+owned copies; its seed and the tutorial database remain available for healthy
+continuation.
+
 ## Follow a failed allocation
 
 The [allocation campaign](../tools/README.md) runs this report through the stock

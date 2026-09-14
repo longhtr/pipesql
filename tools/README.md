@@ -93,7 +93,7 @@ recorded revision after a path move.
 | `check-native-io.py` | Linked byte-I/O calls, partial progress, refusal, and healed outcomes. |
 | `check-native-sanitizer.py` | Explicit nightly AddressSanitizer controls and mutex/default or pathname tests, compared with stock and uninstrumented nightly builds. |
 | `check-catalog-interruption.py` | Stock catalog append/recovery process-termination cuts for the original facts and composed-report histories; independent raw graph and grouped-answer checks. |
-| `check-catalog-graph.py` | Independent persisted-graph checks and negative controls. |
+| `check-catalog-graph.py` | Independent persisted-graph checks, report payload demand and failed recovery, with structural and wrong-answer controls. |
 | [Native allocation reuse](#isolate-native-allocation-reuse) | Optional C control separating allocator reuse from engine accounting. |
 
 These runners compile and execute code. C/Rust callers live in
