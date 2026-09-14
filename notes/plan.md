@@ -7,6 +7,13 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
+The [equality learning example](evidence.md#sql-equality-and-stored-double-bits)
+is complete in `55c6216`. Fresh macOS/GNU arm64 Linux runs verify stored bits,
+four grouping/DISTINCT classes, exact filter IDs and eight equality-join pairs.
+Both wrong-count controls reject the altered oracle before output. Production
+inputs remain unchanged; this example does not expand platform or resource
+qualification.
+
 The [numeric call recognition](evidence.md#numeric-call-recognition) refactor is
 complete in `4ce634c`. One read-only parser decision retains all eighteen function
 spellings, aliases, ordinary-name fallback and call frames. Matching macOS/GNU
@@ -119,24 +126,6 @@ release across 1,020 executions per platform. Both variants observe the same
 logical memory and no temporary use; the measurements retain their sample spread
 and do not justify an engine optimization. Fresh macOS/GNU arm64 Linux runs and
 wrong-total controls pass. All pre-existing non-Markdown inputs remain unchanged.
-
-## Active milestone: SQL equality and stored DOUBLE bits
-
-Add a small public-library example using signed zeros, distinct NaN payloads,
-NULLs with ignored payloads and repeated finite values. Check original values
-after reopen, grouping and DISTINCT classes, ordinary comparisons and exact
-self-join pairs against literal expectations. Validate retained representatives
-against the actual input set without promising incidental order or representative
-choice. Explain why grouping equality differs from ordinary SQL equality through
-the existing predicate, key and duplicate-removal owners.
-
-Keep this an example and learning-path change using existing interfaces. Retain
-explicit schema, completion and release checks, plus a fresh wrong-expectation
-control. Run warnings-denied example checks and sequential fresh macOS/GNU arm64
-Linux executions, followed by maintained tooling/docs checks. Use source comparison
-to delimit unchanged engine/native checkpoints; a newly exposed defect requires
-its own affected-boundary repair and verification. Finish review, compact evidence,
-owned-output cleanup and local commits.
 
 ## Next engineering priorities
 

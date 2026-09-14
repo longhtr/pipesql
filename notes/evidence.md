@@ -5,6 +5,71 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## SQL equality and stored DOUBLE bits
+
+`55c6216` adds [a runnable equality tutorial](../docs/equality.md) and
+[its public-library example](../examples/equality.rs). Eight literal rows contain
+both signed zeros, two distinct NaN representations, two NULLs with different
+ignored payloads and two copies of `1.0`. Reopen preserves every present input's
+bits. Counts distinguish eight rows from six present values; grouping yields
+four classes of two, and DISTINCT retains one actual input representative per
+class. Four predicates retain exact literal ID lists. A self-join emits exactly
+the eight zero/one pairs, with no NULL or NaN match.
+
+The example checks names, types, nullability, complete rows, Finished and logical
+execution/preparation release before printing. Its private numeric copies compare
+DOUBLE bits directly. The fixture oracle accepts either original zero or NaN
+representation without deriving equivalence from production or promising an
+incidental representative or order. The reading path connects ordinary predicates,
+key comparison and hashing, duplicate removal and the join's match guard.
+
+Warnings-denied release Clippy and example builds pass sequentially on macOS and
+GNU arm64 Linux. Fresh wrong-expectation controls on both platforms change only
+`EXPECTED_GROUP_ROWS` from `[2, 2, 2, 2]` to `[3, 2, 2, 2]`. Each exits 1 with
+empty stdout and exactly `Error: "group counts differ from the literal oracle"`
+on stderr. These variants compile with `rustc --edition=2024 -O -D warnings`,
+an explicit crate name, `--extern pipesql` pointing at the stock release rlib and
+`-L dependency` pointing at its release dependency directory. No production
+source is changed for the control.
+
+After these checks, fresh healthy runs execute macOS then Linux. Each checks all
+27 report lines, empty stderr and exit 0. Output SHA-256 agrees at
+`ddd81d45d23611d580e370c62c548d76f1d4a3768f2de31ad5ed1b22c568d291`.
+The maintained checks pass 100 tooling tests and 44 independent codec fixtures.
+All 700 pre-existing tracked non-Markdown files are unchanged from `5812a8a`.
+Ordinary Rust suites and native fault/ownership campaigns are not rerun for this
+example-only change; their preceding checkpoints remain separately scoped.
+
+During development, compilation exposed an unnecessary Clone requirement when
+copying an array into a vector; moving the array resolves it without a new trait.
+The first SQL run used reserved `rows` as an alias. Changing the example's alias
+to `entries` preserves the existing grammar. Neither issue required an engine
+change, allocation owner, allowance or format revision.
+
+Both platforms use frozen 730-input manifest
+`8e9f7c8bf54b652e57be5f61c4c054b48db2e56212c853e1d79bf92e49d844a3`.
+Only the two notes files change afterward; the other 728 inputs retain fingerprint
+`1ce84bffdcf498840ef3a8ea885317fab087a4675d383ae293579297b072591d`.
+
+| Artifact SHA-256 | macOS | GNU arm64 Linux |
+| --- | --- | --- |
+| Stock equality example | `6dd457d6bc4bb514585737e207252b458864a3645a4222196c7c7042051d19f1` | `3084f67d99474ed292a1b722d67866c284b2e92b7877f77cb82f8b1a11085b7c` |
+| Healthy receipt | `d96415c7a260b671460fb48e3fcb9d811c0fa41a725ede7a2244b0f1033a67d9` | `e02d937032b1d6fb986e862f0262949316c24f9654eeea954833481ccfe8154c` |
+
+Monitoring records 43 host and six Docker samples. Host pressure stays normal,
+swap spans 1,350.94–1,462.94 MiB, free disk stays above 187.70 GiB and sampled
+I/O spans 0–65.98 MB/s. Relevant host processes peak at 96.7% CPU and 396,624 KiB
+RSS. Docker peaks at 99.63% CPU and 805.1 MiB, with no OOM and zero network traffic.
+Host en0 counters grow by 4,507,657 input and 2,605,340 output bytes, including
+unrelated traffic. Both platforms use one Cargo job; Linux uses uid/gid 1000,
+one CPU, 2 GiB without extra swap, read-only source and native database storage.
+These observations do not qualify engine admission or process/RSS bounds.
+
+All owned outputs, databases, exports, builds, monitoring and the container are
+removed. The existing workspace target, toolchains and verification image remain.
+Final documentation verification passes 864 local links.
+Broader allocator, concurrency, durability and Windows qualifications remain open.
+
 ## Numeric call recognition
 
 `4ce634c` replaces the numeric parser's duplicate acceptance and frame-selection
