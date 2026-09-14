@@ -127,6 +127,29 @@ logical memory and no temporary use; the measurements retain their sample spread
 and do not justify an engine optimization. Fresh macOS/GNU arm64 Linux runs and
 wrong-total controls pass. All pre-existing non-Markdown inputs remain unchanged.
 
+## Active milestone: inspect a prepared logical plan
+
+Add a borrowed public-library diagnostic view of a prepared query's validated
+semantic nodes, input relationships, column identities and final output positions.
+The learning benefit is direct: readers can compare the runnable query with its
+actual logical structure and distinguish preserved identities from computations.
+Keep this separate from physical scheduling, runtime costs and SQL/CLI syntax.
+
+Trace existing Plan ownership before choosing the text representation. Format
+directly into caller-provided output without an owned report, new engine effects,
+snapshot pins, allocation owners or admission changes. Use concrete formatting
+over the existing representation rather than a generic traversal framework.
+The cheapest falsifier is a literal public-interface example with projections,
+aggregation and a two-input relation; it must remain readable and release all
+owners when formatting fails.
+
+Verify literal diagnostic output, unchanged logical reservations and retained
+snapshot behavior. Add a runnable example and short preparation reading path.
+Complete the affected checks, matching sequential macOS/GNU arm64 Linux core
+gates with independent discovery, then sequential fresh examples. Keep unchanged
+native/resource checkpoints separately scoped. Finish review, compact evidence,
+owned-output cleanup and local commits.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
