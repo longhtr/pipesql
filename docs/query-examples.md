@@ -168,7 +168,9 @@ These literal calls fold during preparation. Compare the previous example's
 `BYTE_LENGTH(region)` with `CHAR_LENGTH(region)` to follow a column-valued call:
 its typed input retains STRING identity, and execution borrows the text to
 produce an INT64. Follow [STRING length evaluation](execution.md#string-length-evaluation)
-through the binder, shared measurement and batch/row readers.
+through the binder, shared measurement and batch/row readers. Continue with
+[stored text measurements](getting-started.md#compare-stored-text-measurements)
+to time complete queries over identical nullable input.
 
 ## Filter by membership
 

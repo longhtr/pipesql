@@ -121,6 +121,66 @@ Remove only the example directory when finished:
 rm -r -- "$pipesql_projection_dir"
 ```
 
+## Compare stored text measurements
+
+[examples/text_cost.rs](../examples/text_cost.rs) creates 4,096 nullable STRING
+rows, then compares BYTE_LENGTH and CHAR_LENGTH over those same stored values.
+Each eight-row cycle contains these explicit classes:
+
+| Stored value | UTF-8 bytes | Unicode scalars |
+| --- | --- | --- |
+| 128 copies of `a` | 128 | 128 |
+| 64 copies of `é` | 128 | 64 |
+| 42 copies of `雪`, followed by `ab` | 128 | 44 |
+| 42 repetitions of the pair (`e`, U+0301), followed by `ab` | 128 | 86 |
+| 32 copies of `😀` | 128 | 32 |
+| 128 NUL characters | 128 | 128 |
+| Empty STRING | 0 | 0 |
+| NULL | NULL | NULL |
+
+The cycle repeats 512 times. There are 3,584 present values; empty STRING counts
+as present. The byte total is `768 × 512 = 393216`, and the scalar total is
+`482 × 512 = 246784`. Each query projects one length, then returns COUNT(*),
+COUNT(length) and SUM(length). Run the example with a fresh database path:
+
+```sh
+pipesql_text_dir=$(mktemp -d)
+cargo run --release --offline --locked --example text_cost -- "$pipesql_text_dir/texts"
+```
+
+Require successful exit and this first line:
+
+```text
+verified rows=4096 present=3584 byte_total=393216 scalar_total=246784 samples=10 executions_per_sample=50 warmups=10
+```
+
+Both prepared queries stay live. Each variant runs ten warmups, followed by ten
+sample pairs with alternating order. A sample averages fifty complete checked
+executions. Every execution verifies the literal row counts and total, reaches
+Finished and restores its reservation baseline after result destruction. The
+example also checks the three INT64 columns: COUNT outputs are required and SUM
+is nullable.
+
+Setup/open and preparation timings are separate. Execution timing includes
+result construction, input reads, computation, aggregation, row checks, completion
+and destruction; printing and the final reservation check are outside it. These
+are warm repeated queries, with no cache eviction. Compare all ten pairs and the
+reported additional logical memory; temporary reservations must remain zero.
+These counters do not measure allocator extents, process RSS or filesystem I/O.
+
+Predict which costs the two queries share before comparing their times. Reading
+stored text requires validation even when the eventual operation only requests
+its byte length. Follow [stored text measurement costs](execution.md#stored-text-measurement-costs)
+to distinguish obtaining a valid STRING from measuring it. The fixed input and
+shared work can limit any timing difference; these measurements do not establish
+a general performance ranking.
+
+Remove only the example directory when finished:
+
+```sh
+rm -r -- "$pipesql_text_dir"
+```
+
 ## Observe grouping with less memory
 
 [The grouping example](../examples/grouping.rs) creates 8,192 sales rows across

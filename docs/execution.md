@@ -152,6 +152,28 @@ reads its input: nullability facts do not suppress source corruption. The retain
 [corrupted-payload test](../src/catalog_snapshot/tests/queries.rs) distinguishes
 skipped text from demanded failures using the same damaged stored column.
 
+### Stored text measurement costs
+
+The [stored-text workload](getting-started.md#compare-stored-text-measurements)
+uses the same nullable rows for byte and scalar projections. Both query plans
+read STRING input, produce one numeric length and feed a global aggregate.
+They retain the same kinds of payload and computed buffers.
+
+Follow `ColumnBuffer::read` and `Unit::read_column` in
+[native_unit.rs](../src/native_unit.rs). Loading a demanded column reads its
+encoded bytes and checks its checksum and typed layout. `Column::validate`
+checks STRING offsets, per-cell bounds, NULL payloads and UTF-8. `Column::string`
+then uses a checked UTF-8 conversion to return each borrowed `str`. These checks
+belong to obtaining the source value, before `string_length` measures it.
+
+For an existing `str`, `string_length::Unit::Bytes` reads its byte count, while
+`string_length::Unit::UnicodeScalars` counts its characters. The complete queries also pay for
+source validation, numeric output, aggregate updates and result ownership.
+A constant-time byte measurement therefore does not make the stored-text query
+constant-time in its input size. The example measures that complete path; its
+wall time cannot isolate one kernel's contribution or establish an optimizer
+opportunity. Literal calls follow the separate preparation-time folding path.
+
 ## Blocking operator ownership
 
 [`blocking.rs`](../src/execution/blocking.rs) owns sorted inputs and the run,
