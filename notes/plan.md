@@ -78,7 +78,7 @@ quality work is not deferred to the final gate.
 
 ### Ordered checkpoint goals
 
-The active goal is **2. Exercise scaled spill and refusal**.
+The active goal is **3. Reconcile transient allocation histories**.
 
 Goals 1 and 2 are verified; seven planned outcomes remain. These queue entries are not
 already activated goals. Activate one through the goal tool at a time. Prerequisites below name queue positions; the
