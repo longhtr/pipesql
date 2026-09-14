@@ -76,7 +76,7 @@ quality work is not deferred to the final gate.
 
 ### Ordered checkpoint goals
 
-The active goal is **6. Challenge query composition**.
+The active goal is **7. Challenge corruption and failed recovery**.
 
 The [composition checkpoint](evidence.md#composed-report-identities-and-demand)
 `651fde1` verifies 350 composition records and 24 semantic cases on matching
