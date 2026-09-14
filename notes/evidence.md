@@ -5,6 +5,79 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Numeric call recognition
+
+`4ce634c` replaces the numeric parser's duplicate acceptance and frame-selection
+chains with read-only `Parser::pending_numeric_call`. Recognition checks token
+kind, the following left parenthesis and one mapping for all eighteen supported
+spellings. Numeric parsing still owns token consumption and stack admission.
+Known-call mappings are unchanged; an unknown name explicitly returns None
+instead of relying on the previous guarded SAFE_DIVIDE fallback. The
+[preparation explanation](../docs/frontend.md#expressions-and-predicates) follows
+nested CAST, COALESCE, ABS and MOD through their postfix operand boundaries.
+
+Source review retains all previous recognized-call branches and spellings,
+including aliases and LOG10. Only the parser changes in production; the lexer,
+binder, typed program, independent validators, execution, resource/native owners,
+allowances and formats are byte-for-byte unchanged from `e7688ab`. No registry,
+mutable parser state or new allocation owner is introduced. This is a readability
+change, with no performance claim or new accepted syntax.
+
+All eighteen focused parser tests pass. Two new tests retain a literal nested
+postfix program across mixed case and POW/POWER and CEIL/CEILING aliases, ordinary
+bare function names as columns, reserved CAST rejection and exact unknown-call
+diagnostics. The first unknown-call assertion incorrectly expected a span on
+`(`. Inspection of the retained parser shows the existing pipe-loop stop and
+end-of-query trailing-syntax error; the corrected test preserves that message
+and empty end span. Existing arity, nesting, token and operation-bound tests remain.
+
+Sequential macOS and GNU arm64 Linux 14-stage core gates pass 663 ordinary Rust
+tests per platform, independently discovered across sixteen targets: seven
+nonempty suites and nine empty example harnesses. macOS has 445 library, 15 CLI,
+159 catalog, 10 execution, seven lifecycle, six load and 21 filesystem tests;
+Linux has 447 library and 19 filesystem tests with the other counts equal. No
+ordinary test is ignored or filtered. The separate lease subprocess passes one
+test with six intentional filtered siblings. Each platform also passes 100
+tooling tests, 44 independent codec fixtures, warnings-denied Clippy, Rustdoc
+and doc tests. Stage times total 467.937 s on macOS and 167.165 s on Linux.
+All 24 independent semantic cases and 322 composition records agree after only
+the documented database-path stdout and composition-digest normalization.
+
+Fresh examples run after the campaigns, macOS then Linux. Declared setup returns
+the documented north/south totals. Numeric CAST returns required DOUBLE bits
+`4340000000000000`, `3ff0000000000000` and `0000000000000000`. SQRT returns
+nullable DOUBLE bits `402a751f9447b724`; query-flow returns nullable INT64 38.
+Every query has its expected schema, one complete row, successful status and exit.
+The [CAST ownership checkpoint](#explicit-numeric-double-casts) and earlier native
+fault evidence remain distinct; their campaigns are not repeated for unchanged
+runtime and native owners.
+
+Both gates use frozen 728-input manifest
+`05767f31c32a6359b1432f1262cc0c7f40f6bbcf36e4e684e84fcfe2fb223541`.
+Only the two notes files change afterward. The other 726 inputs retain fingerprint
+`7f1289be32bc2318ee60e69e62a0607451cc21efceb7b5709ab0d6b483df0ee6`.
+
+| Artifact SHA-256 | macOS | GNU arm64 Linux |
+| --- | --- | --- |
+| Core receipt | `6f5e78b8786da7375b346b71d187788c9cadfa5bd81b76c364cd3c8fc55c0f65` | `7057a95655f4bbb6f3dedd5dd4bb92e05b68aacf780b935495eeaf85820f7b2b` |
+| Stock CLI | `77ba1933a21c46dc4a1d4c20ee2f998c22f73a21587c92c582541dfb82281da8` | `c15c788ddc921a21a020a03445d63c651e12ad56066f49d16ef072162fa4a55e` |
+
+Monitoring records 73 host and 21 Docker samples. Host pressure is normal/warning,
+swap spans 1,197.62–1,814.81 MiB, free disk stays above 186.60 GiB and sampled
+I/O spans 0–136.32 MB/s. Relevant host processes peak at 99.1% CPU and 776,528 KiB
+RSS. Docker peaks at 99.93% CPU and 1.237 GiB memory, with no OOM and zero network
+traffic. Host en0 counters grow by 179,280,998 input and 11,235,839 output bytes,
+including unrelated traffic. Each platform uses one Cargo job; Linux uses uid/gid
+1000, one CPU, 2 GiB without extra swap, no network and native database storage.
+Sampling can miss short peaks and does not qualify engine admission or RSS.
+Broader allocator histories, durability, concurrency, sanitizers and Windows
+qualification remain open.
+
+Owned targets, databases, exports, manifests, logs, monitor outputs and the
+verification container were removed. The existing workspace target, installed
+toolchains and preserved image are unchanged; no owned verification process remains.
+Final documentation verification passes 847 local links.
+
 ## Explicit numeric DOUBLE casts
 
 `1fcd7bd` adds CAST of a bounded numeric expression to FLOAT64 or DOUBLE.

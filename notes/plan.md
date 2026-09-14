@@ -7,14 +7,17 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
+The [numeric call recognition](evidence.md#numeric-call-recognition) refactor is
+complete in `4ce634c`. One read-only parser decision retains all eighteen function
+spellings, aliases, ordinary-name fallback and call frames. Matching macOS/GNU
+arm64 Linux core gates pass 663 ordinary Rust tests, 24 semantic cases, 322
+composition records and fresh examples. Runtime and resource owners are unchanged.
+
 The [explicit numeric DOUBLE casts](evidence.md#explicit-numeric-double-casts)
-are complete in `1fcd7bd`. CAST makes integer-to-DOUBLE conversion explicit while
-retaining numeric argument demand, NULLability and existing DOUBLE bits. The
-learning exercise shows how conversion order changes precision and overflow.
-Matching macOS/GNU arm64 Linux core gates pass 661 ordinary Rust tests, complete
-public ownership and healthy controls, 24 semantic cases, 322 composition records
-and fresh paired examples. No allocation owner, allowance or persistent format
-changes. The earlier [STRING character-length work](evidence.md#string-character-length-projections)
+in `1fcd7bd` retain numeric argument demand, NULLability and existing DOUBLE bits.
+The learning exercise shows how conversion order changes precision and overflow;
+its ownership and healthy-control checkpoint remains retained separately. The
+[STRING character-length work](evidence.md#string-character-length-projections)
 and [stored text workload](evidence.md#stored-text-measurement-costs) remain closed.
 
 The [allocation-capacity preflight](evidence.md#allocation-capacity-preflight)
@@ -116,24 +119,6 @@ release across 1,020 executions per platform. Both variants observe the same
 logical memory and no temporary use; the measurements retain their sample spread
 and do not justify an engine optimization. Fresh macOS/GNU arm64 Linux runs and
 wrong-total controls pass. All pre-existing non-Markdown inputs remain unchanged.
-
-## Active milestone: numeric call recognition
-
-Numeric calls currently repeat their spelling list in an acceptance guard and a
-separate pending-frame dispatch chain. Consolidate that parser responsibility so
-adding or reviewing a spelling requires one mapping. Preserve reserved CAST,
-ordinary identifier fallback, case handling, aliases, arity, precedence, bounds
-and exact diagnostics. Keep the lexer, binder, typed program, independent
-validators and runtime/resource owners unchanged. Reassess if this requires a
-registry, new mutable parser state or a grammar change.
-
-Trace a nested CAST/conditional/arithmetic expression with a literal postfix
-expectation and update the existing preparation reading path. Verify meaningful
-parser/public boundaries, then sequential matching macOS/GNU arm64 Linux core
-gates and independent semantic/composition campaigns, followed by fresh examples.
-Source comparison delimits unchanged runtime and native owners; closed fault
-campaigns remain closed. Complete review, compact evidence, owned-output cleanup
-and local commits before selecting further work.
 
 ## Next engineering priorities
 
