@@ -805,3 +805,23 @@ fn analytic_input_slots_and_evaluation_boundary_are_validated() {
         );
     }
 }
+
+#[test]
+fn date_year_output_rejects_a_raw_date_position() {
+    let directory = Directory(
+        std::env::temp_dir().join(format!("pipesql-physical-year-{}", std::process::id())),
+    );
+    let db = Database::create(
+        &directory.0,
+        crate::Config::new(4_000_000, 1_000_000).unwrap(),
+    )
+    .unwrap();
+    let query = db
+        .prepare("FROM lineitem |> SELECT EXTRACT(YEAR FROM l_shipdate) AS y")
+        .unwrap();
+    let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
+    validate_physical(&plan, &query, &db, RootState::Empty, 0).unwrap();
+    // Legacy ordinal six is a DATE payload, not the extracted INT64 identity.
+    plan.pipelines[0].columns[0] = 6;
+    assert!(validate_physical(&plan, &query, &db, RootState::Empty, 0).is_err());
+}

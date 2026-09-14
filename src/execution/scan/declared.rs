@@ -468,6 +468,13 @@ mod tests {
             ("ints", DataType::Int64, 278_496, "n", 0),
             ("doubles", DataType::Double, 278_496, "n", 0),
             ("dates", DataType::Date, 147_424, "n", 0),
+            (
+                "years",
+                DataType::Date,
+                147_424,
+                "EXTRACT(YEAR FROM n)",
+                6_176,
+            ),
             ("strings", DataType::String, 540_640, "n", 0),
             (
                 "lengths",
@@ -523,7 +530,7 @@ mod tests {
             assert!(scans[0].payloads[1..].iter().all(Option::is_none));
             drop(admitted);
             if computed_bytes != 0 {
-                // Lengths use one 260-word numeric buffer. CAST uses two and a
+                // Lengths and years use one 260-word buffer. CAST uses two and a
                 // 256-word evaluation stack. Both retain the 4-KiB allowance.
                 assert_eq!(
                     crate::execution::computed::BatchLayout::new(plan.scan())

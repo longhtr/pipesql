@@ -157,6 +157,16 @@ macOS/GNU arm64 Linux core, semantic/composition and affected ownership checks,
 then sequential fresh examples, documentation, review and owned-output cleanup.
 Commit coherent verified changes and synchronize the reviewed checkpoint.
 
+Implementation and focused checks now cover stored calendar boundaries, folded
+constants, identities, materialization, owned errors, cancellation, independent
+validator mutations, corrupted DATE demand and forced grouping replay. The
+[calendar lesson](../docs/calendar-year.md) checks a fresh five-row database.
+Matching macOS/GNU arm64 Linux core gates pass 680 ordinary tests, 100 tooling
+tests and 44 codec fixtures. Both ownership campaigns, 24 semantic cases, 326
+composition records and sequential fresh examples pass. Final evidence, cleanup
+and checkpoint commits remain. The ownership selection includes two DATE
+extraction shapes and retains independent missing-marker controls.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete

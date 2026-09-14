@@ -99,6 +99,7 @@ pub(super) enum ParsedOp {
     Date(SourceSpan),
     WindowCount,
     StringLength(StringLengthUnit),
+    DateYear,
     // Separate interval and unit tokens keep every operation within eight
     // bytes; DATE support must not enlarge the shared parser arena.
     DateInterval {
@@ -616,10 +617,65 @@ impl Parser<'_> {
             );
             return Ok(expression);
         }
+        if self.is_word("EXTRACT") && next == Some(Kind::LeftParen) {
+            let call = self.take(Kind::Reserved)?;
+            self.take(Kind::LeftParen)?;
+            let part = self.take(Kind::Identifier)?;
+            if !text(self.source, part).eq_ignore_ascii_case("YEAR") {
+                return Err(Error::Parse {
+                    message: "only YEAR extraction is admitted",
+                    span: part,
+                });
+            }
+            self.word("FROM")?;
+            let mut argument_parentheses = 0;
+            while self.peek() == Kind::LeftParen {
+                self.take(Kind::LeftParen)?;
+                argument_parentheses += 1;
+            }
+            let next = self
+                .tokens
+                .values
+                .get(self.position + 1)
+                .filter(|_| self.position + 1 < self.tokens.len)
+                .map(|token| token.kind);
+            let date = (self.is_word("DATE") && next == Some(Kind::Quoted))
+                || ((self.is_word("DATE_ADD") || self.is_word("DATE_SUB"))
+                    && next == Some(Kind::LeftParen));
+            let mut expression = if date {
+                self.projection_constant(parsed)?
+            } else {
+                let mut expression = ParsedExpression::EMPTY;
+                let column = self.column()?;
+                expression.push(ParsedOp::Column(column), column)?;
+                expression
+            };
+            for _ in 0..argument_parentheses + 1 + parentheses {
+                self.take(Kind::RightParen)?;
+            }
+            expression.push(ParsedOp::DateYear, call)?;
+            expression.span = span(
+                usize::from(self.tokens.values[first].span.start),
+                usize::from(self.tokens.values[self.position - 1].span.end),
+            );
+            return Ok(expression);
+        }
         if self.peek() != Kind::Quoted && !date {
             self.position = first;
             return self.numeric_expression();
         }
+        let mut expression = self.projection_constant(parsed)?;
+        for _ in 0..parentheses {
+            self.take(Kind::RightParen)?;
+        }
+        expression.span = span(
+            usize::from(self.tokens.values[first].span.start),
+            usize::from(self.tokens.values[self.position - 1].span.end),
+        );
+        Ok(expression)
+    }
+
+    fn projection_constant(&mut self, parsed: &mut Parsed) -> Result<ParsedExpression, Error> {
         let mut expression = ParsedExpression::EMPTY;
         match self.comparison_literal(parsed)? {
             ParsedLiteral::String(span) => expression.push(ParsedOp::String(span), span)?,
@@ -643,13 +699,6 @@ impl Parser<'_> {
             }
             _ => return Err(Error::Corrupt("projection constant syntax")),
         }
-        for _ in 0..parentheses {
-            self.take(Kind::RightParen)?;
-        }
-        expression.span = span(
-            usize::from(self.tokens.values[first].span.start),
-            usize::from(self.tokens.values[self.position - 1].span.end),
-        );
         Ok(expression)
     }
 

@@ -15,6 +15,9 @@ mod byte_length;
 #[path = "catalog_lifecycle/char_length.rs"]
 mod char_length;
 
+#[path = "catalog_lifecycle/date_year.rs"]
+mod date_year;
+
 #[path = "catalog_lifecycle/cast.rs"]
 mod cast;
 

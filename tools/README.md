@@ -32,7 +32,7 @@ the command and output ownership.
 | [models/attempt_publication.py](models/attempt_publication.py) | Root/fence representation model under stated persistence premises. |
 | `aggregate-rounding-vectors.py` | Independent rational rounding vectors; `--check` compares retained inputs. |
 | `check-aggregate-semantics.py` | Public stock CLI aggregate boundary campaign. |
-| `check-composable-aggregates.py` | Independent public composition corpus through the stock CLI: legacy aggregates and positional unions over the retained catalog fixture. |
+| `check-composable-aggregates.py` | Independent calendar-year expectations and public composition corpus through the stock CLI: legacy aggregates and positional unions over the retained catalog fixture. |
 | `test-q1-compare.py` | Regression tests for strict typed output parsing and comparison. |
 
 The models do not execute the engine or prove filesystem persistence. Their
@@ -136,11 +136,12 @@ The caller samples requested/usable admission after every step and independently
 reconciles nonheap allowances at admission, first spill, emission and completion.
 Count-only cases require zero temporary consumption; typed input and the second
 stage of the consecutive-count case retain spill coverage. Both pathname lengths
-run all seventeen cases; a one-byte attribution error must fail. BYTE_LENGTH and
+run all nineteen cases; a one-byte attribution error must fail. BYTE_LENGTH and
 CHAR_LENGTH each measure nullable Unicode text before and after analytic
 spooling, with independent byte/scalar expectations, complete results,
 requested/usable ownership and release checks. Numeric CAST runs before and after
-analytic spooling, retaining exact DOUBLE values for integers 0–511.
+analytic spooling, retaining exact DOUBLE values for integers 0–511. Calendar-year
+extraction checks the DATE-to-INT64 result before and after the same spooling boundary.
 Composed-reader bound failures are reported after the
 barrier participants join. This selection also checks the complete append
 allocation-size ranges and full-width maximum-column growth, reuse, publication,

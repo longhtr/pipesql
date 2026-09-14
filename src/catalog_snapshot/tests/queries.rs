@@ -789,3 +789,127 @@ fn catalog_query_typed_nulls_cross_row_quanta() {
     observed.sort_by_key(|row| row.0);
     assert_eq!(observed, expected);
 }
+
+#[test]
+fn year_extraction_reads_only_demanded_date_payloads() {
+    use crate::{
+        AppendLimits, ColumnDeclaration, ColumnInput, ColumnValues, DataType, DateValue, QueryStep,
+    };
+    let parent = Fixture::directory();
+    let path = parent.0.join("year-demand");
+    let db =
+        Database::create_empty(&path, crate::Config::new(4_000_000, 2_000_000).unwrap()).unwrap();
+    let cancel = CancellationToken::new();
+    db.declare_table(
+        "dates",
+        &[
+            ColumnDeclaration {
+                name: "id",
+                data_type: DataType::Int64,
+                nullable: false,
+            },
+            ColumnDeclaration {
+                name: "d",
+                data_type: DataType::Date,
+                nullable: true,
+            },
+        ],
+        &cancel,
+    )
+    .unwrap();
+    let day = DateValue::from_days_since_unix_epoch(0).unwrap();
+    let mut append = db
+        .begin_append(
+            "dates",
+            AppendLimits {
+                batches: 1,
+                encoded_bytes: 20_000,
+            },
+            &cancel,
+        )
+        .unwrap();
+    append
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::Int64(&[0, 1]),
+                    validity: &[3],
+                },
+                ColumnInput {
+                    values: ColumnValues::Date(&[day, day]),
+                    validity: &[3],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    let receipt = append.commit(&cancel).unwrap();
+    let skipped = [
+        ("FROM dates |> EXTEND EXTRACT(YEAR FROM d) AS y |> WHERE id < 0 |> SELECT y", None),
+        ("FROM dates |> EXTEND EXTRACT(YEAR FROM d) AS y |> WHERE id IS NOT NULL OR y > 0 |> AGGREGATE COUNT(*) AS n", Some(2)),
+    ].map(|(sql, expected)| (db.prepare(sql).unwrap(), expected));
+    let demanded = [
+        "FROM dates |> SELECT EXTRACT(YEAR FROM d) AS y",
+        "FROM dates |> SELECT EXTRACT(YEAR FROM d) AS y |> SELECT CAST(y AS DOUBLE) AS n",
+        "FROM dates |> SELECT EXTRACT(YEAR FROM d) AS y |> SELECT COALESCE(1, y) AS chosen |> WHERE chosen < 0",
+        "FROM dates |> EXTEND EXTRACT(YEAR FROM d) AS y |> WHERE y IS NULL |> SELECT id",
+    ].map(|sql| db.prepare(sql).unwrap());
+    // Format 6 stores descriptors in declaration order. Corrupt only the second
+    // column's payload, retaining its descriptor and expected checksum.
+    let name = object(receipt.transaction().sequence(), 1).name();
+    let file = path
+        .join(UNITS_NAME)
+        .join(std::str::from_utf8(&name).unwrap());
+    let mut bytes = fs::read(&file).unwrap();
+    let offset = u64::from_le_bytes(bytes[104..112].try_into().unwrap()) as usize;
+    bytes[offset] ^= 1;
+    fs::write(&file, bytes).unwrap();
+    for (query, expected) in &skipped {
+        let before = db.reserved_memory_bytes();
+        let mut running = db.execute(query, &cancel).unwrap();
+        let mut finished = false;
+        let mut rows = 0;
+        for _ in 0..128 {
+            match running.step() {
+                QueryStep::Progress => (),
+                QueryStep::Rows(batch) => {
+                    assert_eq!(batch.len(), 1);
+                    assert_eq!(batch.value(0, 0), expected.map(crate::Value::Int64));
+                    rows += 1;
+                }
+                QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("skipped DATE read: {error}"),
+            }
+        }
+        assert!(finished);
+        assert_eq!(rows, usize::from(expected.is_some()));
+        drop(running);
+        assert_eq!(db.reserved_memory_bytes(), before);
+    }
+    for query in &demanded {
+        let before = db.reserved_memory_bytes();
+        let mut running = db.execute(query, &cancel).unwrap();
+        let mut failed = false;
+        for _ in 0..128 {
+            match running.step() {
+                QueryStep::Progress => (),
+                QueryStep::Failed(Error::Corrupt(_)) => {
+                    failed = true;
+                    break;
+                }
+                _ => panic!("demanded corrupt DATE must fail before rows"),
+            }
+        }
+        assert!(failed);
+        assert!(matches!(
+            running.step(),
+            QueryStep::Failed(Error::Corrupt(_))
+        ));
+        drop(running);
+        assert_eq!(db.reserved_memory_bytes(), before);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+}

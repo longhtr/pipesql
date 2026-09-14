@@ -124,7 +124,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
         ],
     );
     let cancel = CancellationToken::new();
-    for variant in 0..40 {
+    for variant in 0..42 {
         let joined = matches!(variant, 0 | 2 | 6 | 16 | 17);
         let sql = if joined {
             "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> AGGREGATE SUM(l.n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY l.k"
@@ -246,6 +246,12 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
             39 => {
                 "FROM facts |> ORDER BY n DESC |> EXTEND CAST(n AS FLOAT64) AS converted |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(converted, 3)) AS nrows GROUP AND ORDER BY k"
             }
+            40 => {
+                "FROM facts |> EXTEND DATE '2000-02-29' AS calendar_date |> ORDER BY n DESC |> EXTEND EXTRACT(YEAR FROM calendar_date) AS y |> AGGREGATE SUM(y+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
+            }
+            41 => {
+                "FROM facts |> ORDER BY n DESC |> EXTEND DATE '2000-02-29' AS calendar_date |> EXTEND EXTRACT(YEAR FROM calendar_date) AS y |> AGGREGATE SUM(y+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
+            }
             _ => sql,
         };
         let query = database.prepare(sql).unwrap();
@@ -334,6 +340,7 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
                 21 => [[1, 14, 4], [2, 14, 2]],
                 34 | 35 => [[1, 13, 2], [2, 10, 1]],
                 36 | 37 => [[1, 9, 2], [2, 8, 1]],
+                40 | 41 => [[1, 4007, 2], [2, 2007, 1]],
                 _ => unreachable!(),
             }
         );

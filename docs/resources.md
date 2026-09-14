@@ -686,7 +686,7 @@ copies, never references into this scratch.
 BYTE_LENGTH and CHAR_LENGTH borrow the checked STRING value from its source or
 an owned projection constant. Each numeric result needs one ordinary payload/validity
 buffer; it needs neither a copied text buffer nor a numeric expression stack.
-A scan computing only one length therefore reserves 6,176 computed-workspace
+A scan computing only one column length therefore reserves 6,176 computed-workspace
 bytes: 256 payload words, four validity words and the existing 4,096-byte
 allowance. The demanded STRING payload remains separately admitted by the scan.
 Later numeric computations can borrow the stored length through the usual
@@ -694,6 +694,13 @@ dependency mapping. No allocation owner or conservative workspace ceiling change
 BYTE_LENGTH reads the byte count; CHAR_LENGTH traverses the bounded UTF-8 value
 to count Unicode scalars. Neither measurement allocates. Character counting runs
 within the existing row/batch work quantum and cancellation schedule.
+
+A runtime EXTRACT(YEAR FROM date_column) projection also borrows its typed input
+directly and reserves one 6,176-byte numeric result workspace when it is the only
+scan computation. The
+DATE source payload has its existing separate admission. Calendar conversion
+uses fixed integer arithmetic; it adds no allocator owner, expression stack,
+allowance or persistence format. Constant extraction folds during preparation.
 
 ### Native paths, stack, and I/O
 

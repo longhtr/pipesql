@@ -445,6 +445,7 @@ fn identity_at(
             definition.expression,
             frontend::Computation::Numeric(_)
                 | frontend::Computation::StringLength { .. }
+                | frontend::Computation::DateYear(_)
                 | frontend::Computation::Constant(_)
                 | frontend::Computation::WindowCount
         ) {

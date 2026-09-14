@@ -53,6 +53,9 @@ in one public-library flow. It checks old/new rows and retained outcomes across
 reopen. Follow [their distinct owners](transactions.md#follow-snapshot-pins-and-retained-outcomes)
 to see why reader data pins and transaction history have separate lifetimes.
 
+Use [Group dates by calendar year](calendar-year.md) to trace a stored DATE through
+calendar conversion, a typed numeric projection and grouped execution.
+
 ## Work on the repository
 
 - [Engineering](engineering.md): how to choose, implement, review, and finish changes.

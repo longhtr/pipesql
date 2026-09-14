@@ -88,7 +88,7 @@ separate from this query manifest.
 | `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN or positional set operations. Comma-separated FROM inputs remain unsupported. |
 | `FROM (pipe_query) [AS alias]` | Uses the child query’s ordinary outputs as an independent input. A JOIN may also use this form. See [table subqueries](#table-subqueries) for scope and ordering. |
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
-| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts numeric `ABS`/`SIGN`/`FLOOR`/`CEIL` (`CEILING`)/`ROUND`/`SQRT`/`LN`/`LOG10`/`EXP`, INT64 `DIV`/`MOD` and two-argument `POW` (`POWER`), `SAFE_DIVIDE`, `COALESCE` and `NULLIF`, explicit numeric `CAST(... AS FLOAT64)` (`DOUBLE`), bounded STRING and DATE constants, `BYTE_LENGTH`/`CHAR_LENGTH` projections and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
+| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts numeric `ABS`/`SIGN`/`FLOOR`/`CEIL` (`CEILING`)/`ROUND`/`SQRT`/`LN`/`LOG10`/`EXP`, INT64 `DIV`/`MOD` and two-argument `POW` (`POWER`), `SAFE_DIVIDE`, `COALESCE` and `NULLIF`, explicit numeric `CAST(... AS FLOAT64)` (`DOUBLE`), bounded STRING and DATE constants, `BYTE_LENGTH`/`CHAR_LENGTH` and `EXTRACT(YEAR FROM ...)` projections, and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
 | `EXTEND expression [[AS] alias], ...` | Appends columns using the same expression profile as SELECT. Preserves all input columns, their identities and ranges. Ordinary expressions preserve order; analytic count clears it. Star expansion, reducing aggregate calls and other scalar forms remain unsupported. |
 | `SET name=expression, ...` | Replaces each named ordinary column in place with a fresh identity. Accepts direct references of any supported type and the nonanalytic SELECT expression profile. Every expression sees the original input; replacements can change type and NULLability. |
 | `DROP name, ...` | Removes all ordinary columns matching each name, including duplicate names. Rejects removal of the entire row. |
@@ -592,6 +592,26 @@ constants; DATE compares against DATE. COUNT-to-INT64 comparison remains exact;
 comparison with a DOUBLE constant uses DOUBLE conversion. STRING compares
 against STRING constants in UTF-8 byte order, without normalization or
 collation.
+
+`EXTRACT(YEAR FROM input)` accepts a visible DATE column or an existing bounded
+DATE constant expression as the complete expression in SELECT, EXTEND or SET.
+It returns the Gregorian calendar year as INT64 in 1 through 9999, with the
+input's nullability. Constant DATE literals and DATE_ADD/DATE_SUB expressions
+fold during preparation; every intermediate DATE still obeys the range and
+nesting limits above. Parentheses around the call and its input are accepted.
+Use the resulting identity in later numeric expressions, filters, grouping,
+joins, ordering or set operations. Stored DATE values remain unchanged.
+
+Other extraction parts, non-DATE inputs, untyped NULL, column-valued DATE shifts,
+nested extraction, direct arithmetic around the call and `SUM(EXTRACT(...))`
+remain unsupported. Unused projections and skipped Boolean branches do not
+demand DATE payloads. Scalar COALESCE still follows the
+[scan payload-loading rule](execution.md#scalar-expression-evaluation).
+Demanded input corruption and errors in later numeric expressions remain errors.
+The pinned GoogleSQL [EXTRACT reference](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/date_functions.md#extract)
+and [NULL fixtures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_timestamp.cc#L7763)
+establish the upstream meaning. Follow the
+[calendar-year lesson](calendar-year.md) for a complete stored-date example.
 
 STRING constants use one single- or double-quoted token. Both its source payload
 (excluding delimiters) and decoded UTF-8 value are limited to 32 bytes. Empty

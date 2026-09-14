@@ -266,6 +266,28 @@ def check_grouping(queries, rows):
         [["null"]],
         database="empty",
     )
+    years = [(EPOCH + datetime.timedelta(days=row[6])).year for row in rows]
+    queries.composed(
+        "date-year-stored",
+        "FROM lineitem |> SELECT EXTRACT(YEAR FROM l_shipdate) AS y |> AGGREGATE SUM(y) AS total",
+        [[encoded(sum(years))]],
+    )
+    queries.composed(
+        "date-year-boundaries",
+        "FROM lineitem |> LIMIT 1 |> SELECT EXTRACT(YEAR FROM DATE '0001-01-01') AS first, EXTRACT(YEAR FROM DATE '2016-01-01') AS calendar, EXTRACT(YEAR FROM DATE '9999-12-31') AS last",
+        [[encoded(1), encoded(2016), encoded(9999)]],
+    )
+    queries.composed(
+        "date-year-shift",
+        "FROM lineitem |> LIMIT 1 |> SELECT EXTRACT(YEAR FROM DATE_ADD(DATE '1999-12-31', INTERVAL 1 DAY)) AS y",
+        [[encoded(2000)]],
+    )
+    queries.composed(
+        "date-year-empty",
+        "FROM lineitem |> SELECT EXTRACT(YEAR FROM l_shipdate) AS y |> AGGREGATE SUM(y) AS total",
+        [["null"]],
+        database="empty",
+    )
     queries.aggregate("global", GLOBAL_SQL, rows, [], [("sum", 0), ("avg", 0), ("count", 0)])
     queries.aggregate(
         "empty-global",

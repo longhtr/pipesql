@@ -854,6 +854,7 @@ pub(crate) enum Computation {
         input: SemanticColumn,
         unit: StringLengthUnit,
     },
+    DateYear(SemanticColumn),
     Numeric(Expression),
     Constant(Constant),
     WindowCount,
@@ -862,7 +863,9 @@ pub(crate) enum Computation {
 impl Computation {
     pub(crate) fn columns(&self) -> impl Iterator<Item = SemanticColumn> {
         let (single, expression) = match self {
-            Self::Copy(column) | Self::StringLength { input: column, .. } => (Some(*column), None),
+            Self::Copy(column)
+            | Self::StringLength { input: column, .. }
+            | Self::DateYear(column) => (Some(*column), None),
             Self::Numeric(expression) => (None, Some(expression)),
             Self::Constant(_) | Self::WindowCount => (None, None),
         };
@@ -884,11 +887,13 @@ impl Computation {
     pub(crate) fn numeric(&self) -> Result<&Expression, Error> {
         match self {
             Self::Numeric(expression) => Ok(expression),
-            Self::Copy(_) | Self::StringLength { .. } | Self::Constant(_) | Self::WindowCount => {
-                Err(Error::Corrupt(
-                    "nonnumeric computation reached a numeric kernel",
-                ))
-            }
+            Self::Copy(_)
+            | Self::StringLength { .. }
+            | Self::DateYear(_)
+            | Self::Constant(_)
+            | Self::WindowCount => Err(Error::Corrupt(
+                "nonnumeric computation reached a numeric kernel",
+            )),
         }
     }
 
@@ -897,13 +902,15 @@ impl Computation {
             Self::Copy(column) => column.data_type(),
             Self::Numeric(expression) => expression.data_type,
             Self::Constant(value) => value.data_type(),
-            Self::StringLength { .. } | Self::WindowCount => DataType::Int64,
+            Self::StringLength { .. } | Self::DateYear(_) | Self::WindowCount => DataType::Int64,
         }
     }
 
     fn nullable(&self) -> bool {
         match self {
-            Self::Copy(column) | Self::StringLength { input: column, .. } => column.nullable(),
+            Self::Copy(column)
+            | Self::StringLength { input: column, .. }
+            | Self::DateYear(column) => column.nullable(),
             Self::Numeric(expression) => expression.nullable(),
             Self::Constant(_) | Self::WindowCount => false,
         }
@@ -920,6 +927,14 @@ impl Computation {
             }
             Self::StringLength { .. } => Err(Error::Corrupt(
                 "STRING length requires an available STRING input",
+            )),
+            Self::DateYear(column)
+                if column.data_type() == DataType::Date && available.contains(column) =>
+            {
+                Ok(())
+            }
+            Self::DateYear(_) => Err(Error::Corrupt(
+                "year extraction requires an available DATE input",
             )),
             Self::Numeric(expression) => expression.validate(available),
             Self::WindowCount => Ok(()),

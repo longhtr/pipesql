@@ -71,6 +71,12 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
                 DataType::Int64,
             );
         }
+        if let Computation::DateYear(column) = definition.expression {
+            return number(
+                date_year(self.plan, column, &mut self.raw)?,
+                DataType::Int64,
+            );
+        }
         if self.plan.has_conditional_work() {
             return self.conditional_value(target);
         }
@@ -85,8 +91,8 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
             }
             let current = &self.plan.computed[index];
             if matches!(current.expression, Computation::Constant(_)) {
-                // STRING length reads its owned text constant directly. That
-                // dependency has no numeric program or cached numeric payload.
+                // Typed-input projections read their owned constants directly.
+                // These have no numeric program or cached numeric payload.
                 continue;
             }
             if let Computation::StringLength {
@@ -95,6 +101,10 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
             } = current.expression
             {
                 cache[index] = Some(string_length(self.plan, column, unit, &mut self.raw)?);
+                continue;
+            }
+            if let Computation::DateYear(column) = current.expression {
+                cache[index] = Some(date_year(self.plan, column, &mut self.raw)?);
                 continue;
             }
             if matches!(current.expression, Computation::WindowCount) {
@@ -190,6 +200,11 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
                 depth -= 1;
                 continue;
             }
+            if let Computation::DateYear(column) = definition.expression {
+                cache[index] = Some(date_year(self.plan, column, &mut self.raw)?);
+                depth -= 1;
+                continue;
+            }
             if matches!(definition.expression, Computation::WindowCount) {
                 let count = self
                     .partition_count
@@ -279,33 +294,53 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
     }
 }
 
+// Copies map back to their inputs. A nonnumeric value in this pipeline is
+// either checked source/materialized data or an owned projection constant.
+fn typed_input<'input, 'row: 'input>(
+    plan: &'input Pipeline<'_>,
+    column: SemanticColumn,
+    mut raw: impl FnMut(u8) -> Result<Value<'row>, Error>,
+) -> Result<Value<'input>, Error> {
+    let slot = plan.slots[column.identity().value() as usize];
+    if usize::from(slot) < MAX_ROW_VALUES {
+        return raw(slot);
+    }
+    let definition = plan
+        .computed
+        .get(usize::from(slot) - MAX_ROW_VALUES)
+        .ok_or(Error::Corrupt("typed projection input slot"))?;
+    let Computation::Constant(value) = &definition.expression else {
+        return Err(Error::Corrupt(
+            "typed projection input is not stored or constant",
+        ));
+    };
+    Ok(value.value())
+}
+
 fn string_length<'row>(
     plan: &Pipeline<'_>,
     column: SemanticColumn,
     unit: StringLengthUnit,
-    mut raw: impl FnMut(u8) -> Result<Value<'row>, Error>,
+    raw: impl FnMut(u8) -> Result<Value<'row>, Error>,
 ) -> Result<Option<u64>, Error> {
-    let slot = plan.slots[column.identity().value() as usize];
-    let value = if usize::from(slot) < MAX_ROW_VALUES {
-        raw(slot)?
-    } else {
-        // Copies map back to their input. The only computed STRING producer
-        // within this pipeline is an owned constant; materialized text is raw.
-        let definition = plan
-            .computed
-            .get(usize::from(slot) - MAX_ROW_VALUES)
-            .ok_or(Error::Corrupt("STRING-length input slot"))?;
-        let Computation::Constant(value) = &definition.expression else {
-            return Err(Error::Corrupt("STRING-length input is not stored text"));
-        };
-        value.value()
-    };
-    match value {
+    match typed_input(plan, column, raw)? {
         Value::Null if column.nullable() => Ok(None),
         Value::String(value) => i64::try_from(unit.measure(value.as_str()))
             .map(|length| Some(length as u64))
             .map_err(|_| Error::Corrupt("STRING length exceeds INT64")),
         _ => Err(Error::Corrupt("STRING-length input type or nullability")),
+    }
+}
+
+fn date_year<'row>(
+    plan: &Pipeline<'_>,
+    column: SemanticColumn,
+    raw: impl FnMut(u8) -> Result<Value<'row>, Error>,
+) -> Result<Option<u64>, Error> {
+    match typed_input(plan, column, raw)? {
+        Value::Null if column.nullable() => Ok(None),
+        Value::Date(value) => Ok(Some(value.year() as u64)),
+        _ => Err(Error::Corrupt("year extraction input type or nullability")),
     }
 }
 
@@ -423,11 +458,12 @@ impl BatchLayout {
             }
         }
         let mut needed = plan.dependencies(&targets[..count])?;
-        // Length borrows checked text directly; numeric scratch stores only its
-        // result. A validated STRING input cannot also be a numeric-kernel input.
+        // Typed-input projections borrow checked STRING/DATE values directly.
+        // Numeric scratch stores their results, never their nonnumeric inputs.
         for (index, definition) in plan.computed.iter().enumerate() {
             if needed[MAX_ROW_VALUES + index]
-                && let Computation::StringLength { input: column, .. } = definition.expression
+                && let Computation::StringLength { input: column, .. }
+                | Computation::DateYear(column) = definition.expression
             {
                 let slot = usize::from(plan.slots[column.identity().value() as usize]);
                 if slot < MAX_ROW_VALUES {
@@ -450,7 +486,7 @@ impl BatchLayout {
                 layout.buffers += 1;
                 if slot >= MAX_ROW_VALUES {
                     match &plan.computed[slot - MAX_ROW_VALUES].expression {
-                        Computation::StringLength { .. } => (),
+                        Computation::StringLength { .. } | Computation::DateYear(_) => (),
                         computation => {
                             let depth = computation.numeric()?.stack_depth();
                             layout.depth = layout.depth.max(depth as u8);
@@ -542,19 +578,26 @@ impl BatchScratch {
                 self.ready[slot] = true;
                 continue;
             }
-            if let Computation::StringLength {
-                input: column,
-                unit,
-            } = definition.expression
-            {
+            if matches!(
+                definition.expression,
+                Computation::StringLength { .. } | Computation::DateYear(_)
+            ) {
                 let offset = usize::from(self.layout.mapping[slot]) * WORDS_PER_COLUMN;
                 let (values, validity) = data
                     .get_mut(offset..offset + WORDS_PER_COLUMN)
-                    .ok_or(Error::Corrupt("STRING-length output buffer mapping"))?
+                    .ok_or(Error::Corrupt("typed projection output buffer mapping"))?
                     .split_at_mut(ROWS);
                 validity.fill(0);
                 for (lane, &row) in selection.iter().enumerate() {
-                    let value = string_length(plan, column, unit, |slot| raw(slot, row as usize))?;
+                    let input = |slot| raw(slot, row as usize);
+                    let value = match definition.expression {
+                        Computation::StringLength {
+                            input: column,
+                            unit,
+                        } => string_length(plan, column, unit, input)?,
+                        Computation::DateYear(column) => date_year(plan, column, input)?,
+                        _ => unreachable!(),
+                    };
                     values[lane] = value.unwrap_or(0);
                     if value.is_some() {
                         validity[lane / 64] |= 1 << (lane % 64);

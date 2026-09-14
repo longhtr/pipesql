@@ -453,6 +453,7 @@ fn bind_expression(
             ParsedOp::Empty
             | ParsedOp::WindowCount
             | ParsedOp::StringLength(_)
+            | ParsedOp::DateYear
             | ParsedOp::String(_)
             | ParsedOp::Date(_)
             | ParsedOp::DateInterval { .. }
@@ -1503,7 +1504,21 @@ impl Binder<'_, '_> {
 
     fn bind_computation(&self, syntax: &ParsedExpression) -> Result<Computation, Error> {
         let ops = &syntax.ops[..usize::from(syntax.len)];
+        let (ops, extract_year) = match ops {
+            [input @ .., ParsedOp::DateYear] => (input, true),
+            _ => (ops, false),
+        };
         let constant = match ops {
+            [ParsedOp::Column(span)] if extract_year => {
+                let column = self
+                    .facts()
+                    .column(self.resolve(*span)?)
+                    .ok_or(Error::Corrupt("year input has no semantic facts"))?;
+                if column.data_type() != DataType::Date {
+                    return Err(bind_error("EXTRACT YEAR requires a DATE column", *span));
+                }
+                return Ok(Computation::DateYear(column));
+            }
             [ParsedOp::WindowCount] => return Ok(Computation::WindowCount),
             [ParsedOp::Column(span), ParsedOp::StringLength(unit)] => {
                 let column = self
@@ -1571,6 +1586,16 @@ impl Binder<'_, '_> {
             }
             _ => return Ok(Computation::Numeric(self.bind_expression(syntax)?)),
         };
+        if extract_year {
+            let Constant::Date(date) = constant else {
+                return Err(Error::Corrupt("year extraction constant is not DATE"));
+            };
+            let mut expression = Expression::EMPTY;
+            expression.ops[0] = Op::Integer(date.year());
+            expression.len = 1;
+            expression.data_type = DataType::Int64;
+            return Ok(Computation::Numeric(expression));
+        }
         Ok(Computation::Constant(constant))
     }
 

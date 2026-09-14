@@ -2097,3 +2097,46 @@ fn nullif_validates_numeric_arguments_nullable_identity_and_admission() {
         "FROM facts |> SELECT k, NULLIF(n, k) AS value |> WHERE value>NULLIF(1, 0) |> AGGREGATE SUM(value) AS total GROUP BY k",
     );
 }
+
+#[test]
+fn date_year_definitions_reject_invalid_types_scope_and_nullability() {
+    let (_temp, db) = database(4_000_000);
+    for mutation in 0..6 {
+        let mut query = db
+            .prepare("FROM lineitem |> SELECT EXTRACT(YEAR FROM l_shipdate) AS y")
+            .unwrap();
+        validate(&query.plan).unwrap();
+        let definition = &mut query.plan.computed[0];
+        let Computation::DateYear(input) = definition.expression else {
+            panic!("typed year computation");
+        };
+        match mutation {
+            0 => definition.expression = Computation::DateYear(SourceColumn::QUANTITY.semantic()),
+            1 => {
+                definition.expression = Computation::DateYear(SemanticColumn::new(
+                    input.identity().value(),
+                    DataType::Date,
+                    true,
+                ))
+            }
+            2 => {
+                definition.expression =
+                    Computation::DateYear(SemanticColumn::new(99, DataType::Date, false))
+            }
+            3 => {
+                definition.column = SemanticColumn::new(
+                    definition.column.identity().value(),
+                    DataType::Double,
+                    false,
+                )
+            }
+            4 => {
+                definition.column =
+                    SemanticColumn::new(definition.column.identity().value(), DataType::Int64, true)
+            }
+            5 => definition.input = RelationId(16),
+            _ => unreachable!(),
+        }
+        assert!(validate(&query.plan).is_err(), "year mutation {mutation}");
+    }
+}

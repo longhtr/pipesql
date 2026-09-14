@@ -24,6 +24,10 @@ impl DateValue {
         self.days
     }
 
+    pub(crate) fn year(self) -> i64 {
+        self.components().0
+    }
+
     pub(crate) fn from_days(days: i32) -> Option<Self> {
         (-719_162..=2_932_896)
             .contains(&days)
@@ -64,6 +68,9 @@ impl DateValue {
     }
 
     fn components(self) -> (i64, i64, i64) {
+        // Decode within a 400-year Gregorian cycle, with March as month zero.
+        // Moving January/February to the previous year puts the leap day last;
+        // the final adjustment restores the ordinary calendar year.
         let shifted = i64::from(self.days) + 719468;
         let era = shifted.div_euclid(146097);
         let d = shifted - era * 146097;

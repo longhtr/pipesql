@@ -203,6 +203,9 @@ impl fmt::Display for LogicalPlan<'_> {
             write!(output, "c{} = ", computed.column.identity().value())?;
             match &computed.expression {
                 Computation::Copy(column) => write!(output, "copy c{}", column.identity().value())?,
+                Computation::DateYear(column) => {
+                    write!(output, "extract year c{}", column.identity().value())?
+                }
                 Computation::StringLength { input, unit } => write!(
                     output,
                     "{} c{}",
