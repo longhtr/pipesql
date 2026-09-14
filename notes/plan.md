@@ -77,7 +77,7 @@ quality work is not deferred to the final gate.
 
 ### Ordered checkpoint goals
 
-The active goal is **1. Establish the composed report**.
+The active goal is **2. Exercise scaled spill and refusal**.
 
 Goal 1 is verified; eight planned outcomes remain. These queue entries are not
 already activated goals. Activate one through the goal tool at a time. Prerequisites below name queue positions; the
