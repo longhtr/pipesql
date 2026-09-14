@@ -80,21 +80,11 @@ reclamation and reopen. Its reading path distinguishes data pins from retained
 success history. Fresh macOS/GNU arm64 Linux runs agree; engine inputs remain
 unchanged.
 
-## Active milestone: computed projection costs
-
-Use a bounded public-library workload to compare six successive computed
-projections with the same six ordered INT64 additions inside one expression.
-Inspect actual evaluation owners, construct identical non-overflowing input and
-check the complete result independently in every measured execution. Alternate
-repeated variants after warmup; separate setup and preparation from execution,
-validation, completion and result destruction. Limit investigation to 30 minutes
-before deciding whether an engine change is justified.
-
-Verify sequential fresh macOS/GNU arm64 Linux runs, targeted lint, maintenance
-and documentation checks. Reuse prior engine evidence only after input comparison.
-Explain what the observed evaluation path costs and what the study cannot infer;
-do not add an optimizer, framework or performance promise from this narrow case.
-Finish local commits, evidence and owned cleanup with publication restricted.
+The [computed projection workload](evidence.md#computed-projection-costs) is
+complete in `5671e4c`. Repeated complete executions confirm the staged form's
+five extra batch buffers and evaluation/copy overhead on this fixed input.
+The study retains a runnable comparison and the current evaluation owners;
+no general optimizer or performance guarantee follows from the narrow result.
 
 ## Next engineering priorities
 

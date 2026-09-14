@@ -5,6 +5,91 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Computed projection costs
+
+`5671e4c` adds [projection_cost.rs](../examples/projection_cost.rs), with
+[replay instructions](../docs/getting-started.md#compare-computed-projection-costs)
+and the [evaluation explanation](../docs/execution.md#computed-projection-costs).
+It compares six successive SELECT additions with the same six left-to-right
+additions inside one SELECT expression. Both use the same scan/global-aggregate
+producer structure and stored input: 32,768 nonnullable INT64 amounts, repeating
+0 through 99 in 256-row append batches. COUNT is 32,768 and SUM after adding six
+is 1,817,536. Every execution checks both literal outputs, complete termination,
+zero observed temporary reservations and release to the shared logical baseline.
+
+The source hypothesis is five extra computed batch buffers and five extra scalar
+program evaluations/result copies per selection. Each 256-row buffer contains
+2,048 payload bytes and 32 validity bytes. Fresh macOS and GNU arm64 Linux runs
+both observe additional logical memory of 362,996 bytes for staged evaluation
+and 352,596 for the single expression: exactly the predicted 10,400-byte gap.
+Both prepared queries remain live, and query/temporary limits are 8,000,000 bytes.
+No transient allocator, physical-memory or I/O conclusion follows from these
+step-boundary logical observations.
+
+The initial macOS trial has descending millisecond timings despite two warmups;
+it is not the retained timing comparison. The final example warms each variant
+twenty times and averages one hundred checked executions per sample, alternating
+which variant runs first across ten sample pairs. Each platform completes 2,040
+checked executions. Timing includes result construction, execution, row validation,
+completion and destruction, excluding printing and the final reservation check.
+No cache eviction is attempted. The table summarizes the ten per-sample averages
+in milliseconds; these are not individual-query tail latencies.
+
+| Platform | Staged minimum / median / maximum | Single minimum / median / maximum |
+| --- | ---: | ---: |
+| macOS | 3.465 / 3.527 / 3.559 | 3.046 / 3.056 / 3.107 |
+| GNU arm64 Linux | 3.026 / 3.0365 / 3.061 | 2.369 / 2.3805 / 2.770 |
+
+The single expression is faster in all ten pairs on each platform. Median paired
+relative reductions are 12.80% and 21.66%, respectively. These observations locate
+a cost in this narrow repeated workload, not a general query-speed or platform
+comparison. Retain the existing owners: automatic substitution would need to
+preserve each definition's demanded failure span, shared uses, conditional work,
+materialization and admission. This small case alone does not repay that broader
+semantic and maintenance obligation. No optimizer or admission change is retained.
+
+An initial Clippy check rejects two indexed loops; the example now iterates its
+sample pairs directly. Final warnings-denied example Clippy and optimized builds
+pass on both platforms. A separately compiled caller changes only the expected
+SUM to 1,817,537 and must reject the correct result: both platforms exit one with
+the literal-oracle failure and no success output. Maintenance passes 99 tooling
+tests, 44 independent codec fixtures and 769 local links. All 688 prior
+non-Markdown inputs remain byte-identical to `85cd497`; production inputs retain
+the allocation-preflight engine baseline without another core gate.
+
+The frozen 717-input manifest and Linux source export agree, SHA-256
+`342e0058eabf76168b8833cfca1a01eaee3d1246dd14a2087b7a67282d7ef53d`.
+Only the notes files change afterward; the other 715 inputs retain fingerprint
+`fc679ce356832c1addd46beb53c5f8d8f1e59807fdd469deb89f155c07bd0da1`.
+The example source hash is
+`383a0377267324256654075ce0ca6529d3b7a3087d1c69da521b4ef0a3698e5b`.
+Executable hashes are macOS
+`b7cd5988e1f957531b8510f318ac6df30b7a283e568b265f679e888777a1383c`
+and Linux `5d528b05862a784eea172a785d4943811e286f6a8167e81325cbe52fc7d8d3df`.
+Final stdout hashes, which include timings, are macOS
+`1a4fa2b15338f44c73e84f7073924cd524cdb3fda186069bceec8ba55a5472ca`
+and Linux `cc70cce4921ade5f7a04ea5e5e4ad994b26e0b1aec190b486782e14b5d19e77e`.
+
+The host is an 8-GiB Apple M1 running macOS 26.6.2. Rust 1.98.1 uses one Cargo
+job per platform. Linux uses the preserved image, LinuxKit 7.0.12 aarch64,
+uid/gid 1000, one CPU, 2 GiB without extra swap, disabled networking and native
+database storage. macOS setup/open takes 0.720269 seconds and preparation takes
+0.000550; Linux takes 0.077467 and 0.000103. Whole-example process observations
+include setup and all repetitions: macOS 8.05 seconds elapsed, 3.69 user and
+3.14 system, maximum RSS 3,293,184 bytes; Linux 5.67 elapsed, 5.01 user and
+0.57 system, maximum RSS 3,032 KiB. Linux reports 1,224 filesystem-output units;
+these process counters do not measure per-query bytes or qualify resource bounds.
+
+Four sparse host observations show normal/warning pressure, swap
+1,374.50–1,382.50 MiB, over 187 GiB free disk and sampled I/O 0.06–34.17 MB/s.
+The container observation shows 100.64% reported CPU, 381.3 MiB memory and zero
+network traffic; inspection confirms no OOM kill. These are not peak bounds.
+Owned trial/final databases, targets, control callers, exports, logs, manifests
+and container are removed. Existing target, image and toolchains are preserved.
+Final documentation verification passes 773 local links. Broader durability,
+allocation-history, concurrency and platform qualifications remain open. Nothing
+is pushed or published.
+
 ## Snapshot pins and retained outcomes
 
 `45d1158` extends [snapshots.rs](../examples/snapshots.rs) and its
