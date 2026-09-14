@@ -32,6 +32,8 @@ def stages(scope, output):
     fixtures = sorted(
         str(p.relative_to(ROOT)) for p in (ROOT / "tools/fixtures").glob("*.rs")
     )
+    # Full host synchronization costs more than a VM disk using host fsync.
+    # Keep finite supervision while allowing the measured storage-heavy paths.
     common = [
         Stage("rust-version", 30, ["rustc", "-vV"]),
         Stage("cargo-version", 30, ["cargo", "--version"]),
@@ -69,7 +71,7 @@ def stages(scope, output):
         ),
         Stage(
             "rust-tests",
-            600,
+            900,
             [
                 "cargo",
                 "test",
@@ -133,7 +135,7 @@ def stages(scope, output):
             ],
         ),
         Stage(
-            "public-allocation", 1200, [*python, "tools/check-diagnostic-allocation.py"]
+            "public-allocation", 1800, [*python, "tools/check-diagnostic-allocation.py"]
         ),
         Stage("cli-allocation", 600, [*python, "tools/check-cli-allocation.py"]),
         Stage(
@@ -142,7 +144,7 @@ def stages(scope, output):
             [*python, "tools/check-native-initialization.py"],
         ),
         Stage("native-sync", 480, [*python, "tools/check-native-sync.py"]),
-        Stage("native-io", 600, [*python, "tools/check-native-io.py"]),
+        Stage("native-io", 900, [*python, "tools/check-native-io.py"]),
         Stage(
             "catalog-interruption",
             600,

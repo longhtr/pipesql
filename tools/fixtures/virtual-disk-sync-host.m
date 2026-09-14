@@ -1,5 +1,5 @@
-/* Optional macOS controller for the isolated Linux synchronization diagnostic.
- * The only changed VM property within each comparison is synchronizationMode. */
+/* macOS controller for isolated Linux diagnostics and full-storage verification.
+ * Verification refuses a weaker data-disk policy before starting the VM. */
 #import <Foundation/Foundation.h>
 #import <Virtualization/Virtualization.h>
 
@@ -9,7 +9,7 @@
 @implementation ProbeDelegate
 - (void)guestDidStopVirtualMachine:(VZVirtualMachine *)machine {
     (void)machine;
-    exit(0); // The supervisor must also require the guest's PROBE_OK marker.
+    exit(0); // The supervisor must also validate the guest's completion records.
 }
 
 - (void)virtualMachine:(VZVirtualMachine *)machine didStopWithError:(NSError *)error {
@@ -23,7 +23,7 @@ int main(int argc, const char **argv) {
     @autoreleasepool {
         if (argc != 6) {
             fprintf(stderr, "usage: host KERNEL BOOT_DISK NEW_DATA_DISK "
-                    "full|fsync raw|catalog\n");
+                    "full|fsync raw|catalog|verify|verify-smoke|verify-fail\n");
             return 2;
         }
         VZDiskImageSynchronizationMode mode;
@@ -34,13 +34,19 @@ int main(int argc, const char **argv) {
         } else {
             return 2;
         }
-        if (strcmp(argv[5], "raw") != 0 && strcmp(argv[5], "catalog") != 0) {
+        BOOL verification = strcmp(argv[5], "verify") == 0
+            || strcmp(argv[5], "verify-smoke") == 0 || strcmp(argv[5], "verify-fail") == 0;
+        if (verification && mode != VZDiskImageSynchronizationModeFull) {
+            fprintf(stderr, "verification requires full synchronization\n");
+            return 2;
+        }
+        if (!verification && strcmp(argv[5], "raw") != 0 && strcmp(argv[5], "catalog") != 0) {
             return 2;
         }
 
         VZVirtualMachineConfiguration *configuration = [VZVirtualMachineConfiguration new];
         configuration.CPUCount = 1;
-        configuration.memorySize = 256 * 1024 * 1024;
+        configuration.memorySize = (verification ? 2048ULL : 256ULL) * 1024 * 1024;
         // Avoid measuring a newly booted kernel's wait for its first random seed.
         configuration.entropyDevices = @[[[VZVirtioEntropyDeviceConfiguration alloc] init]];
         VZLinuxBootLoader *boot = [[VZLinuxBootLoader alloc]
@@ -81,10 +87,11 @@ int main(int argc, const char **argv) {
             NSLog(@"Configuration: %@", error);
             return 2;
         }
-        NSLog(@"EXPERIMENT CPU=%lu memory=%llu cache=%ld sync=%ld",
+        NSLog(@"EXPERIMENT CPU=%lu memory=%llu cache=%ld sync=%ld network=%lu",
               (unsigned long)configuration.CPUCount,
               (unsigned long long)configuration.memorySize,
-              (long)data.cachingMode, (long)data.synchronizationMode);
+              (long)data.cachingMode, (long)data.synchronizationMode,
+              (unsigned long)configuration.networkDevices.count);
 
         // Keep both alive until shutdown; the VM's delegate reference is weak.
         NS_VALID_UNTIL_END_OF_SCOPE ProbeDelegate *delegate = [ProbeDelegate new];
@@ -97,7 +104,7 @@ int main(int argc, const char **argv) {
                 exit(2);
             }
         }];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC),
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (verification ? 7200LL : 60LL) * NSEC_PER_SEC),
                        dispatch_get_main_queue(), ^{
             NSLog(@"VM timeout");
             exit(3);

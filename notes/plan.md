@@ -13,7 +13,8 @@ outcomes are verified; no checkpoint goal remains. The final tested source is
 covers matching 24-stage macOS/GNU arm64 Linux gates, 687 ordinary Rust tests per
 platform, 103 tooling tests, 44 codec fixtures, 24 semantic cases, 350 composition
 records and 18 fresh scenarios per platform. Engine sources remain at that
-checkpoint; subsequent work adds timing diagnostics and clarifies qualification.
+checkpoint; subsequent work adds timing diagnostics and full-synchronization
+Linux verification.
 
 The [event-report lesson](../docs/event-report.md) is the entry point: build typed
 events and dimensions, append, reopen, report, retain an older snapshot, compare
@@ -33,6 +34,21 @@ Earlier language, tooling, append, reader and grouped-allocation work remains
 closed unless a concrete defect or new workload changes its scope. No historical
 archive is required.
 
+## Full-synchronization Linux checkpoint
+
+The [full-synchronization Linux gate](evidence.md#full-synchronization-linux-verification)
+passed all 24 stages and four fresh storage workflows. The runner verifies the
+host disk policy, native database placement, unprivileged identity, source
+integrity, command failures and owned cleanup. Host interruption also passed its
+cleanup control. The stronger storage policy required longer finite deadlines
+for three storage-heavy stages; engine code and fault coverage are unchanged.
+
+[Testing](../docs/testing.md#linux-verification-with-full-synchronization) owns the
+reproduction command. Routine Docker checks remain available for development;
+new persistence checkpoints need this full-storage path or an equivalent
+established premise. Broader power-loss/device and platform qualifications below
+remain unresolved. No additional verification framework is planned.
+
 ## Synchronization comparison
 
 The [root-cause investigation](evidence.md#virtual-disk-synchronization-root-cause)
@@ -40,8 +56,9 @@ is complete. The observed Docker disk uses a weaker host synchronization policy
 than native macOS PipeSQL. Changing only that policy in a controlled Linux VM
 reproduced the slowdown with both raw writes and the stock catalog caller. The
 [retained experiment](../tools/README.md#compare-virtual-disk-synchronization-guarantees)
-and qualification contract now make that distinction explicit. No engine or full
-gate behavior changed; the completed analytical checkpoint stays closed.
+and qualification contract now make that distinction explicit. That investigation
+changed no engine or gate behavior; the completed analytical checkpoint stays
+closed.
 
 Fresh creation's four recovery calls remain an optimization candidate, not an
 explanation of the platform gap or an activated implementation milestone. Any

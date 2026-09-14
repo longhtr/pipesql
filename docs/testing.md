@@ -94,11 +94,68 @@ do not transfer to another filesystem or operating system automatically.
 Record the database filesystem as well as the OS. On the tested Docker
 host-shared `fuseblk` mount, catalog creation intermittently observed different
 path and open-file inode identities and correctly refused with
-`RecoveryRequired`. That mount remains unqualified. Linux fixtures run on the
-container's native filesystem; source exports may be mounted read-only, and
-receipts can be copied out after the run. The [retained
+`RecoveryRequired`. That mount remains unqualified. Routine Docker fixtures run on the
+container's native filesystem; the full-synchronization workflow below uses a
+private ext4 VM disk. Source exports may be read-only, and receipts are copied
+out after the run. The [retained
 counterexample](../notes/evidence.md#platform-and-sanitizer-limitations)
 distinguishes this unresolved failure from passing native-filesystem checks.
+
+### Linux verification with full synchronization
+
+Use the full-synchronization VM path for new Linux persistence checkpoints and
+comparisons with native macOS. Routine Docker runs remain useful for development,
+but their guest fsync calls do not establish the host disk policy. The
+[verification contract](verification.md#linked-native-effects) distinguishes these
+claims. This workflow exercises one Linux/ext4/Apple Virtualization configuration;
+it does not certify power-loss behavior or qualify every Linux filesystem.
+
+On an Apple silicon Mac, set `PIPESQL_VM_IMAGE` to an already provisioned GNU arm64
+Linux image containing the pinned Rust toolchain, Clippy, rustfmt, Python, Git,
+GNU time, a static C toolchain, tar, mkfs.ext4 and debugfs. Set `PIPESQL_VM_KERNEL`
+to a local arm64 kernel with ext4, procfs, sysfs, devtmpfs and virtio
+block/console/entropy support built in. The image's PATH, CARGO_HOME, RUSTUP_HOME
+and RUSTUP_TOOLCHAIN settings are carried into the guest when present. No image,
+kernel, package or toolchain is downloaded. The macOS command-line SDK and codesign
+are also required. Place the new output directory on APFS; image copies use APFS
+clones.
+
+```sh
+python3 -B tools/check-linux-vm.py \
+  --image "$PIPESQL_VM_IMAGE" --kernel "$PIPESQL_VM_KERNEL" \
+  --output /absolute/new-linux-results
+```
+
+The command freezes the source, prepares an immutable ext4 boot image, and creates
+fresh sparse 8-GiB data disks. The controller requires full synchronization,
+one CPU, 2 GiB guest RAM and no network device. Init mounts the private data disk
+at `/tmp`; the gate and all database callers run as uid/gid 1000. Docker prepares
+the image and reads results only after VM execution. Database files never use a
+host-shared directory during execution. Monitor host pressure while running;
+configured guest RAM is not a whole-process host RSS bound.
+
+The boot sequence first checks native prerequisites and deliberately returns a
+failed command status. The controller also rejects a weaker disk policy before
+boot. It then runs the ordinary complete gate, followed sequentially by fresh
+`declared`, `event_report`, and high/low-budget `scaled_report` examples. Gate
+commands and fault coverage are shared with `sh tools/check.sh`. The Rust-test,
+public-allocation and native-I/O stage deadlines allow the measured cost of full
+host synchronization; they remain finite and do not change engine bounds.
+
+Require command exit zero, `environment.json` status `passed` with no cleanup
+errors, and `gate/result.json` scope `full`, status `passed` and unchanged inputs.
+The outer receipt binds the guest gate to the frozen source manifest. Logs retain
+bootstrap, deliberate-failure, complete-gate and example output. Failed guest
+commands cannot pass because the VM shuts down normally. A failed gate's receipts
+are copied out before its failure is reported; a VM/bootstrap failure may leave
+only console context. Owned containers, images and builds are removed even after
+failure. Review the small receipts and logs, then remove the result directory.
+
+For setup changes, `--bootstrap-only` runs the success and deliberate-failure
+controls without the gate or examples. Its receipt is labeled `bootstrap` and is
+never complete verification evidence. The
+[virtual-disk diagnostic](../tools/README.md#compare-virtual-disk-synchronization-guarantees)
+separately compares the two disk policies on identical small workloads.
 
 ### Diagnose filesystem identity
 

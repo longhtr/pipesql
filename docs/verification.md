@@ -616,7 +616,13 @@ mode before comparing synchronization latency or qualifying durability. A guest
 fault campaign can still verify engine call ordering and failure handling while
 the host policy prevents a full-device durability claim. The
 [controlled comparison](../notes/evidence.md#virtual-disk-synchronization-root-cause)
-records one observed instance. Neither the
+records one observed instance. New Linux persistence checkpoints use the
+[full-synchronization VM workflow](testing.md#linux-verification-with-full-synchronization)
+or another documented storage path that honors the same guarantee. A routine
+Docker gate remains development evidence until its host policy is established.
+A complete gate and a qualified storage premise are separate requirements;
+neither a `passed` label nor guest syscall observation supplies the other.
+Neither the
 [dynamic loader](https://man7.org/linux/man-pages/man8/ld.so.8.html) nor
 [symbol forwarding](https://man7.org/linux/man-pages/man3/dlsym.3.html) instruments
 kernel internals or qualifies another libc/static-linking configuration.

@@ -12,6 +12,7 @@ assertions enabled.
 | --- | --- | --- |
 | `python3 tools/check-maintenance.py` | Current guides, Python sources, and tooling unit fixtures; reports failures. | No |
 | `sh tools/check.sh` | Sequential gate with fresh outputs, source comparison, stage logs, and a result receipt. Accepts `--output` and `--scope`. | Yes |
+| `python3 tools/check-linux-vm.py --image IMAGE --kernel KERNEL --output NEW_DIRECTORY` | Full-synchronization Linux VM gate and fresh examples; owns its images and containers. See [setup](../docs/testing.md#linux-verification-with-full-synchronization). | Yes |
 | `python3 tools/check-docs.py` | Current guides; checks relative links and Markdown anchors. | No |
 | `python3 tools/source-manifest.py` | Build/gate source trees; prints SHA-256 identities and checks Rust file inclusions. | No |
 | `python3 tools/check-fixtures.py` | Independent encoders and retained bytes; refuses disagreement. Does not update fixtures. | No |
@@ -23,6 +24,25 @@ refusals, and limitations are specified in
 It is not a backup, repair, or online-consistency interface. Follow
 [Inspect a persisted catalog](../docs/testing.md#inspect-a-persisted-catalog) for
 the command and output ownership.
+
+## Linux VM verification owners
+
+[check-linux-vm.py](check-linux-vm.py) freezes inputs, prepares the provisioned
+image, checks the controller's policy refusal, runs the guest and validates its
+receipts before removing owned images and containers. The
+[controller](fixtures/virtual-disk-sync-host.m) owns VM resources and enforces
+full synchronization for verification profiles. Its smaller raw/catalog profiles
+remain the latency diagnostic below.
+
+[linux-verification-init.c](fixtures/linux-verification-init.c) owns privileged
+mounts, the unprivileged child, descendant reaping and shutdown. It reports the
+actual child status separately from completed cleanup. The
+[guest commands](fixtures/linux-verification.sh) check placement and identity,
+then invoke the existing gate and examples. No alternate database verification
+implementation lives in the wrapper. [Completion tests](test-linux-vm.py) reject
+missing, duplicate, reordered or failed status records and wrong-source or
+incomplete gate receipts. [Testing](../docs/testing.md#linux-verification-with-full-synchronization)
+owns the public command and its output interpretation.
 
 ## Models and semantic oracles
 

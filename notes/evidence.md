@@ -5753,3 +5753,123 @@ time 1789272882.6037393. The preserved verification image retained SHA-256
 `520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
 Installed toolchains, unrelated containers and Docker's disks/settings were
 unchanged.
+
+## Full-synchronization Linux verification
+
+The complete GNU arm64 Linux gate passed on 2026-09-15 using the
+[full-synchronization VM workflow](../docs/testing.md#linux-verification-with-full-synchronization).
+Linux database operations ran on private ext4 storage. Apple Virtualization's
+full policy carried guest flush requests through the macOS host. Docker prepared
+the boot image and read results after shutdown; it did not host live database
+operations. Engine sources and persistent formats were unchanged.
+
+The exercised configuration was macOS 26.6.2 (25G83), arm64/APFS, with a Linux
+7.0.12-linuxkit guest, GNU libc, Rust/Cargo 1.98.1 and Python 3.11.2. The guest
+had one virtual CPU, 2 GiB configured RAM, no network device and uid/gid 1000 for
+verification. Init mounted the data disk with `barrier=1,data=ordered`. The boot
+image was read-only; each run received a fresh sparse 8-GiB data disk. The image
+SHA-256 was `520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`;
+the kernel SHA-256 was
+`6747bf2ef8eebe6d5b0c45278b55b8f91524e671597a4553523b8ece6af5d9bb`.
+
+All 24 stages passed in 3,238.255 seconds, about 54 minutes. The largest stages
+were Rust tests (809.044 seconds), public allocation (1,514.946 seconds) and
+native I/O (544.038 seconds). Their deadlines are now 900, 1,800 and 900 seconds;
+commands, cases, fault positions and engine bounds did not change. These elapsed
+times describe this configuration, not a fresh matched macOS/Linux benchmark.
+The [controlled disk-policy experiment](#virtual-disk-synchronization-root-cause)
+owns the causal explanation of the earlier timing discrepancy.
+
+The complete run verified:
+
+- 687 ordinary Rust tests across 21 targets, with none ignored or filtered.
+  The separate lease subprocess passed its selected test; its six filtered
+  siblings are intentional.
+- 107 tooling tests, 44 independent codec fixtures, 24 aggregate-semantic cases
+  and 350 composition records.
+- Catalog allocation refusals 0 through 1055 and healthy control 1056 at short
+  and 384-byte pathnames. Report preparation covered refusals 0 through 12 and
+  control 13; construction covered refusals 0 through 106 and control 107.
+  Both pathname profiles passed. CLI allocation covered 552 prefix cases.
+- 80 native initialization cells, 241 native synchronization cells and 1,394
+  native I/O cells. The two Darwin ACL recovery cases remain excluded on Linux.
+- 76 append and 46 recovery interruption cuts with 249 independent graph checks;
+  the composed report covered 88 append and 46 recovery cuts with 273 graph
+  checks. Deliberately wrong histories, rows and receipts were rejected.
+- 48 graph cases, two graph-oracle controls and one report-oracle control, plus
+  retained CLI-limit, genesis, lease-contention and column-order checks.
+
+Four fresh workflows followed the gate sequentially: `declared`, `event_report`
+and `scaled_report` at 32,000,000-byte and 8,000,000-byte budgets with the `even`
+distribution. All completed their independent result checks and cleanup. The
+scaled runs each reported 131,072 events and 20 groups. These four runs do not
+replace the earlier checkpoint's separate record of 18 scenarios per platform.
+
+The environment checks reject the weaker VM policy before boot. Boot controls
+verified native prerequisites and preserved a deliberately failed command's exit
+23. Completion decoding rejects missing, duplicate, reordered and malformed
+records, cleanup errors, wrong source identities and failed gate receipts.
+The retained raw/catalog diagnostic also passed 12 regular VM runs and its
+unformatted-disk rejection control with the extended host controller. Focused
+macOS maintenance passed 107 tooling tests and 44 fixtures. The unchanged macOS
+engine gate was not repeated.
+
+Two setup assumptions were corrected before the successful full run. The kernel
+creates virtual interfaces even without a network device; boot now checks the
+actual device configuration and absence of hardware-backed interfaces. The first
+full attempt completed the ordinary Rust suite with 686 passes and one failure:
+`/dev/fd` was absent, preventing an independent descriptor-leak check. Init now
+creates the normal `/proc/self/fd` alias and checks it before the gate. No database
+file was lost, no engine repair was needed and no test was removed. That failed
+gate retained its receipt and cleaned up; its later stages were not run.
+
+A separate host interruption control sent SIGTERM after the Rust stage started.
+The wrapper propagated exit 143, retained a failed environment receipt and
+removed its two containers, work images and observed VM service process. This
+intentional interruption is cleanup evidence, not another completed gate.
+Normal and deliberate guest failures also required completed guest cleanup;
+VM shutdown alone could not produce a passing receipt. This does not establish
+cleanup after host power loss or SIGKILL of every supervising process.
+
+The successful run's 751-input manifest SHA-256 was
+`ba31f916c8bc467623e856b8a5763c77243c3bf33b5a75aa1fcb4e9a7c1290f6`.
+Both the outer environment receipt and inner gate bound that identity; the gate
+reported unchanged inputs and no finalization errors. Only this evidence file,
+the plan and a synchronization-policy comment in `tools/check.py` changed
+afterward. The other 748 inputs retain fingerprint
+`c57034e643d79aea6409475c33cbd820dcd674e2e7b8702162ffd353fef2a98c`.
+
+| Receipt or log | SHA-256 |
+| --- | --- |
+| Environment | `b77f4beb4d458df18aebc503b00494054583c9e5d6d30d0e8675de457a334e04` |
+| Complete gate | `e7dc7e1bb3b107fd53b7d0dda4c3b745bce230e54a7761acbe3303074996cdb6` |
+| Public allocation | `901a1482b06b8dbefb99bfd76ad184a53dec2a3170031df0abc44c81919982f9` |
+| Native synchronization | `7b30ab902334507a02a9a1eb0004779e509f6fddd096a34a64a7489f417228e9` |
+| Native I/O | `f4ce71a22c0119177da0dd8c5690faa4c63cca09a07a4e6c87acd4d56785788f` |
+| Interruption/recovery | `18594860bb5c6e016e54693a7de68e56e4f02ded25201f9ca8375243f5089180` |
+| Graph validation | `5bae189f1f9233c614b92ed37eb74bcdfc9b21fb1cd54836a9eac6926c4938f8` |
+| Host-interruption environment | `65adc8ba07843b64396fa015a2df2ea1703ba22561ce8a27745b7bb7900a1190` |
+
+Monitoring covered CPU, memory pressure, swap, free space, one-second disk-I/O
+samples and network counters. Across 304 samples, free-memory readings ranged
+from 31 to 64 percent and swap from 1,483.62 to 4,132.62 MiB. Warning-level host
+memory pressure was observed during the long gate. Verification stayed sequential
+with one Cargo job. The full-run VM service sampled 8.7 to 100.9 percent host CPU;
+this includes virtualization work and is not a host CPU admission bound. Owned
+containers peaked at 237.6 MiB sampled memory and recorded no network traffic.
+Free disk space stayed above 174.79 GiB. Configured guest RAM and these observations
+do not qualify engine admission, usable-heap histories or whole-process/RSS bounds.
+
+This checkpoint establishes the exercised Linux storage path and complete gate,
+not power-loss/device certification, broader Linux/filesystem coverage, Windows
+support or general concurrency/sanitizer qualification. The host-shared database
+mount remains excluded. Routine Docker checks remain useful development evidence;
+new persistence checkpoints require the documented full-storage premise.
+
+All owned verification containers, VM processes, disk images, source exports,
+builds, tutorial databases, receipts and monitoring outputs were removed after
+completion. The original workspace target remained at 342 files with maximum
+modification time 1789272882.6037393. The provisioned image, installed toolchains
+and unrelated containers were preserved. Final documentation verification passed
+962 local links. The commands and source reproduce the checks; removed outputs
+are not required inputs and no historical archive was retained.
