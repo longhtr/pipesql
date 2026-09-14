@@ -5048,3 +5048,92 @@ fingerprint `92391ad914299b05c71d106355515f46cf21b18ed899a51339febb0bf61792b4`.
 Owned exports, targets, databases, logs, monitoring outputs and the verification
 container were removed. The original 342-file workspace target and preserved
 verification image were unchanged. No owned verification process remained.
+
+## Report corruption and failed recovery
+
+Implementation `ed72a8a` adds five report cases to the existing catalog graph
+campaign and a bounded public caller in `catalog-report-corruption.rs`. It reuses
+the sixteen-event fixture, while literal grouped answers remain in the caller.
+The original 43 graph cases, two oracle controls, three CLI-limit checks,
+genesis, lease contention and independent physical-column-order checks remain.
+No engine, format, admission allowance, independent decoder or recovery protocol
+changed.
+
+The new cases establish these separate outcomes:
+
+- A changed measurement payload fails independent checksum validation. The report
+  still returns all thirteen literal groups because measurement is unused.
+  Demanding measurement fails with `Corrupt` before rows; dropping the failed
+  cursor releases reservations and permits another complete report.
+- A checksum-valid authoritative version 8 fails public open with
+  `UnsupportedVersion(8)`. Independent validation also rejects that version.
+- A damaged newer catalog fails with `Corrupt` despite a valid adjacent older
+  root. The older graph is independently selected in a separate copy and checked
+  against its eight event rows before the newer catalog is damaged. Restoring
+  the deliberate catalog damage permits the complete healthy report.
+- A repairable damaged root with directory writes denied produces
+  `RecoveryRequired`. Restoring permissions permits reopen and root repair; the
+  independent graph is settled and the complete report agrees afterward.
+- Changing an amount from 10 to 11 and recomputing its full checksum chain is
+  structurally valid. The independent checker reads 11, while the public literal
+  answer oracle rejects the changed grouped total. The unchanged seed still
+  passes. This is the added wrong-answer control.
+
+Metadata refusals preserve every fixture file's contents and file inventory.
+The caller checks exact report schema, complete rows, finite progress and
+memory/temp release. Report payload checks and graph checks have distinct demand
+scopes; a passing unused-column report does not certify all stored payloads.
+Restoring deliberately corrupted bytes in this campaign is not a claim that
+recovery reconstructs lost data. The permission failure covers one repair path,
+not all possible recovery failures; earlier process-cut evidence remains scoped.
+
+Initial older-root probes failed before reaching catalog validation: copying a
+root between slots retained the wrong role, and a pre-issuance root was not
+adjacent to the committed state. The final fixture captures the root after
+issuance and before publication, preserves the destination slot role, validates
+adjacency before damage and separately validates the older graph. These were
+fixture corrections. An attempted second graph traversal with one checker also
+hit its intentional alias guard; separate quiescent copies now use normal full
+inspection rather than sharing traversal state. No validator was weakened.
+
+Frozen verification used 744 matching inputs with manifest SHA-256
+`c5d81b2b954ba78caa73f89f14f2bee891c3d1e12a81ecd66e3f7ba11bc0bcf8`.
+Sequential macOS/GNU arm64 Linux scopes passed caller formatting, maintenance and
+the complete catalog graph campaign. Each discovered 103 tooling tests,
+reproduced 44 independent codec fixtures and passed 48 graph cases with the two
+original controls and one added report control. The 43 original emitted graph
+records agree exactly; both report campaigns asserted the five specified
+outcomes. Receipts agree apart from platform artifact hashes. Source manifests
+remained unchanged, compiler/campaign subprocesses succeeded and finalization
+passed. The three stages totaled 40.749 seconds on macOS and 39.643 on Linux.
+
+After both scopes, eight fresh lessons ran first on macOS, then Linux: even and
+skewed reports at both 32,000,000 and 8,000,000 query-memory bytes, empty and small
+at 8,000,000, plus event report and calendar year. Every process exited 0 with
+empty stderr and a Finished marker; all output hashes agree. Execution totaled
+21.329 and 12.565 seconds, excluding builds. Documentation verification passed
+946 local links before this record and 948 after the final notes update. Ordinary Rust suites and unrelated native
+failure campaigns were not rerun for these fixture/tooling/documentation changes;
+their earlier verified checkpoints retain their original scope.
+
+| Receipt | SHA-256 |
+| --- | --- |
+| macOS affected stages | `d08fdf670f555b39c6fc6d4151fa56371d1aa5c23205367c3d97b1d4f5f562a6` |
+| Linux affected stages | `d1bb5ab2ae2f7a9a4ebe2945e0008eeea9ba310c01fefa221e5f6111bd7af333` |
+| macOS fresh lessons | `5d752ada23552c1e5b93328567c97b7fa84a9f00215f96a4f7c3fa1d24983d4b` |
+| Linux fresh lessons | `481f460224aec0ccc92eab2379e06647e4942870068c7f7749bb12a7c9d1d335` |
+
+Monitoring sampled host/process CPU, free-memory percentage, swap, disk
+capacity/I/O and network counters. Free memory reached 30%; swap ranged from
+1,437.56 to 2,395.88 MiB. Docker reached 838.5 MiB with no OOM and zero network
+traffic. Cargo used one job; Linux used uid/gid 1000, one CPU, 2 GiB without extra
+swap and native container database storage. These observations do not qualify
+engine admission or whole-process/RSS bounds. The combined-query macOS usable
+allocation deficit, broader durability, arbitrary concurrency, sanitizer,
+filesystem and Windows limits remain unchanged.
+
+Only notes changed after the frozen checks; the other 742 inputs retain
+fingerprint `39abf08760190739a55f365fb3dd59bd4de4bb8e8cda88624eb7b526dbcb6b84`.
+Owned targets, copied databases, root fixtures, source exports, logs and monitoring
+outputs were removed with the verification container. No owned process remained.
+The original 342-file workspace target and preserved Linux image were unchanged.

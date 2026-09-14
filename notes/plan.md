@@ -78,6 +78,12 @@ quality work is not deferred to the final gate.
 
 The active goal is **7. Challenge corruption and failed recovery**.
 
+The [report corruption checkpoint](evidence.md#report-corruption-and-failed-recovery)
+`ed72a8a` verifies five added report cases within the 48-case graph campaign,
+including unused/demanded payloads, authoritative refusal, older-state validity,
+failed repair and a wrong-answer control. Both platform scopes and fresh lessons
+pass. No engine change was needed; broader recovery qualification remains open.
+
 The [composition checkpoint](evidence.md#composed-report-identities-and-demand)
 `651fde1` verifies 350 composition records and 24 semantic cases on matching
 macOS/Linux inputs, followed by eight matching fresh lessons. Literal report
@@ -103,7 +109,7 @@ that boundary without changing an allowance. Both full platform gates and fresh
 lessons now pass; the [evidence record](evidence.md#composed-report-allocation-histories)
 owns the failure, repair, observation scope and retained limitations.
 
-Goals 1–6 have verified outcomes; three planned outcomes remain. Queue entries are
+Goals 1–7 have verified outcomes; two planned outcomes remain. Queue entries are
 not already activated goals. Activate one through the goal tool at a time.
 Prerequisites below name queue positions; existing narrower scenarios are inputs
 to these goals, not work to repeat for its own sake.
@@ -116,15 +122,15 @@ to these goals, not work to repeat for its own sake.
 | 4. Exercise overlapping report lifetimes — [verified](evidence.md#overlapping-report-lifetimes) | 1–3 | Park two report readers at different generations, cancel one while a writer/reclaimer advances, then rerun both pinned plans with fresh tokens. | Extend the existing [real-thread snapshot scenario](../tests/catalog_lifecycle/snapshots.rs) with blocking report state, shared-budget refusal and bounded alternative publication/cancellation/completion orders. Require exact old/new rows, receipts, clean terminal ownership and healthy reuse. Retain bounded waits and a control that breaks pin protection. This is enumerated schedule evidence, not arbitrary-race freedom. |
 | 5. Recover the mixed append history — [verified](evidence.md#mixed-report-append-interruption-and-recovery) | 1 and 4 | Interrupt one report-data append between an issuance/publication boundary and verify the public reopen outcome against independent history. | Extend the existing [interruption campaign](../tools/check-catalog-interruption.py) with the composed data and retained reader/receipt history where process lifetime permits. Cover relevant publication cuts and recovery-after-failure, inspect the persisted graph independently, and require a healthy subsequent append/report. Reuse process ownership and cut machinery; do not implement a second publisher. |
 | 6. Challenge query composition — [verified](evidence.md#composed-report-identities-and-demand) | 1–2 | Apply a harmless rename or legal projection boundary to the report and compare complete typed answers; a wrong-row oracle must fail. | Extend the [composition corpus](../tools/check-composable-aggregates.py) with bounded variants of identities, NULL predicates, source/derived inputs and numeric consumers. Include rejected near-misses and demanded spans. Use only equivalences guaranteed by the language; record covered dimensions and retain replayable failing inputs. No general fuzz framework is required. |
-| 7. Challenge corruption and failed recovery | 5 | Corrupt one referenced typed payload and one authoritative metadata field in fresh quiescent fixtures; demand must fail without silently choosing an older valid state. | Add composed-workload cases to existing [graph and corruption checks](../docs/verification.md#independent-catalog-inspection). Preserve skipped payload demand, bounded validation, failed-recovery outcomes and cleanup. Independently distinguish structural validity from the report's semantic result. Keep source and scratch corruption expectations with their actual owners. |
+| 7. Challenge corruption and failed recovery — [verified](evidence.md#report-corruption-and-failed-recovery) | 5 | Corrupt one referenced typed payload and one authoritative metadata field in fresh quiescent fixtures; demand must fail without silently choosing an older valid state. | Add composed-workload cases to existing [graph and corruption checks](../docs/verification.md#independent-catalog-inspection). Preserve skipped payload demand, bounded validation, failed-recovery outcomes and cleanup. Independently distinguish structural validity from the report's semantic result. Keep source and scratch corruption expectations with their actual owners. |
 | 8. Measure and teach the complete workflow | 2–7 | Run the same verified report at both budgets and compare complete-query costs; stop an optimization proposal if it cannot change that result. | Measure ingestion, prepare, execute, reopen and reclamation phases with CPU, I/O, logical/temp and process-memory observations kept distinct. Document a bounded baseline and explain material differences. Consolidate the fresh report lesson with existing owner explanations, including one failure and recovery path. Make performance changes only for a demonstrated workload cost and verify them fully. |
 | 9. Verify the frozen internal checkpoint | 1–8 | Run the documented workflow from a clean source export; any undocumented setup dependency or false capability claim fails the audit. | Review current interfaces, dependency/unsafe boundaries, documentation and actual change locality using the work above. Remove only demonstrated stale/duplicate material. Run the complete [gate](../docs/testing.md), all added campaigns and sequential fresh examples on matching inputs. Reconcile records, preserve exclusions, record compact evidence, clean outputs and synchronize coherent commits. |
 
 ### Estimate and reassessment
 
-Three planned goals remain after verifying report composition. Budget **6–12
+Two planned goals remain after verifying report corruption. Budget **5–11
 remaining goals**, allowing three to nine bounded prerequisite repairs or necessary
-splits. The initial mapped estimate was 12–18. Goals 1, 2, 4, 5 and 6 required no engine
+splits. The initial mapped estimate was 12–18. Goals 1, 2, 4, 5, 6 and 7 required no engine
 repair; goal 3 exposed one concrete fault-path ownership defect and repaired it
 within that goal. That finding supports retaining contingency, but does not
 justify inventing an additional completed goal or expanding the queue.
