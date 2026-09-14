@@ -5137,3 +5137,127 @@ fingerprint `39abf08760190739a55f365fb3dd59bd4de4bb8e8cda88624eb7b526dbcb6b84`.
 Owned targets, copied databases, root fixtures, source exports, logs and monitoring
 outputs were removed with the verification container. No owned process remained.
 The original 342-file workspace target and preserved Linux image were unchanged.
+
+## Report cost and complete learning path
+
+Implementation `14de33c` adds optional `--measure` output to the retained scaled
+report. It reports phase wall times and sampled memory/temp reservations. The
+same caller still checks schema, every independent expected group, DOUBLE bits,
+cancellation, replay and release. Measurement mode additionally reclaims with
+all preceding plans dropped, then verifies the complete answer and release again.
+Default stdout remains unchanged. No engine optimization, resource allowance,
+format or durability change was made.
+
+The report lesson connects setup, scaled execution, phase measurements, identity,
+snapshot publication, corruption, failed recovery and final cleanup. It gives
+fresh-path commands, success markers, the existing graph campaign for a failure
+exercise and the exact meaning of each measurement. Ingestion timing includes
+creation, declarations, caller batch construction, writes, commit and close.
+The independent expected-answer model precedes that timer. Execution includes
+schema/group checking and runs through Finished and cursor release. Reclamation
+excludes its subsequent verification query. Memory samples occur after cursor
+construction and between steps, not within a step.
+
+### Bounded observations
+
+Optimized measured runs used even, skewed and sixteen-event small profiles at
+32,000,000 and 8,000,000 query-memory bytes, plus empty at 8,000,000. Even ran twice
+per budget in high/low/low/high order; other cells ran once. All nine cells per
+platform returned matching stdout hashes and removed obsolete names during
+reclamation. There is no statistical confidence claim from these small samples.
+The ingestion configuration and 512 batches of 256 events stayed fixed.
+
+Complete first-execution wall time, in milliseconds:
+
+| Platform | Profile | 32,000,000 bytes | 8,000,000 bytes |
+| --- | --- | --- | --- |
+| macOS | even | 596.355–644.853 | 590.561–595.578 |
+| macOS | skewed | 704.298 | 700.495 |
+| macOS | small | 14.913 | 17.357 |
+| GNU arm64 Linux | even | 908.995–989.712 | 894.040–1,014.360 |
+| GNU arm64 Linux | skewed | 1,229.923 | 1,283.833 |
+| GNU arm64 Linux | small | 3.743 | 7.022 |
+
+Empty execution took 16.004 ms on macOS and 2.208 ms on Linux. For the large
+profiles, macOS ingestion took 2,568.666–2,713.011 ms, reopen 17.793–28.574 ms,
+prepare 0.108–0.293 ms and reclaim 17.672–23.735 ms. Linux ingestion took
+286.014–312.404 ms, reopen 3.305–3.746 ms, prepare 0.066–0.094 ms and reclaim
+7.613–8.877 ms. These platforms have different scheduling and filesystem
+conditions; the numbers are separate baselines, not a platform ranking.
+
+All large cells sampled 13,893,440 logical temporary bytes at either budget;
+small sampled 2,065 and empty 237. Sampled memory reservations were about
+29.56 MB at the high budget and 7.54 MB at the low budget. Small path-length
+contributions differ between runs/platforms. Reserved capacity does not equal
+committed heap, touched pages or RSS.
+
+External `/usr/bin/time -l` on macOS and GNU `/usr/bin/time -v` on Linux measured
+the whole process. Large-cell user+system CPU ranged 2.36–2.81 seconds on macOS
+and 3.25–4.53 seconds on Linux. Across all measured cells, maximum-RSS reports
+ranged 5,767,168–9,715,712 bytes on macOS and 5,677,056–9,535,488 bytes on Linux
+(after converting GNU KiB to bytes). These totals include oracle construction,
+extra cancellation/replay, the numeric projection and post-reclamation report;
+they are not CPU/RSS measurements of the first execution alone. macOS reported
+zero block input/output operations in every cell. Linux reported 599,264 output
+operations for each large cell, 416 for small and 296 for empty, with zero inputs
+except eight in one skewed cell. Retain these as native timer counters, not
+physical-byte totals or proof that cached runs did no I/O.
+
+The initial investigation was limited to 15 minutes after artifacts became
+available. A reverse-order comparison and skew case did not identify a consistent
+benefit from the larger query budget. Source tracing confirmed that each of the
+fixture's 512 writes synchronizes its completed unit before returning. This is
+relevant to ingestion cost, not proof of exclusive attribution. Changing batch
+size would change the retained workload; weakening synchronization would change
+the contract. Neither is justified as a tuning shortcut. No engine optimization
+was retained, and these observations do not qualify universal performance.
+
+### Verification and reproducibility
+
+Frozen macOS then GNU arm64 Linux verification used 744 matching inputs:
+`5dcd7cccdf0b1d3f9e6130b6bcd2b668d57fc2ab43d77f55e55581fc28f549cf`.
+Six affected stages passed: Rust formatting, maintenance, all-target/workspace
+warnings-denied release Clippy, Rust documentation, both report-example suites
+and the complete graph campaign. Each platform discovered all four report tests
+with no ignored/filtered tests, passed 103 tooling tests, reproduced 44 codec
+fixtures and passed 48 graph cases with three oracle controls and the retained
+CLI/genesis/lease/column-order checks. Stage totals were 100.046 seconds on macOS
+and 82.586 on Linux. Inputs and finalization checks passed. Broader ordinary Rust
+and native failure campaigns retain their earlier qualification scope.
+
+Measured stock scaled-report SHA-256 identities were
+`aec73ea5fe3e779f9883b18430d05869933829f7e1a341006bcecbce7b2777b6` (macOS) and
+`fa6f0c606430e45c05e24056259db9630273ed223dfc17ed19c7a422026c3561` (Linux).
+Reproduce with the retained example and documented native timer, fresh absolute
+paths and the profile/budget order above; timings are observations, not required
+constants. Nine measured runs on each platform followed the two verification
+scopes. Eight additional ordinary fresh lessons then ran sequentially on macOS
+and Linux: even/skewed at both budgets, empty/small at low budget, event report
+and calendar year. All exited 0 with empty stderr and Finished markers; output
+hashes agree. Their execution totals were 19.458 and 12.533 seconds, excluding
+builds. The measurement mode's expected stderr is separately parsed into all five
+phase records. Documentation verification passed 950 links before this record
+and 952 after the final notes update.
+
+| Receipt | SHA-256 |
+| --- | --- |
+| macOS affected stages | `4d4ac46ae1c0aa5e9573039851e2de08f440b4f9a14c4c7db80c73f7e81323cc` |
+| Linux affected stages | `aa935f54c47ebfd2d5703b8dc56d445aa55518e37e822613c5bf8009ed8c02a9` |
+| macOS measured cases | `3469d4fb2d21c9650271847cedb709a5d61a92e35b82cd5743a05c6f73f089a7` |
+| Linux measured cases | `2fa877a31d46aa44a0bc82db5b31f33a9af6a2faba3b4d5bdb51b92dcf3e8622` |
+| macOS ordinary lessons | `4a9517d9f138d9eec2818bb3a62ed25bd2242e57de2b6e6ff2fce5e8c51d6945` |
+| Linux ordinary lessons | `0fb3066edc1ec39efc387ffdab87e61a18648348eb3e8ba155f6a3a43e58a9e1` |
+
+Host/process CPU, memory, swap, disk capacity/I/O and network were sampled during
+sustained verification. Free-memory percentage reached 38%; swap ranged
+1,882.38–1,986.38 MiB during these monitored final runs. Docker peaked at
+889.7 MiB with no OOM and zero network traffic. Cargo used one job. Linux used
+uid/gid 1000, one CPU, 2 GiB without extra swap, networking disabled and native
+container database storage. All broader allocation/RSS, concurrency, durability,
+sanitizer, filesystem and Windows limitations remain unchanged.
+
+Only notes changed after the freeze. The other 742 inputs retain fingerprint
+`81a85f90b806adef50d05998bf922750a961dd21b06048aedd4015156391ac54`.
+Owned measurement databases, exports, targets, logs and monitor outputs were
+removed with the container; no owned process remained. The original 342-file
+target and preserved verification image/toolchains were unchanged.

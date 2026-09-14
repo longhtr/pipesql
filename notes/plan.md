@@ -78,6 +78,13 @@ quality work is not deferred to the final gate.
 
 The active goal is **8. Measure and teach the complete workflow**.
 
+The [cost and learning checkpoint](evidence.md#report-cost-and-complete-learning-path)
+`14de33c` adds opt-in phase measurements and completes the setup-to-cleanup
+reading path. Both platform scopes, nine measured cells per platform and eight
+additional fresh lessons pass. The bounded comparison did not justify an engine
+optimization. Timing, reservations and whole-process observations remain distinct;
+these are workload baselines rather than universal performance qualification.
+
 The [report corruption checkpoint](evidence.md#report-corruption-and-failed-recovery)
 `ed72a8a` verifies five added report cases within the 48-case graph campaign,
 including unused/demanded payloads, authoritative refusal, older-state validity,
@@ -109,7 +116,7 @@ that boundary without changing an allowance. Both full platform gates and fresh
 lessons now pass; the [evidence record](evidence.md#composed-report-allocation-histories)
 owns the failure, repair, observation scope and retained limitations.
 
-Goals 1–7 have verified outcomes; two planned outcomes remain. Queue entries are
+Goals 1–8 have verified outcomes; one planned outcome remains. Queue entries are
 not already activated goals. Activate one through the goal tool at a time.
 Prerequisites below name queue positions; existing narrower scenarios are inputs
 to these goals, not work to repeat for its own sake.
@@ -123,14 +130,14 @@ to these goals, not work to repeat for its own sake.
 | 5. Recover the mixed append history — [verified](evidence.md#mixed-report-append-interruption-and-recovery) | 1 and 4 | Interrupt one report-data append between an issuance/publication boundary and verify the public reopen outcome against independent history. | Extend the existing [interruption campaign](../tools/check-catalog-interruption.py) with the composed data and retained reader/receipt history where process lifetime permits. Cover relevant publication cuts and recovery-after-failure, inspect the persisted graph independently, and require a healthy subsequent append/report. Reuse process ownership and cut machinery; do not implement a second publisher. |
 | 6. Challenge query composition — [verified](evidence.md#composed-report-identities-and-demand) | 1–2 | Apply a harmless rename or legal projection boundary to the report and compare complete typed answers; a wrong-row oracle must fail. | Extend the [composition corpus](../tools/check-composable-aggregates.py) with bounded variants of identities, NULL predicates, source/derived inputs and numeric consumers. Include rejected near-misses and demanded spans. Use only equivalences guaranteed by the language; record covered dimensions and retain replayable failing inputs. No general fuzz framework is required. |
 | 7. Challenge corruption and failed recovery — [verified](evidence.md#report-corruption-and-failed-recovery) | 5 | Corrupt one referenced typed payload and one authoritative metadata field in fresh quiescent fixtures; demand must fail without silently choosing an older valid state. | Add composed-workload cases to existing [graph and corruption checks](../docs/verification.md#independent-catalog-inspection). Preserve skipped payload demand, bounded validation, failed-recovery outcomes and cleanup. Independently distinguish structural validity from the report's semantic result. Keep source and scratch corruption expectations with their actual owners. |
-| 8. Measure and teach the complete workflow | 2–7 | Run the same verified report at both budgets and compare complete-query costs; stop an optimization proposal if it cannot change that result. | Measure ingestion, prepare, execute, reopen and reclamation phases with CPU, I/O, logical/temp and process-memory observations kept distinct. Document a bounded baseline and explain material differences. Consolidate the fresh report lesson with existing owner explanations, including one failure and recovery path. Make performance changes only for a demonstrated workload cost and verify them fully. |
+| 8. Measure and teach the complete workflow — [verified](evidence.md#report-cost-and-complete-learning-path) | 2–7 | Run the same verified report at both budgets and compare complete-query costs; stop an optimization proposal if it cannot change that result. | Measure ingestion, prepare, execute, reopen and reclamation phases with CPU, I/O, logical/temp and process-memory observations kept distinct. Document a bounded baseline and explain material differences. Consolidate the fresh report lesson with existing owner explanations, including one failure and recovery path. Make performance changes only for a demonstrated workload cost and verify them fully. |
 | 9. Verify the frozen internal checkpoint | 1–8 | Run the documented workflow from a clean source export; any undocumented setup dependency or false capability claim fails the audit. | Review current interfaces, dependency/unsafe boundaries, documentation and actual change locality using the work above. Remove only demonstrated stale/duplicate material. Run the complete [gate](../docs/testing.md), all added campaigns and sequential fresh examples on matching inputs. Reconcile records, preserve exclusions, record compact evidence, clean outputs and synchronize coherent commits. |
 
 ### Estimate and reassessment
 
-Two planned goals remain after verifying report corruption. Budget **5–11
+One planned goal remains after verifying the cost and learning path. Budget **4–10
 remaining goals**, allowing three to nine bounded prerequisite repairs or necessary
-splits. The initial mapped estimate was 12–18. Goals 1, 2, 4, 5, 6 and 7 required no engine
+splits. The initial mapped estimate was 12–18. Goals 1, 2, 4, 5, 6, 7 and 8 required no engine
 repair; goal 3 exposed one concrete fault-path ownership defect and repaired it
 within that goal. That finding supports retaining contingency, but does not
 justify inventing an additional completed goal or expanding the queue.
