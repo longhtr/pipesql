@@ -7,21 +7,21 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 710 frozen inputs retained in `a72e3c6`
+Both complete 24-stage gates verify the 710 frozen inputs retained in `7eee0be`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `48f4a9a086c28857d99c9def9ed006b3d6b680a549b9e1521e212b194baa8fd9`.
+gates: `042c9709eed90e307ab24403e22c2471558ac116084438927f7296da2e5c0a5c`.
 Finalization changes only the two notes files. The other 708 inputs retain
-fingerprint `8cbd32ecce6a24ef05b9e6769753a7f6f30d8462472e9742ff52e78b51d4fc57`;
+fingerprint `6755ffbc2fb911bdcfc8c12b0237d421af02c3ff2100452e7580103637c6d1b6`;
 all manifested inputs are tracked. Final local-link verification passes 669 links.
 
 Each platform executes 632 ordinary Rust tests, including all 140 public catalog
 tests, plus the separate lease subprocess. Discovery independently lists those
 632 tests across thirteen targets per platform. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 666 local links.
+passes 97 tooling tests, 44 independent codec fixtures and 669 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311
 scenarios. Their complete records agree across platforms after excluding ambient
 database paths and composition stdout digests. Those digests are not portable
@@ -38,19 +38,20 @@ lease contention and independent column order pass. Linux retains two Darwin
 ACL repair-rename exclusions, one at each pathname length.
 
 Both receipts have zero finalization errors. The full gates run sequentially;
-stage times total 1,656.740 seconds on macOS and 433.266 seconds on Linux. Receipt
+stage times total 1,651.514 seconds on macOS and 432.433 seconds on Linux. Receipt
 SHA-256 values are respectively
-`24bc72f5a15dcb1fe335b8d598e7315582dcf0073d60afa521b9179695659ad9` and
-`2908f7936c023c06e2537d0215db63036d8c1c186e456adfa13a66d956075ede`.
+`d0a0502f464d2cc92cf1a6f367c1c53d3ab3fa88bcfa013af17d21d3fc90cce3` and
+`da1f0c0af15f440ce81be6a2a954ca70812b244c98584839f500050bfe629b73`.
 These runs are verification observations, not performance benchmarks.
 
-Ninety-eight periodic resource samples observed normal memory pressure on an
-8 GiB host and steady 961.75 MiB swap use. macOS used at most two Cargo jobs and
+Ninety-two periodic resource samples observed normal memory pressure on an
+8 GiB host. Periodic swap use ranged from 913.69 to 929.69 MiB, ending at 913.69;
+an initial host check observed 937.69 MiB. macOS used at most two Cargo jobs and
 one for the fresh example. Docker used one CPU, one build job and a 2 GiB memory
-and memory-plus-swap limit. Eighteen container samples observed CPU up to 99.51%
-and memory up to 1.219 GiB. Networking was disabled and sampled container network
-traffic was zero. Host disk samples ranged from zero to 178.45 MB/s; free disk
-stayed above 188.23 GiB. Host process, disk and network observations include
+and memory-plus-swap limit. Eighteen container samples observed CPU up to 99.10%
+and memory up to 1.185 GiB. Networking was disabled and sampled container network
+traffic was zero. Host disk samples ranged from zero to 169.77 MB/s; free disk
+stayed above 188.32 GiB. Host process, disk and network observations include
 unrelated applications. No container OOM kill occurred. These observations do
 not qualify engine admission, usable-heap limits or whole-process/RSS bounds.
 
@@ -64,6 +65,55 @@ logs, monitor, databases, isolated build outputs and the verification container
 are removed. Pre-existing target artifacts, the image and installed toolchains
 remain. Windows, broader durability, physical-memory and sanitizer qualification
 remain unfinished.
+
+### Failed preparation ownership
+
+`7eee0be` extends the maintained wide nullable STRING LEFT JOIN caller to failed
+preparation, using the existing allocator harness and scoped observer. No new
+accounting defect was exposed. Engine behavior, admission allowances and
+persistent formats are unchanged; the binding owner now explains why its shared
+reservation precedes partial plan and descriptor locals. The
+[preparation contract](../docs/resources.md#query-preparation) owns that flow.
+
+Each platform and pathname length observes a ten-allocation healthy preparation
+census. Prefixes 0–9 each return a typed allocation failure; prefix 10 succeeds
+without a refusal. For each nonzero refused prefix, every successful allocation
+has a corresponding observed free before preparation returns. Heap and
+reservation counters must already match the resident baseline while allocation
+refusal remains armed. The caller then suspends faults for descriptor enumeration
+and reporting, without another engine operation. The error stays live through
+that complete reconciliation, followed by another release check after its drop.
+Prefix zero intentionally has no successful events and reports no headroom sample.
+
+A constant predicate, `l.id > EXP(1000)`, fails after the join's partial plan and
+null-extension descriptor have been allocated. All ten allocations are freed,
+and the error retains operation `exponentiation` and exact span 80..89 after the
+caller's source text has been freed. Error formatting and subsequent release
+also pass. The complete healthy join then returns all eleven literal pairs and
+checks every one of its 64 columns. The retained normal preparation, execute/step,
+finished release and two abandonment observations also pass.
+
+The minimum requested/usable headrooms over nonzero refused prefixes are shown
+below in bytes. The late arithmetic error observes the same minima for each
+platform/path pair. These are aggregate observations of the exercised histories,
+not per-pointer attribution or universal allocator bounds.
+
+| Path | macOS headroom | GNU/Linux headroom |
+| --- | --- | --- |
+| Short | 7,938 / 7,920 | 8,016 / 7,992 |
+| 384 bytes | 7,382 / 7,296 | 7,382 / 7,368 |
+
+A negative control suppresses observation of failed prefix one and must fail
+coverage even though its returned resources reconcile. The supervisor checks the
+complete ordered prefix trace, real refusal records and the healthy final
+control. Its independent interpretation tests reject missing census/completion
+markers, omitted zero or full-prefix cases, duplicates, reordering, absent
+refusals and a mismatched control. The existing hidden-allocation/free-only
+calibration, false-attribution controls and independent nonheap equations remain
+intact. A 32-allocation caller ceiling bounds work without changing engine
+admission. Both full gates above include these checks and the two complete
+ordered traces per platform. Foreign allocations, arbitrary allocator histories,
+concurrent schedules and whole-process/RSS remain outside this observation.
 
 ### Transient preparation and release ownership
 

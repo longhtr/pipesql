@@ -7,7 +7,7 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `a72e3c6` pass on matching frozen macOS and GNU
+The complete 24-stage gates for `7eee0be` pass on matching frozen macOS and GNU
 arm64 Linux inputs: 632 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
@@ -25,49 +25,24 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Active: failed preparation ownership
+## Completed: failed preparation ownership
 
-Trace partial catalog/binder/plan construction and retained errors within a
-30-minute investigation. Extend the existing wide nullable STRING LEFT JOIN
-caller to observe failed preparation: measure the successful allocation census,
-refuse every prefix including zero, retain a healthy full-prefix control and
-check a demanded late-binding arithmetic error with its exact owned source span.
-Exercise both pathname lengths, restore heap/descriptors/reservations with the
-error live and after release, and preserve complete healthy rows, independent
-equations, calibration and phase-coverage controls. Repair a concrete deficit
-at its owner without padding allowances or adding an instrumentation framework.
-
-The focused caller observes ten successful preparation allocations, rejects
-prefixes 0–9 and accepts control 10 at both pathname lengths. Every refused
-prefix releases its observed owners before returning, with heap and reservation
-checks performed while refusal remains armed. The late arithmetic error releases
-all ten allocations and preserves its span after caller text is freed. No new
-engine accounting defect was exposed; the change adds failure qualification,
-independent trace controls and ownership explanation.
-
-Complete focused checks and matching frozen sequential macOS/GNU arm64 Linux
-gates, reconcile discovery and semantic/allocation evidence, then run fresh
-examples sequentially. Document the failure ownership flow and limits, remove
-owned outputs, review the diff and commit locally. Normal lifecycle work remains
-closed beyond these failure histories; broader allocator, concurrency, RSS,
-Windows, durability and sanitizer qualifications remain open. Do not publish.
-
-## Completed: transient preparation and release ownership
-
-`d84c30b` admits the two previously uncharged catalog-read paths during query
-preparation. `a72e3c6` preserves the independent opening minimum while checking
-the larger preparation peak. The [lifecycle record](evidence.md#transient-preparation-and-release-ownership)
-retains the counterexample, failed-gate repair, phase observations and limits.
+`7eee0be` observes every allocation-refusal prefix of the retained wide nullable
+STRING LEFT JOIN's preparation, plus a late arithmetic error with its owned
+source span. The [failure record](evidence.md#failed-preparation-ownership) retains
+the census, live-error release checks, complete trace controls and exact limits.
+No new engine accounting defect was exposed.
 
 Both complete 24-stage macOS/GNU/Linux gates pass on matching frozen inputs,
-with 632 ordinary Rust tests per platform. Discovery, ordered allocation
-schedules, semantic records and lifecycle controls are reconciled. Fresh LEFT
-JOIN examples pass sequentially on both platforms after both gates. Owned
-outputs are removed while pre-existing artifacts and toolchains remain.
+with 632 ordinary Rust tests and 97 tooling tests per platform. Discovery,
+semantic/composition records and both preparation/catalog prefix schedules are
+reconciled. Fresh LEFT JOIN examples pass sequentially on both platforms after
+both gates. Owned outputs are removed while pre-existing artifacts and toolchains
+remain.
 
-The prior [execute/step observation](evidence.md#transient-ownership-in-wide-left-join)
-and [language work](evidence.md#exponential-transforms-and-geometric-means) remain
-closed. Arbitrary allocators, concurrent histories, whole-process/RSS, Windows
+The [normal lifecycle repair](evidence.md#transient-preparation-and-release-ownership)
+and prior language/resource work remain closed beyond a concrete new defect or
+workload. Arbitrary allocators, concurrent histories, whole-process/RSS, Windows
 and broader durability retain their documented limits. Publication restrictions
 are unchanged. Reassess README's decision order before activating the next
 bounded milestone.
