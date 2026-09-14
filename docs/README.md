@@ -42,8 +42,10 @@ Try [LEFT JOIN with missing dimensions](getting-started.md#retain-facts-with-mis
 to follow nullable output identities into matching, grouping and ordering.
 
 Run the [snapshot lifetime example](getting-started.md#keep-an-old-snapshot-readable)
-to connect preparation pins, append publication and reclamation in one small
-public-library flow. It checks old and new row values before closing and reopening.
+to connect preparation pins, append publication, aborted attempts and reclamation
+in one public-library flow. It checks old/new rows and retained outcomes across
+reopen. Follow [their distinct owners](transactions.md#follow-snapshot-pins-and-retained-outcomes)
+to see why reader data pins and transaction history have separate lifetimes.
 
 ## Work on the repository
 

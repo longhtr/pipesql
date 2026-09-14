@@ -153,6 +153,57 @@ it. Writers may publish newer generations. Maintenance may reclaim only objects
 not reachable from current or pinned generations. Pin capacity and retained
 generations are bounded with typed refusal.
 
+## Follow snapshot pins and retained outcomes
+
+Run [the snapshot example](getting-started.md#keep-an-old-snapshot-readable) with
+[snapshots.rs](../examples/snapshots.rs) open. It commits amounts 10 and 20,
+prepares an old reader, explicitly aborts an empty append, then commits 30.
+The new reader sees all three values while the old reader keeps its original
+two. It also resolves the two successful receipts and the aborted attempt after
+reclamation, old-plan release and reopen.
+
+Three public types carry different responsibilities in this flow:
+
+| Value kept by the example | Responsibility |
+| --- | --- |
+| `PreparedQuery` | Borrows the database and pins the data generation chosen during preparation. |
+| `Commit` | Copies a successful attempt's identity and published generation. The database's success history preserves the outcome. |
+| `TransactionId` | Identifies an issued attempt whose outcome can be resolved, including an attempt that was explicitly aborted. |
+
+Follow the write and lookup owners in order:
+
+1. `begin_append_named` in [append admission](../src/catalog_snapshot/append/admission.rs)
+   retains the selected table and reserves construction bounds. Only then does
+   `Writer::issue` in [catalog_snapshot.rs](../src/catalog_snapshot.rs) publish
+   the next issuance prefix while preserving the existing data graph. The empty
+   append therefore has an identity before it writes any rows. Its successful
+   explicit `abort` settles writer ownership and leaves an issued gap.
+2. For a successful append, `write_batch` in
+   [append.rs](../src/catalog_snapshot/append.rs) constructs private typed units.
+   `build_commit` creates the next table index, catalog and success history,
+   closes and synchronizes dependencies, then returns a complete candidate graph.
+   `commit_prepared` validates that graph and hands outcome authority to the
+   [shared publisher](#shared-publication-protocol). The returned `Commit`
+   identifies the completed publication.
+3. The old prepared query continues to borrow its original pinned catalog.
+   `prepare` after the second commit selects the new catalog. The example's
+   literal row checks exercise both views before and after reclamation.
+4. `resolve_catalog` takes a short-lived resolution pin on the current registry
+   view, checks issuance and active-writer state, then searches
+   [success_index.rs](../src/success_index.rs). A recorded success returns its
+   original generation. The known issued gap resolves as `Aborted`, even after a
+   later success. Foreign or unissued identities still return `NotFound`.
+5. `Reachable::open` in [reclaim.rs](../src/catalog_snapshot/reclaim.rs) captures
+   data and history reachability separately. It preserves current data and
+   prepared-query data pins, plus current history and active resolution pins.
+   Dropping `old` releases its data pin. The copied `Commit` values impose no
+   data pin, and their outcomes remain in the current success history.
+
+The final close/reopen checks rows and outcomes through a fresh database handle.
+This is a healthy sequential lifecycle. The [outcome contract](#outcomes) still
+requires reopen and resolution after uncertainty; the example does not establish
+crash recovery, concurrent scheduling or power-loss durability.
+
 ## Platform contract
 
 On macOS, the durable-success contract requires ordered writes followed by the

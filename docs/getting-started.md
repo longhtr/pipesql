@@ -437,28 +437,42 @@ and leaves it available afterward. Successful completion prints exactly:
 old before append: [10, 20]
 old after reclaim: [10, 20]
 new after reclaim: [10, 20, 30]
+receipts after reclaim: durable generations=[2, 3], aborted=Aborted
 new after old plan drops: [10, 20, 30]
+receipts after old plan drops: durable generations=[2, 3], aborted=Aborted
 reopened: [10, 20, 30]
+receipts reopened: durable generations=[2, 3], aborted=Aborted
 ```
 
 Follow the operations in `main`. The first append commits amounts 10 and 20.
 `prepare` captures that catalog generation in `old`; finishing its first execution
 releases the result buffers while the prepared plan keeps its snapshot pin.
-Appending 30 publishes a newer generation. Preparing `current` captures the new
-view, but executing `old` again still reads the original two rows.
+The program then begins an empty append, retains its issued transaction identity,
+and explicitly aborts it. That attempt resolves as `Aborted` without adding rows
+or a data generation. Appending 30 publishes a newer generation. Preparing
+`current` captures the new view, but executing `old` again still reads the
+original two rows.
 
 The first `reclaim` runs while both plans are pinned. `verify_rows` checks every
 row against the literal expected values and requires successful completion.
 `ORDER BY amount` makes their order explicit. Dropping `old` releases its pin;
-the second reclamation can remove objects that no remaining snapshot or receipt
-requires. Its return value counts removed filenames, so the example does not
+the second reclamation can remove objects that neither retained data views nor
+transaction history require. Its return value counts removed filenames, so the example does not
 predict bytes freed or a fixed removal count. Finally, the program drops the
 remaining plan, closes the database and verifies the latest rows after reopening.
+
+`append_amounts` returns each successful `Commit`. `verify_outcomes` checks that
+both receipts still resolve to those exact commits and that the aborted attempt
+stays aborted after the later publication, both reclamations and reopening.
+Declaration creates generation 1; the successful appends create generations 2
+and 3. The aborted issuance does not consume a data generation. These copied
+receipts survive closing the handle; prepared queries must be dropped first
+because they borrow the database and retain its snapshot pins.
 
 For the implementation, follow `Database::prepare` into
 [prepare_catalog](../src/frontend/binding.rs), where the prepared query retains its catalog
 snapshot. Then follow append publication in
-[the transaction guide](transactions.md#declared-table-transactions) and reclamation in
+[the transaction trace](transactions.md#follow-snapshot-pins-and-retained-outcomes) and reclamation in
 [Reachable::open](../src/catalog_snapshot/reclaim.rs), which captures current and
 pinned views before unlinking obsolete objects. The
 [public contract](interfaces.md#reclaim-obsolete-catalog-objects) defines failure
