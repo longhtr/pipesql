@@ -65,6 +65,21 @@ reuse in those cells. It does not identify the original query's freed block or
 explain its entire aggregate deficit. The strict combined-query diagnostic and
 unqualified usable-heap/RSS status remain; no admission padding was added.
 
+## Active milestone: trace one query through execution
+
+Connect the preparation walkthrough's existing sales query to the execution
+scheduler. Keep its SQL in a runnable example, and explain the two physical
+producers, input requests, retained batches, aggregate checking/emission and
+terminal result lifetime through their actual owners. Distinguish query stages
+from producer boundaries and illustrative events from exact step counts.
+
+Verify source facts, fresh setup, total 38 and successful completion on sequential
+macOS/GNU arm64 Linux stock runs. Exercise a demanded-overflow variant and its
+owned location without accepting partial output as success. Check maintenance
+and links; reuse the unchanged engine's verified baseline instead of another
+core gate. No instrumentation, public API or execution framework is needed.
+Finish the reading path, evidence, local commits and owned-output cleanup.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
