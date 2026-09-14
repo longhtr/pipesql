@@ -5,6 +5,93 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Scaled report spill, refusal and replay
+
+`8eeaa08` adds [scaled_report.rs](../examples/scaled_report.rs) and extends the
+[event-report lesson](../docs/event-report.md#scale-the-report-and-observe-spill).
+The caller writes 131,072 events in 512 bounded batches using the retained input
+helper, with different NULL intervals and even/skewed dimension distributions.
+The skewed profile retains rare missing keys and empty labels as well as the
+frequent duplicated key. An independent nested-loop join and literal DATE/year
+mapping construct complete nullable integer expectations; the ordered DOUBLE
+projection has separate bit checks. Small and empty profiles remain explicit.
+The original sixteen-event literal oracle and negative control are unchanged.
+
+Two new public tests compare all four profiles at 32 MB and 8 MB query budgets,
+require spill for both scaled profiles, cancel after observed temporary storage,
+and rerun the retained plan. They check result schema, every row, Finished and
+reservation release. A 500 KB memory budget refuses the native query workspace;
+a one-byte temp budget refuses database temporary storage. Both retain typed
+Resource fields and release ownership before close and healthy reopen. An altered
+reference count must fail, followed by a successful rerun. Abandoning a result
+after its first batch also releases execution state and preserves the plan.
+
+The [internal replay test](../src/execution/aggregation/grouping/tests/replay.rs)
+uses the same report SQL over four facts and three dimensions. It admits one
+hash group, then observes disk fallback and replay of the retained join. Five
+literal rows cover NULL years/labels, duplicate dimensions and all-NULL totals.
+Every step reconciles result ownership, and completion releases all pressure,
+plan, result and temporary reservations. No production engine code, allocation
+allowance, format, validator or failure contract changed.
+
+Sequential optimized macOS/GNU arm64 Linux verification independently discovered
+and passed 449/451 library tests, 173 catalog tests and four example tests per
+platform: 626/628 tests respectively, with zero ignored or filtered tests. Platform-specific
+library discovery accounts for the difference. All-target
+Clippy with warnings denied, formatting, stock example builds and documentation
+checks passed. This scoped library/catalog/example verification does not replace
+the earlier complete core or native/persistence gate records.
+
+After both platform suites, eight fresh lessons ran first on macOS and then on
+Linux. Every process succeeded with empty stderr and identical complete stdout:
+
+| Profile | Query memory bytes | Events | Groups | Sampled temporary bytes |
+| --- | --- | --- | --- | --- |
+| Even | 32,000,000 and 8,000,000 | 131,072 | 20 | 13,893,440 |
+| Skewed | 32,000,000 and 8,000,000 | 131,072 | 16 | 13,893,440 |
+| Empty | 8,000,000 | 0 | 0 | 237 |
+| Small | 8,000,000 | 16 | 13 | 2,065 |
+
+The original report and calendar lessons also matched. These observations show
+that the high-budget report spills too; they do not attribute all temporary bytes
+to grouping. The separate internal observation establishes grouping replay.
+The independent oracle rejected its altered count on both platforms.
+
+The frozen 742-input manifest SHA-256 was
+`a67c19ddd7e5def20752f2606a2c12d63762cc0f3b3d89e8f4366e5216f283ee`.
+Only the two notes files changed afterward; the other 740 inputs retain
+fingerprint `8709ae8730b2ed56278f673f43c66d6d8864690ee28bbca74c5553532dcc6bb8`.
+
+| Artifact | macOS SHA-256 | GNU arm64 Linux SHA-256 |
+| --- | --- | --- |
+| Scoped command receipt | `b656ce2350e8505065fc427e113a2b87a0cda10385c642e6d7418a801efce26d` | `e36a2e0c87452d3b166ed9b49884e0e78ee8157041889cad5fccbb239cc96665` |
+| Fresh-example receipt | `b94afb487514e32c7361f4ce2d2d6037effac056bdc0f3c6876d47d28de5e3f9` | `b41590a90e294732f686ae5b3e4c39b78f37f14765624c3994ca166f53f119d2` |
+| Optimized scaled-report binary | `9a473a28d622293ec1498f2efd19250455769ff091403f89efd1b86d94749204` | `e8b7240748701d808d21bf064fdc0d233310d962bd6ea31035f01fc958d3309d` |
+
+The common even-profile stdout digest is
+`c31f844f8a1cc0548e3c5cc7dda0d48b6fda5b12459f01fa248eeeb4bb0fd40c`;
+the skewed digest is
+`00b83a5c2d30af631514a20e2b392e007ce08c690147b9d775fefa2255465b15`.
+The scoped sequences took 473.94 seconds on macOS and 162.56 seconds on Linux.
+Fresh examples took another 21.21 and 12.36 seconds. These include validation and
+filesystem setup; they are verification timings, not a query performance claim.
+
+Host monitoring covered CPU, RSS, memory pressure/swap, disk capacity/I/O and
+network. Observed pressure was normal/warning, swap 1,676.56–2,174.25 MiB, and
+available disk space stayed above 185.84 GiB. The largest compiler/owned-process
+samples were 100% CPU and 832,080 KiB RSS; observed host disk throughput reached
+172.49 MB/s. Container samples reached 1.195 GiB, with no OOM kill and zero
+network traffic. One Mac Cargo job and one Linux CPU/job were used; Linux kept
+uid/gid 1000, 2 GiB without extra swap, no network and native database storage.
+These sampled observations do not establish physical-memory bounds. Broader
+[qualification limits](plan.md#qualifications-that-remain-outside-this-internal-claim)
+remain unchanged.
+
+Final documentation verification passed 919 local links. Owned build targets,
+source exports, input manifests, logs, monitoring outputs, tutorial databases and
+the verification container were removed. No owned verification process remained;
+the original workspace target and preserved Linux image were unchanged.
+
 ## Composed report across appends
 
 `890b5c9` adds the [sixteen-event report lesson](../docs/event-report.md) and

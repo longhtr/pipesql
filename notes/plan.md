@@ -7,8 +7,9 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The composed-report checkpoint is `890b5c9`; its [record](evidence.md#composed-report-across-appends)
-covers the new example and affected public integration checks. The engine remains
+The scaled-report checkpoint is `8eeaa08`; its [record](evidence.md#scaled-report-spill-refusal-and-replay)
+covers library/catalog checks, spill/refusal/replay and fresh examples. The
+[sixteen-event report](evidence.md#composed-report-across-appends) remains verified. The engine remains
 at `464fbd6`. Its
 [calendar-year record](evidence.md#calendar-year-projections) identifies matching
 macOS/GNU arm64 Linux core gates: 680 ordinary Rust tests, 100 tooling tests,
@@ -79,7 +80,7 @@ quality work is not deferred to the final gate.
 
 The active goal is **2. Exercise scaled spill and refusal**.
 
-Goal 1 is verified; eight planned outcomes remain. These queue entries are not
+Goals 1 and 2 are verified; seven planned outcomes remain. These queue entries are not
 already activated goals. Activate one through the goal tool at a time. Prerequisites below name queue positions; the
 first goal has no unfinished prerequisite. Existing narrower scenarios are inputs
 to these goals, not work to repeat for its own sake.
@@ -87,7 +88,7 @@ to these goals, not work to repeat for its own sake.
 | Order and outcome | Prerequisites | Cheapest useful falsifier | Completion and verification boundary |
 | --- | --- | --- | --- |
 | 1. Establish the composed report — [verified](evidence.md#composed-report-across-appends) | Current baseline | Run the sixteen-event public query against literal rows; deliberately alter one expected group and require rejection. | Add reusable, bounded fixture construction and an independent reference answer. Check all four types, LEFT JOIN multiplicity, nullable year groups, two append generations, schema, Finished and release. Explain the fixture and query beside their owners. Reuse [composed](../examples/composed.rs), [calendar](../examples/calendar_year.rs) and [snapshot](../tests/catalog_lifecycle/snapshots.rs) patterns. |
-| 2. Exercise scaled spill and refusal | 1 | Compare one high-budget run with one admitted low-budget run and assert observed temporary storage. | Add the scaled profile, skew/NULL/empty variants and exact answers. Exercise memory and temp refusal, spill cancellation and replay using existing [grouping tests](../src/execution/aggregation/grouping/tests/replay.rs) and [resource contracts](../docs/resources.md). Repair any affected producer/admission defect; do not lower expectations to avoid the failing path. |
+| 2. Exercise scaled spill and refusal — [verified](evidence.md#scaled-report-spill-refusal-and-replay) | 1 | Compare one high-budget run with one admitted low-budget run and assert observed temporary storage. | Add the scaled profile, skew/NULL/empty variants and exact answers. Exercise memory and temp refusal, spill cancellation and replay using existing [grouping tests](../src/execution/aggregation/grouping/tests/replay.rs) and [resource contracts](../docs/resources.md). Repair any affected producer/admission defect; do not lower expectations to avoid the failing path. |
 | 3. Reconcile transient allocation histories | 2 | Arm the existing observer around one preparation/execution/drop history for the report, then challenge it with a known wrong attribution. | Extend the [ownership caller](../tools/fixtures/composed-ownership.rs) for cold, reused and refused construction histories at both pathname lengths/platforms. Observe transient requested/usable quantities, live errors and release separately. Resolve any newly exposed engine ownership gap. Compare with the retained native-reuse limitation below without padding an allowance or claiming a general physical cap. |
 | 4. Exercise overlapping report lifetimes | 1–3 | Park two report readers at different generations, cancel one while a writer/reclaimer advances, then rerun both pinned plans with fresh tokens. | Extend the existing [real-thread snapshot scenario](../tests/catalog_lifecycle/snapshots.rs) with blocking report state, shared-budget refusal and bounded alternative publication/cancellation/completion orders. Require exact old/new rows, receipts, clean terminal ownership and healthy reuse. Retain bounded waits and a control that breaks pin protection. This is enumerated schedule evidence, not arbitrary-race freedom. |
 | 5. Recover the mixed append history | 1 and 4 | Interrupt one report-data append between an issuance/publication boundary and verify the public reopen outcome against independent history. | Extend the existing [interruption campaign](../tools/check-catalog-interruption.py) with the composed data and retained reader/receipt history where process lifetime permits. Cover relevant publication cuts and recovery-after-failure, inspect the persisted graph independently, and require a healthy subsequent append/report. Reuse process ownership and cut machinery; do not implement a second publisher. |
@@ -98,9 +99,9 @@ to these goals, not work to repeat for its own sake.
 
 ### Estimate and reassessment
 
-Eight planned goals remain after completing the composed report. Budget **11–17
+Seven planned goals remain after verifying scaled spill and refusal. Budget **10–16
 remaining goals**, allowing three to nine bounded prerequisite repairs or necessary
-splits. The initial mapped estimate was 12–18; goal 1 completed without a new repair.
+splits. The initial mapped estimate was 12–18; goals 1 and 2 completed without an engine repair.
 The earlier 20–35 estimate was not a mapped backlog and counted broad areas that
 already have substantial implementation and evidence. It is superseded for this
 explicit internal scope; it was not a reliable production-readiness estimate.
