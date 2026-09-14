@@ -898,3 +898,205 @@ fn full_length_text_extrema_survive_hash_fallback_and_cancelled_reduction() {
     drop(query);
     database.close().unwrap();
 }
+
+#[test]
+fn event_report_replays_nullable_joined_dates_and_labels() {
+    use crate::{AppendLimits, ColumnDeclaration, ColumnInput, ColumnValues, DateValue};
+
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("report"),
+        crate::Config::new(16_000_000, 8_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    database
+        .declare_table(
+            "events",
+            &[
+                ColumnDeclaration {
+                    name: "dimension_id",
+                    data_type: DataType::Int64,
+                    nullable: true,
+                },
+                ColumnDeclaration {
+                    name: "happened",
+                    data_type: DataType::Date,
+                    nullable: true,
+                },
+                ColumnDeclaration {
+                    name: "amount",
+                    data_type: DataType::Int64,
+                    nullable: true,
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    database
+        .declare_table(
+            "dimensions",
+            &[
+                ColumnDeclaration {
+                    name: "id",
+                    data_type: DataType::Int64,
+                    nullable: false,
+                },
+                ColumnDeclaration {
+                    name: "label",
+                    data_type: DataType::String,
+                    nullable: false,
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    let dates =
+        [10_956, 11_016, 0, 11_016].map(|day| DateValue::from_days_since_unix_epoch(day).unwrap());
+    let mut append = database
+        .begin_append(
+            "events",
+            AppendLimits {
+                batches: 1,
+                encoded_bytes: 2048,
+            },
+            &cancel,
+        )
+        .unwrap();
+    append
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::Int64(&[1, 2, 99, 0]),
+                    validity: &[0b0111],
+                },
+                ColumnInput {
+                    values: ColumnValues::Date(&dates),
+                    validity: &[0b1011],
+                },
+                ColumnInput {
+                    values: ColumnValues::Int64(&[10, 20, 0, 3]),
+                    validity: &[0b1011],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    append.commit(&cancel).unwrap();
+    let mut append = database
+        .begin_append(
+            "dimensions",
+            AppendLimits {
+                batches: 1,
+                encoded_bytes: 2048,
+            },
+            &cancel,
+        )
+        .unwrap();
+    append
+        .write(
+            &[
+                ColumnInput {
+                    values: ColumnValues::Int64(&[1, 2, 2]),
+                    validity: &[0b111],
+                },
+                ColumnInput {
+                    values: ColumnValues::String(&["north", "south", "南"]),
+                    validity: &[0b111],
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    append.commit(&cancel).unwrap();
+
+    let resident = database.reserved_memory_bytes();
+    let query = database
+        .prepare(include_str!("../../../../../examples/event_report.sql"))
+        .unwrap();
+    let baseline = database.reserved_memory_bytes();
+    let result = database.execute(&query, &cancel).unwrap();
+    let Some(Aggregation::General(owner)) = result.first_aggregate() else {
+        panic!("general grouping");
+    };
+    let general = &owner[0];
+    // Admit hash grouping but leave room for only one key. Its second distinct
+    // year/label pair must trigger disk fallback and replay the retained join.
+    let retry_peak = result.accounted_memory_bytes() + crate::catalog::MAX_BYTES as u64
+        - general.memory.first().map_or(0, MemoryGroups::memory_bytes)
+        + MemoryGroups::requirement(&general.aggregate, &general.keys, 1, 9)
+            .unwrap()
+            .1;
+    drop(result);
+    let pressure = database
+        .reserve_memory(
+            database.config().memory_limit_bytes() - baseline - retry_peak,
+            "event report replay pressure",
+        )
+        .unwrap();
+    let mut result = database.execute(&query, &cancel).unwrap();
+    let Some(Aggregation::General(owner)) = result.first_aggregate() else {
+        panic!("general grouping");
+    };
+    assert_eq!(owner[0].memory.len(), 1);
+    let expected = [
+        (None, None, 1, 0, None),
+        (Some(1999), Some("north"), 1, 1, Some(10)),
+        (Some(2000), None, 1, 1, Some(3)),
+        (Some(2000), Some("south"), 1, 1, Some(20)),
+        (Some(2000), Some("南"), 1, 1, Some(20)),
+    ];
+    let (mut seen, mut disk, mut replay, mut finished) = (0, false, false, false);
+    for _ in 0..10_000 {
+        assert_eq!(
+            database.reserved_memory_bytes(),
+            baseline + pressure.bytes() + result.accounted_memory_bytes()
+        );
+        if let Some(Aggregation::General(owner)) = result.first_aggregate() {
+            disk |= matches!(owner[0].files, Files::Open(_));
+        }
+        if let State::Running(runtime) = &mut result.state {
+            replay |= runtime.first_join_mut().was_replayed();
+        }
+        match result.step() {
+            QueryStep::Progress => (),
+            QueryStep::Rows(batch) => {
+                for row in 0..batch.len() {
+                    let &(year, label, entries, present, total) =
+                        expected.get(seen).expect("extra group");
+                    assert_eq!(
+                        batch.value(row, 0),
+                        Some(year.map_or(Value::Null, Value::Int64))
+                    );
+                    match (batch.value(row, 1), label) {
+                        (Some(Value::Null), None) => (),
+                        (Some(Value::String(actual)), Some(label)) => {
+                            assert_eq!(actual.as_str(), label)
+                        }
+                        _ => panic!("unexpected label"),
+                    }
+                    assert_eq!(batch.value(row, 2), Some(Value::Int64(entries)));
+                    assert_eq!(batch.value(row, 3), Some(Value::Int64(present)));
+                    assert_eq!(
+                        batch.value(row, 4),
+                        Some(total.map_or(Value::Null, Value::Int64))
+                    );
+                    seen += 1;
+                }
+            }
+            QueryStep::Finished => {
+                finished = true;
+                break;
+            }
+            QueryStep::Failed(error) => panic!("event report replay: {error}"),
+        }
+    }
+    assert!(finished && disk && replay);
+    assert_eq!(seen, expected.len());
+    drop(result);
+    drop(pressure);
+    drop(query);
+    assert_eq!(database.reserved_memory_bytes(), resident);
+    assert_eq!(database.reserved_temp_bytes(), 0);
+    database.close().unwrap();
+}

@@ -203,3 +203,9 @@ literal joined/yearly answers, two append generations, reopen, numeric bit
 patterns, schema and reservation release. A deliberately altered expected group
 must fail before a healthy rerun. The [input helper](../examples/support/event_data.rs)
 owns bounded caller buffers; literal expected groups remain in the example.
+
+[scaled_report.rs](../examples/scaled_report.rs) compares the four input profiles
+at two budgets, cancellation/reuse, memory/temp refusal and partial-result drop.
+Its independent nested-loop row model is challenged with an altered count.
+The grouping [replay owner](../src/execution/aggregation/grouping/tests/replay.rs)
+forces the report from one hash group to disk fallback and observes join replay.
