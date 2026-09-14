@@ -95,6 +95,22 @@ five extra batch buffers and evaluation/copy overhead on this fixed input.
 The study retains a runnable comparison and the current evaluation owners;
 no general optimizer or performance guarantee follows from the narrow result.
 
+## Active milestone: partial query results and terminal ownership
+
+Add one bounded public-library example showing an explicitly ordered valid row
+prefix followed by arithmetic overflow, owned terminal errors, cancellation after
+rows and reuse of a prepared query with a fresh token. Verify literal row values,
+exact error operation/span, completion and reservation release. Trace the existing
+result/batch lifetimes beside their implementation owners and provide an optional
+tutorial without expanding the first declared-table flow.
+
+Keep production code unchanged unless the workload exposes a concrete defect.
+Run warnings-denied example compilation/Clippy and fresh sequential macOS/GNU
+arm64 Linux examples, with a wrong-expectation negative control and maintenance
+checks. Apply enclosing verification only to an affected engine boundary. Finish
+with compact evidence, local commits and owned cleanup; broader qualifications
+and publication restrictions remain unchanged.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
