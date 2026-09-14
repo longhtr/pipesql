@@ -5,6 +5,99 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Mixed report append interruption and recovery
+
+`a002bb1` extends the existing [interruption campaign](../tools/check-catalog-interruption.py)
+with a [report caller](../tools/fixtures/catalog-report-interruption.rs). The native
+observer and production engine are unchanged. The same cut loop now checks the
+original facts history and the composed report separately, with one stock library
+and caller build. Literal grouped answers remain independent of input construction;
+the Python graph oracle separately checks both tables, column identities, types,
+NULLability, complete raw DATE offsets and DOUBLE bits, including signed zero.
+
+Report setup commits two declarations, the dimension rows and eight events, then
+aborts attempt 5. The observed append issues attempt 6 and adds eight events in
+two writes. Its uninterrupted control retains and reruns the old eight-event plan
+before checking the new report. Terminated processes retain no live reader pins.
+A healthy continuation appends event 8 again, producing nine or seventeen raw
+events depending on whether the interrupted append published. Literal grouped
+answers and receipt history are checked before retry, after retry and after a
+second reopen, with memory/temp release at every report boundary.
+
+The first targeted probe terminated at event 77, immediately before data
+publication at event 78. The independent graph retained eight events, generation
+4 and issued attempt 6; public recovery resolved that attempt as aborted. Healthy
+retry published attempt 7 at generation 5 and produced the exact nine-event graph.
+The final campaign covers every observed before/after cut:
+
+| History | Append cuts | Recovery cuts | Independent graph checks | Issuance/data publication after events |
+| --- | ---: | ---: | ---: | --- |
+| Original facts | 76 | 46 | 249 | 10 / 66 |
+| Composed report | 88 | 46 | 273 | 10 / 78 |
+
+Recovery cuts start from both unpublished and mixed-root published states.
+Each terminated recovery is followed by healthy reopen, exact history checks,
+a successful append and another reopen. Both platforms reconcile 528 unique case
+records: 256 intentional process terminations, six expected oracle failures and
+266 successful processes, including 522 independent graph inspections. Each
+workload's wrong-generation, wrong-row and wrong-receipt controls fail at the
+intended assertion. The report graph unit test also rejects twelve field/value
+mutations, three wrong state/retry interpretations and an altered healthy-retry
+amount. Missing completion output cannot count as a successful caller.
+
+The selected graphs, receipts, outcomes and all 528 native traces agree across
+macOS and GNU arm64 Linux. Sixteen intermediate unpublished-recovery cuts
+(16–23 in each workload) retain different obsolete filenames, with matching
+counts and reachable graphs. [Recovery construction](../src/catalog_snapshot/construction.rs)
+collects uncommitted IDs in directory order before unlinking them; it promises no
+cross-platform deletion order. Every healed inventory agrees. No comparison
+removed a reachable-object, row, identity or receipt difference.
+
+Frozen sequential platform verification passes caller formatting, optimized
+warnings-denied Rust/native caller builds, 102 tooling tests, 44 independent codec
+fixtures, both interruption histories and the independent graph campaign. The
+latter retains 43 cases, two oracle controls, three CLI limit checks, genesis,
+lease contention and independent column order. The scoped sequences took
+119.344 seconds on macOS and 69.298 seconds on Linux. This tooling/documentation
+change does not replace the preceding complete ordinary Rust or native gate
+records; no production code, format, allowance or failure contract changed.
+
+After both platform sequences, eight fresh lessons ran on macOS then Linux:
+even/skewed reports at both budgets, empty/small reports, the original report and
+calendar lesson. Every process succeeded with empty stderr and byte-for-byte
+stdout agreement, including complete rows and DOUBLE bits. Lesson execution took
+21.256/12.173 seconds, excluding fresh builds; these are verification timings.
+
+The frozen 743-input manifest SHA-256 is
+`b245ea949fc0b152dad4831ddc1c7f90406473b3dff33d5508d4c27f42f9c3e1`.
+Only the two notes files changed afterward; the other 741 inputs retain fingerprint
+`3e19efed22b8a9ba593ebda11a1dd00fdec6cb7e6a41da1f01b469739101979d`.
+
+| Artifact | macOS SHA-256 | GNU arm64 Linux SHA-256 |
+| --- | --- | --- |
+| Scoped verification receipt | `f70d177d171ebd6583832670d217c53fa37f175351e739cd6ddb67bba38b45e2` | `d6c5f46ed44537cd2039866718ad28e4c427e850d975f7667a1b0a0b81cf2c45` |
+| Interruption receipt | `f36f817970b83398edc721ba0cd0ef53428516d09a43b2428e123c1e2b1deef7` | `022a96f7464d4d15f889af90733a72c9345aa6618176bcc445a4f715859ddd58` |
+| Fresh lesson receipt | `6cbc601794ab561d6c5e6ca1f364ed695179dfa652bd6f8e01ad0032c50e5f0d` | `42d5d5d8316bccc372a1b5cf904e670f0bc14e76f1144c342be5c177ac500b30` |
+
+Host monitoring sampled CPU/RSS, memory pressure/swap, disk capacity/I/O and
+network. Pressure was normal/warning, swap ranged from 1,321.75 to 3,095.25 MiB,
+and free disk stayed above 187.46 GiB. Sampled disk throughput reached 174.32 MB/s;
+compiler/owned-process samples reached 100.3% CPU and 452,064 KiB RSS. Container
+samples reached 898.0 MiB with no OOM kill and zero network traffic. One Mac Cargo
+job and one Linux CPU/job were used. Linux retained uid/gid 1000, 2 GiB without
+extra swap, no network and native database storage. These are resource observations,
+not physical-memory qualification.
+
+This remains process-termination evidence with host-visible writes preserved.
+It does not simulate discarded writes, torn storage, kernel/device failure or
+power loss. General concurrency, Windows, broader durability and the separate
+macOS combined-query usable-allocation deficit remain unfinished.
+
+Final documentation verification passed 940 local links. Owned probe/cut fixtures,
+logs, manifests, source exports, targets, lesson databases, monitoring outputs and
+the verification container were removed. No owned verification process remained;
+the original workspace target and preserved Linux image are unchanged.
+
 ## Overlapping report lifetimes
 
 `3e7156a` extends the existing [snapshot tests](../tests/catalog_lifecycle/snapshots.rs)
