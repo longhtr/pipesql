@@ -95,25 +95,11 @@ five extra batch buffers and evaluation/copy overhead on this fixed input.
 The study retains a runnable comparison and the current evaluation owners;
 no general optimizer or performance guarantee follows from the narrow result.
 
-## Active milestone: partial query results and terminal ownership
-
-Add one bounded public-library example showing an explicitly ordered valid row
-prefix followed by arithmetic overflow, owned terminal errors, cancellation after
-rows and reuse of a prepared query with a fresh token. Verify literal row values,
-exact error operation/span, completion and reservation release. Trace the existing
-result/batch lifetimes beside their implementation owners and provide an optional
-tutorial without expanding the first declared-table flow.
-
-The first example run distinguishes the 256-row batch maximum from the direct
-sorted producer's one-row first batch. Cancel after a validated nonempty prefix
-without assuming that every producer fills its output batch.
-
-Keep production code unchanged unless the workload exposes a concrete defect.
-Run warnings-denied example compilation/Clippy and fresh sequential macOS/GNU
-arm64 Linux examples, with a wrong-expectation negative control and maintenance
-checks. Apply enclosing verification only to an affected engine boundary. Finish
-with compact evidence, local commits and owned cleanup; broader qualifications
-and publication restrictions remain unchanged.
+The [partial-result lifecycle](evidence.md#partial-query-results-and-terminal-ownership)
+is complete in `3c7e5d2`. Its runnable tutorial verifies a valid row prefix followed
+by owned arithmetic failure, cancellation after rows and successful prepared-plan
+reuse with a fresh token. Both platforms pass exact output and a wrong-prefix
+negative control. Engine inputs remain unchanged.
 
 ## Next engineering priorities
 

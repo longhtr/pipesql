@@ -5,6 +5,64 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Partial query results and terminal ownership
+
+`3c7e5d2` adds [query_results.rs](../examples/query_results.rs) and the optional
+[partial-result tutorial](../docs/query-results.md). A fresh table contains
+INT64 amounts 0–255 and INT64 maximum. Explicit ORDER BY makes the expected
+sequence independent of scan order. The projection returns 256 checked values
+1–256 before a demanded addition overflow. The owned error retains operation
+`addition` and source bytes 40–50 after the result, prepared query and caller SQL
+string are released. A direct ordered query is cancelled after its first
+nonempty partial batch; its prepared plan then executes successfully with a
+fresh token, returning all 257 literal expected values and terminal Finished.
+
+The first trial incorrectly assumes every Rows batch has 256 rows. The direct
+sorted producer returns one row initially; the example now accepts a nonempty
+partial prefix and verifies its values before cancellation. It retains repeated
+terminal-state checks, result/plan reservation baselines and zero temporary debt.
+The [owner trace](../docs/execution.md#trace-a-terminal-query-result) distinguishes
+workspace destruction, the remaining result handle, the owned error and the
+prepared plan. No production interface or engine behavior changes.
+
+Warnings-denied release example Clippy/builds and fresh sequential macOS/GNU
+arm64 Linux runs pass. Both return exactly the tutorial's three lines, including
+cancellation prefix 1, with identical stdout SHA-256
+`ad9a84302be0eb71abab0ea2841961914fc734c00cedc1a3bbfc989aff62f5be`.
+A separately compiled caller changes only the expected overflow-prefix count to
+255; each platform rejects it with exit one, the prefix diagnostic and no success
+output. Maintenance passes 99 tooling tests, 44 independent codec fixtures and
+796 local links. All 691 prior non-Markdown inputs remain byte-identical to
+`66b90ea`; the BYTE_LENGTH engine baseline remains applicable without another
+core/native campaign. This example does not qualify arbitrary concurrent
+cancellation or general physical-memory bounds.
+
+The frozen 721-input manifest and read-only export agree, SHA-256
+`740fa716b4a088f70f7ac66e53bf678439760cf4c6364b1af4c3ef0b3b27a964`.
+Only the two notes files change afterward; the other 719 inputs retain fingerprint
+`063bb783e67542eced9c08e9723ad1579a4662a85c9fbbcf55e24cb410fb65e7`.
+Example source SHA-256 is
+`865c2705b72225d306e49915bf16265fa48c692d9ac321ffc7c219e4dae107cb`.
+Executable hashes are macOS
+`5cc6b95c17c3b5e7b6d716effc8db2585cd1659b07bdab01bbba86c9eddab807`
+and Linux `8f369375070de93a26d9e75a317d1419d61b935b00c1276837924ba2e2d8b167`.
+
+Rust 1.98.1 uses one Cargo job per platform on the 8-GiB Apple M1/macOS 26.6.2
+host. The preserved Linux image runs with uid/gid 1000, one CPU, 2 GiB without
+extra swap, no network and native database storage. Twenty-one sustained host
+samples show normal/warning pressure, swap 1,539.69–1,555.69 MiB, over 188.14 GiB
+free disk and sampled I/O 0–14.72 MB/s. Five container samples show at most
+100.03% reported CPU, 784 MiB and zero network traffic; final inspection confirms
+no OOM kill. Host en0 counters increase by 106,607,895 received and 5,065,949 sent
+bytes, including unrelated activity. These samples are observations, not peaks
+or engine resource qualification.
+
+Owned trials, final databases, targets, negative callers, export, monitoring
+records, logs, manifests and container are removed. No owned verification process
+remains. The existing target, image and toolchains are preserved. Final
+documentation verification passes 800 local links. Broader qualifications remain
+open. Nothing is pushed or published.
+
 ## STRING byte-length projections
 
 `ffa73b3` adds bounded BYTE_LENGTH through `Computation::ByteLength`: one typed
