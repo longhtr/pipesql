@@ -55,22 +55,12 @@ complete. Optional queries have their own setup, cleanup and maintained guide;
 the first declared-table flow now finishes before those choices. Executable inputs
 remain unchanged, and fresh setup, representative queries and cleanup pass.
 
-## Active milestone: explain native allocation reuse
-
-Reduce the retained macOS usable-heap counterexample before changing admission.
-The measuring allocator forwards System layouts unchanged and adds no allocation
-header. Compare a fresh 3,817,440-byte request with reuse after a larger allocation
-whose observed usable extent is 3,899,392 bytes. Use an independent native control
-to separate allocator behavior from the caller's accounting. Limit the first
-investigation to 30 minutes and prefer a small reproducible diagnostic over an
-allocation-tracing framework.
-
-Retain an explanatory diagnostic or negative control, and repair a demonstrated
-engine or observer defect if found. Preserve the strict combined-history replay
-and distinguish causal evidence from allocator-specific observations. Run focused
-stock macOS and GNU/Linux checks plus verification required by the retained change,
-document the result, commit locally and remove owned outputs. Do not pad admission
-or claim a universal usable-heap/RSS bound.
+The [native allocation reuse reduction](evidence.md#native-allocation-reuse) is
+complete. A two-allocation C history reproduces the oversized Darwin extent
+without the engine or Rust observer; GNU/Linux reports different extents and no
+reuse in those cells. It does not identify the original query's freed block or
+explain its entire aggregate deficit. The strict combined-query diagnostic and
+unqualified usable-heap/RSS status remain; no admission padding was added.
 
 ## Next engineering priorities
 

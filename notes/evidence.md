@@ -7,8 +7,9 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Native allocation reuse
 
-The ordinary Rust measuring allocator forwards allocation layouts unchanged to
-System and samples after allocation/before physical free. It adds no headers,
+`0c78252` adds the independent native diagnostic. The ordinary Rust measuring
+allocator forwards allocation layouts unchanged to System and samples after
+allocation/before physical free. It adds no headers,
 padding or per-allocation payload. The independent native C control uses only
 `malloc`, `free` and the platform's usable-size query. Its larger seed is a
 controlled input matching an observed extent, not a complete reconstruction of
@@ -22,13 +23,51 @@ without the engine or Rust observer. It supports that explanation for the query'
 extent but does not identify its original freed block or explain every byte of
 its aggregate deficit. Three invalid-invocation controls reject, and closing
 stdout rejects with exit one instead of reporting success after a failed flush.
+The inherited macOS environment sets `MallocNanoZone=0`. Repeating all six native
+cells with that variable unset produces the same extents and address-reuse results.
+This checks those two configurations, not every allocator setting.
 
 The unmodified combined-history caller still fails on macOS with exit 101,
 349 allocations, nine frees, requested headroom 16,528 and usable headroom
 -219,998 bytes. The guard remains strict. No engine or observer defect has been
-demonstrated by this reduction, and no admission allowance changes. GNU/Linux
-controls and final maintenance verification are pending. Broader allocator,
-physical-memory and RSS qualification remains unresolved.
+demonstrated by this reduction, and no admission allowance changes. GNU/Linux's
+combined history completes with the full eleven-pair result. Its three cold C
+cells report 3,817,456 usable bytes; three seeded cells report 3,817,448 bytes and
+no address reuse. Each seed occupies 3,903,472 usable bytes. Invalid-invocation
+controls reject on both platforms; a full output sink on Linux returns exit one.
+These are observed allocator configurations, not fixed cross-platform constants.
+
+Both native callers compile with the documented C11, optimized, warnings-denied
+command; macOS uses Apple clang 21.0.0. The experiment runs sequentially on
+macOS arm64 Darwin 25.6.0 and GNU
+arm64 Linux 7.0.12-linuxkit/glibc 2.36. The stock Rust caller uses Rust 1.98.1 and
+unchanged production/observer inputs; no engine or existing caller test source
+changes from `df0cace`. Maintenance passes 99 tooling tests, 44 independent codec
+fixtures and 719 local links. Final link verification passes 721 links. No broader
+runtime gate is repeated for this optional independent diagnostic.
+
+The 714-input manifest and exact Linux source export have SHA-256
+`f65368a0c86ebe37745107f75c8b7d7ff7b164ed4ed13ed68c9326eba9efe713`.
+Only the two notes files change afterward; the other 712 inputs retain fingerprint
+`ccc09b8ca69c8a1be82538e148366c0f0c3a23fa9a9de1c92f316aa8f0592fee`.
+The native C source has SHA-256
+`516d5904364a01217dda1835a17ead60bf4a2da6f4fb0ff14d4b7722409db013`.
+The maintained [replay commands](../tools/README.md#isolate-native-allocation-reuse)
+reconstruct both controlled histories; the separate combined-query command keeps
+its original failure condition. The first native reduction completed within the
+initial 30-minute investigation.
+
+Twenty-two host samples observe normal and warning pressure, swap between
+1,345.94 and 1,433.94 MiB, ending at 1,345.94, and at least 188.43 GiB free disk.
+Sampled disk I/O ranges from 0.02 to 57.71 MB/s. Rust builds use one job. Linux
+uses uid/gid 1000, one CPU, a 2 GiB memory/memory-plus-swap limit and no network.
+Twenty container samples observe up to 100.07% CPU, 846.6 MiB and zero network
+traffic. No monitoring command fails and no container OOM kill occurs. These
+observations include unrelated host activity and do not qualify engine/RSS bounds.
+Owned probes, stock builds, databases, source export, logs, monitoring outputs
+and the container are removed. The existing target, toolchains and verification
+image remain. Broader allocator, physical-memory and RSS qualification remains
+unresolved.
 
 ## First tutorial and optional queries
 
