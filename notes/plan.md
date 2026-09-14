@@ -25,25 +25,35 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: bounded base-ten logarithms
+## Active: demanded execution failure ownership
 
-`0f4c3b3` adds one-argument LOG10 through the existing unary expression owners.
-The [base-ten record](evidence.md#base-ten-logarithms) retains the independent
-references, demand/error checks, composition, admission and replay coverage.
-There is no new allocation owner, scratch buffer or persistent format.
+Observe transient ownership when a numeric expression fails during execution of
+the retained wide nullable STRING LEFT JOIN. Limit the initial trace of failure
+transitions, runtime/batch/plan drop order and owned error lifetimes to 30 minutes.
+The cheapest useful falsifier is a late LOG10 domain error after observable
+external work, measured through the existing public scoped allocator observer.
+Reassess if the workload cannot reach that boundary within maintained caller limits.
 
-Both complete 24-stage macOS/GNU arm64 Linux gates pass on matching frozen inputs,
-with 634 ordinary Rust tests and 97 tooling tests per platform. Discovery,
-semantic/composition records and preparation/catalog prefix schedules are
-reconciled. Fresh declared-table and decibel examples pass sequentially on both
-platforms after both gates. Owned outputs are removed while pre-existing target
-artifacts, the verification image and toolchains remain.
+Keep caller storage fixed during observed calls. Require prior allocation events,
+observed physical frees in the failing call, nonnegative requested/usable headroom,
+and exact heap, descriptor and reservation restoration with the owned error live
+and after release. Retain exact UTF-8 source spans and repeated failure behavior.
+Add an omitted-observation negative control and preserve the complete independent
+eleven-pair/64-column healthy oracle, calibration, nonheap equations and all existing
+admission, cancellation, replay, publication, recovery and cleanup checks. Repair
+only concrete owner defects; add no admission padding or engine instrumentation.
 
-Completed language and ownership work remains closed beyond a concrete new defect
-or affected workload. Arbitrary allocators, concurrent histories, whole-process/RSS,
-Windows and broader durability retain their documented limits. Publication
-restrictions are unchanged. Reassess README's decision order before activating
-the next bounded milestone.
+Document the actual failure flow and limits. Run focused checks and matching
+frozen sequential macOS/GNU arm64 Linux gates, reconcile discovery and independent
+evidence, then run fresh relevant examples sequentially. Review the final diff,
+remove owned outputs and make coherent local commits. Keep historical evidence
+below 641,696 bytes and preserve publication restrictions.
+
+The [base-ten milestone](evidence.md#base-ten-logarithms), normal lifecycle and
+preparation-failure checks remain closed beyond this demanded execution-failure
+boundary. This work does not establish exhaustive execution-allocation histories,
+arbitrary allocator/concurrency behavior, whole-process/RSS, Windows or broader
+durability/sanitizer qualification.
 
 ## Next engineering priorities
 
