@@ -1,191 +1,144 @@
 # Work plan
 
 [README](../README.md) owns product requirements and decision order;
-[Engineering](../docs/engineering.md) owns working method. This plan identifies
-unfinished work and publication restrictions. [Evidence](evidence.md) owns
+[Engineering](../docs/engineering.md) owns working method. This plan owns the
+unfinished queue and publication restrictions. [Evidence](evidence.md) owns
 completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The [calendar-year projections](evidence.md#calendar-year-projections) are
-complete in `a2fed93`. Matching macOS/GNU arm64 Linux core gates pass 680 ordinary
-Rust tests, the expanded ownership selection, 24 semantic cases and 326
-composition records. Fresh calendar, declared-table, logical-plan and STRING
-measurement examples pass. The [calendar lesson](../docs/calendar-year.md)
-connects the existing Gregorian decoder to typed projection and grouping;
-no allocation owner, allowance or persistent format changes.
+The verified implementation checkpoint is `464fbd6`. Its
+[calendar-year record](evidence.md#calendar-year-projections) identifies matching
+macOS/GNU arm64 Linux core gates: 680 ordinary Rust tests, 100 tooling tests,
+44 independent codec fixtures, expanded ownership checks, 24 semantic cases and
+326 composition records. Fresh calendar, declared-table, logical-plan and STRING
+measurement examples pass. The last complete 24-stage native/persistence
+[checkpoint](evidence.md#full-verification-checkpoint) remains attached to
+`1e5cfdc`; newer scoped checks do not update that full claim.
 
-The [borrowed logical-plan explanation](evidence.md#borrowed-logical-plan-explanations)
-is complete in `2244948`. The public view exposes validated semantic relationships
-without adding engine effects or allocation ownership. Matching macOS/GNU arm64
-Linux core gates pass 669 ordinary Rust tests, the complete ownership selection
-and fresh examples. Fixed-sink formatting observes zero allocation and free
-events on success and failure. Parser, binder, execution and native owners remain
-unchanged; broader platform and resource qualifications remain open.
+The engine already has typed appends, snapshot readers, nullable projections,
+joins, grouped aggregation, sorting, spill/replay, cancellation and recovery.
+The [language manifest](../docs/language.md#current-public-query-manifest),
+[public interfaces](../docs/interfaces.md), [test map](../tests/README.md) and
+[tool map](../tools/README.md) locate their exact scope. Existing
+[preparation/execution](evidence.md#query-execution-walkthrough),
+[snapshot](evidence.md#snapshot-pins-and-retained-outcomes),
+[equality](evidence.md#sql-equality-and-stored-double-bits) and
+[partial-result](evidence.md#partial-query-results-and-terminal-ownership)
+lessons remain complete. The testing/tooling overhaul and earlier language,
+append, reader and grouped-allocation repairs remain closed unless a concrete
+defect or new workload changes their scope. No historical archive is required.
 
-The [equality learning example](evidence.md#sql-equality-and-stored-double-bits)
-is complete in `55c6216`. Fresh macOS/GNU arm64 Linux runs verify stored bits,
-four grouping/DISTINCT classes, exact filter IDs and eight equality-join pairs.
-Both wrong-count controls reject the altered oracle before output. Production
-inputs remain unchanged; this example does not expand platform or resource
-qualification.
+## Internal analytical learning checkpoint
 
-The [numeric call recognition](evidence.md#numeric-call-recognition) refactor is
-complete in `4ce634c`. One read-only parser decision retains all eighteen function
-spellings, aliases, ordinary-name fallback and call frames. Matching macOS/GNU
-arm64 Linux core gates pass 663 ordinary Rust tests, 24 semantic cases, 322
-composition records and fresh examples. Runtime and resource owners are unchanged.
+This is the finite internal checkpoint informally called “0.0.1 level.” It does
+not change the package version, activate publication, stabilize an API or format,
+or certify the [production release criteria](../docs/verification.md#release-criteria).
+It covers macOS and GNU arm64 Linux on the qualified local/native database paths.
+Windows work is outside this queue and remains an unfinished product obligation.
 
-The [explicit numeric DOUBLE casts](evidence.md#explicit-numeric-double-casts)
-in `1fcd7bd` retain numeric argument demand, NULLability and existing DOUBLE bits.
-The learning exercise shows how conversion order changes precision and overflow;
-its ownership and healthy-control checkpoint remains retained separately. The
-[STRING character-length work](evidence.md#string-character-length-projections)
-and [stored text workload](evidence.md#stored-text-measurement-costs) remain closed.
+The checkpoint follows one complete analytical task: append events and a small
+dimension table, reopen, prepare a report, publish more events while an older
+report remains pinned, compare old/new answers, reclaim safely and recover an
+interrupted append. Events contain an INT64 identity, a nullable dimension key,
+a nullable DATE, a nullable INT64 amount and a DOUBLE measurement. Dimensions
+contain an INT64 key and a STRING label. A LEFT JOIN retains missing dimensions;
+year extraction and grouping produce per-year/per-label counts and totals.
+A separate projection exercises the DOUBLE values without making approximate
+arithmetic the oracle for exact integer totals.
 
-The [allocation-capacity preflight](evidence.md#allocation-capacity-preflight)
-in `51bd731`, with campaign integration in `7078729`, passes matching macOS
-and GNU arm64 Linux scoped verification:
-14-stage core gates, 640 ordinary Rust tests per platform, public ownership,
-29 healthy allocation-control cells, 24 independent aggregate-semantic cases,
-311 composition cases and fresh examples. A direct allocator observer rejects
-the previous helper. Current production callers use equal request/ceiling values;
-valid allocation and release behavior is preserved. These checks establish the
-affected boundary; they do not constitute a complete 24-stage gate. The preceding
-[blocking-controller repair](evidence.md#blocking-controller-lifetimes) retains
-its independent physical-size controls against the prior implementation.
-The previous [full checkpoint](evidence.md#full-verification-checkpoint) remains
-attached to `1e5cfdc`. The [platform matrix](../docs/testing.md#platform-status)
-distinguishes implementation, execution and qualification.
+Use a readable sixteen-event fixture first, with literal expected rows. Add a
+bounded 131,072-event profile with independently varied NULLs, missing keys,
+duplicate join keys and skew. Keep tables, batches and native units within the
+existing [ingestion limits](../docs/interfaces.md#streaming-ingestion). Choose
+high/low query budgets from measured working storage: the low budget must admit
+the operation and demonstrably spill. A large input file alone is not spill
+evidence. Reuse caller buffers and existing test/campaign owners; no new server,
+scheduler, general expression framework or simulator is needed.
 
-Use the [language manifest](../docs/language.md#current-public-query-manifest),
-[implementation reading path](../docs/README.md#learn-the-implementation),
-[test map](../tests/README.md) and [tool map](../tools/README.md) for current
-capabilities and commands. Maintained checks need no historical checkout or
-archive. Completed milestones remain closed unless a concrete defect, affected
-boundary or new workload changes their disposition. The
-[testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
-coverage inventory and consequential deletion rationale.
+### Completion criteria
 
-The [bounded power expressions](evidence.md#bounded-power-expressions) are
-complete. POW and POWER share the existing binary numeric path, with explicit
-exceptional values, owned failures and approximate finite results. Both full
-gates, independent discovery and record reconciliation, and sequential fresh
-compounding examples pass. Prior language and ownership milestones remain closed
-unless a concrete affected defect or new workload changes their scope. Exhaustive
-execution-allocation histories, arbitrary allocator/concurrency behavior,
-whole-process/RSS, Windows and broader durability/sanitizer qualification remain
-unfinished.
-
-The [failed wide-join construction boundary](evidence.md#failed-wide-join-construction)
-is complete. Existing inline charges now outlive physical controller release;
-no allowance or payload allocation was added. All 353 construction allocation
-prefixes and the healthy control pass at both pathname lengths on both platforms,
-alongside independent negative controls, complete gates and fresh LEFT JOIN
-examples. The prepared query remains independently owned while errors are live.
-
-The combined construction-refusal and changed-width demanded-expression history
-still exposes a macOS native usable-heap deficit, with requested ownership covered.
-Its fresh Linux replay completes. Keep that strict diagnostic available without
-a passing or general physical-memory claim. Join, ordering and sorted-set
-controllers now retain their inline charges through physical release. Broader
-allocator histories still need their own evidence.
-
-The [first-tutorial cleanup](evidence.md#first-tutorial-and-optional-queries) is
-complete. Optional queries have their own setup, cleanup and maintained guide;
-the first declared-table flow now finishes before those choices. Executable inputs
-remain unchanged, and fresh setup, representative queries and cleanup pass.
-
-The [native allocation reuse reduction](evidence.md#native-allocation-reuse) is
-complete. A two-allocation C history reproduces the oversized Darwin extent
-without the engine or Rust observer; GNU/Linux reports different extents and no
-reuse in those cells. It does not identify the original query's freed block or
-explain its entire aggregate deficit. The strict combined-query diagnostic and
-unqualified usable-heap/RSS status remain; no admission padding was added.
-
-The [query execution walkthrough](evidence.md#query-execution-walkthrough) is
-complete in `7450500`. Preparation and execution follow the same runnable query,
-including producer boundaries, borrowed batches, completion and terminal failure.
-Fresh macOS/GNU arm64 Linux runs agree on total 38 and a demanded addition
-overflow with its exact source span. Engine inputs remain unchanged.
-
-The [snapshot and outcome walkthrough](evidence.md#snapshot-pins-and-retained-outcomes)
-is complete in `45d1158`. The existing example now checks old/new rows, two
-successful receipts and a separately aborted attempt across later publication,
-reclamation and reopen. Its reading path distinguishes data pins from retained
-success history. Fresh macOS/GNU arm64 Linux runs agree; engine inputs remain
-unchanged.
-
-The [computed projection workload](evidence.md#computed-projection-costs) is
-complete in `5671e4c`. Repeated complete executions confirm the staged form's
-five extra batch buffers and evaluation/copy overhead on this fixed input.
-The study retains a runnable comparison and the current evaluation owners;
-no general optimizer or performance guarantee follows from the narrow result.
-
-The [partial-result lifecycle](evidence.md#partial-query-results-and-terminal-ownership)
-is complete in `3c7e5d2`. Its runnable tutorial verifies a valid row prefix followed
-by owned arithmetic failure, cancellation after rows and successful prepared-plan
-reuse with a fresh token. Both platforms pass exact output and a wrong-prefix
-negative control. Engine inputs remain unchanged.
-
-The [partial-result allocation observations](evidence.md#partial-result-allocation-ownership)
-are complete in `b9b3fcc`. The ordered workload now checks transient allocation
-ownership through valid prefixes, failure/cancellation, terminal repetition,
-owned-error transfer and prepared release. Both pathname lengths and platforms
-pass the complete ownership selection and sixteen negative controls. Production
-inputs remain unchanged; broader allocator/RSS qualifications remain open.
-
-
-The [stored text measurement workload](evidence.md#stored-text-measurement-costs)
-is complete in `529306d`. The example checks byte/scalar totals and full result
-release across 1,020 executions per platform. Both variants observe the same
-logical memory and no temporary use; the measurements retain their sample spread
-and do not justify an engine optimization. Fresh macOS/GNU arm64 Linux runs and
-wrong-total controls pass. All pre-existing non-Markdown inputs remain unchanged.
-
-## Active milestone: define a finite analytical learning checkpoint
-
-Define an internal checkpoint around one useful end-to-end analytical workload,
-clear interfaces and ownership, teachable implementation flows and observable
-failure/resource behavior on macOS and GNU/Linux. This does not activate a
-release, stabilize a format or replace the production criteria.
-
-Audit current contracts and evidence before fixing the remaining queue. Map each
-unmet criterion to a bounded outcome, prerequisite, inexpensive falsifier and
-sufficient verification. The provisional planning estimate is 20–35 additional
-goals, including this audit; revise it if the mapped gaps warrant a different
-range. Resource, concurrency and recovery findings carry the largest uncertainty.
-Keep this plan as the working owner, link existing contracts and evidence, and
-avoid duplicate roadmaps or reopening closed features without an affected case.
-Finish with a reviewed, verified documentation checkpoint and repository sync.
-
-## Next engineering priorities
-
-Choose the next bounded milestone by README's decision order. Resolve a concrete
-semantic, durability or resource counterexample before extending the affected
-owner. The existing append, reader and grouped-allocation repairs remain complete;
-the physical-memory qualifications below are broader obligations.
-
-| Area | Next action and required evidence |
+| Criterion | Evidence required before this checkpoint is complete |
 | --- | --- |
-| Resource ownership | Identify an uncovered owner, allocation history or transient boundary with a representative public workload. Trace any requested/usable/charged discrepancy before changing admission. Preserve independent attribution and release checks; arbitrary allocators and whole-process/RSS bounds remain unqualified. |
-| Native platforms | Implement the missing Windows paths, handles, traversal, locking, synchronization, CLI startup and process ownership in bounded owner-specific changes. Separate compilation from native runtime qualification; unavailable Windows hardware must not block independent macOS/GNU/Linux work. |
-| Filesystems and durability | Qualify additional supported filesystem/device premises beyond process termination. Keep the tested host-shared mount excluded and identity checks fail-closed. Reopen its unresolved sharing-layer cause only when new environment evidence can change the disposition. The [identity diagnostic](../docs/testing.md#diagnose-filesystem-identity) is independently replayable. |
-| Native diagnostics | Extend from qualified mutex/pathname Rust wrappers to an affected unqualified boundary with reproducible clean/fault controls. ThreadSanitizer, instrumented standard libraries, system-library internals, other native boundaries and general race freedom remain unfinished. See the [qualification limits](evidence.md#platform-and-sanitizer-limitations). |
-| Product qualification | Select a useful bounded language/workload or crash/concurrency scenario from the intended analytical workload. Preserve independent result, failure and resource oracles. Deterministic overlapping-reader schedules do not establish arbitrary-race detection. Measure complete-query costs before changing an owner for performance; define compatibility before promising stable formats or interfaces. |
+| Correct, useful answers | Exact schema and complete rows agree with literal small-case expectations and an independent row model at scale. Cover NULL, duplicates, missing dimensions, skew, empty input and demand-sensitive errors through stock public interfaces. |
+| Bounded ownership and failure | High/low budgets agree; actual spill/replay is observed. Requested allocation ownership, memory/temp refusal, cancellation, partial-result failure and terminal release reconcile in the composed workload. Preserve every existing strict negative control and demanded error span. |
+| Snapshot and publication truth | Reader/writer/reclamation schedules preserve pinned answers and receipts. Process cuts and failed recovery produce only independently permitted old/new/unresolved/refused states, followed by a successful healthy continuation when the contract allows it. |
+| Understandable architecture and interfaces | Follow one result and one consequential failure from public call to semantic identity, producer, allocation/effect owner and cleanup. Repair obstacles discovered during these changes beside their owners; do not require speculative rewrites or a separate cosmetic audit. |
+| Usable learning path | One fresh setup-to-cleanup path connects the report to existing preparation, execution, snapshot and outcome explanations. Commands check completion, expected failures and release. Readers need no development chronology or removed outputs. |
+| Reproducible final evidence | Review the exact final tree and its API/format claims; run complete sequential macOS/Linux gates and the composed workload on matching frozen inputs, followed by fresh examples. Record discovery, negative controls, source/artifact identities and exclusions; clean owned outputs and commit. |
 
-The shared-mount investigation found descriptor APIs agreeing and no repository
-normalization defect. Native storage passed while the tested sharing layer did
-not; the causal question remains unresolved. Linux campaigns use an unprivileged
-user and native database storage. Broader durability, Windows runtime and
-whole-process memory require separate evidence.
+An unexplained semantic, requested-ownership, publication or cleanup failure in
+this workload blocks completion. An existing passing component test cannot
+stand in for the missing composed observation. Every implementation goal includes
+its affected documentation, readable ownership flow and sufficient verification;
+quality work is not deferred to the final gate.
+
+### Ordered remaining goals
+
+These are nine bounded outcomes, not nine already activated goals. Activate one
+through the goal tool at a time. Prerequisites below name queue positions; the
+first goal has no unfinished prerequisite. Existing narrower scenarios are inputs
+to these goals, not work to repeat for its own sake.
+
+| Order and outcome | Prerequisites | Cheapest useful falsifier | Completion and verification boundary |
+| --- | --- | --- | --- |
+| 1. Establish the composed report | Current baseline | Run the sixteen-event public query against literal rows; deliberately alter one expected group and require rejection. | Add reusable, bounded fixture construction and an independent reference answer. Check all four types, LEFT JOIN multiplicity, nullable year groups, two append generations, schema, Finished and release. Explain the fixture and query beside their owners. Reuse [composed](../examples/composed.rs), [calendar](../examples/calendar_year.rs) and [snapshot](../tests/catalog_lifecycle/snapshots.rs) patterns. |
+| 2. Exercise scaled spill and refusal | 1 | Compare one high-budget run with one admitted low-budget run and assert observed temporary storage. | Add the scaled profile, skew/NULL/empty variants and exact answers. Exercise memory and temp refusal, spill cancellation and replay using existing [grouping tests](../src/execution/aggregation/grouping/tests/replay.rs) and [resource contracts](../docs/resources.md). Repair any affected producer/admission defect; do not lower expectations to avoid the failing path. |
+| 3. Reconcile transient allocation histories | 2 | Arm the existing observer around one preparation/execution/drop history for the report, then challenge it with a known wrong attribution. | Extend the [ownership caller](../tools/fixtures/composed-ownership.rs) for cold, reused and refused construction histories at both pathname lengths/platforms. Observe transient requested/usable quantities, live errors and release separately. Resolve any newly exposed engine ownership gap. Compare with the retained native-reuse limitation below without padding an allowance or claiming a general physical cap. |
+| 4. Exercise overlapping report lifetimes | 1–3 | Park two report readers at different generations, cancel one while a writer/reclaimer advances, then rerun both pinned plans with fresh tokens. | Extend the existing [real-thread snapshot scenario](../tests/catalog_lifecycle/snapshots.rs) with blocking report state, shared-budget refusal and bounded alternative publication/cancellation/completion orders. Require exact old/new rows, receipts, clean terminal ownership and healthy reuse. Retain bounded waits and a control that breaks pin protection. This is enumerated schedule evidence, not arbitrary-race freedom. |
+| 5. Recover the mixed append history | 1 and 4 | Interrupt one report-data append between an issuance/publication boundary and verify the public reopen outcome against independent history. | Extend the existing [interruption campaign](../tools/check-catalog-interruption.py) with the composed data and retained reader/receipt history where process lifetime permits. Cover relevant publication cuts and recovery-after-failure, inspect the persisted graph independently, and require a healthy subsequent append/report. Reuse process ownership and cut machinery; do not implement a second publisher. |
+| 6. Challenge query composition | 1–2 | Apply a harmless rename or legal projection boundary to the report and compare complete typed answers; a wrong-row oracle must fail. | Extend the [composition corpus](../tools/check-composable-aggregates.py) with bounded variants of identities, NULL predicates, source/derived inputs and numeric consumers. Include rejected near-misses and demanded spans. Use only equivalences guaranteed by the language; record covered dimensions and retain replayable failing inputs. No general fuzz framework is required. |
+| 7. Challenge corruption and failed recovery | 5 | Corrupt one referenced typed payload and one authoritative metadata field in fresh quiescent fixtures; demand must fail without silently choosing an older valid state. | Add composed-workload cases to existing [graph and corruption checks](../docs/verification.md#independent-catalog-inspection). Preserve skipped payload demand, bounded validation, failed-recovery outcomes and cleanup. Independently distinguish structural validity from the report's semantic result. Keep source and scratch corruption expectations with their actual owners. |
+| 8. Measure and teach the complete workflow | 2–7 | Run the same verified report at both budgets and compare complete-query costs; stop an optimization proposal if it cannot change that result. | Measure ingestion, prepare, execute, reopen and reclamation phases with CPU, I/O, logical/temp and process-memory observations kept distinct. Document a bounded baseline and explain material differences. Consolidate the fresh report lesson with existing owner explanations, including one failure and recovery path. Make performance changes only for a demonstrated workload cost and verify them fully. |
+| 9. Verify the frozen internal checkpoint | 1–8 | Run the documented workflow from a clean source export; any undocumented setup dependency or false capability claim fails the audit. | Review current interfaces, dependency/unsafe boundaries, documentation and actual change locality using the work above. Remove only demonstrated stale/duplicate material. Run the complete [gate](../docs/testing.md), all added campaigns and sequential fresh examples on matching inputs. Reconcile records, preserve exclusions, record compact evidence, clean outputs and synchronize coherent commits. |
+
+### Estimate and reassessment
+
+Nine planned goals remain after this planning audit. Budget **12–18 additional
+goals**, allowing three to nine bounded prerequisite repairs or necessary splits.
+The earlier 20–35 estimate was not a mapped backlog and counted broad areas that
+already have substantial implementation and evidence. It is superseded for this
+explicit internal scope; it was not a reliable production-readiness estimate.
+
+This is a planning allowance, not a completion promise or a calendar estimate.
+An allocation-history explanation, concurrency defect or recovery repair can
+outweigh several feature goals. After goals 1–3, reassess using observed costs
+and failures; later discoveries update this same queue with their concrete reason.
+Do not manufacture goals to use the allowance. Retire a planned item only when
+its full outcome already has applicable evidence. Additional SQL functions,
+operator families, optimizer rewrites and platform expansion enter only if this
+workload demonstrates a prerequisite; they are not part of the countdown.
+
+### Qualifications that remain outside this internal claim
+
+The [combined allocation history](evidence.md#native-allocation-reuse) still
+exposes a macOS usable-heap deficit while requested ownership is covered. The
+independent native reduction demonstrates oversized block reuse but does not
+identify the original query block or explain its entire deficit. The strict
+combined-query diagnostic stays available and must not be described as passing.
+This checkpoint does not claim arbitrary allocator-history, usable-heap or
+whole-process/RSS bounds. Any newly uncovered violation of an advertised resource
+contract still requires repair; naming a qualification gap is not a waiver.
+
+Deterministic overlapping-reader schedules, effect injection and process cuts
+already have evidence. General concurrency/race detection, ThreadSanitizer,
+whole-system scheduling/fault simulation and uninstrumented native/runtime
+internals remain unfinished. The [sanitizer record](evidence.md#platform-and-sanitizer-limitations)
+identifies the exercised mutex/pathname scopes; no broader claim follows.
+
+The [durability contract](../docs/transactions.md#platform-contract) remains
+conditional on exact OS/filesystem/device premises. Broader Linux durability,
+power-loss/device certification, additional filesystems and stable API/format
+upgrade compatibility are not established by this queue. The tested host-shared
+Linux database mount remains excluded; use native database storage and preserve
+fail-closed identity checks. Reopen that sharing-layer investigation only when
+new evidence can change its disposition. Windows implementation/runtime work
+remains outside this checkpoint. These exclusions make this an internal learning
+checkpoint, not fulfillment of README's complete production standard.
 
 Partitioned hash aggregation, a shared buffer manager and parallel execution
-remain possible alternatives, not scheduled rewrites. Investigate one when a
-representative workload exposes a concrete limitation, with an independent
-correctness oracle, resource costs and an end-to-end measurement that can reject
-the proposal. The [grouping workload record](evidence.md#grouping-learning-workload)
-retains the adopted research lessons and oracle-compatibility caveat.
+remain alternatives requiring a demonstrated workload need, independent results,
+resource costs and end-to-end measurements.
 
 ## Publication
 
