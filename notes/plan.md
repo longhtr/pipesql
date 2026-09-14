@@ -180,7 +180,9 @@ retains the adopted research lessons and oracle-compatibility caveat.
 
 ## Publication
 
-Review the exact tree and destination before publishing. Do not push, publish,
-modify remote refs or rewrite published history until the publication decision
-is explicitly resolved. Any later history replacement requires explicit
-authorization and reconciliation of the actual remote state.
+Repository synchronization is permitted for reviewed, verified checkpoints.
+Check the exact committed tree, destination and current remote state before
+pushing. Use a fast-forward update when the remote history is an ancestor;
+reconcile divergent work before deciding whether history replacement is needed.
+Unfinished working-tree changes remain outside published checkpoints. Repository
+synchronization does not establish release readiness or authorize a package release.
