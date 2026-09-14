@@ -7,30 +7,38 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 712 frozen inputs retained in `38f2332`
+Both complete 24-stage gates verify the 712 frozen inputs retained in `1e5cfdc`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `bf19bd256d1156e7fb5706ee918f637469824b8591022020b9c1d68a67d665b9`.
+gates: `e1b8ba30a2d7e9ab3b3bd1299a365b852cefddcffbf251725ff5bc8359fe943a`.
 Finalization changes only the two notes files. The other 710 inputs retain
-fingerprint `6b377a2b1afb061948410e54be09c71c70e91785fa0f3b737218680cdc1eb02a`;
-all manifested inputs are tracked. Final local-link verification passes 689 links.
+fingerprint `2ecfe1b669db279c217f9f34b6c641d6b5dedc0102630c0e8da885266d11fd00`;
+all manifested inputs are tracked. Final local-link verification passes 699 links.
 
-Each platform executes 639 ordinary Rust tests, including all 143 public catalog
+Each platform executes 640 ordinary Rust tests, including all 143 public catalog
 tests, plus the separate lease subprocess. Discovery independently lists those
-639 tests across thirteen targets per platform. No ordinary test is ignored or
-filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 98 tooling tests, 44 independent codec fixtures and 687 local links.
-Independent aggregate semantics pass 24 cases and composition passes 311
-scenarios. Their complete records agree across platforms after excluding ambient
-database paths and composition stdout digests. Those digests are not portable
-semantic hashes; expected nonzero semantic-case exits remain part of the comparison.
+640 tests across thirteen targets per platform: seven nonempty test targets and
+six examples with no tests. No ordinary test is ignored or filtered; the selected
+lease child reports six filtered siblings. Maintenance passes 99 tooling tests,
+44 independent codec fixtures and 698 local links. Independent aggregate semantics
+pass 24 cases and composition passes 311 scenarios. Their complete records agree
+across platforms after excluding ambient database paths and composition stdout
+digests. Those digests are not portable semantic hashes; expected nonzero
+semantic-case exits remain part of the comparison.
 
 Both allocation campaigns retain positions 0–1,055 plus healthy control 1,056
 at both short and 384-byte database paths. All four ordered lists were reconciled
 explicitly. The caller's work ceiling remains 1,100. The retained preparation
-census and complete prefixes 0–10 also agree at both lengths on both platforms.
+census and complete prefixes 0–10 agree in both fresh ownership callers at both
+lengths on both platforms. Join construction adds a census of 353: prefixes
+0–352 refuse and prefix 353 succeeds, at both pathnames on both platforms.
+Minimum requested/usable construction headroom is 4,096/1,400 bytes on macOS
+and 4,096/3,648 bytes on Linux. The missing-observer control rejects, and every
+successful caller retains the full 11-pair, 64-column healthy result and lifecycle
+checks. The combined-history diagnostic remains separately unqualified below.
+
 Both platforms pass 552 CLI allocation prefix cases. Native initialization passes
 30 macOS and 80 GNU/Linux cells; synchronization passes 241 cells and I/O passes
 1,394 cells per platform. Interruption retains 76 append cuts, 46 recovery cuts
@@ -39,33 +47,35 @@ CLI limits, genesis, lease contention and independent column order pass. Linux
 retains two Darwin ACL repair-rename exclusions, one at each pathname length.
 
 Both receipts have zero finalization errors. The full gates run sequentially;
-stage times total 1,669.080 seconds on macOS and 436.620 seconds on Linux. Receipt
+stage times total 1,598.832 seconds on macOS and 512.610 seconds on Linux. Receipt
 SHA-256 values are respectively
-`9b68a3ef4dd2df0184a58537b8b11b15070024f4881313c21cbf8ae48ff58472` and
-`e116d7779a7afeb05ccc34b37e0d8735dbc58b01aaa262a986ad046610251e60`.
+`7b80e44ae6cfcf71c5386a8bd54954e366b22f938f72f9a332b4f5ec6dee5d16` and
+`db7af84381c3857663003f56ea4f2b159cb4cd93ed5445e583fb3e4180607172`.
 These runs are verification observations, not performance benchmarks.
 
-One hundred seven periodic resource samples observed normal memory pressure on an
-8 GiB host. Swap use ranged from 801.69 to 825.69 MiB, ending at 801.69. macOS
-used at most two Cargo jobs and one for fresh examples. Docker used one CPU,
-one build job and a 2 GiB memory and memory-plus-swap limit. Seventeen container
-samples observed CPU up to 100% and memory up to 1.182 GiB. Networking was disabled
-and sampled container network traffic was zero. Host disk samples ranged from
-zero to 157.98 MB/s; free disk stayed above 188.13 GiB. Host process, disk and
-network observations include unrelated applications. Monitoring commands reported
-no failures or timeouts, and no container OOM kill occurred. These observations
-do not qualify engine admission, usable-heap limits or whole-process/RSS bounds.
+One hundred seventeen periodic resource samples observed normal and warning
+memory pressure on an 8 GiB host. Swap use ranged from 737.69 to 1,562.88 MiB,
+ending at 1,546.88. macOS used at most two Cargo jobs and one for fresh examples
+and diagnostics. Docker used one CPU, one build job and a 2 GiB memory and
+memory-plus-swap limit. Twenty-nine container samples observed CPU up to 101.49%
+and memory up to 1.260 GiB. Networking was disabled and sampled container network
+traffic was zero. Host disk samples ranged from zero to 143.99 MB/s; free disk
+stayed above 188.22 GiB. Completed development builds were removed during warning
+pressure; platform work remained sequential. Host process, disk and network
+observations include unrelated applications. Monitoring commands reported no
+failures or timeouts, and no container OOM kill occurred. These observations do
+not qualify engine admission, usable-heap limits or whole-process/RSS bounds.
 
 The Linux image remains `pipesql-verification-rust:1.98.1-time`, digest
 `sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
-Fresh declared-table and compounding examples run sequentially on macOS and
-Linux after both complete gates. Each creates and reopens its database, then
-returns all three documented compounded values with successful exit and
-`status=queried`. The power record below retains the observed values and limits.
-Owned gate outputs, source exports, logs, monitor, databases, isolated build
-outputs and the verification container are removed. Pre-existing target artifacts,
-the image and installed toolchains remain. Windows, broader durability,
-physical-memory and sanitizer qualification remain unfinished.
+Fresh LEFT JOIN examples run sequentially on macOS and Linux after both complete
+gates. Each creates and reopens its database, completes the query and returns
+`unmatched total=90 rows=2`, `north total=30 rows=2` and `south total=30 rows=1`
+in that order with successful exit. Owned gate outputs, source exports, logs,
+monitor, databases, isolated build outputs and the verification container are
+removed. Pre-existing target artifacts, the image and installed toolchains remain.
+Windows, broader durability, physical-memory and sanitizer qualification remain
+unfinished.
 
 ### Failed wide-join construction
 
@@ -83,10 +93,10 @@ or payload allocation. Run-buffer release returns only freed payload capacity;
 inline charge can remain local or belong to the runtime. The bounded prefix
 fixture keeps preparation outside fault injection, checks typed live errors and
 physical-free ordering, and retains the complete 11-pair healthy oracle. Focused
-short/384-byte sweeps and their missing-observer control pass. Full platform
-verification is pending. An initial library run used default parallel test
-threads and failed the process-global descriptor oracle in reclamation; that run
-is not passing evidence. Its join-account oracle also exposed the moved inline
+short/384-byte sweeps and their missing-observer control pass, followed by both
+complete gates and fresh examples above. An initial library run used default
+parallel test threads and failed the process-global descriptor oracle in
+reclamation; that run is not passing evidence. Its join-account oracle also exposed the moved inline
 charge and now checks both the runtime transfer and independent physical sizes.
 All seven join tests and the selected reclamation test then pass in the retained
 sequential mode. Maintenance passes 99 tooling tests, 44 independent codec
@@ -100,8 +110,11 @@ no hard usable-heap/RSS bound is claimed. Construction and demanded-error gates
 retain separate fresh callers. The strict combined history remains replayable as
 `wide-left-join-construction-sequence`, with instructions in the
 [tool map](../tools/README.md). It is a diagnostic with no passing qualification
-claim. Ordering and sorted-set controller lifetimes require a separate affected
-boundary review before extension.
+claim. A fresh post-gate macOS replay fails with exit 101, 349 allocations,
+nine frees, requested headroom 16,528 and usable headroom -220,030 bytes. The same
+fresh Linux history completes with exit zero; that observation does not establish
+a general bound. Ordering and sorted-set controller lifetimes require a separate
+affected boundary review before extension.
 
 ### Bounded power expressions
 

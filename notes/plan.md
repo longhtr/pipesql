@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `38f2332` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 639 ordinary Rust tests per platform, 24 independent aggregate
+The complete 24-stage gates for `1e5cfdc` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 640 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
@@ -35,40 +35,19 @@ execution-allocation histories, arbitrary allocator/concurrency behavior,
 whole-process/RSS, Windows and broader durability/sanitizer qualification remain
 unfinished.
 
-## Active milestone: failed wide-join construction
+The [failed wide-join construction boundary](evidence.md#failed-wide-join-construction)
+is complete. Existing inline charges now outlive physical controller release;
+no allowance or payload allocation was added. All 353 construction allocation
+prefixes and the healthy control pass at both pathname lengths on both platforms,
+alongside independent negative controls, complete gates and fresh LEFT JOIN
+examples. The prepared query remains independently owned while errors are live.
 
-Qualify every allocation prefix during construction of the existing 64-column
-nullable STRING LEFT JOIN result, before its first public step. First trace the
-physical plan, runtime admissions and native cursor owners within 30 minutes.
-Use the existing scoped allocator observer and short/long pathname cells to
-require typed refusal, nonnegative requested/usable headroom and exact release
-while each error remains live. Keep the prepared query fixed and retain the
-independent 11-pair healthy result and all existing negative controls.
-
-The initial trace found a requested-byte deficit during destruction of the
-5,992-byte join controller vector: nested inline reservations released before
-the vector. Transfer those existing charges to the enclosing runtime account.
-The unchanged 353-allocation construction census now passes both pathname
-prefix sweeps and the negative observation control; full platform gates are pending.
-
-A separate combined allocator history (the full refusal sweep followed by a
-changed-width demanded expression) exposed Darwin usable extents beyond
-logical charges: a 3,817,440-byte request occupied 3,899,392 bytes. Requested
-ownership remained covered. Keep construction and existing demanded-error
-qualification in independent fresh callers, and retain the combined history as
-an explicit diagnostic with no passing claim. This is a concrete instance of the
-open native usable-heap qualification, not a repaired physical-memory bound.
-Ordering and sorted-set controller allocations share the inline-charge pattern;
-trace and qualify those enclosing lifetimes as follow-up work before extending them.
-
-Repair a demonstrated ownership defect at its owner; do not add admission padding
-or an instrumentation framework. Complete focused checks, sequential full macOS
-and GNU arm64 Linux gates on matching frozen inputs, independent discovery and
-record reconciliation, and sequential fresh LEFT JOIN examples. Record resource
-observations separately from engine/RSS qualification, update relevant contracts
-and learning paths, review and commit locally, and remove owned outputs. Broader
-execution allocation histories and platform qualifications remain unfinished.
-Publication restrictions below apply throughout.
+The combined construction-refusal and changed-width demanded-expression history
+still exposes a macOS native usable-heap deficit, with requested ownership covered.
+Its fresh Linux replay completes. Keep that strict diagnostic available without
+a passing or general physical-memory claim. Ordering and sorted-set controllers
+share the inline-charge lifetime pattern; their enclosing ownership is the next
+concrete architectural boundary to resolve before extending those consumers.
 
 ## Next engineering priorities
 
