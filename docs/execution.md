@@ -20,6 +20,71 @@ runtime to own while executing the producer graph.
 [`execution.rs`](../src/execution.rs) exposes the borrowed result and handles
 successful completion or terminal failure.
 
+## Trace a query through execution
+
+Run [the query-flow example](query-examples.md#follow-one-query-from-names-to-results)
+after its sales-table setup. This is the same query used in the
+[preparation walkthrough](frontend.md#trace-a-query-through-preparation): rename
+`amount` to `subtotal`, compute `subtotal + 1` as `adjusted`, then return
+`SUM(adjusted)` as `total`. Its four input amounts are 10, 20, 5 and NULL, so
+the complete result is one INT64 value, 38.
+
+The SQL transformations do not each require a controller. `pipeline_end` in
+[planning.rs](../src/execution/planning.rs) fuses these two SELECT stages with
+their scan. Aggregation creates the next producer because it must consume input
+before producing a different row shape. The resulting runtime has two nodes:
+
+| Node | Controller and owned output | Consumer |
+| --- | --- | --- |
+| 0 | Scan; a batch of demanded `adjusted` values | Node 1 |
+| 1 | Global aggregate; a batch containing `total` | The caller |
+
+The scan reads `amount`; `region` is unused. Renaming changes no value, while
+the computed output contains 11, 21, 6 and NULL. These values cross the producer
+boundary in the scan's batch. The aggregate borrows that batch and retains its
+own accumulator, without advancing the source cursor itself. The
+[physical plan contract](planning.md#physical-plan) owns demand and
+position mapping.
+
+Follow `Runtime::admit`, `open_native` and `advance` in
+[runtime.rs](../src/execution/runtime.rs), then `Groups::step` in
+[aggregation.rs](../src/execution/aggregation.rs). This query has no grouping
+keys, so `Aggregation::open` selects the dense controller with one global cell.
+The sequence below identifies consequential events; source reading and decoding
+can take several `Progress` steps between them.
+
+1. Admission reserves both node outputs and the aggregate controller before
+   source opening. The runtime starts with node 1 active: the caller wants the
+   final result, so its producer determines which input is needed.
+2. The aggregate's `Read` phase returns `ConsumerStep::Input` and enters
+   `Consume`. The runtime clears the previous child batch, selects node 0 and
+   returns progress to the caller. It does not call the scan recursively.
+3. The scan reads and computes demanded values in bounded steps. When its batch
+   is ready, the runtime records `OutputState::Rows` and selects the validated
+   parent, node 1. These are internal rows; the caller still receives progress
+   because the root aggregate has no output yet.
+4. The aggregate consumes the borrowed input and requests another batch. The
+   runtime retains the batch until that request permits its reuse. When the
+   scan finishes, the same parent handoff supplies an empty batch with
+   `finished = true`.
+5. The aggregate checks demanded final results before its `Emit` phase writes
+   38 to node 1's output. Root rows become `QueryStep::Rows`. The caller borrows
+   this batch; Rust prevents another mutable `step` while that borrow is live.
+6. The next step clears the root batch. The aggregate reports completion, and
+   `QueryResult::step_with_effects` in [execution.rs](../src/execution.rs) replaces
+   the running state with `Finished`. This drops execution owners and clears
+   physical planning storage. The small result handle and the separately owned
+   prepared query keep their charges until each is dropped.
+
+Failure follows the same ownership boundary. If the computed expression instead
+adds `9223372036854775807`, the first present input overflows during scanning.
+Preparation can succeed because the expression depends on a table value. The
+runtime returns the error, and the public result replaces its running state with
+`Failed`, releasing execution owners while retaining the owned error and source
+span. It cannot resume to produce the total. Cancellation also terminates the
+query through this path. [Result ownership](#result-ownership) and the
+[public interface](interfaces.md) own the full lifetime and failure contracts.
+
 ## Blocking operator ownership
 
 [`blocking.rs`](../src/execution/blocking.rs) owns sorted inputs and the run,

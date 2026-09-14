@@ -24,7 +24,8 @@ compact plan representation. Try the [EXTEND example](query-examples.md#transfor
 to follow preserved columns, new definitions, and alias scope.
 
 Continue with [Planning](planning.md) for demanded inputs and the producer
-graph, then [Execution](execution.md#pipeline-state) for controller steps and
+graph, then [trace the same query through execution](execution.md#trace-a-query-through-execution)
+for input requests and controller steps. Read
 [result ownership](execution.md#result-ownership) for completion and cleanup.
 Use the [joined workload](getting-started.md#follow-a-join-through-grouping-and-sorting)
 to trace several blocking operators sharing one memory budget.

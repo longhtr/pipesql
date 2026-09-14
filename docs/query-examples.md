@@ -34,6 +34,24 @@ The database contains amounts 10, 20, 5 and NULL. Repeating setup requires a new
 path. Each query below reopens this database and must complete with successful
 exit and `status=queried`; printed rows alone can be an incomplete result.
 
+## Follow one query from names to results
+
+Run [query-flow.sql](../examples/query-flow.sql), the query used in the
+[preparation walkthrough](frontend.md#trace-a-query-through-preparation):
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/query-flow.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+It renames `amount` to `subtotal`, adds one to each present value, then sums the
+results. The arithmetic is `11 + 21 + 6 = 38`; the fourth value remains NULL.
+Require one `row=int64:38`, `row_count=1`, `status=queried` and successful exit.
+The [execution trace](execution.md#trace-a-query-through-execution) follows this
+same query from producer admission to the final borrowed batch and cleanup.
+
 ## Transform columns while retaining the original values
 
 Before removing the database, run [examples/extend.sql](../examples/extend.sql)

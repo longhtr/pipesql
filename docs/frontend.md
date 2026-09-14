@@ -30,7 +30,8 @@ immutable plans.
 
 ## Trace a query through preparation
 
-Use the `sales` table from [the library walkthrough](getting-started.md):
+Use the `sales` table from [the library walkthrough](getting-started.md).
+The query is maintained in [query-flow.sql](../examples/query-flow.sql):
 
 ```sql
 FROM sales
@@ -70,6 +71,8 @@ so execution can identify a demanded overflow. See
 The `computed_definitions_reject_invalid_scope_identity_and_provenance` and
 `repeated_aggregate_binding_preserves_identity_and_transitive_demand` tests in
 [binding tests](../src/frontend/binding/tests.rs) exercise these distinctions.
+Continue with [the execution trace](execution.md#trace-a-query-through-execution)
+to follow this prepared query into producer scheduling, batches and completion.
 
 EXTEND uses the same expression binder but retains the input row. Follow
 `bind_extend` to see all new expressions bound before their names are published.
