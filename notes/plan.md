@@ -104,6 +104,10 @@ exact error operation/span, completion and reservation release. Trace the existi
 result/batch lifetimes beside their implementation owners and provide an optional
 tutorial without expanding the first declared-table flow.
 
+The first example run distinguishes the 256-row batch maximum from the direct
+sorted producer's one-row first batch. Cancel after a validated nonempty prefix
+without assuming that every producer fills its output batch.
+
 Keep production code unchanged unless the workload exposes a concrete defect.
 Run warnings-denied example compilation/Clippy and fresh sequential macOS/GNU
 arm64 Linux examples, with a wrong-expectation negative control and maintenance

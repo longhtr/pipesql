@@ -853,6 +853,31 @@ error that can be moved out with `into_error`. Neither successful admission nor
 receipt of a row establishes successful completion. The CLI prints success only
 after Finished. See `interfaces.md` for the caller contract.
 
+### Trace a terminal query result
+
+Run [the partial-result example](query-results.md) with
+[execution.rs](../src/execution.rs) open. Its ordered projection produces valid
+rows before a later addition overflows. The public `step` delegates to
+`step_with_effects`, which advances the running workspace and then exposes one
+of the four `QueryStep` outcomes.
+
+On a runtime error, replacing `State::Running` with `State::Failed(error)` drops
+the workspace before `PhysicalPlan::clear` releases physical mappings and the
+result reservation shrinks. The error remains inside the small result handle.
+A later step reads that terminal state without executing the query again.
+`into_error` moves the error out; consuming the result also drops its remaining
+plan and reservation fields. The prepared query remains separately owned.
+
+The example checks the resulting source span after releasing the prepared query
+and original SQL string. This works because `Error::ArithmeticOverflow` owns its
+operation and byte range. It does not borrow source text or execution buffers.
+
+The cancellation run takes the same terminal cleanup path. Its token requests
+cancellation; a runtime boundary returns `Error::Cancelled`. Reusing the prepared
+query with a fresh token starts a separate runtime. Follow
+[cancellation](concurrency.md#cancellation) for the request/observation boundary,
+and [public stepping](interfaces.md#stepping-a-query) for the caller contract.
+
 ## Required evidence
 
 Test empty/all-NULL, NaN, infinities, signed zero, subnormals, finite overflow,

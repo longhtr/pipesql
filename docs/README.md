@@ -10,6 +10,7 @@ restrictions.
 - [Create and query a declared table](getting-started.md): a complete Rust example.
 - [Explore queries on a declared table](query-examples.md): runnable queries,
   expected results and implementation reading paths.
+- [Handle partial query results](query-results.md): rows, terminal errors, cancellation and plan reuse.
 - [Language](language.md#current-public-query-manifest): supported queries and limits.
 - [Public interfaces](interfaces.md): API ownership, CLI commands, errors, and recovery.
 
