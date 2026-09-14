@@ -49,6 +49,25 @@ a passing or general physical-memory claim. Ordering and sorted-set controllers
 share the inline-charge lifetime pattern; their enclosing ownership is the next
 concrete architectural boundary to resolve before extending those consumers.
 
+## Active milestone: blocking controller lifetimes
+
+Make the inline-charge lifetime consistent across join, order, DISTINCT,
+partition count and sorted set controllers. Their nested sorters own payload
+allocations, but their inline fields occupy an enclosing controller vector.
+That vector must be freed before its charge is released. Use the existing
+reservation transfer and runtime owner; preserve admission totals and allocation
+order. A new execution framework is unnecessary for this boundary.
+
+Extend the independent physical-capacity regressions to check the transferred
+controller sizes and retain exact-minimum admission, refusal before I/O, replay,
+cancellation and terminal cleanup. Exercise affected public construction/release
+histories on macOS and GNU/Linux, with negative controls and complete results.
+Run focused checks first and the required regression verification against frozen
+inputs; report its actual scope without promoting an earlier full gate to changed
+inputs. Explain the ownership path beside its implementation, commit coherent
+changes locally and remove owned outputs. Keep the separate native usable-heap
+counterexample unresolved unless new evidence explains and repairs it.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
