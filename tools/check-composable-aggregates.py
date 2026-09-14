@@ -190,9 +190,11 @@ class QueryChecks:
             }
         )
 
-    def composed(self, label, sql, expected, database="data", ordered=True, limits=QUERY_LIMITS):
+    def composed(self, label, sql, expected, database="data", ordered=True, limits=QUERY_LIMITS, columns=None):
         call = self.run(database, sql, limits)
         assert call.returncode == 0, (label, call.stdout, call.stderr)
+        if columns is not None:
+            assert f"columns={columns}" in call.stdout.splitlines(), (label, call.stdout)
         actual = parse_rows(call.stdout)
         assert actual == expected if ordered else sorted(actual) == sorted(expected), (
             label,
@@ -1343,6 +1345,168 @@ def check_positional_unions(queries, work):
         queries.composed(label, sql, expected, "declared", limits=limits)
 
 
+
+# Independent grouped answers for examples/support/event_data.rs. Duplicate
+# dimension key 2 contributes once to each label; missing keys retain NULL.
+REPORT_GROUPS = [
+    (None, None, 1, 1, 11),
+    (None, "", 1, 1, 5),
+    (None, "north", 1, 1, 7),
+    (None, "south", 1, 0, None),
+    (None, "南", 1, 0, None),
+    (1999, "north", 2, 2, 8),
+    (2000, None, 3, 2, 33),
+    (2000, "", 2, 2, 9),
+    (2000, "south", 2, 2, 15),
+    (2000, "南", 2, 2, 15),
+    (2001, "north", 2, 1, 13),
+    (2001, "south", 1, 1, 40),
+    (2001, "南", 1, 1, 40),
+]
+REPORT_COLUMNS = (
+    "calendar_year:int64:nullable|label:string:nullable|entries:int64:required|"
+    "present:int64:required|total:int64:nullable"
+)
+REPORT_LIMITS = ["--memory-limit-bytes", "16777216", "--temp-limit-bytes", "8388608"]
+
+
+def check_event_report(queries, work):
+    # Reuse the public lesson to construct typed tables, not its result checker
+    # to compute our answers. This target belongs to the campaign's work tree.
+    target = work / "report-target"
+    build = run_process(
+        ["cargo", "build", "--release", "--offline", "--locked", "--jobs", "1",
+         "--example", "event_report", "--target-dir", str(target)],
+        cwd=ROOT, capture_output=True, text=True, timeout=300,
+    )
+    assert build.returncode == 0, (build.stdout, build.stderr)
+    seed = run_process(
+        [str(target / "release/examples/event_report"), str(work / "report")],
+        cwd=ROOT, capture_output=True, text=True, timeout=60,
+    )
+    assert seed.returncode == 0 and not seed.stderr, (seed.stdout, seed.stderr)
+    assert "status=finished" in seed.stdout.splitlines(), seed.stdout
+    report = (ROOT / "examples/event_report.sql").read_text().strip().removesuffix(";")
+    expected = [
+        [encoded(year), "null" if label is None else "string:" + label.encode().hex(),
+         encoded(entries), encoded(present), encoded(total)]
+        for year, label, entries, present, total in REPORT_GROUPS
+    ]
+    projection = " |> SELECT calendar_year, label, entries, present, total"
+    renamed = report + " |> RENAME total AS amount_sum |> RENAME amount_sum AS total"
+    queries.composed("report-rename-round-trip", renamed, expected,
+                     database="report", limits=REPORT_LIMITS, columns=REPORT_COLUMNS)
+    wrong = [row.copy() for row in expected]
+    wrong[5][-1] = "int64:9"
+    before = len(queries.observations)
+    try:
+        queries.composed("report-wrong-row-control", renamed, wrong,
+                         database="report", limits=REPORT_LIMITS, columns=REPORT_COLUMNS)
+    except AssertionError:
+        assert len(queries.observations) == before
+    else:
+        raise AssertionError("report checker accepted a wrong total")
+    queries.observations.append({"case": "report-wrong-row-control", "outcome": "rejected"})
+    for label, sql in [
+        ("literal", report),
+        ("projection", report + projection),
+        ("derived-result", "FROM (" + report + ") AS r" + projection
+         + " |> ORDER BY calendar_year NULLS FIRST, label NULLS FIRST"),
+        ("derived-source", report.replace("FROM events AS f", "FROM (FROM events |> SELECT id, dimension_id, happened, amount, measurement) AS f")),
+        ("derived-dimension", report.replace("JOIN dimensions AS d", "JOIN (FROM dimensions |> SELECT id, label) AS d")),
+        ("null-partition", report + " |> WHERE total IS NULL OR total IS NOT NULL"),
+        ("boolean-short-circuit", report + " |> EXTEND SQRT(-entries) AS bad"
+         + " |> WHERE entries > 0 OR bad > 0" + projection),
+        ("derived-pruned-error", "FROM (" + report
+         + " |> EXTEND SQRT(-1) AS unused) AS r" + projection
+         + " |> ORDER BY calendar_year NULLS FIRST, label NULLS FIRST"),
+        ("pruned-domain-error", report + " |> EXTEND SQRT(-1) AS unused" + projection),
+    ]:
+        queries.composed("report-" + label, sql, expected,
+                         database="report", limits=REPORT_LIMITS, columns=REPORT_COLUMNS)
+    for label, predicate, selected in [
+        ("null-total", "total IS NULL", [3, 4]),
+        ("null-label", "label IS NULL", [0, 6]),
+        ("null-year", "calendar_year IS NULL", [0, 1, 2, 3, 4]),
+        ("empty-label", "label = ''", [1, 7]),
+    ]:
+        queries.composed("report-" + label, report + " |> WHERE " + predicate,
+                         [expected[index] for index in selected],
+                         database="report", limits=REPORT_LIMITS, columns=REPORT_COLUMNS)
+
+    # SET publishes a fresh ordinary identity while the input range still names
+    # the original value. RENAME must not manufacture a new identity.
+    for label, transform, ordinary, increment in [
+        ("rename-range", "RENAME amount AS adjusted", "adjusted", 0),
+        ("set-range", "SET amount = amount + 1", "amount", 1),
+    ]:
+        amounts = [10, 20, 30, None, 5, None, -5, 7, -2, 40, 3, 11, 0, 13, None, 9]
+        queries.composed(
+            "report-" + label,
+            "FROM events AS f |> " + transform
+            + " |> ORDER BY f.id |> SELECT " + ordinary + ", f.amount",
+            [[encoded(None if value is None else value + increment),
+              encoded(value)] for value in amounts],
+            database="report", limits=REPORT_LIMITS,
+        )
+    queries.composed(
+        "report-exact-integer-consumer",
+        report + " |> SELECT COALESCE(total, 0) + 9007199254740993 AS shifted",
+        [[encoded((total or 0) + 9007199254740993)]
+         for _, _, _, _, total in REPORT_GROUPS],
+        database="report", limits=REPORT_LIMITS,
+    )
+    queries.composed(
+        "report-coalesce-skips-error",
+        report + " |> SELECT COALESCE(entries, SQRT(-1)) AS count_value",
+        [[encoded(float(entries))] for _, _, entries, _, _ in REPORT_GROUPS],
+        database="report", limits=REPORT_LIMITS,
+    )
+    # These dyadic values and the stored negative zero have literal IEEE bits.
+    measurement_bits = [
+        "3fe0000000000000", "3ff8000000000000", "null", "8000000000000000",
+        "4000000000000000", "4004000000000000", "4008000000000000", "bff0000000000000",
+        "4010000000000000", "4012000000000000", "4014000000000000", "null",
+        "4018000000000000", "401a000000000000", "401c000000000000", "c000000000000000",
+    ]
+    queries.composed(
+        "report-renamed-double-bits",
+        "FROM (FROM events |> RENAME measurement AS reading) AS f"
+        " |> ORDER BY id |> SELECT reading, f.reading",
+        [[bits, bits] for bits in measurement_bits],
+        database="report", limits=REPORT_LIMITS,
+    )
+
+    for label, sql, token, message in [
+        ("hidden-range", "FROM events AS f |> SELECT amount |> SELECT f.amount",
+         "f.amount", "table alias is not visible"),
+        ("ambiguous-identity", "FROM events |> SELECT amount AS v, amount AS v |> SELECT v",
+         "v", "ambiguous column name"),
+    ]:
+        start = sql.rindex(token)
+        call = queries.run("report", sql, REPORT_LIMITS)
+        assert call.returncode == 1 and not call.stdout, (label, call.stdout, call.stderr)
+        assert call.stderr == (
+            f"database error: bind error at bytes {start}..{start + len(token)}: {message}\n"
+        ), (label, call.stderr)
+        queries.observations.append({"case": "report-" + label, "outcome": "refused"})
+    for expression in [
+        "SAFE_DIVIDE(SQRT(-amount), 0)",
+        "COALESCE(SAFE_DIVIDE(1, 0), SQRT(-amount))",
+    ]:
+        sql = "FROM events |> WHERE id = 0 |> SELECT " + expression + " AS bad"
+        start = sql.index(expression)
+        call = queries.run("report", sql, REPORT_LIMITS)
+        assert call.returncode == 1 and not parse_rows(call.stdout), (sql, call.stdout, call.stderr)
+        assert call.stderr == (
+            "database error: arithmetic domain error during square root at bytes "
+            f"{start}..{start + len(expression)}\n"
+        ), (sql, call.stderr)
+        queries.observations.append({
+            "case": "report-demanded-domain-error", "expression": expression, "outcome": "refused",
+        })
+
+
 def campaign(cli, work):
     work.mkdir()
     encoder = runpy.run_path(str(ROOT / "tools/snapshot-fixtures.py"))["write_snapshot"]
@@ -1356,6 +1520,7 @@ def campaign(cli, work):
         timeout=90,
     )
     queries = QueryChecks(cli, work)
+    check_event_report(queries, work)
     check_positional_unions(queries, work)
     check_grouping(queries, rows)
     check_expressions_and_reference_queries(queries, rows)

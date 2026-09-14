@@ -141,6 +141,16 @@ class GroupExpectations(unittest.TestCase):
                 checker.composed("negative", "unused", [["int64:1"]])
         self.assertEqual(checker.observations, [])
 
+    def test_query_checker_requires_exact_schema(self):
+        checker = COMPOSITION["QueryChecks"](Path("unused"), Path("unused"))
+        for columns in ("other:int64:required", "v:double:required", "v:int64:nullable", ""):
+            output = f"columns={columns}\nrow=int64:1\nrow_count=1\nstatus=queried\n"
+            with self.subTest(columns=columns), patch.object(
+                checker, "run", return_value=subprocess.CompletedProcess([], 0, output, "")
+            ), self.assertRaises(AssertionError):
+                checker.composed("schema", "unused", [["int64:1"]], columns="v:int64:required")
+        self.assertEqual(checker.observations, [])
+
     def test_query_checker_rejects_failed_process_even_with_complete_output(self):
         checker = COMPOSITION["QueryChecks"](Path("unused"), Path("unused"))
         result = subprocess.CompletedProcess(

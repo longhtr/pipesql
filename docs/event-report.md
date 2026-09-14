@@ -96,6 +96,41 @@ returns a nullable INT64. The [calendar lesson](calendar-year.md) traces that
 conversion. The [resource contract](resources.md) owns admission and release
 rules; this small example does not establish spill or whole-process memory bounds.
 
+## Follow names through composition
+
+Compare these projections over the retained event table:
+
+```sql
+FROM events AS f
+|> RENAME amount AS adjusted
+|> ORDER BY f.id
+|> SELECT adjusted, f.amount;
+
+FROM events AS f
+|> SET amount = amount + 1
+|> ORDER BY f.id
+|> SELECT amount, f.amount;
+```
+
+The first returns the same value twice. RENAME changes the ordinary name while
+preserving the column identity. The second returns the incremented value beside
+the original: SET defines a new ordinary identity, while `f.amount` still names
+the input member. NULL propagates in both projections.
+
+A SELECT boundary removes the earlier range. Consequently, appending
+`|> SELECT f.amount` after `|> SELECT amount` is a bind error. Projecting one
+identity under two identical names also makes a later reference ambiguous;
+equal identities do not make duplicate names unambiguous.
+
+The [composition campaign](../tools/check-composable-aggregates.py) checks these
+boundaries through the stock CLI. It compares literal grouped rows and schema,
+separates NULL labels from empty labels, and checks integer arithmetic and stored
+DOUBLE bits independently. A derived report needs its own outer ORDER BY because
+[table subqueries](language.md#table-subqueries) do not preserve semantic order.
+Unused expressions remain undemanded, but SAFE_DIVIDE still propagates an error
+from its argument. The campaign checks the owned expression span for that failure
+and deliberately submits a wrong expected total to challenge its answer checker.
+
 ## Scale the report and observe spill
 
 The [scaled caller](../examples/scaled_report.rs) extends the same schema and

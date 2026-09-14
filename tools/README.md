@@ -32,7 +32,7 @@ the command and output ownership.
 | [models/attempt_publication.py](models/attempt_publication.py) | Root/fence representation model under stated persistence premises. |
 | `aggregate-rounding-vectors.py` | Independent rational rounding vectors; `--check` compares retained inputs. |
 | `check-aggregate-semantics.py` | Public stock CLI aggregate boundary campaign. |
-| `check-composable-aggregates.py` | Independent calendar-year expectations and public composition corpus through the stock CLI: legacy aggregates and positional unions over the retained catalog fixture. |
+| `check-composable-aggregates.py` | Independent calendar-year expectations and public composition corpus through the stock CLI: legacy aggregates, positional unions, and the composed event report over retained catalog fixtures. |
 | `test-q1-compare.py` | Regression tests for strict typed output parsing and comparison. |
 
 The models do not execute the engine or prove filesystem persistence. Their
@@ -444,6 +444,9 @@ that it is executable, print its SHA-256 identity, and require that identity to
 remain unchanged through a successful campaign. The composition checker also
 requires a new work directory with a supplied CLI; it refuses an existing one.
 Without supplied artifacts, both checkers build in a fresh temporary target.
+The composition campaign also builds the retained `event_report` example in its
+owned work directory to seed typed report tables. Its expected rows are separate
+literals; the example does not compute the campaign oracle.
 The full gate builds one stock CLI after its Cargo checks and supplies it to both
 campaigns sequentially. Each campaign checks its hash before and after execution.
 The gate removes the shared target and composition databases during finalization.
