@@ -79,7 +79,9 @@ The three runs separate these facts:
 The [result ownership trace](execution.md#trace-a-terminal-query-result) follows
 these transitions through the implementation. Reservation equality in this
 example concerns logical engine ownership, not whole-process or physical-memory
-bounds. The run does not qualify arbitrary concurrent cancellation schedules.
+bounds. The run does not qualify arbitrary concurrent cancellation schedules. The
+[independent allocation-event caller](resources.md#partial-result-terminal-ownership)
+observes this workload's transient ownership separately from these public counters.
 
 ## Clean up
 

@@ -8,6 +8,9 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::{Barrier, Mutex};
 
+#[path = "result-ownership.rs"]
+pub(super) mod partial_results;
+
 const ROWS: usize = 4096;
 const MEMORY: u64 = 4_000_000;
 const TEMP: u64 = 8_000_000;

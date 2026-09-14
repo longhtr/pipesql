@@ -176,6 +176,38 @@ class AllocationInterpretation(unittest.TestCase):
             with self.subTest(output=invalid):
                 self.assertFalse(check(invalid))
 
+    def test_partial_results_require_prefixes_and_every_terminal_observation(self):
+        rows = [f"partial result case={name} rows={count} steps=4000 "
+                "prepare_allocations=7 execute_allocations=26 terminal_frees=18 "
+                "prepared_frees=2 requested_headroom=32 usable_headroom=16 release=complete\n"
+                for name, count in [("overflow", 256), ("cancelled", 1), ("finished", 257)]]
+        complete = "partial result ownership passed: 3 cases; rows, terminal events and release\n"
+        check = ALLOCATION["complete_partial_results"]
+        valid = "".join(rows) + complete
+        self.assertTrue(check(valid))
+        for invalid in [
+            "", complete, "".join(rows), "".join(rows[1:]) + complete,
+            "".join(rows[:-1]) + complete, "".join(reversed(rows)) + complete,
+            valid + complete, rows[0] + valid,
+            valid + rows[0].replace("case=overflow", "case=unknown"),
+            valid + "partial result case=malformed\n",
+            valid.replace("overflow rows=256", "overflow rows=255"),
+            valid.replace("cancelled rows=1", "cancelled rows=0"),
+            valid.replace("cancelled rows=1", "cancelled rows=257"),
+            valid.replace("finished rows=257", "finished rows=256"),
+            valid.replace("steps=4000", "steps=1"),
+            valid.replace("steps=4000", "steps=20000"),
+            valid.replace("prepare_allocations=7", "prepare_allocations=0"),
+            valid.replace("execute_allocations=26", "execute_allocations=0"),
+            valid.replace("terminal_frees=18", "terminal_frees=0"),
+            valid.replace("prepared_frees=2", "prepared_frees=0"),
+            valid.replace("requested_headroom=32", "requested_headroom=-1"),
+            valid.replace("usable_headroom=16", "usable_headroom=-1"),
+            valid.replace("release=complete", "release=incomplete"),
+        ]:
+            with self.subTest(output=invalid):
+                self.assertFalse(check(invalid))
+
     def test_ownership_requires_joined_and_allocator_observations(self):
         marker = ("joined shapes passed: 2 budgets; complete rows, step ownership and release\n"
                   "analytic shapes passed: 13 cases; rows, attribution and release\n"
@@ -202,6 +234,9 @@ class AllocationInterpretation(unittest.TestCase):
                 ALLOCATION["check_ownership"](Path("unused"), run, failures)
             self.assertEqual("incomplete joined allocation ownership checks" in failures, missing)
             self.assertIn((("joined-shapes", "joined-shapes"), {}), run.call_args_list)
+            self.assertIn((("partial-result-shapes", "partial-results-path384", 384), {}), run.call_args_list)
+            self.assertEqual(sum(message.startswith("incomplete partial result ownership checks:")
+                                 for message in failures), 2)
             self.assertIn((("analytic-shapes", "analytic-path384", 384), {}), run.call_args_list)
             self.assertIn((("wide-set-shapes", "wide-sets-path384", 384), {}), run.call_args_list)
             self.assertIn((("wide-left-join-shape", "wide-left-join-path384", 384), {}), run.call_args_list)

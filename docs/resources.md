@@ -499,6 +499,20 @@ allocator histories. Foreign allocations, allocator metadata/retained pages,
 mapped or resident stack, other process mappings and whole-process/RSS bounds
 remain outside the observation.
 
+## Partial-result terminal ownership
+
+The [partial-result workload](query-results.md) has a separate allocation-event
+caller in [result-ownership.rs](../tools/fixtures/result-ownership.rs). It follows
+an ordered 257-row result through healthy completion, cancellation after rows and
+late arithmetic failure. Each terminal step must physically free runtime owners
+before only the inline result charge remains. Repeated terminal steps perform no
+allocation or free. Consuming the result moves out its owned error and releases
+the inline charge; dropping the prepared plan then frees its retained allocations.
+The caller checks requested/usable headroom at allocation events and restores
+heap, descriptor and logical baselines while the error stays alive. Wrong-prefix
+and missing-terminal-observation controls challenge those checks. This is another
+bounded observed history, not a general allocator or RSS qualification.
+
 ## Blocking buffer capacity
 
 Declared payloads, sort frames, run bytes, prior keys and hash lookup keys use

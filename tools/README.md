@@ -210,6 +210,22 @@ every returned step. The catalog work ceiling is 1,100 allocation prefixes;
 the EXCEPT healthy census observed 1,056.
 This ceiling bounds campaign work and does not change engine admission.
 
+The same selection runs `partial-result-shapes` from
+[`result-ownership.rs`](fixtures/result-ownership.rs) at both pathname lengths.
+Its ordered 257-row workload checks a 256-row prefix followed by addition
+overflow, cancellation after a nonempty prefix, and complete healthy output.
+Each phase uses the existing allocation-event observer: preparation, construction,
+individual steps, repeated terminal state, owned-error transfer and prepared
+release. Terminal steps must free real allocations; repeated terminal steps and
+consuming the remaining result handle must allocate and free none. Owned errors
+retain their category and literal span after the prepared plan drops.
+`complete_partial_results` requires all three distinct records, their row counts,
+phase events, nonnegative requested/usable headroom and final release.
+`partial-result-prefix-negative` changes the expected prefix count;
+`partial-result-terminal-negative` leaves post-prefix steps unobserved. Both must
+fail at their intended oracle. These checks extend observed histories without
+claiming arbitrary allocator behavior or whole-process bounds.
+
 The ownership selection also runs `wide_set_shapes` in
 [`composed-ownership.rs`](fixtures/composed-ownership.rs) at short and 384-byte
 paths. A two-column left source repeats one nullable STRING across 61 positions;

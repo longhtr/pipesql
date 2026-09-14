@@ -275,8 +275,37 @@ def complete_execution_failures(output):
     )
 
 
+def complete_partial_results(output):
+    completed = re.findall(
+        r"^partial result ownership passed: 3 cases; rows, terminal events and release$",
+        output, re.MULTILINE,
+    )
+    records = re.findall(
+        r"^partial result case=(\S+) rows=(\d+) steps=(\d+) "
+        r"prepare_allocations=(\d+) execute_allocations=(\d+) terminal_frees=(\d+) "
+        r"prepared_frees=(\d+) requested_headroom=(-?\d+) usable_headroom=(-?\d+) release=complete$",
+        output, re.MULTILINE,
+    )
+    return (
+        len(completed) == 1
+        and len(re.findall(r"^partial result case=", output, re.MULTILINE)) == 3
+        and [record[0] for record in records] == ["overflow", "cancelled", "finished"]
+        and int(records[0][1]) == 256
+        and 0 < int(records[1][1]) < 257
+        and int(records[2][1]) == 257
+        and all(1 < int(step) < 20_000
+                and all(int(events) > 0 for events in [prepared, constructed, terminal, released])
+                and int(requested) >= 0 and int(usable) >= 0
+                for _, _, step, prepared, constructed, terminal, released, requested, usable in records)
+    )
+
+
 def check_ownership(work, run, failures):
     for label, length in [("short", None), ("path384", 384)]:
+        partial = run("partial-result-shapes", f"partial-results-{label}", length)
+        print(partial.stdout + partial.stderr, end="", flush=True)
+        if not complete_partial_results(partial.stdout):
+            failures.append(f"incomplete partial result ownership checks: {label}")
         analytic = run("analytic-shapes", f"analytic-{label}", length)
         print(analytic.stdout + analytic.stderr, end="", flush=True)
         if "analytic shapes passed: 13 cases; rows, attribution and release" not in analytic.stdout:
@@ -384,6 +413,8 @@ def check_ownership(work, run, failures):
                 f"ownership-{label}: missing composed ownership completion"
             )
     for mode, expected in [
+        ("partial-result-prefix-negative", "partial result prefix oracle"),
+        ("partial-result-terminal-negative", "missing partial result terminal events"),
         ("analytic-attribution-negative", "execution ownership attribution: analytic-admitted"),
         ("prepared-aggregate-attribution-negative", "prepared ownership attribution"),
         ("legacy-constant-attribution-negative", "execution ownership attribution: legacy-text"),

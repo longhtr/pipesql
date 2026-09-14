@@ -264,6 +264,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         allocation_capacity::run();
         return Ok(());
     }
+    if mode == "partial-result-shapes"
+        || mode == "partial-result-prefix-negative"
+        || mode == "partial-result-terminal-negative"
+    {
+        use ownership::partial_results::{Control, run};
+        let control = if mode == "partial-result-prefix-negative" {
+            Control::WrongPrefix
+        } else if mode == "partial-result-terminal-negative" {
+            Control::MissingTerminal
+        } else {
+            Control::Healthy
+        };
+        return run(&root, control);
+    }
     if mode == "analytic-shapes" || mode == "analytic-attribution-negative" {
         return ownership::analytic_shapes(&root, mode == "analytic-attribution-negative");
     }
