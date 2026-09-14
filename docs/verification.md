@@ -626,6 +626,19 @@ host-visible writes preserved, not modeled write loss or power-loss testing.
 Open/close cuts, arbitrary concurrent mutations and Windows remain
 outside this campaign; the broader requirements below still apply.
 
+The same campaign runs a second history using the composed event report. Two
+four-event writes publish together while an eight-event report plan remains
+pinned in the uninterrupted control. After termination, process-local pins are
+gone; reopen must instead agree with the independently selected persisted graph.
+The report caller checks complete grouped answers and receipt history, then
+appends a known event and checks again after another reopen. The Python oracle
+separately checks both tables, column identities/types/NULLability, every raw
+DATE offset and DOUBLE bit pattern, including signed zero. Each history retains
+its own cut counts, boundaries and graph-check count in the receipt. Both run
+wrong-generation, wrong-row and wrong-receipt controls; tooling tests challenge
+the report graph interpretation with damaged values and histories.
+
+
 ### Independent catalog inspection
 
 `tools/catalog_graph.py` independently reads namespace-format-7 roots, selects

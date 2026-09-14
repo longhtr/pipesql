@@ -167,6 +167,31 @@ would not prove that the snapshot remained reopenable. These bounded schedules
 exercise real threads, shared ownership and release; they do not prove arbitrary
 race freedom or replace broader concurrency qualification.
 
+## Follow an interrupted append
+
+The [interruption campaign](../tools/check-catalog-interruption.py) runs the same
+report over a process-termination history. Follow its
+[report caller](../tools/fixtures/catalog-report-interruption.rs): setup publishes
+eight events, the observed append adds eight more in two writes, and a healthy
+retry adds one known event. Literal grouped answers remain separate from input
+construction. The independent graph inspector also checks all raw DATE and
+DOUBLE values, including values the grouped report does not demand.
+
+Issuing a transaction and publishing its data are separate boundaries. Before
+issuance, reopen reports that attempt as unknown. After issuance but before data
+publication, recovery records it as aborted and the old report remains complete.
+After publication, the new report and durable receipt must agree. Each cut is
+followed by a successful append and another reopen. Cuts during recovery challenge
+the same history again. Process-local pins survive only in the uninterrupted
+control; a terminated process has no reader left to protect.
+
+Run the maintained campaign with `python3 -B tools/check-catalog-interruption.py`.
+It checks both histories and removes its temporary outputs on exit. This observes
+process termination with host-visible writes preserved. It does not simulate
+power loss, discarded writes or torn storage; the
+[persistence contract](verification.md#persistence-and-recovery-evidence) defines
+those limits.
+
 ## Follow a failed allocation
 
 The [allocation campaign](../tools/README.md) runs this report through the stock

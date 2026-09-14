@@ -2,6 +2,7 @@
 """Challenge campaign interpretation without building or invoking the engine."""
 
 from contextlib import redirect_stdout
+import copy
 import io
 import hashlib
 import json
@@ -16,6 +17,57 @@ TOOLS = Path(__file__).resolve().parent
 COMPOSITION = runpy.run_path(str(TOOLS / "check-composable-aggregates.py"))
 ALLOCATION = runpy.run_path(str(TOOLS / "check-diagnostic-allocation.py"))
 GRAPH = runpy.run_path(str(TOOLS / "check-catalog-graph.py"))
+INTERRUPTION = runpy.run_path(str(TOOLS / "check-catalog-interruption.py"))
+
+
+class ReportHistory(unittest.TestCase):
+    def test_interrupted_graph_requires_typed_rows_and_exact_history(self):
+        graph = dict(issued=6, successes=[1, 2, 3, 4], generation=4, tables=[
+            dict(id=1, name="events", columns=[
+                dict(id=1, name="id", type=1, nullable=False),
+                dict(id=2, name="dimension_id", type=1, nullable=True),
+                dict(id=3, name="happened", type=4, nullable=True),
+                dict(id=4, name="amount", type=1, nullable=True),
+                dict(id=5, name="measurement", type=2, nullable=True),
+            ], rows=copy.deepcopy(INTERRUPTION["REPORT_EVENTS"][:8])),
+            dict(id=2, name="dimensions", columns=[
+                dict(id=1, name="id", type=1, nullable=False),
+                dict(id=2, name="label", type=3, nullable=False),
+            ], rows=[[1, "north"], [2, "south"], [2, "南"], [3, ""]]),
+        ])
+        check = INTERRUPTION["check_report_graph"]
+        check(graph, 1, False)
+        for state, retried in [(0, False), (2, False), (1, True)]:
+            with self.subTest(state=state, retried=retried), self.assertRaises(AssertionError):
+                check(graph, state, retried)
+        for path, value in [
+            (["issued"], 5),
+            (["successes"], [1, 2, 3, 4, 6]),
+            (["generation"], 5),
+            (["tables"], graph["tables"][:1]),
+            (["tables", 0, "id"], 2),
+            (["tables", 0, "columns", 2, "id"], 5),
+            (["tables", 0, "columns", 2, "type"], 1),
+            (["tables", 0, "columns", 2, "nullable"], False),
+            (["tables", 0, "rows", 0, 2], 10957),
+            (["tables", 0, "rows", 3, 4], {"double_bits": "0000000000000000"}),
+            (["tables", 0, "rows"], graph["tables"][0]["rows"][:-1]),
+            (["tables", 1, "rows"], [[1, "north"], [2, "south"], [3, ""]]),
+        ]:
+            altered = copy.deepcopy(graph)
+            owner = altered
+            for key in path[:-1]:
+                owner = owner[key]
+            owner[path[-1]] = value
+            with self.subTest(path=path), self.assertRaises(AssertionError):
+                check(altered, 1, False)
+        healed = copy.deepcopy(graph)
+        healed.update(issued=7, successes=[1, 2, 3, 4, 7], generation=5)
+        healed["tables"][0]["rows"].append(copy.deepcopy(INTERRUPTION["REPORT_EVENTS"][8]))
+        check(healed, 1, True)
+        healed["tables"][0]["rows"][-1][3] = 2
+        with self.assertRaises(AssertionError):
+            check(healed, 1, True)
 
 
 class CatalogSeed(unittest.TestCase):

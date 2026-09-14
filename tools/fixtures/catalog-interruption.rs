@@ -5,6 +5,8 @@ use pipesql::{
 };
 use std::os::fd::AsRawFd;
 use std::path::Path;
+#[path = "catalog-report-interruption.rs"]
+mod report;
 unsafe extern "C" {
     fn interruption_start(fd: i32, cut: u32);
     fn interruption_stop();
@@ -142,6 +144,11 @@ fn main() {
     let trace = std::fs::File::create(&args[3]).unwrap();
     let cut = args[4].parse().unwrap();
     let state = args[5].parse().unwrap();
+    if let Some(operation) = mode.strip_prefix("report-") {
+        report::run(path, operation, &trace, cut, state);
+        println!("catalog interruption {mode} passed state={state}");
+        return;
+    }
     if mode == "setup" {
         let db = Database::create_empty(path, config()).unwrap();
         db.declare_table(
