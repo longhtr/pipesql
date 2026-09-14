@@ -25,27 +25,31 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Completed: failed preparation ownership
+## Active: bounded base-ten logarithms
 
-`7eee0be` observes every allocation-refusal prefix of the retained wide nullable
-STRING LEFT JOIN's preparation, plus a late arithmetic error with its owned
-source span. The [failure record](evidence.md#failed-preparation-ownership) retains
-the census, live-error release checks, complete trace controls and exact limits.
-No new engine accounting defect was exposed.
+Add one-argument LOG10 for base-ten analytical scales through the existing unary
+numeric parser, binder, validators, batch scratch and demand cursor. Resolve the
+pinned upstream signature, exceptional values and approximate finite results
+before changing the kernel. Limit uncertain contract research to 20 minutes;
+reassess if it exposes incompatible semantics or a new ownership premise.
 
-Both complete 24-stage macOS/GNU/Linux gates pass on matching frozen inputs,
-with 632 ordinary Rust tests and 97 tooling tests per platform. Discovery,
-semantic/composition records and both preparation/catalog prefix schedules are
-reconciled. Fresh LEFT JOIN examples pass sequentially on both platforms after
-both gates. Owned outputs are removed while pre-existing artifacts and toolchains
-remain.
+Independent finite reference vectors and public queries must challenge promotion,
+NULL, domain errors, owned spans, skipped demand, composition, bounded programs,
+admission, cancellation and replay. Add a runnable power-ratio scale example and
+a short reading path through real implementation owners. Do not add an expression
+framework, allocation owner or admission allowance.
 
-The [normal lifecycle repair](evidence.md#transient-preparation-and-release-ownership)
+Run focused checks, then complete sequential macOS/GNU arm64 Linux gates on
+matching frozen inputs. Reconcile discovery and independent results, run fresh
+relevant examples sequentially after both gates, review the final diff, remove
+owned outputs and make coherent local commits. Keep historical evidence below
+641,696 bytes and preserve publication restrictions.
+
+The [failed preparation checks](evidence.md#failed-preparation-ownership),
+[normal lifecycle repair](evidence.md#transient-preparation-and-release-ownership)
 and prior language/resource work remain closed beyond a concrete new defect or
-workload. Arbitrary allocators, concurrent histories, whole-process/RSS, Windows
-and broader durability retain their documented limits. Publication restrictions
-are unchanged. Reassess README's decision order before activating the next
-bounded milestone.
+affected workload. Arbitrary allocators, concurrent histories, whole-process/RSS,
+Windows and broader durability retain their documented limits.
 
 ## Next engineering priorities
 
