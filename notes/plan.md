@@ -76,7 +76,7 @@ quality work is not deferred to the final gate.
 
 ### Ordered checkpoint goals
 
-The active goal is **4. Exercise overlapping report lifetimes**.
+The active goal is **5. Recover the mixed append history**.
 
 The [overlapping-report checkpoint](evidence.md#overlapping-report-lifetimes)
 `3e7156a` verifies four bounded thread schedules, shared-budget refusal,
