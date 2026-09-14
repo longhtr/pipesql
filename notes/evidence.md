@@ -5,6 +5,76 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Partial-result allocation ownership
+
+`b9b3fcc` adds [result-ownership.rs](../tools/fixtures/result-ownership.rs) under
+the existing composed-ownership caller. It reuses the allocation-event observer
+and heap/descriptor snapshots. Its independent ordered input is 0–255 followed
+by INT64 maximum. The three cases require a 256-row addition prefix before
+`ArithmeticOverflow` at bytes 40–50, cancellation after a nonempty partial prefix,
+and all 257 healthy rows followed by Finished. No production code, ordinary
+Rust tests or executable examples change from `64af0e6`.
+
+Each case observes preparation, construction, individual execution steps and
+prepared release. The terminal step must free runtime allocations while their
+charges remain live. Repeated terminal steps and consuming the remaining result
+handle must allocate and free nothing. The result's retained charge is checked
+against its independent physical size. Owned errors retain their category/span
+and remain formattable after prepared release; heap, descriptor, memory and
+temporary baselines must be restored while the error remains alive.
+
+Focused macOS cases pass. Changing the expected prefix count rejects 256 rows
+against 257; leaving steps unobserved after the prefix rejects missing terminal
+free events. Both negative controls exit 101 at the intended assertion. The
+Python completion checker independently requires all three distinct records,
+correct row bounds, nonzero phase events, nonnegative headroom and complete
+release. Its new interpretation test challenges missing, duplicated, malformed,
+unknown, incorrectly counted and unobserved records.
+
+Complete ownership selections pass sequentially on macOS and GNU arm64 Linux
+at short and 384-byte database paths. New case rows/steps are overflow 256/3,783,
+cancelled 1/3,016 and finished 257/3,785 on both platforms. Each construction
+allocates 26 times and each terminal step frees 18 allocations. Overflow
+preparation allocates seven times and prepared release frees two; the other
+cases allocate six and free one. Across these new cells, minimum requested/usable
+headroom is 4,240/3,208 bytes on macOS and 4,240/4,240 on Linux. These are aggregate
+allocation-event observations for these histories, not arbitrary allocator or
+whole-process/RSS bounds.
+
+Both enclosing selections retain thirteen analytic shapes, six wide-set shapes,
+353 construction refusal prefixes plus healthy control 353 at both paths, and
+all existing caller controls. All sixteen negative controls reject as intended.
+Warnings-denied caller builds and formatting pass. Maintenance passes 100 tooling
+tests, 44 independent codec fixtures and 804 local links. The BYTE_LENGTH core
+engine baseline remains applicable; these tool-only changes do not repeat or
+supersede its core gate or the earlier full native/persistence checkpoint.
+
+The frozen 722-input manifest and read-only Linux export agree, SHA-256
+`d3aba43b89f9ad3803a60b998d60860d5562d63a60e2a5cf4b51940b967433e0`.
+Only the two notes files change afterward; the other 720 inputs retain fingerprint
+`a31858ba8be3b97bd1c8f85734c0e571cfb723f74eff9bb79231269165011164`.
+Final driver hashes are macOS
+`6fd011600a325f636e944f53541e700c1e1cc020ce53a3ae11d4cb75644bcf49`
+and Linux `71656ad327d77166bfe735569407ca0af34f9bf9eef6225350268d009e52d2a5`.
+Complete ownership-log hashes are macOS
+`30f850142647c17effacbb7ec6a9d3c50f40bf666737f8a1bf08cba16c8e958b`
+and Linux `249280d9c181c3630dac1068b0cc3bf7c9230576d2e5284de84666dc8b744599`.
+
+Rust 1.98.1 uses one Cargo job per platform on the 8-GiB Apple M1/macOS 26.6.2
+host. The preserved Linux image uses uid/gid 1000, one CPU, 2 GiB without extra
+swap, disabled networking and native database storage. Twenty-two host samples
+show normal pressure, 1,531.69 MiB swap, over 188.00 GiB free disk and sampled
+I/O 0–105.44 MB/s. Five container samples show at most 100.42% reported CPU,
+824.2 MiB and zero network traffic; final inspection confirms no OOM kill.
+Host en0 counters increase by 64,083,591 received and 3,833,132 sent bytes,
+including unrelated activity. These measurements do not establish peak bounds.
+
+Owned focused/campaign outputs, targets, source export, monitoring records,
+logs, manifests and container are removed. No owned verification process remains.
+The existing target, image and toolchains are preserved. Final documentation
+verification passes 806 local links. Broader physical-memory, concurrency,
+durability and Windows qualifications remain open. Nothing is pushed or published.
+
 ## Partial query results and terminal ownership
 
 `3c7e5d2` adds [query_results.rs](../examples/query_results.rs) and the optional
