@@ -5,6 +5,31 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Native allocation reuse
+
+The ordinary Rust measuring allocator forwards allocation layouts unchanged to
+System and samples after allocation/before physical free. It adds no headers,
+padding or per-allocation payload. The independent native C control uses only
+`malloc`, `free` and the platform's usable-size query. Its larger seed is a
+controlled input matching an observed extent, not a complete reconstruction of
+the original query history.
+
+Three fresh macOS cold cells each request 3,817,440 bytes and observe 3,817,472
+usable bytes. Three reuse cells first allocate/free 3,899,392 bytes, then request
+3,817,440; each receives the same address and all 3,899,392 usable bytes. Thus a
+controlled native reuse history reproduces the observed oversized allocation
+without the engine or Rust observer. It supports that explanation for the query's
+extent but does not identify its original freed block or explain every byte of
+its aggregate deficit. Three invalid-invocation controls reject, and closing
+stdout rejects with exit one instead of reporting success after a failed flush.
+
+The unmodified combined-history caller still fails on macOS with exit 101,
+349 allocations, nine frees, requested headroom 16,528 and usable headroom
+-219,998 bytes. The guard remains strict. No engine or observer defect has been
+demonstrated by this reduction, and no admission allowance changes. GNU/Linux
+controls and final maintenance verification are pending. Broader allocator,
+physical-memory and RSS qualification remains unresolved.
+
 ## First tutorial and optional queries
 
 The first declared-table walkthrough now reaches cleanup directly after its main

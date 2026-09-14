@@ -62,7 +62,8 @@ The observer distinguishes three quantities:
 - **Requested bytes** are the sizes of live allocations through the caller's Rust
   global allocator. Database and caller allocations share this observer.
 - **Usable bytes** are the allocator-reported extents of those same allocations.
-  Their difference from requested bytes is allocator rounding, not engine data.
+  Rounding or reuse of a larger freed block can make them exceed the request.
+  That excess is allocator capacity, not additional engine data.
 
 For this numeric workload, the caller checks the following equations. `R` is
 an owner's live requested heap bytes, and `P` is the byte length of its canonical
@@ -94,7 +95,12 @@ A negative control changes a preparation allowance by one byte and must fail
 attribution; a separate control rejects an incorrect complete query result.
 
 Logical allowances do not guarantee that usable allocations fit under the same
-limit. The native allocator can round a request beyond its logical allowance.
+limit. The native allocator can round a request or reuse a larger block beyond
+its logical allowance. The [native reuse diagnostic](../tools/fixtures/native-allocation-reuse.c)
+isolates this distinction with two ordinary C allocations, without the engine or
+its Rust observer. A cold allocation's extent does not bound later reuse of that
+request size. The [tool map](../tools/README.md#isolate-native-allocation-reuse)
+provides the diagnostic commands and interpretation limits.
 The observer also excludes direct foreign allocations, allocator metadata and
 retained free pages, mapped or resident stack, and other process mappings. Parked
 samples do not measure transient peaks. `/usr/bin/time` reports process-level

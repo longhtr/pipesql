@@ -501,6 +501,10 @@ Run this construction campaign and the demanded-expression campaign in separate
 fresh callers at each pathname length. Their allocator histories are independent
 qualification inputs. The retained combined-history diagnostic can expose native
 usable extents beyond logical charges; it has no passing qualification claim.
+The independent [native reuse control](../tools/README.md#isolate-native-allocation-reuse)
+can reproduce one oversized extent without the engine or its observer. That
+controlled history does not identify the original freed block or qualify the
+combined history's aggregate charge. Keep both observations distinct.
 The [resource contract](resources.md#interpret-composed-memory-observations)
 distinguishes that unresolved native limit from requested ownership and release.
 

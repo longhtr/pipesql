@@ -94,6 +94,7 @@ recorded revision after a path move.
 | `check-native-sanitizer.py` | Explicit nightly AddressSanitizer controls and mutex/default or pathname tests, compared with stock and uninstrumented nightly builds. |
 | `check-catalog-interruption.py` | Stock catalog append/recovery process-termination cuts. |
 | `check-catalog-graph.py` | Independent persisted-graph checks and negative controls. |
+| [Native allocation reuse](#isolate-native-allocation-reuse) | Optional C control separating allocator reuse from engine accounting. |
 
 These runners compile and execute code. C/Rust callers live in
 `fixtures/`; they are development scaffolding with their own unsafe and process
@@ -393,6 +394,42 @@ Without supplied artifacts, both checkers build in a fresh temporary target.
 The full gate builds one stock CLI after its Cargo checks and supplies it to both
 campaigns sequentially. Each campaign checks its hash before and after execution.
 The gate removes the shared target and composition databases during finalization.
+
+### Isolate native allocation reuse
+
+The [native reuse caller](fixtures/native-allocation-reuse.c) uses ordinary C
+`malloc` and `free`, with no engine or Rust allocator observer. Its two modes use
+the same 3,817,440-byte request. `cold` measures it in a fresh process. `reuse`
+first allocates and frees 3,899,392 bytes, then measures the smaller request.
+The seed size is the usable extent observed in the wide-join diagnostic; this
+controlled history does not replay the original query's full allocation history.
+
+Run from the repository root on macOS or GNU/Linux:
+
+```sh
+pipesql_reuse_dir=$(mktemp -d)
+cc -std=c11 -O2 -Wall -Wextra -Werror tools/fixtures/native-allocation-reuse.c \
+  -o "$pipesql_reuse_dir/native-reuse"
+"$pipesql_reuse_dir/native-reuse" cold
+"$pipesql_reuse_dir/native-reuse" reuse
+rm -r -- "$pipesql_reuse_dir"
+```
+
+Each successful invocation prints one JSON record after freeing its allocations.
+`usable` and `seed_usable` come from `malloc_size` on Darwin or
+`malloc_usable_size` on GNU/Linux. `reused` compares saved integer addresses and
+never dereferences a freed pointer. The program rejects malformed invocations,
+allocation failures and extents smaller than their requests; it does not require
+reuse or a particular rounded size from every allocator configuration.
+
+Compare fresh processes, including the cold control. On the measured Darwin
+configuration, reuse reproduces the oversized extent independently of PipeSQL.
+The [evidence](../notes/evidence.md#native-allocation-reuse) records both platforms'
+observations. A matching extent supports a native-reuse explanation for one
+allocation; it does not identify the original freed block or account for every
+byte of the combined query's deficit. Keep that query's strict diagnostic and its
+unqualified usable-heap/RSS status. This optional experiment is not a passing
+engine admission campaign.
 
 ## Maintaining a tool
 
