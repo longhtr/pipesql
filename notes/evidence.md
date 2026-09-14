@@ -5,6 +5,56 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Query execution walkthrough
+
+`7450500` connects the preparation example to a concrete
+[execution trace](../docs/execution.md#trace-a-query-through-execution).
+[query-flow.sql](../examples/query-flow.sql) preserves the existing query:
+rename `amount` to `subtotal`, compute `subtotal + 1`, then sum the result.
+The guide follows its two physical producers, backwards input requests, parent
+handoffs, retained batches, global result checking/emission and terminal cleanup.
+It distinguishes those events from exact step counts and keeps implementation
+entry points beside the explanation. No engine instrumentation or API changes.
+
+Sequential fresh macOS and GNU arm64 Linux stock builds and declared-table setup
+pass. Running the exact SQL through the CLI with 16,000,000 bytes memory and
+8,000,000 temporary capacity returns one nullable INT64 row, 38, followed by
+`row_count=1`, `status=queried` and exit zero. This agrees with the independent
+sum 11 + 21 + 6; the fourth input remains NULL. Replacing only `subtotal + 1`
+with `subtotal + 9223372036854775807` produces a schema but no result row or
+success marker, exits one and reports addition overflow at bytes 50..80. The
+byte slice independently resolves to the complete demanded addition. Both
+platforms' normal/failure records agree after removing only the database path.
+Setup and replay commands remain in the
+[query guide](../docs/query-examples.md#follow-one-query-from-names-to-results).
+
+The SQL SHA-256 is
+`9a18d9015a08462eef80875684e1be48e98c2fb69e6aaddd48f52f953ecca477`.
+Build plus setup and both queries take 23.762 seconds on macOS and 21.133 seconds
+on Linux. Stock CLI hashes are
+`fd25e134c7a1e0667962073df1af86ee8d6c7e6be76b3976765f28e1a8a1951c`
+and `449425181d66379d64688fdda495a0cf574f30dafe5b6f1da9b3db01c45718f2`,
+respectively. All 695 prior non-documentary inputs remain byte-identical to
+`5975b71`; the only new executable example input is this SQL file. Its verified
+engine baseline therefore remains applicable without another core gate.
+Maintenance passes 99 tooling tests and 44 independent codec fixtures.
+Final documentation verification passes 746 local links.
+
+The 715-input manifest is
+`f8ec598d4bf9f18fe1a1ceb9b850c8f95d61d185ac94caa4d69d095c2e07e1e3`;
+the native Linux export matches exactly. Only the two notes files change after
+verification; the other 713 inputs retain fingerprint
+`519a0769f60542119cf4e26d129e563d67f98025538fc0bf67391ddcc7334335`.
+Both builds use the pinned Rust 1.98.1 with one Cargo job. Linux retains the
+preserved image, uid/gid 1000, one CPU, 2 GiB limit, networking disabled and native
+database storage. Four host snapshots observe normal/warning pressure, swap
+1,595 MiB and over 188.24 GiB free disk; sampled I/O ranges from 0.19 to
+4.61 MB/s. Two container snapshots observe up to 674.3 MiB and zero network
+traffic; no OOM kill occurs. These sparse observations do not establish peaks
+or memory bounds. Owned targets, databases, source export, logs and container
+are removed; existing targets, image and toolchains are preserved. Nothing is
+pushed or published, and broader qualifications remain unchanged.
+
 ## Explicit producer admission
 
 `5975b71` replaces the classification chain and implicit aggregate fallthrough
