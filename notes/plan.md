@@ -76,7 +76,7 @@ quality work is not deferred to the final gate.
 
 ### Ordered checkpoint goals
 
-The active goal is **3. Reconcile transient allocation histories**.
+The active goal is **4. Exercise overlapping report lifetimes**.
 
 The report observer exposed an early reservation release during constructor
 failure. Keeping `Minimum` intact through fallible optional allocation repaired
