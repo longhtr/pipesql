@@ -42,17 +42,22 @@ through the existing bounded expression path. A compounding-rate query provides
 a useful analytical workload with independent mathematical references. No current
 ownership counterexample requires reopening the completed failure boundaries.
 
-Limit the initial pinned-upstream signature, compliance and kernel trace to
-30 minutes. Resolve negative bases, zero, infinities, NaNs, overflow and underflow
-before choosing the accepted contract. Reassess if evidence conflicts or the
-existing binary call and numeric scratch owners cannot support it without broader
-changes. Do not add a second expression framework or new admission padding.
+The bounded upstream trace reconciles signature, alias, compliance cases and
+kernel behavior. Implementation reuses the binary call frames and numeric scratch;
+it adds no allocation owner or admission allowance. Explicit exceptional-value
+decisions precede the finite native power and its overflow check. The accepted
+language contract records conversion, demand, errors and approximate precision.
 
-Preserve NULL propagation, INT64 promotion, demand, skipped branches, owned error
-spans, operation/token bounds and independent validators. Verify kernel references,
-public composition, cancellation/release, replay and maintained allocation/native
-campaigns. Document the accepted profile and precision limits, plus a runnable
-compounding example and its implementation reading path. Complete matching frozen
+Focused release checks pass 29 scalar tests, 48 binder tests, six replay tests
+including 34 forced-fallback variants, and all 143 public catalog tests. Tests
+preserve NULLs, represented parity, owned spans, skipped branches, exact program
+bounds, cancellation and stored exceptional values across reopen. An initial
+fixture incorrectly supplied nonfinite literals; typed-column inputs repair that
+test without weakening literal validation. Clippy passes. Allocation development
+controls retain the catalog census; they do not establish refusal-sweep coverage.
+
+The compounding example and its implementation reading path are documented.
+Complete matching frozen
 sequential macOS/GNU arm64 Linux gates, discovery and evidence reconciliation,
 sequential fresh examples, final review, owned-output cleanup and local commits.
 Keep historical evidence below 641,696 bytes and publication restrictions intact.

@@ -42,7 +42,7 @@ fn composition_query(db: &Database, derived: bool) -> Result<(), Error> {
             Value::Double(4.5),
         )))
         .chain(derived.then_some((
-            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(FLOOR(n/2)+CEIL(ROUND(SQRT(n*n)/2))+EXP(LN(n/n))-1+LOG10(n/n)) AS rounded",
+            "FROM facts |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(FLOOR(n/2)+CEIL(ROUND(SQRT(n*n)/2))+POWER(EXP(LN(n/n))+1, 3)-8+LOG10(n/n)) AS rounded",
             Value::Double(9.0),
         )))
         .chain(derived.then_some((

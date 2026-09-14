@@ -433,6 +433,7 @@ fn bind_expression(
             ParsedOp::Multiply => Op::Multiply,
             ParsedOp::Divide => Op::Divide,
             ParsedOp::SafeDivide => Op::SafeDivide,
+            ParsedOp::Power => Op::Power,
             ParsedOp::Coalesce => Op::Coalesce,
             ParsedOp::NullIf => Op::NullIf,
             ParsedOp::Mod => Op::Mod,

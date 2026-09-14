@@ -500,7 +500,7 @@ pub(super) fn run(root: &Path, after: Option<usize>) -> Result<(), Box<dyn std::
             consume_count(result, 16)?;
             drop(count);
             phase = "division-prepare";
-            let division = db.prepare("FROM facts |> SELECT ABS(-(measure/2)) AS ratio, SQRT(ROUND(CEIL(SIGN(MOD(amount, 2))))) AS odd, COALESCE(DIV(amount, 1), DIV(1, 0)) AS exact |> WHERE ratio=1.75 AND odd=1 AND exact=9007199254740993 |> EXTEND SAFE_DIVIDE(ratio, 0) AS missing |> EXTEND EXP(LN(FLOOR(COALESCE(missing, NULLIF(ratio, missing)))))+LOG10(1) AS filled |> WHERE missing IS NOT DISTINCT FROM NULL AND filled=1 |> AGGREGATE COUNT(*) AS n")?;
+            let division = db.prepare("FROM facts |> SELECT ABS(-(measure/2)) AS ratio, SQRT(ROUND(CEIL(SIGN(MOD(amount, 2))))) AS odd, COALESCE(DIV(amount, 1), DIV(1, 0)) AS exact |> WHERE ratio=1.75 AND odd=1 AND exact=9007199254740993 |> EXTEND SAFE_DIVIDE(ratio, 0) AS missing |> EXTEND EXP(LN(FLOOR(COALESCE(missing, NULLIF(ratio, missing)))))+LOG10(POW(2, 3)/8) AS filled |> WHERE missing IS NOT DISTINCT FROM NULL AND filled=1 |> AGGREGATE COUNT(*) AS n")?;
             phase = "division-execute";
             let result = db.execute(&division, &cancel)?;
             phase = "division-step";

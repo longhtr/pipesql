@@ -790,6 +790,7 @@ fn public_numeric_cancellation_and_early_drop_release_owners() {
         "FROM facts |> SELECT LN(v) AS logarithm |> ORDER BY logarithm",
         "FROM facts |> SELECT LOG10(v) AS scale |> ORDER BY scale",
         "FROM facts |> SELECT EXP(v) AS growth |> ORDER BY growth",
+        "FROM facts |> SELECT POWER(v, 3) AS cubed |> ORDER BY cubed",
         "FROM facts |> SELECT MOD(v, 3) AS remainder |> ORDER BY remainder",
         "FROM facts |> SELECT DIV(v, 15) AS quotient |> ORDER BY quotient",
         "FROM facts |> SELECT COALESCE(k, v) AS chosen |> ORDER BY chosen",
@@ -1562,7 +1563,7 @@ fn public_sign_preserves_types_classification_and_demand() {
 }
 
 #[test]
-fn public_unary_numeric_preserves_stored_double_bits_across_producers_and_reopen() {
+fn public_numeric_preserves_stored_double_bits_across_producers_and_reopen() {
     let directory = Directory::new();
     let path = directory.database();
     let mut db = Database::create_empty(&path, config()).unwrap();
@@ -1664,6 +1665,51 @@ fn public_unary_numeric_preserves_stored_double_bits_across_producers_and_reopen
                     vec![Cell::Null],
                 ],
             );
+            for (expression, expected) in [
+                (
+                    "POW(value, 1)",
+                    vec![
+                        0x8000_0000_0000_0000,
+                        0,
+                        0x8000_0000_0000_0001,
+                        1,
+                        0xfff0_0000_0000_0000,
+                        0x7ff0_0000_0000_0000,
+                        0xfff8_0000_0000_0042,
+                        (-7.0_f64).to_bits(),
+                    ],
+                ),
+                ("POWER(value, 0)", vec![1.0_f64.to_bits(); 8]),
+                ("POW(1, value)", vec![1.0_f64.to_bits(); 8]),
+                (
+                    "COALESCE(POWER(value, 1), 9)",
+                    vec![
+                        0x8000_0000_0000_0000,
+                        0,
+                        0x8000_0000_0000_0001,
+                        1,
+                        0xfff0_0000_0000_0000,
+                        0x7ff0_0000_0000_0000,
+                        0xfff8_0000_0000_0042,
+                        (-7.0_f64).to_bits(),
+                    ],
+                ),
+            ] {
+                let mut rows: Vec<_> = expected
+                    .into_iter()
+                    .map(|bits| vec![Cell::Number(bits)])
+                    .collect();
+                rows.push(vec![if expression.starts_with("COALESCE") {
+                    Cell::Number(9.0_f64.to_bits())
+                } else {
+                    Cell::Null
+                }]);
+                query(
+                    &db,
+                    &format!("{source} |> ORDER BY id |> SELECT {expression} AS powered"),
+                    rows,
+                );
+            }
             // Explicit answers distinguish SIGN's positive zero from rounding's
             // preserved zero sign and exercise subnormal values without an oracle
             // that calls the implementation's rounding primitive.
@@ -2532,5 +2578,271 @@ fn public_exp_owns_demanded_overflow_spans() {
         assert_eq!((span.start(), span.end()), (start, end));
         assert_eq!(db.reserved_memory_bytes(), baseline);
         assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+}
+
+#[test]
+fn public_power_preserves_promotion_composition_and_demand() {
+    let (_directory, db) = join_fixture();
+    let baseline = db.reserved_memory_bytes();
+    for function in ["POW", "POWER"] {
+        for (arguments, expected) in [
+            ("2, 3", Some(8.0_f64)),
+            ("2.0, 3", Some(8.0)),
+            ("2, 3.0", Some(8.0)),
+            ("2.0, 3.0", Some(8.0)),
+            ("-2, 3", Some(-8.0)),
+            ("-2, -3", Some(-0.125)),
+            ("-1, 9007199254740991", Some(-1.0)),
+            ("-1, 9007199254740993", Some(1.0)),
+            ("-1, 9223372036854775807", Some(1.0)),
+            ("-1, -9223372036854775808", Some(1.0)),
+            ("9007199254740993, 1", Some(9_007_199_254_740_992.0)),
+            ("9223372036854775807, 1", Some(9_223_372_036_854_775_808.0)),
+            ("0, 0", Some(1.0)),
+            ("-0.0, 3", Some(-0.0)),
+            ("2, -1074", Some(f64::from_bits(1))),
+            ("2, -1075", Some(0.0)),
+            ("NULLIF(1, 1), 0", None),
+            ("1, SAFE_DIVIDE(1, 0)", None),
+        ] {
+            let sql = format!("FROM facts |> LIMIT 1 |> SELECT {function}({arguments}) AS growth");
+            let prepared = db.prepare(&sql).unwrap();
+            let column = prepared.result_column(0).unwrap();
+            assert_eq!(
+                (column.data_type, column.nullable),
+                (DataType::Double, expected.is_none())
+            );
+            drop(prepared);
+            query(
+                &db,
+                &sql,
+                vec![vec![
+                    expected.map_or(Cell::Null, |value| Cell::Number(value.to_bits())),
+                ]],
+            );
+        }
+        for expression in [
+            format!("COALESCE(9, {function}(-1, 0.5))"),
+            format!("COALESCE({function}(NULLIF(1, 1), 0), 9)"),
+        ] {
+            query(
+                &db,
+                &format!("FROM facts |> LIMIT 1 |> SELECT {expression} AS chosen"),
+                vec![vec![Cell::Number(9.0_f64.to_bits())]],
+            );
+        }
+        for sql in [
+            format!(
+                "FROM facts |> EXTEND {function}(-v, 0.5) AS bad |> DROP bad |> SELECT v |> ORDER BY v"
+            ),
+            format!(
+                "FROM facts |> EXTEND {function}(-v, 0.5) AS bad |> WHERE v>0 OR bad>0 |> SELECT v |> ORDER BY v"
+            ),
+            format!(
+                "FROM facts |> EXTEND {function}(v, 2) AS square |> WHERE square>{function}(0, 2) |> SELECT v |> ORDER BY v"
+            ),
+        ] {
+            query(&db, &sql, integers(&[10, 20, 30, 40]));
+        }
+        query(
+            &db,
+            &format!(
+                "FROM facts |> EXTEND {function}(-v, 0.5) AS bad |> WHERE v<0 AND bad>0 |> SELECT v"
+            ),
+            vec![],
+        );
+        query(
+            &db,
+            &format!(
+                "FROM facts |> AGGREGATE SUM({function}(v/10, 2)) AS total GROUP AND ORDER BY k"
+            ),
+            vec![
+                vec![Cell::Null, Cell::Number(16.0_f64.to_bits())],
+                vec![Cell::Integer(1), Cell::Number(5.0_f64.to_bits())],
+                vec![Cell::Integer(2), Cell::Number(9.0_f64.to_bits())],
+            ],
+        );
+        query(
+            &db,
+            &format!(
+                "FROM facts AS l |> LEFT JOIN facts AS r ON l.k=r.k |> SELECT {function}(r.v, 0) AS one |> DISTINCT |> ORDER BY one"
+            ),
+            vec![vec![Cell::Null], vec![Cell::Number(1.0_f64.to_bits())]],
+        );
+        query(
+            &db,
+            &format!(
+                "FROM facts |> SELECT {function}(v, 0) AS one |> UNION DISTINCT (FROM facts |> SELECT {function}(1, v) AS one)"
+            ),
+            vec![vec![Cell::Number(1.0_f64.to_bits())]],
+        );
+        query(
+            &db,
+            &format!("FROM facts |> LIMIT 0 |> AGGREGATE AVG({function}(v, 3)) AS mean"),
+            vec![vec![Cell::Null]],
+        );
+        for arguments in [
+            "",
+            "1",
+            "1, 2, 3",
+            ", 1",
+            "1, ",
+            "'x', 1",
+            "1, 'x'",
+            "DATE '1970-01-01', 1",
+            "1, DATE '1970-01-01'",
+            "NULL, 1",
+            "1, NULL",
+            "missing, 1",
+        ] {
+            assert!(
+                db.prepare(&format!(
+                    "FROM facts |> SELECT {function}({arguments}) AS bad"
+                ))
+                .is_err(),
+                "{arguments}"
+            );
+        }
+        for sql in [
+            format!("FROM facts |> LIMIT {function}(1, 0)"),
+            format!("FROM facts |> LIMIT 1 OFFSET {function}(1, 0)"),
+            format!("FROM facts |> SELECT DIV({function}(1, 0), 1) AS bad"),
+            format!("FROM facts |> SELECT MOD(1, {function}(1, 0)) AS bad"),
+        ] {
+            assert!(db.prepare(&sql).is_err(), "{sql}");
+        }
+        // A leaf and fifteen binary calls occupy 31 operations. Negation fills
+        // slot 32; the next binary call exceeds the same bound before token 160.
+        let nested = format!(
+            "{}v{}",
+            format!("{function}(").repeat(15),
+            ", 1)".repeat(15)
+        );
+        query(
+            &db,
+            &format!("FROM facts |> SELECT -({nested}) AS value |> ORDER BY value"),
+            vec![40.0_f64, 30.0, 20.0, 10.0]
+                .into_iter()
+                .map(|value| vec![Cell::Number((-value).to_bits())])
+                .collect(),
+        );
+        assert!(
+            db.prepare(&format!(
+                "FROM facts |> SELECT {function}({nested}, 1) AS bad"
+            ))
+            .is_err()
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+    // Exact rational compounding gives 1331, 1728, 2197 and 2744. Six ULPs
+    // cover this complete DOUBLE query, independently of its native powf path.
+    let prepared = db
+        .prepare("FROM facts |> ORDER BY v |> SELECT 1000*POWER(1+v/100, 3) AS compounded")
+        .unwrap();
+    let cancel = CancellationToken::new();
+    let mut result = db.execute(&prepared, &cancel).unwrap();
+    let rows = collect(&mut result);
+    assert_eq!(rows.len(), 4);
+    for (row, expected) in rows.iter().zip([1331.0_f64, 1728.0, 2197.0, 2744.0]) {
+        let [Cell::Number(actual)] = row.as_slice() else {
+            panic!("DOUBLE compounded value");
+        };
+        assert!(actual.abs_diff(expected.to_bits()) <= 6, "{actual:016x}");
+    }
+    drop(result);
+    drop(prepared);
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+}
+
+#[test]
+fn public_power_owns_demanded_domain_and_overflow_spans() {
+    let (_directory, db) = join_fixture();
+    let baseline = db.reserved_memory_bytes();
+    for (expression, domain) in [("POW(-1, 0.5)", true), ("POWER(2, 1024)", false)] {
+        let sql = format!("FROM facts |> WHERE v>{expression}");
+        let error = db.prepare(&sql).err().expect("constant power failure");
+        let (operation, span) = match (domain, error) {
+            (true, Error::ArithmeticDomain { operation, span })
+            | (false, Error::ArithmeticOverflow { operation, span }) => (operation, span),
+            _ => panic!("power failure category"),
+        };
+        assert_eq!(operation, "power");
+        assert_eq!(&sql[span.start()..span.end()], expression);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    for (expression, domain) in [
+        ("POW(-v, 0.5)", true),
+        ("POWER(0, -1)", true),
+        ("POW(-0.0, -0.5)", true),
+        ("SUM(POWER(-v, 0.5))", true),
+        ("SAFE_DIVIDE(POW(-v, 0.5), 0)", true),
+        ("SAFE_DIVIDE(1, POWER(-v, 0.5))", true),
+        ("COALESCE(NULLIF(1, 1), POW(-v, 0.5))", true),
+        ("POWER(2, v*1000)", false),
+        ("SUM(POW(2, v*1000))", false),
+        ("SAFE_DIVIDE(POWER(2, v*1000), 0)", false),
+        ("SAFE_DIVIDE(1, POW(2, v*1000))", false),
+        ("COALESCE(NULLIF(1, 1), POWER(2, v*1000))", false),
+    ] {
+        let stage = if expression.starts_with("SUM(") {
+            "AGGREGATE"
+        } else {
+            "SELECT"
+        };
+        let sql = format!("# 雪\nFROM facts |> {stage} {expression} AS bad");
+        let start = sql.find(expression).unwrap();
+        let end = start + expression.len();
+        let prepared = db.prepare(&sql).unwrap();
+        drop(sql);
+        let cancel = CancellationToken::new();
+        let mut result = db.execute(&prepared, &cancel).unwrap();
+        let mut failed = false;
+        for _ in 0..100_000 {
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Failed(error) => {
+                    let (operation, span) = match (domain, error) {
+                        (true, Error::ArithmeticDomain { operation, span })
+                        | (false, Error::ArithmeticOverflow { operation, span }) => {
+                            (operation, span)
+                        }
+                        _ => panic!("power failure category"),
+                    };
+                    assert_eq!(*operation, "power");
+                    assert_eq!((span.start(), span.end()), (start, end));
+                    failed = true;
+                    break;
+                }
+                _ => panic!("missing demanded power failure"),
+            }
+        }
+        assert!(failed);
+        assert!(matches!(result.step(), QueryStep::Failed(_)));
+        let error = result.into_error().unwrap();
+        drop(prepared);
+        let (operation, span) = match (domain, error) {
+            (true, Error::ArithmeticDomain { operation, span })
+            | (false, Error::ArithmeticOverflow { operation, span }) => (operation, span),
+            _ => panic!("owned power failure category"),
+        };
+        assert_eq!(operation, "power");
+        assert_eq!((span.start(), span.end()), (start, end));
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+    for expression in [
+        "POW(v*9223372036854775807, 0)",
+        "POWER(1, v*9223372036854775807)",
+        "POW(NULLIF(1, 1), v*9223372036854775807)",
+    ] {
+        failure(
+            &db,
+            &format!("FROM facts |> SELECT {expression} AS bad"),
+            "multiplication",
+            expression,
+        );
     }
 }

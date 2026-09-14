@@ -552,6 +552,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             2
         );
         println!("returned rendered diagnostic: {text}");
+        let mut power_text = FixedText {
+            bytes: [0; 1_024],
+            length: 0,
+        };
+        DENY.store(deny, Ordering::Relaxed);
+        let domain = Error::ArithmeticDomain {
+            operation: "power",
+            span: division_span,
+        };
+        let domain_cause = pipesql::CauseKind::ArithmeticDomain {
+            operation: "power",
+            span: division_span,
+        };
+        let overflow = Error::ArithmeticOverflow {
+            operation: "power",
+            span: division_span,
+        };
+        let overflow_cause = pipesql::CauseKind::ArithmeticOverflow {
+            operation: "power",
+            span: division_span,
+        };
+        let formatted = write!(
+            &mut power_text,
+            "{domain}; {domain_cause}; {overflow}; {overflow_cause}"
+        );
+        DENY.store(false, Ordering::Relaxed);
+        formatted.unwrap();
+        let text = std::str::from_utf8(&power_text.bytes[..power_text.length]).unwrap();
+        assert_eq!(
+            text.matches("arithmetic domain error during power at bytes 36..39")
+                .count(),
+            2
+        );
+        assert_eq!(
+            text.matches("arithmetic overflow during power at bytes 36..39")
+                .count(),
+            2
+        );
         return Ok(());
     }
     std::fs::write(database.join("private/caller-canary"), b"do not remove")?;

@@ -59,7 +59,8 @@ impl<'a> Evaluation<'a> {
                     if *op == Op::Coalesce {
                         evaluation.fallback_end[usize::from(starts[depth])] = position as u8;
                     }
-                    if matches!(op, Op::Divide | Op::SafeDivide) || types[depth] == DataType::Double
+                    if matches!(op, Op::Divide | Op::SafeDivide | Op::Power)
+                        || types[depth] == DataType::Double
                     {
                         types[depth - 1] = DataType::Double;
                     }
@@ -179,7 +180,9 @@ fn coerce(value: Number, kind: DataType) -> Number {
 fn binary(op: Op, left: Number, right: Number) -> Result<Number, ArithmeticFailure> {
     match (left, right) {
         (Number::Null, _) | (_, Number::Null) => Ok(Number::Null),
-        (Number::Integer(a), Number::Integer(b)) if !matches!(op, Op::Divide | Op::SafeDivide) => {
+        (Number::Integer(a), Number::Integer(b))
+            if !matches!(op, Op::Divide | Op::SafeDivide | Op::Power) =>
+        {
             integer_binary(op, a, b).map(Number::Integer)
         }
         _ => {

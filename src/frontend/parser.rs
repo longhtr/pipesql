@@ -112,6 +112,7 @@ pub(super) enum ParsedOp {
     Multiply,
     Divide,
     SafeDivide,
+    Power,
     Coalesce,
     NullIf,
     Mod,
@@ -158,6 +159,7 @@ impl ParsedExpression {
 #[derive(Clone, Copy)]
 enum BinaryCall {
     SafeDivide,
+    Power,
     Coalesce,
     NullIf,
     Mod,
@@ -168,6 +170,7 @@ impl BinaryCall {
     fn parsed(self) -> ParsedOp {
         match self {
             Self::SafeDivide => ParsedOp::SafeDivide,
+            Self::Power => ParsedOp::Power,
             Self::Coalesce => ParsedOp::Coalesce,
             Self::NullIf => ParsedOp::NullIf,
             Self::Mod => ParsedOp::Mod,
@@ -638,6 +641,8 @@ impl Parser<'_> {
                         if (self.is_word("COALESCE")
                             || self.is_word("NULLIF")
                             || self.is_word("SAFE_DIVIDE")
+                            || self.is_word("POW")
+                            || self.is_word("POWER")
                             || self.is_word("ABS")
                             || self.is_word("SIGN")
                             || self.is_word("FLOOR")
@@ -684,6 +689,8 @@ impl Parser<'_> {
                             PendingOp::Sqrt
                         } else if self.is_word("ROUND") {
                             PendingOp::Round
+                        } else if self.is_word("POW") || self.is_word("POWER") {
+                            PendingOp::FirstArgument(BinaryCall::Power)
                         } else if self.is_word("DIV") {
                             PendingOp::FirstArgument(BinaryCall::IntegerDivide)
                         } else if self.is_word("MOD") {

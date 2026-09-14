@@ -347,6 +347,45 @@ and permits underflow to zero. The [language contract](language.md#current-publi
 owns these rules and the approximate precision limits; the composed answer can
 vary slightly from 10.
 
+## Compound a rate over several periods
+
+For this calculation, interpret the same positive amounts as percentage rates
+per period. Run [examples/compound_growth.sql](../examples/compound_growth.sql)
+to compound an initial quantity of 1,000 for three periods:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/compound_growth.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+Require successful exit and `status=queried`, with nullable INT64/DOUBLE columns
+and these three rows in order. DOUBLE values can differ slightly from the
+mathematical amounts shown:
+
+| rate_percent | compounded |
+| --- | --- |
+| 5 | 1157.625 |
+| 10 | 1331 |
+| 20 | 1728 |
+
+Dividing the percentage by 100 gives a fractional rate; adding one gives the
+growth factor for one period. POWER raises that factor to the third power before
+multiplying by the starting quantity. POW is an equivalent spelling. This
+calculation uses approximate DOUBLE arithmetic and does not define exact decimal
+rounding for money.
+
+Follow the binary call frame in the [parser](../src/frontend/parser.rs), then
+the typed operation in the [binder](../src/frontend/binding.rs). The
+[scalar owner](../src/scalar.rs) promotes both operands, handles exceptional
+values and evaluates the finite power. Its batch evaluator and
+[demand cursor](../src/scalar/evaluation.rs) share that kernel. The
+[language contract](language.md#current-public-query-manifest) owns NULL behavior,
+domain/overflow errors and precision limits; the
+[public calculation](../tests/catalog_lifecycle/computed.rs) checks complete
+compounded results against independent mathematical answers.
+
 ## Combine pipeline results
 
 Run [examples/union.sql](../examples/union.sql) against the same database:

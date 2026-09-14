@@ -175,6 +175,10 @@ LN and LOG10 use the same DOUBLE unary slot as SQRT, with a finite-domain check
 and native logarithm evaluation; neither adds scratch allocation. EXP uses that slot with
 DOUBLE promotion and finite-result overflow checking. Its exceptional values and
 gradual underflow require no new buffer, allocation owner or admission allowance.
+POW and POWER use the binary numeric slot with DOUBLE promotion of both operands.
+Their exceptional-value decisions and finite power kernel add no scratch, heap
+owner or admission allowance. Each call consumes two input slots and retains one
+output slot through the same batch and demanded-evaluation paths.
 
 COALESCE retains the same prepared expression and operation bound. A bounded
 row cursor derives fallback endpoints and result types from validated postfix

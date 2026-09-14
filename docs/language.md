@@ -88,7 +88,7 @@ separate from this query manifest.
 | `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN or positional set operations. Comma-separated FROM inputs remain unsupported. |
 | `FROM (pipe_query) [AS alias]` | Uses the child query’s ordinary outputs as an independent input. A JOIN may also use this form. See [table subqueries](#table-subqueries) for scope and ordering. |
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
-| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts numeric `ABS`/`SIGN`/`FLOOR`/`CEIL` (`CEILING`)/`ROUND`/`SQRT`/`LN`/`LOG10`/`EXP`, INT64 `DIV`/`MOD` and two-argument `SAFE_DIVIDE`, `COALESCE` and `NULLIF`, bounded STRING and DATE constants and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
+| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts numeric `ABS`/`SIGN`/`FLOOR`/`CEIL` (`CEILING`)/`ROUND`/`SQRT`/`LN`/`LOG10`/`EXP`, INT64 `DIV`/`MOD` and two-argument `POW` (`POWER`), `SAFE_DIVIDE`, `COALESCE` and `NULLIF`, bounded STRING and DATE constants and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
 | `EXTEND expression [[AS] alias], ...` | Appends columns using the same expression profile as SELECT. Preserves all input columns, their identities and ranges. Ordinary expressions preserve order; analytic count clears it. Star expansion, reducing aggregate calls and other scalar forms remain unsupported. |
 | `SET name=expression, ...` | Replaces each named ordinary column in place with a fresh identity. Accepts direct references of any supported type and the nonanalytic SELECT expression profile. Every expression sees the original input; replacements can change type and NULLability. |
 | `DROP name, ...` | Removes all ordinary columns matching each name, including duplicate names. Rejects removal of the entire row. |
@@ -435,6 +435,56 @@ The pinned [EXP contract](https://github.com/google/googlesql/blob/0e7d7073ed036
 and [reference kernel](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/math.h#L315)
 establish promotion, finite overflow and exceptional-value behavior. PipeSQL
 retains its own typed errors and explicit bit choices.
+
+`POW(base, exponent)` and its alias `POWER(base, exponent)` accept two INT64 or
+DOUBLE expressions and return DOUBLE. Each INT64 operand converts before the
+power operation; prior integer arithmetic remains checked. In particular,
+conversion beyond 2^53 can change an exponent's oddness: POW(-1, 9007199254740993)
+returns 1 because the represented exponent is 9007199254740992. Either NULL
+operand produces NULL, including a NULL base with exponent zero or base one
+with a NULL exponent.
+
+For non-NULL operands, exponent zero (either sign) or base one produces exactly
+1, even if the other value is NaN. Otherwise an input NaN produces NaN. PipeSQL
+preserves the first NaN operand's bits, inspecting the base before the exponent;
+this bit choice is an explicit profile rule. Remaining exceptional cases are:
+
+| Base | Exponent | Result |
+| --- | --- | --- |
+| Absolute value 1 | Either infinity | 1 |
+| Absolute value below 1 | Positive / negative infinity | Positive zero / positive infinity |
+| Absolute value above 1 | Positive / negative infinity | Positive infinity / positive zero |
+| Either infinity | Finite positive value | Infinity; negative only for a negative base and odd integer exponent |
+| Either infinity | Finite negative value | Zero; negative only for a negative base and odd integer exponent |
+| Either zero | Finite positive value | Zero; negative only for negative zero and an odd integer exponent |
+| Either zero | Finite negative value | `ArithmeticDomain` |
+| Finite negative value | Finite noninteger value | `ArithmeticDomain` |
+
+Other finite operands use Rust's
+[`f64::powf`](https://doc.rust-lang.org/std/primitive.f64.html#method.powf).
+Finite overflow raises `ArithmeticOverflow`; representable subnormals remain
+subnormal and unrepresentable underflow becomes zero. Precision can vary by
+platform, compiler and invocation. Correct rounding, a universal ULP bound and
+bit-identical repeated or cross-platform finite results are not promised.
+Both power error categories use operation `power` and the demanded expression's
+owned span.
+
+Arguments retain ordinary demand. Unity and zero-exponent identities do not
+suppress errors while evaluating either argument. Unused computations and
+skipped Boolean/COALESCE branches remain unevaluated; SAFE_DIVIDE does not hide
+errors in its arguments. Predicate constants can fail during preparation.
+Other arities, STRING, DATE and untyped NULL arguments are rejected. The DOUBLE
+result cannot satisfy INT64-only LIMIT/OFFSET or DIV/MOD arguments. Both spellings
+use one binary operation, the existing call frames, batch scratch and demand
+cursor within the same 32-operation and 160-token bounds.
+
+The pinned [power contract](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/docs/mathematical_functions.md#pow),
+[signature and alias](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/common/builtin_function_internal_3.cc#L2757),
+[compliance cases](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/compliance/functions_testlib_math.cc#L1464)
+and [reference kernel](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/functions/math.h#L309)
+establish the accepted numeric form and exceptional-value decisions. They were
+inspected as source, not executed upstream. Typed error categories and explicit
+NaN payload choices remain PipeSQL profile decisions.
 
 `ABS(value)` accepts one INT64 or DOUBLE expression and preserves its type and
 NULLability. NULL yields NULL. Minimum INT64 has no positive INT64 counterpart

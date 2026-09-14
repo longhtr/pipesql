@@ -20,6 +20,8 @@ pub(crate) enum ArithmeticFailure {
     SqrtDomain,
     LnDomain,
     Log10Domain,
+    PowerDomain,
+    Power,
     Exp,
 }
 
@@ -33,7 +35,14 @@ impl ArithmeticFailure {
             Self::Negate => "negation",
             Self::Abs => "absolute value",
             Self::Exp => "exponentiation",
+            Self::Power => "power",
             Self::DivideByZero => return Error::DivisionByZero { span },
+            Self::PowerDomain => {
+                return Error::ArithmeticDomain {
+                    operation: "power",
+                    span,
+                };
+            }
             Self::Log10Domain => {
                 return Error::ArithmeticDomain {
                     operation: "base-ten logarithm",
@@ -170,6 +179,7 @@ pub(crate) enum Op {
     Multiply,
     Divide,
     SafeDivide,
+    Power,
     Coalesce,
     NullIf,
     Mod,
@@ -385,6 +395,7 @@ impl Expression {
                 | Op::Multiply
                 | Op::Divide
                 | Op::SafeDivide
+                | Op::Power
                 | Op::Coalesce
                 | Op::NullIf
                 | Op::Mod
@@ -402,7 +413,7 @@ impl Expression {
                             "DIV requires INT64 arguments"
                         }));
                     }
-                    types[depth - 1] = if matches!(op, Op::Divide | Op::SafeDivide)
+                    types[depth - 1] = if matches!(op, Op::Divide | Op::SafeDivide | Op::Power)
                         || types[depth - 1] == DataType::Double
                         || types[depth] == DataType::Double
                     {
@@ -449,6 +460,7 @@ impl Expression {
                 | Op::Multiply
                 | Op::Divide
                 | Op::SafeDivide
+                | Op::Power
                 | Op::Coalesce
                 | Op::NullIf
                 | Op::Mod
@@ -620,6 +632,7 @@ impl Expression {
                 | Op::Multiply
                 | Op::Divide
                 | Op::SafeDivide
+                | Op::Power
                 | Op::Mod
                 | Op::IntegerDivide => {
                     depth -= 1;
@@ -632,7 +645,7 @@ impl Expression {
                     for (left, right) in valid[depth - 1].iter_mut().zip(right_valid) {
                         *left &= right;
                     }
-                    let integer_result = !matches!(op, Op::Divide | Op::SafeDivide)
+                    let integer_result = !matches!(op, Op::Divide | Op::SafeDivide | Op::Power)
                         && left_type == DataType::Int64
                         && right_type == DataType::Int64;
                     let all_valid = valid[depth - 1] == [u64::MAX; VALID_WORDS];
@@ -724,7 +737,59 @@ fn integer_binary(op: Op, left: i64, right: i64) -> Result<i64, ArithmeticFailur
     }
 }
 
+// NULLs are removed before this kernel. The SQL identities precede NaNs;
+// finite domain errors must not reject the separately defined infinity cases.
+fn double_power(base: f64, exponent: f64) -> Result<f64, ArithmeticFailure> {
+    if exponent == 0.0 || base == 1.0 {
+        return Ok(1.0);
+    }
+    if base.is_nan() {
+        return Ok(base);
+    }
+    if exponent.is_nan() {
+        return Ok(exponent);
+    }
+    if exponent.is_infinite() {
+        let magnitude = base.abs();
+        return Ok(if magnitude == 1.0 {
+            1.0
+        } else if (magnitude > 1.0) == exponent.is_sign_positive() {
+            f64::INFINITY
+        } else {
+            0.0
+        });
+    }
+    // Integer inputs have already promoted to DOUBLE. Oddness is a property
+    // of that represented exponent, including the even values above 2^53.
+    let negative = base.is_sign_negative() && exponent % 2.0 != 0.0 && exponent.fract() == 0.0;
+    if base.is_infinite() {
+        let magnitude = if exponent < 0.0 { 0.0 } else { f64::INFINITY };
+        return Ok(if negative { -magnitude } else { magnitude });
+    }
+    if base == 0.0 {
+        return if exponent < 0.0 {
+            Err(ArithmeticFailure::PowerDomain)
+        } else {
+            Ok(if negative { -0.0 } else { 0.0 })
+        };
+    }
+    if base < 0.0 && exponent.fract() != 0.0 {
+        return Err(ArithmeticFailure::PowerDomain);
+    }
+    // Remaining operands are finite and in-domain. Keep gradual underflow;
+    // reject infinity created by overflow rather than publishing it as data.
+    let result = base.powf(exponent);
+    if result.is_finite() {
+        Ok(result)
+    } else {
+        Err(ArithmeticFailure::Power)
+    }
+}
+
 fn double_binary(op: Op, left: f64, right: f64) -> Result<f64, ArithmeticFailure> {
+    if op == Op::Power {
+        return double_power(left, right);
+    }
     let (value, failure) = match op {
         Op::Add => (left + right, ArithmeticFailure::Add),
         Op::Subtract => (left - right, ArithmeticFailure::Subtract),
@@ -747,6 +812,280 @@ fn double_binary(op: Op, left: f64, right: f64) -> Result<f64, ArithmeticFailure
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn power_checks_exceptional_values_and_finite_domains() {
+        let nan = f64::from_bits(0x7ff0_0000_0000_0042);
+        let other_nan = f64::from_bits(0xfff8_0000_0000_0081);
+        let inf = f64::INFINITY;
+        // Literal answers distinguish identity precedence, represented parity,
+        // signed zeros, nonfinite inputs, and gradual underflow from overflow.
+        for (base, exponent, expected) in [
+            (0.0, 0.0, 1.0),
+            (-0.0, -0.0, 1.0),
+            (nan, 0.0, 1.0),
+            (nan, -0.0, 1.0),
+            (1.0, nan, 1.0),
+            (1.0, inf, 1.0),
+            (inf, 0.0, 1.0),
+            (-inf, -0.0, 1.0),
+            (nan, 2.0, nan),
+            (2.0, other_nan, other_nan),
+            (nan, other_nan, nan),
+            (-1.0, inf, 1.0),
+            (-1.0, -inf, 1.0),
+            (0.5, inf, 0.0),
+            (-0.5, inf, 0.0),
+            (0.5, -inf, inf),
+            (-0.5, -inf, inf),
+            (2.0, inf, inf),
+            (-2.0, inf, inf),
+            (2.0, -inf, 0.0),
+            (-2.0, -inf, 0.0),
+            (0.0, -inf, inf),
+            (-0.0, -inf, inf),
+            (inf, 0.5, inf),
+            (-inf, 0.5, inf),
+            (-inf, 3.0, -inf),
+            (-inf, 2.0, inf),
+            (inf, -0.5, 0.0),
+            (-inf, -0.5, 0.0),
+            (-inf, -3.0, -0.0),
+            (-inf, -2.0, 0.0),
+            (-inf, inf, inf),
+            (-inf, -inf, 0.0),
+            (-0.0, 3.0, -0.0),
+            (-0.0, 2.0, 0.0),
+            (-0.0, 0.5, 0.0),
+            (-2.0, 3.0, -8.0),
+            (-2.0, -3.0, -0.125),
+            (-1.0, 9_007_199_254_740_991.0, -1.0),
+            (-1.0, 9_007_199_254_740_992.0, 1.0),
+            (2.0, 1023.0, f64::from_bits(0x7fe0_0000_0000_0000)),
+            (2.0, -1022.0, f64::MIN_POSITIVE),
+            (2.0, -1074.0, f64::from_bits(1)),
+            (2.0, -1075.0, 0.0),
+            (-2.0, -1075.0, -0.0),
+        ] {
+            check_power_answer(base, exponent, expected.to_bits(), 0);
+        }
+        for (base, exponent, domain) in [
+            (-1.0, 0.5, true),
+            (-2.0, -0.5, true),
+            (0.0, -1.0, true),
+            (-0.0, -0.5, true),
+            (-f64::MAX, f64::from_bits(1), true),
+            (2.0, 1024.0, false),
+            (-2.0, 1025.0, false),
+            (f64::MAX, 2.0, false),
+            (f64::from_bits(1), -1.0, false),
+        ] {
+            let expression = power_expression(base, exponent);
+            let mut cursor = Evaluation::new(&expression);
+            for result in [
+                expression.evaluate_constant().map(|_| ()),
+                cursor.next_column().map(|_| ()),
+            ] {
+                assert!(matches!(
+                    (domain, result),
+                    (true, Err(ArithmeticFailure::PowerDomain))
+                        | (false, Err(ArithmeticFailure::Power))
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn power_matches_independent_finite_references() {
+        // Decimal.from_float(base) ** Decimal.from_float(exponent), precision
+        // 100, then rounded to binary64. Two ULPs bound these regression cases,
+        // not all powers or repeated/cross-platform native results.
+        for (base, exponent, expected) in [
+            (
+                0x4000_0000_0000_0000,
+                0x3fe0_0000_0000_0000,
+                0x3ff6_a09e_667f_3bcd,
+            ),
+            (
+                0x403b_0000_0000_0000,
+                0x3fd5_5555_5555_5555,
+                0x4008_0000_0000_0000,
+            ),
+            (
+                0x4024_0000_0000_0000,
+                0xbfe0_0000_0000_0000,
+                0x3fd4_3d13_6248_490f,
+            ),
+            (
+                0x3ff0_28f5_c28f_5c29,
+                0x4028_0000_0000_0000,
+                0x3ff2_0779_aecb_b247,
+            ),
+            (
+                0x3ff0_cccc_cccc_cccd,
+                0x403e_0000_0000_0000,
+                0x4011_49ab_4311_dfee,
+            ),
+            (
+                0x3fe0_0000_0000_0000,
+                0xc012_0000_0000_0000,
+                0x4036_a09e_667f_3bcd,
+            ),
+            (
+                0x7fef_ffff_ffff_ffff,
+                0x3fe0_0000_0000_0000,
+                0x5fef_ffff_ffff_ffff,
+            ),
+            (
+                0x0010_0000_0000_0000,
+                0x3fe0_0000_0000_0000,
+                0x2000_0000_0000_0000,
+            ),
+            (
+                0x0000_0000_0000_0001,
+                0x3fe0_0000_0000_0000,
+                0x1e60_0000_0000_0000,
+            ),
+            (
+                0x3fef_ffff_ffff_ffff,
+                0x412e_8480_0000_0000,
+                0x3fef_ffff_fff0_bdc0,
+            ),
+            (
+                0x3ff0_0000_0000_0001,
+                0x412e_8480_0000_0000,
+                0x3ff0_0000_000f_4240,
+            ),
+        ] {
+            check_power_answer(f64::from_bits(base), f64::from_bits(exponent), expected, 2);
+        }
+    }
+
+    fn power_expression(base: f64, exponent: f64) -> Expression {
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[
+            Op::Double(base.to_bits()),
+            Op::Double(exponent.to_bits()),
+            Op::Power,
+        ]);
+        expression.len = 3;
+        expression.data_type = DataType::Double;
+        expression.validate(&[]).unwrap();
+        expression
+    }
+
+    fn check_power_answer(base: f64, exponent: f64, expected: u64, tolerance: u64) {
+        // Nonfinite values enter through typed data, never invalid literals.
+        let left = SemanticColumn::new(42, DataType::Double, false);
+        let right = SemanticColumn::new(43, DataType::Double, false);
+        let mut expression = power_expression(0.0, 0.0);
+        expression.ops[..2].copy_from_slice(&[Op::Column(left), Op::Column(right)]);
+        expression.validate(&[left, right]).unwrap();
+        let bases = [base];
+        let exponents = [exponent];
+        let inputs = [
+            Some(NumericInput::new(left, NumericValues::Double(&bases), None).unwrap()),
+            Some(NumericInput::new(right, NumericValues::Double(&exponents), None).unwrap()),
+        ];
+        let mut scratch = [0; MAX_OPS];
+        let output = expression
+            .evaluate_batch(&inputs, 0..1, &mut scratch)
+            .unwrap();
+        let mut cursor = Evaluation::new(&expression);
+        assert_eq!(cursor.next_column().unwrap(), Some(left));
+        cursor.supply(Number::Double(base)).unwrap();
+        assert_eq!(cursor.next_column().unwrap(), Some(right));
+        cursor.supply(Number::Double(exponent)).unwrap();
+        assert_eq!(cursor.next_column().unwrap(), None);
+        for number in [
+            Number::Double(f64::from_bits(output.value(0).unwrap())),
+            cursor.value(),
+        ] {
+            let Number::Double(actual) = number else {
+                panic!("power result type");
+            };
+            assert!(
+                actual.to_bits().abs_diff(expected) <= tolerance,
+                "POW({base:?}, {exponent:?}): {:016x}; expected {expected:016x}",
+                actual.to_bits()
+            );
+        }
+    }
+
+    #[test]
+    fn power_promotes_inputs_preserves_nulls_and_validates_programs() {
+        let base = SemanticColumn::new(42, DataType::Int64, true);
+        let exponent = SemanticColumn::new(43, DataType::Int64, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[Op::Column(base), Op::Column(exponent), Op::Power]);
+        expression.len = 3;
+        expression.data_type = DataType::Double;
+        expression.validate(&[base, exponent]).unwrap();
+        assert!(expression.nullable());
+        assert_eq!(expression.stack_depth(), 2);
+        let bases = [-1, -1, -1, 0, 1, 0];
+        let exponents = [
+            9_007_199_254_740_991,
+            9_007_199_254_740_993,
+            i64::MAX,
+            -1,
+            0,
+            -1,
+        ];
+        let base_valid = [0b010111];
+        let exponent_valid = [0b001111];
+        let inputs = [
+            Some(NumericInput::new(base, NumericValues::Int64(&bases), Some(&base_valid)).unwrap()),
+            Some(
+                NumericInput::new(
+                    exponent,
+                    NumericValues::Int64(&exponents),
+                    Some(&exponent_valid),
+                )
+                .unwrap(),
+            ),
+        ];
+        let mut scratch = [0; MAX_OPS * 6];
+        let output = expression
+            .evaluate_batch(&inputs, 0..6, &mut scratch)
+            .unwrap();
+        for (row, expected) in [Some(-1.0_f64), Some(1.0), Some(1.0), None, None, None]
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(output.value(row), expected.map(f64::to_bits));
+            let mut cursor = Evaluation::new(&expression);
+            for (column, values, valid) in [
+                (base, &bases, base_valid[0]),
+                (exponent, &exponents, exponent_valid[0]),
+            ] {
+                assert_eq!(cursor.next_column().unwrap(), Some(column));
+                cursor
+                    .supply(if valid & (1 << row) == 0 {
+                        Number::Null
+                    } else {
+                        Number::Integer(values[row])
+                    })
+                    .unwrap();
+            }
+            assert_eq!(cursor.next_column().unwrap(), None);
+            match (cursor.value(), expected) {
+                (Number::Double(actual), Some(expected)) => {
+                    assert_eq!(actual.to_bits(), expected.to_bits())
+                }
+                (Number::Null, None) => (),
+                _ => panic!("nullable DOUBLE power"),
+            }
+        }
+        expression.data_type = DataType::Int64;
+        assert!(expression.validate(&[base, exponent]).is_err());
+        expression.data_type = DataType::Double;
+        expression.ops[0] = Op::Column(SemanticColumn::new(42, DataType::String, true));
+        assert!(expression.infer(&[base, exponent]).is_err());
+        expression.ops[..2].copy_from_slice(&[Op::Integer(1), Op::Power]);
+        expression.len = 2;
+        assert!(expression.infer(&[]).is_err());
+    }
 
     #[test]
     fn sign_preserves_numeric_types_nulls_and_exceptional_values() {
