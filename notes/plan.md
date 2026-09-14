@@ -76,7 +76,7 @@ quality work is not deferred to the final gate.
 
 ### Ordered checkpoint goals
 
-The active goal is **7. Challenge corruption and failed recovery**.
+The active goal is **8. Measure and teach the complete workflow**.
 
 The [report corruption checkpoint](evidence.md#report-corruption-and-failed-recovery)
 `ed72a8a` verifies five added report cases within the 48-case graph campaign,
