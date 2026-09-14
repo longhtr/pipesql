@@ -171,8 +171,8 @@ argument-frame representation with SAFE_DIVIDE. DIV uses checked integer
 arithmetic without a floating-point intermediate. Zero-denominator and overflow
 errors retain inline
 source spans and release query ownership through the ordinary failure path.
-LN uses the same DOUBLE unary slot as SQRT, with a finite-domain check and native
-logarithm evaluation; it adds no scratch allocation. EXP uses that slot with
+LN and LOG10 use the same DOUBLE unary slot as SQRT, with a finite-domain check
+and native logarithm evaluation; neither adds scratch allocation. EXP uses that slot with
 DOUBLE promotion and finite-result overflow checking. Its exceptional values and
 gradual underflow require no new buffer, allocation owner or admission allowance.
 

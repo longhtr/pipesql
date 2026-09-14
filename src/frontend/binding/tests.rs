@@ -1841,6 +1841,7 @@ fn unary_numeric_calls_preserve_type_nullability_and_bounded_admission() {
         ("ROUND", DataType::Double),
         ("SQRT", DataType::Double),
         ("LN", DataType::Double),
+        ("LOG10", DataType::Double),
         ("EXP", DataType::Double),
     ] {
         for (argument, kind, nullable) in [
@@ -1878,7 +1879,7 @@ fn unary_numeric_calls_preserve_type_nullability_and_bounded_admission() {
             drop(result);
             assert_eq!(db.reserved_memory_bytes(), baseline);
         }
-        let threshold = if matches!(function, "SQRT" | "LN") {
+        let threshold = if matches!(function, "SQRT" | "LN" | "LOG10") {
             "2"
         } else {
             "-2"

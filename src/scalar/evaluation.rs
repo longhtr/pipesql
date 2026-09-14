@@ -50,7 +50,7 @@ impl<'a> Evaluation<'a> {
                     depth += 1;
                 }
                 Op::Abs | Op::Negate | Op::Sign => (),
-                Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Ln | Op::Exp => {
+                Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Log10 | Op::Ln | Op::Exp => {
                     types[depth - 1] = DataType::Double
                 }
                 Op::Empty => unreachable!("validated scalar extent"),
@@ -84,7 +84,7 @@ impl<'a> Evaluation<'a> {
                 Op::Column(column) => return Ok(Some(column)),
                 Op::Integer(value) => self.push(Number::Integer(value)),
                 Op::Double(bits) => self.push(Number::Double(f64::from_bits(bits))),
-                Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Ln | Op::Exp => {
+                Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Log10 | Op::Ln | Op::Exp => {
                     self.values[self.depth - 1] = match self.values[self.depth - 1] {
                         Number::Null => Number::Null,
                         Number::Integer(value) => Number::Double(double_unary(op, value as f64)?),

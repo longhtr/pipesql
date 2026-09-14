@@ -124,6 +124,7 @@ pub(super) enum ParsedOp {
     Round,
     Sqrt,
     Ln,
+    Log10,
     Exp,
 }
 
@@ -189,6 +190,7 @@ enum PendingOp {
     Round,
     Sqrt,
     Ln,
+    Log10,
     Exp,
     Unary,
     Binary(Kind),
@@ -206,6 +208,7 @@ impl PendingOp {
             | Self::Ceil
             | Self::Round
             | Self::Sqrt
+            | Self::Log10
             | Self::Ln
             | Self::Exp => 0,
             Self::Binary(Kind::Star | Kind::Slash) => 2,
@@ -642,6 +645,7 @@ impl Parser<'_> {
                             || self.is_word("CEILING")
                             || self.is_word("ROUND")
                             || self.is_word("SQRT")
+                            || self.is_word("LOG10")
                             || self.is_word("LN")
                             || self.is_word("EXP")
                             || self.is_word("MOD")
@@ -672,6 +676,8 @@ impl Parser<'_> {
                             PendingOp::Ceil
                         } else if self.is_word("EXP") {
                             PendingOp::Exp
+                        } else if self.is_word("LOG10") {
+                            PendingOp::Log10
                         } else if self.is_word("LN") {
                             PendingOp::Ln
                         } else if self.is_word("SQRT") {
@@ -792,6 +798,7 @@ impl Parser<'_> {
                         PendingOp::Ceil => expression.push(ParsedOp::Ceil, at)?,
                         PendingOp::Round => expression.push(ParsedOp::Round, at)?,
                         PendingOp::Sqrt => expression.push(ParsedOp::Sqrt, at)?,
+                        PendingOp::Log10 => expression.push(ParsedOp::Log10, at)?,
                         PendingOp::Ln => expression.push(ParsedOp::Ln, at)?,
                         PendingOp::Exp => expression.push(ParsedOp::Exp, at)?,
                         PendingOp::Paren => (),

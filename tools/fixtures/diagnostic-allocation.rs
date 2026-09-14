@@ -498,6 +498,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             operation: "natural logarithm",
             span: division_span,
         };
+        let decimal_logarithm = Error::ArithmeticDomain {
+            operation: "base-ten logarithm",
+            span: division_span,
+        };
+        let decimal_logarithm_cause = pipesql::CauseKind::ArithmeticDomain {
+            operation: "base-ten logarithm",
+            span: division_span,
+        };
         let exponential = Error::ArithmeticOverflow {
             operation: "exponentiation",
             span: division_span,
@@ -508,7 +516,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let formatted = write!(
             &mut text,
-            "{error}; {arithmetic}; {cause}; {division}; {division_cause}; {domain}; {domain_cause}; {logarithm}; {logarithm_cause}; {exponential}; {exponential_cause}"
+            "{error}; {arithmetic}; {cause}; {division}; {division_cause}; {domain}; {domain_cause}; {logarithm}; {logarithm_cause}; {decimal_logarithm}; {decimal_logarithm_cause}; {exponential}; {exponential_cause}"
         );
         DENY.store(false, Ordering::Relaxed);
         formatted.unwrap();
@@ -527,6 +535,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         assert_eq!(
             text.matches("arithmetic domain error during natural logarithm at bytes 36..39")
+                .count(),
+            2
+        );
+        assert_eq!(
+            text.matches("arithmetic domain error during base-ten logarithm at bytes 36..39")
                 .count(),
             2
         );

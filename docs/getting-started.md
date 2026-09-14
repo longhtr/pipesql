@@ -284,6 +284,41 @@ result through the ordinary aggregate path. The
 [language contract](language.md#current-public-query-manifest) owns exceptional
 values and precision limits; this example's decimal output is approximate.
 
+## Express a power ratio in decibels
+
+Use the existing amounts 5, 10 and 20 as a small numeric fixture for power
+measurements. [examples/decibel_scale.sql](../examples/decibel_scale.sql) compares
+each value with a reference power of 10. For actual measurements, the power and
+reference must use the same units. The decibel value is ten times the base-ten
+logarithm of their ratio.
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/decibel_scale.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+Require successful exit and `status=queried`, with three rows ordered by amount:
+
+| amount | relative_db (approximately) |
+| --- | --- |
+| 5 | -3.010299956639812 |
+| 10 | 0 |
+| 20 | 3.010299956639812 |
+
+Doubling power adds about 3.01 dB; equal power gives zero. The filter excludes
+NULL and nonpositive amounts before LOG10 is demanded. A zero reference would
+fail in division before reaching LOG10.
+
+Trace `ParsedOp::Log10` through the [binder](../src/frontend/binding.rs) to
+`Op::Log10` in the [scalar owner](../src/scalar.rs). Division first forms a DOUBLE
+ratio; LOG10 checks its domain and applies the native base-ten logarithm. Batch
+evaluation and the [demand cursor](../src/scalar/evaluation.rs) reuse the unary
+kernel and existing scratch. The [language contract](language.md#current-public-query-manifest)
+owns exceptional values and precision limits. Independent scalar vectors and the
+[public calculation](../tests/catalog_lifecycle/computed.rs) check the result.
+
 ## Compute a geometric mean
 
 Run [examples/geometric_mean.sql](../examples/geometric_mean.sql) against the same

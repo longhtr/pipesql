@@ -444,6 +444,7 @@ fn bind_expression(
             ParsedOp::Ceil => Op::Ceil,
             ParsedOp::Round => Op::Round,
             ParsedOp::Sqrt => Op::Sqrt,
+            ParsedOp::Log10 => Op::Log10,
             ParsedOp::Ln => Op::Ln,
             ParsedOp::Exp => Op::Exp,
             ParsedOp::Empty

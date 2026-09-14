@@ -39,11 +39,18 @@ admission, cancellation and replay. Add a runnable power-ratio scale example and
 a short reading path through real implementation owners. Do not add an expression
 framework, allocation owner or admission allowance.
 
-Run focused checks, then complete sequential macOS/GNU arm64 Linux gates on
-matching frozen inputs. Reconcile discovery and independent results, run fresh
-relevant examples sequentially after both gates, review the final diff, remove
-owned outputs and make coherent local commits. Keep historical evidence below
-641,696 bytes and preserve publication restrictions.
+The implementation and authoritative contracts are in place. Focused release
+checks pass 26 scalar, 141 public catalog, 48 binder and 13 replay tests. Catalog
+allocation and derived native-I/O census controls pass; these are not prefix or
+failure coverage. An initial debug-profile selection aborted in a bounded-stack
+scenario; it is not passing evidence. A transcribed power-ratio reference was
+corrected from the independent Decimal calculation before the release tests.
+
+Complete sequential macOS/GNU arm64 Linux gates on matching frozen inputs remain.
+Reconcile discovery and independent results, run fresh relevant examples
+sequentially after both gates, review the final diff, remove owned outputs and
+make coherent local commits. Keep historical evidence below 641,696 bytes and
+preserve publication restrictions.
 
 The [failed preparation checks](evidence.md#failed-preparation-ownership),
 [normal lifecycle repair](evidence.md#transient-preparation-and-release-ownership)
