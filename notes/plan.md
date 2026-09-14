@@ -7,12 +7,15 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The [blocking-controller lifetime repair](evidence.md#blocking-controller-lifetimes)
-in `df0cace` passes matching macOS and GNU arm64 Linux scoped verification:
+The [explicit producer admission](evidence.md#explicit-producer-admission)
+in `5975b71` passes matching macOS and GNU arm64 Linux scoped verification:
 14-stage core gates, 640 ordinary Rust tests per platform, public ownership,
 24 independent aggregate-semantic cases, 311 composition cases and fresh examples.
-Independent physical-size controls reject the prior implementation. These checks
-establish the affected boundary; they do not constitute a complete 24-stage gate.
+The exhaustive admission interface preserves the existing allocation and release
+order. These checks establish the affected boundary; they do not constitute a
+complete 24-stage gate. The preceding
+[blocking-controller repair](evidence.md#blocking-controller-lifetimes) retains
+its independent physical-size controls against the prior implementation.
 The previous [full checkpoint](evidence.md#full-verification-checkpoint) remains
 attached to `1e5cfdc`. The [platform matrix](../docs/testing.md#platform-status)
 distinguishes implementation, execution and qualification.
@@ -61,23 +64,6 @@ without the engine or Rust observer; GNU/Linux reports different extents and no
 reuse in those cells. It does not identify the original query's freed block or
 explain its entire aggregate deficit. The strict combined-query diagnostic and
 unqualified usable-heap/RSS status remain; no admission padding was added.
-
-## Active milestone: explicit producer admission
-
-`Runtime::open_native` mixes a long producer-classification chain with source
-opening. Its final branch implicitly constructs an aggregate owner. Move producer
-admission to one exhaustive match on `Producer` under `Owner`, with no effects
-recorder parameter. Keep catalog scratch, all owner admissions, aggregate
-preparation and source opening visible in the runtime operation.
-
-Preserve output-before-controller allocation, admission totals and order,
-transferred inline-charge lifetimes, stack bounds and every failure/replay path.
-Use the existing independent exact-minimum, capacity, fault and result tests.
-After focused checks, run sequential macOS and GNU/Linux core gates, public
-ownership and independent semantic/composition checks on matching frozen inputs,
-then fresh examples. Report that scope rather than a new full gate. Explain the
-phase boundary beside its implementation, review and commit locally, and remove
-owned outputs. No new public API, allowance, framework or state wrapper is needed.
 
 ## Next engineering priorities
 

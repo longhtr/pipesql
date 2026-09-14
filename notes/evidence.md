@@ -5,6 +5,90 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Explicit producer admission
+
+`5975b71` replaces the classification chain and implicit aggregate fallthrough
+in `Runtime::open_native` with `Owner::admit_native`, an exhaustive match on
+`Producer`. The interface admits memory and controllers without an effects
+recorder. The runtime operation visibly reserves catalog scratch, collects all
+owners, prepares aggregates, then opens pending sources. Each non-scan output
+still precedes its controller allocation. Normal construction and a later
+controller refusal were reviewed through ownership transfer and physical drop:
+earlier owners release before source opening, and the runtime reservation outlives
+transferred controller storage. No public API, payload allocation, admission
+allowance, execution state or persistent format changes. The
+[execution reading path](../docs/execution.md#producer-execution) explains the
+decision and phase boundary beside the real implementation.
+
+Focused execution verification passes 124 tests, with 314 unrelated library
+tests deliberately filtered. Subsequent complete core runs discover and execute
+640 ordinary Rust tests per platform, including 143 catalog tests, with no
+ordinary ignored or filtered tests. The separate lease subprocess passes one
+test with its six intentional sibling filters. Independent executable listing
+confirms 13 targets: seven nonempty and six zero-test examples. Both 14-stage
+core gates also pass warnings-denied compilation, rustdoc/doctests, 99 tooling
+tests, 44 independent codec fixtures and 723 local links. Existing exact-minimum,
+one-byte-short before-I/O refusal, independent capacity/lifetime, cancellation,
+replay, demanded-error and small-stack regressions remain passing.
+
+Sequential public ownership campaigns pass on both platforms: eleven analytic
+shapes and six wide-set shapes at both pathname lengths; complete wide join,
+preparation/execution failure, lifetime, abandonment and overlapping-owner
+checks; and all fourteen negative controls. Construction retains its census of
+353 allocations: refusal prefixes 0–352 and healthy control 353 pass at both
+pathname lengths. Minimum sampled requested/usable construction headroom is
+4,096/1,400 bytes on macOS and 4,096/3,648 bytes on Linux. These samples retain
+their workload-specific meaning and do not establish arbitrary-history bounds.
+
+The unchanged stock CLI on each platform passes all 24 independent
+aggregate-semantic cases and 311 composition records. Cross-platform records
+agree after removing only database-path output lines from semantic stdout and
+ambient stdout-digest fields from composition records. Sequential fresh declared
+and LEFT JOIN examples produce their documented complete totals; fresh
+`window-count.sql` and `repeated-regions.sql` queries each return the expected
+three rows, successful exit and `status=queried`. Their exact row records agree.
+
+Replay uses `tools/check.py --scope core --output NEW_DIRECTORY`, followed by
+`tools/check-diagnostic-allocation.py --ownership-only`, a fresh stock
+`cargo build --release --offline --locked --workspace --bins --examples`, and
+the [independent semantic/composition commands](../tools/README.md). Fresh
+examples use the [declared setup](../docs/query-examples.md#set-up-the-sales-table)
+and [LEFT JOIN setup](../docs/getting-started.md#retain-facts-with-missing-dimensions).
+The frozen 714-input manifest SHA-256 is
+`7d54612cc5f4e7d46901ae39402cdc87c52ab7fd6e041684e5394ed12f558403`.
+Both core gates and public campaigns retain matching before/after manifests,
+including an exact Git export for Linux. Only this record and the plan change
+afterward; the other 712 inputs retain fingerprint
+`7546b227efa75378499c0c3f4b98ddf924c59b2f6d163097e906d5d2bc23a18a`.
+
+| Record | macOS | GNU arm64 Linux |
+| --- | --- | --- |
+| Core elapsed seconds | 456.274 | 154.641 |
+| Core receipt SHA-256 | `0097badf33e7df3474eb8c59156d9e4c3aa3a4a7923ecd75b7b6defe260c9cb5` | `5ac6420eaa3332e0dcab222a10685ed4799cf34dc1b438a7e8915c0f24b5ee80` |
+| Public campaigns/build elapsed seconds | 101.475 | 97.065 |
+| Public receipt SHA-256 | `81c59acda87f529dbaad2266048cc392a32059b14b13a2aeed0aa6e713a17451` | `7d7e3d21046636724682b4ef6d27f4eb3e27605817e4a949df830a53cf6fee67` |
+| Stock CLI SHA-256 | `dba6b3a91dc3ef2a0df34697fcaf6fbf41a1a62fb82f4beaa0e251814e8fee3b` | `449425181d66379d64688fdda495a0cf574f30dafe5b6f1da9b3db01c45718f2` |
+
+Verification uses Rust 1.98.1, one Cargo job per platform, macOS arm64 and the
+preserved GNU arm64 image
+`sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
+The Linux container uses uid/gid 1000, one CPU, 2 GiB memory with no additional
+swap, networking disabled and native database storage. Fifty-eight host samples
+observe normal/warning memory pressure, swap 1,249.94–1,643.00 MiB ending at
+1,627.00 MiB, over 187.90 GiB free disk and sampled disk I/O 0–137.21 MB/s.
+Nineteen container samples reach 100.58% CPU and 1.297 GiB memory, with zero
+network traffic and no OOM kill. These are resource observations, not engine
+admission or whole-process bounds. Owned logs, manifests, exports, targets,
+databases, monitoring and container outputs are removed; the pre-existing target,
+toolchains and verification image are preserved.
+Final documentation verification passes 728 local links.
+
+This is scoped verification, not another complete 24-stage checkpoint. The
+unchanged native/persistence campaigns retain their earlier evidence. The strict
+combined-allocation-history deficit, arbitrary allocator/concurrency and
+whole-process/RSS qualification, broader durability, Windows and general
+sanitizer/race coverage remain open. Nothing is pushed or published.
+
 ## Native allocation reuse
 
 `0c78252` adds the independent native diagnostic. The ordinary Rust measuring
