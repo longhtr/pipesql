@@ -178,6 +178,61 @@ starts the same report with room for one hash group. It requires disk fallback,
 observed replay of the retained join, complete literal rows and final release.
 This distinguishes the mechanism from the public caller's observation of spill.
 
+## Measure the complete workflow
+
+Keep the same profile and compare budgets on fresh database paths. The optional
+`--measure` argument prints phase observations to stderr after all checks pass:
+
+```sh
+target/release/examples/scaled_report "$pipesql_report_dir/cost-high" 32000000 even --measure
+target/release/examples/scaled_report "$pipesql_report_dir/cost-low" 8000000 even --measure
+```
+
+Require exit 0 and `status=finished` on stdout. The measurement mode also reclaims
+obsolete objects after releasing all plans, then checks the complete report
+again. Its stderr contains five `phase=` records:
+
+| Phase | Timed boundary |
+| --- | --- |
+| `ingest` | Create the database, declare tables, construct/write batches, commit and close. The independent expected-answer model is built before this timer. |
+| `reopen` | Open the completed database with the requested query budget. |
+| `prepare` | Prepare the retained report SQL. |
+| `execute` | Execute through Finished, check every group and release the result cursor. Schema and small answer comparisons are included. |
+| `reclaim` | Reclaim after preceding plans are released; the subsequent answer check is outside this timer. |
+
+`elapsed_ns` measures wall time, not CPU time. `resident_bytes` and
+`reserved_bytes` describe engine reservations at the stated boundary.
+`sampled_memory_bytes` and `sampled_temp_bytes` are maxima observed after cursor
+construction and between steps; they do not capture transient peaks within a
+step. Reserved memory includes admitted capacity and does not equal touched heap
+or process RSS.
+
+For whole-process observations, prefix the command with `/usr/bin/time -l` on
+macOS or `/usr/bin/time -v` on GNU/Linux. Those CPU, I/O and maximum-RSS figures
+cover input generation, independent checks, cancellation/replay, measurement
+projection and the post-reclamation report as well as the timed phases. They
+cannot be attributed to one execution. RSS units differ between the two tools;
+zero reported block operations do not establish that no filesystem I/O occurred.
+Record compiler/artifact identity and host load when comparing runs.
+
+This fixture writes 512 units with 256 events each. The
+[append owner](../src/catalog_snapshot/append.rs) synchronizes each completed
+unit before returning from write. Changing batch size changes this workload;
+weakening synchronization changes the durability contract. A faster complete run
+must still return the verified answer and satisfy the same failure boundaries.
+
+For a fresh failure-and-recovery exercise, run the existing campaign:
+
+```sh
+python3 -B tools/check-catalog-graph.py
+```
+
+Require successful exit and the `catalog graph passed` summary. The campaign
+creates and removes its own database copies. Follow the
+[corruption and recovery explanation](#follow-corrupt-data-and-failed-recovery)
+for the failed public call, preserved authority and healthy continuation.
+Keep the tutorial databases until the final cleanup below.
+
 ## Follow overlapping readers
 
 The [snapshot tests](../tests/catalog_lifecycle/snapshots.rs) run two report

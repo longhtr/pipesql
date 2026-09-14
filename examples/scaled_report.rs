@@ -8,6 +8,7 @@ use pipesql::{
 };
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::time::Instant;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 type Key = (Option<i64>, Option<&'static str>);
@@ -124,11 +125,17 @@ fn create(path: &Path, profile: Profile) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
+struct ReportUsage {
+    sampled_memory_bytes: u64,
+    sampled_temp_bytes: u64,
+}
+
 fn report(
     db: &Database,
     query: &PreparedQuery<'_>,
     reference: &BTreeMap<Key, Totals>,
-) -> Result<u64> {
+) -> Result<ReportUsage> {
     check_schema(
         query,
         &[
@@ -143,7 +150,10 @@ fn report(
     let cancel = CancellationToken::new();
     let mut result = db.execute(query, &cancel)?;
     let mut expected = reference.iter();
-    let mut peak_temp = db.reserved_temp_bytes();
+    let mut usage = ReportUsage {
+        sampled_memory_bytes: db.reserved_memory_bytes(),
+        sampled_temp_bytes: db.reserved_temp_bytes(),
+    };
     for _ in 0..10_000_000 {
         match result.step() {
             QueryStep::Progress => (),
@@ -173,11 +183,12 @@ fn report(
                 if db.reserved_memory_bytes() != resident || db.reserved_temp_bytes() != 0 {
                     return Err("report reservations remain live".into());
                 }
-                return Ok(peak_temp);
+                return Ok(usage);
             }
             QueryStep::Failed(_) => return Err(result.into_error().ok_or("missing error")?.into()),
         }
-        peak_temp = peak_temp.max(db.reserved_temp_bytes());
+        usage.sampled_memory_bytes = usage.sampled_memory_bytes.max(db.reserved_memory_bytes());
+        usage.sampled_temp_bytes = usage.sampled_temp_bytes.max(db.reserved_temp_bytes());
     }
     Err("report exhausted its step bound".into())
 }
@@ -301,16 +312,31 @@ fn main() -> Result<()> {
         Some("empty") => Profile::Empty,
         _ => return Err("choose small, even, skewed or empty".into()),
     };
+    let measure = match args.next() {
+        None => false,
+        Some(value) if value == "--measure" => true,
+        Some(_) => return Err("optional final argument must be --measure".into()),
+    };
     let path = Path::new(&path);
     if args.next().is_some() || !path.is_absolute() || path.exists() {
         return Err("expected a new absolute path, memory bytes and profile".into());
     }
     let reference = expected(profile);
+    let started = Instant::now();
     create(path, profile)?;
+    let ingest = started.elapsed();
+    let started = Instant::now();
     let db = Database::open(path, Config::new(memory, 64_000_000)?)?;
+    let reopen = started.elapsed();
     let resident = db.reserved_memory_bytes();
+    let started = Instant::now();
     let query = db.prepare(include_str!("event_report.sql"))?;
-    let peak_temp = report(&db, &query, &reference)?;
+    let prepare = started.elapsed();
+    let prepared_memory = db.reserved_memory_bytes();
+    let started = Instant::now();
+    let usage = report(&db, &query, &reference)?;
+    let execute = started.elapsed();
+    let peak_temp = usage.sampled_temp_bytes;
     if profile.len() == 131_072 {
         if peak_temp == 0 {
             return Err("scaled report did not spill".into());
@@ -321,6 +347,35 @@ fn main() -> Result<()> {
     drop(query);
     released(&db, resident)?;
     verify_measurements(&db, profile)?;
+    if measure {
+        let started = Instant::now();
+        let removed = db.reclaim(&CancellationToken::new())?;
+        let reclaim = started.elapsed();
+        // Reclamation is measured with all preceding plans released. Its
+        // success must preserve the answer, not just return a removed count.
+        let query = db.prepare(include_str!("event_report.sql"))?;
+        report(&db, &query, &reference)?;
+        drop(query);
+        released(&db, resident)?;
+        eprintln!("phase=ingest elapsed_ns={}", ingest.as_nanos());
+        eprintln!(
+            "phase=reopen elapsed_ns={} resident_bytes={resident}",
+            reopen.as_nanos()
+        );
+        eprintln!(
+            "phase=prepare elapsed_ns={} reserved_bytes={prepared_memory}",
+            prepare.as_nanos()
+        );
+        eprintln!(
+            "phase=execute elapsed_ns={} sampled_memory_bytes={} sampled_temp_bytes={peak_temp}",
+            execute.as_nanos(),
+            usage.sampled_memory_bytes
+        );
+        eprintln!(
+            "phase=reclaim elapsed_ns={} removed_names={removed}",
+            reclaim.as_nanos()
+        );
+    }
     db.close()?;
     println!(
         "events={} groups={} sampled_temp_bytes={peak_temp}",
@@ -357,7 +412,10 @@ mod tests {
                 let query = db.prepare(include_str!("event_report.sql")).unwrap();
                 let peak = report(&db, &query, &reference).unwrap();
                 if profile.len() == 131_072 {
-                    assert!(peak > 0, "large report must exhibit temporary storage");
+                    assert!(
+                        peak.sampled_temp_bytes > 0,
+                        "large report must exhibit temporary storage"
+                    );
                     cancel_after_spill(&db, &query).unwrap();
                     report(&db, &query, &reference).unwrap();
                 }
@@ -381,7 +439,7 @@ mod tests {
         ] {
             let db = Database::open(&path, Config::new(memory, temp).unwrap()).unwrap();
             let resident = db.reserved_memory_bytes();
-            let attempt = || -> Result<u64> {
+            let attempt = || -> Result<ReportUsage> {
                 let query = db.prepare(include_str!("event_report.sql"))?;
                 report(&db, &query, &reference)
             };
