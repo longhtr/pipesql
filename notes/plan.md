@@ -7,6 +7,15 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
+The [STRING byte-length projections](evidence.md#string-byte-length-projections)
+in `ffa73b3` pass matching macOS/GNU arm64 Linux core gates: 648 ordinary Rust
+tests per platform, public ownership and healthy allocation controls, 24 semantic
+cases, 314 composition records and fresh examples. BYTE_LENGTH is a bounded
+STRING-to-INT64 projection; its learning path traces typed identity, borrowed
+source text, numeric results and the distinct scalar/source demand boundaries.
+No format, allocation owner or admission allowance changes. The previous full
+native/persistence checkpoint retains its own source identity and limitations.
+
 The [allocation-capacity preflight](evidence.md#allocation-capacity-preflight)
 in `51bd731`, with campaign integration in `7078729`, passes matching macOS
 and GNU arm64 Linux scoped verification:
@@ -85,33 +94,6 @@ complete in `5671e4c`. Repeated complete executions confirm the staged form's
 five extra batch buffers and evaluation/copy overhead on this fixed input.
 The study retains a runnable comparison and the current evaluation owners;
 no general optimizer or performance guarantee follows from the narrow result.
-
-## Active milestone: STRING byte-length projections
-
-Add one-argument BYTE_LENGTH as a complete SELECT, EXTEND or SET expression
-on a visible STRING column or bounded STRING literal. Return INT64 UTF-8 byte
-length, preserve NULL and fold literal length during binding. Projected lengths
-can feed arithmetic and aggregates in later stages. Nested calls and direct
-aggregate arguments remain outside this bounded profile and must fail with
-owned source spans.
-
-Use one typed computation through existing dependencies, validators, batch/row
-evaluation and admission. Preserve conditional demand, range identities,
-materialization, replay, refusal, cancellation and cleanup; do not generalize the
-numeric kernel or introduce allocation owners, formats or admission allowances.
-Verify UTF-8/empty/maximal/NULL inputs, literal ownership, wrong types/arities,
-legacy ASCII and representative composed public queries, plus independent
-malformed-plan rejection. Complete affected focused and enclosing verification
-on macOS and constrained GNU arm64 Linux, then fresh examples sequentially.
-Finish learning paths, evidence, local commits and owned cleanup with broader
-qualifications and publication restrictions preserved.
-
-The corrupted-payload control distinguishes existing scan behavior from scalar
-short-circuiting: Boolean branches can skip payload reads, while a selected
-COALESCE expression loads potential raw dependencies before evaluating its
-chosen branch. Retain both outcomes without promising new source-I/O laziness.
-A post-sort STRING constant feeding length and then numeric arithmetic also
-needs explicit coverage of the row resolver's constant dependencies.
 
 ## Next engineering priorities
 

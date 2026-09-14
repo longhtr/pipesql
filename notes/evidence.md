@@ -5,6 +5,97 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## STRING byte-length projections
+
+`ffa73b3` adds bounded BYTE_LENGTH through `Computation::ByteLength`: one typed
+STRING input produces INT64 with the input's nullability. Literal arguments fold
+into ordinary integer programs. The shared evaluator borrows checked text;
+numeric kernels receive only the resulting integer. Independent semantic and
+physical validators retain their own rejection rules. No allocation owner,
+format, admission allowance or numeric-expression framework changes. The
+[learning query](../docs/query-examples.md#measure-text-in-bytes) and
+[evaluation trace](../docs/execution.md#string-byte-length-evaluation) connect the
+public result to these owners.
+
+Focused checks cover UTF-8 bytes versus characters, empty and 65,536-byte text,
+NULLs, bounded decoded literals, owned rejection spans, aliases/ranges, STRING
+constants, batch and row evaluation, joins, grouping, sets, cancellation,
+abandonment and source corruption. Two added forced hash-fallback variants
+require disk use, replay of a sorted producer, literal aggregate results and
+complete release for stored text and retained text constants. Independent
+mutation checks reject invalid type, nullability, scope and physical positions.
+The existing exact/one-byte-short admission control also checks the literal
+6,176-byte computed workspace, separately from the source STRING allocation.
+
+Development checks caught invalid test aliases and unsupported standalone legacy
+sorting; those fixtures now use accepted names and grouped materialization.
+A deliberate post-sort constant-to-length-to-arithmetic case exposed a missing
+constant branch in the new row dependency loop. The repaired resolver reads
+retained text directly instead of sending it to a numeric kernel. A corrupted
+payload control also disproved an initial test assumption: COALESCE skips scalar
+evaluation after potential source payloads load, while an earlier Boolean branch
+can skip the entire expression and its payload. Both outcomes are retained and
+explained at the execution-contract owner. The final enclosing suites pass.
+
+Matching frozen inputs pass sequential 14-stage macOS and GNU arm64 Linux core
+gates in 473.954 and 177.140 seconds. Independent test listings contain 648
+ordinary tests per platform across fourteen targets, seven of them zero-test
+examples. The catalog suite contains 149 tests. No ordinary tests are ignored or
+filtered; the separate lease subprocess passes one test with six intentional
+sibling filters. Both maintenance stages pass 99 tooling tests, 44 independent
+codec fixtures and 783 local links. These are scoped core gates; the previous
+complete 24-stage native/persistence checkpoint remains attached to `1e5cfdc`.
+
+Public ownership selections pass thirteen analytic shapes and six wide-set
+shapes at both pathname lengths, fourteen negative controls, and construction
+prefixes 0–352 plus healthy control 353. The two new analytic shapes each return
+512 independently checked rows, alternating byte length 128 and NULL, with
+partition count 512. They require nonzero temporary storage, step ownership and
+release. Minimum observed requested/usable headroom across the retained ownership
+histories is 4,096/1,400 bytes on macOS and 4,096/3,648 on Linux. macOS ownership
+ran before the final replay-test additions and prose wrapping; its production and
+caller inputs match the frozen revision. Both platforms also pass 29 healthy
+allocation-control cells, including catalog control 1,056 at both path lengths.
+Healthy controls do not repeat the allocation-prefix sweeps. Linux retains the
+two Darwin ACL exclusions, with its expanded-path create/open controls.
+
+The stock CLI passes 24 independent aggregate-semantic cases and 314 composition
+records on each platform. Records agree after removing only semantic stdout
+`database=` lines and composition stdout-digest fields. Sequential fresh declared
+examples then complete with the documented setup rows. BYTE_LENGTH returns one
+nullable INT64 row `5, 5, 12`; the existing query-flow example returns 38. Schema,
+row count, terminal status and exit are checked, with platform outputs agreeing
+after pathname normalization.
+
+The frozen 719-input manifest and read-only Linux export share SHA-256
+`5eef16591fabf84ac4258ecf4abff59195e4bdc714abc89c14db572a3f9319db`.
+Only the two notes files change afterward; the other 717 inputs retain fingerprint
+`0295f87f8ca43ba3531816634395734d2112a65f07811e3e100e8fac7d50ae51`.
+Core receipt hashes are macOS
+`4216ef93a57e03e4e83e3dc9ec7e7c2aa9870ff9babc439f4e4b439da4676948`
+and Linux `1ff41d7f5d4dcdef64e8f5993c94f9d24c7eaa1bf9870717200b1ddae9b39dca`.
+Stock CLI hashes are macOS
+`f64a84d2f46bbb1a4fd153fedfc3f688db7503607144bc4a779e2036d8c1e003`
+and Linux `0fb33704bc6a3cfe18d10011f7dbfb8b67acde95c873d98bf726b307f47d3191`.
+
+Rust 1.98.1 uses one Cargo job per platform on the 8-GiB Apple M1/macOS 26.6.2
+host. Linux uses the preserved image, LinuxKit 7.0.12 aarch64, uid/gid 1000,
+one CPU, 2 GiB without extra swap, disabled networking and native database storage.
+Eighty-eight sustained host samples show normal/warning pressure, swap
+1,126.88–1,595.69 MiB, over 187.66 GiB free disk and sampled I/O 0–163.26 MB/s.
+Forty-three container samples show at most 103.69% reported CPU and 1.256 GiB
+memory, zero network traffic and no OOM kill. Host en0 counters increase by
+469,370,630 received and 22,360,034 sent bytes, including unrelated host activity.
+These samples do not qualify physical-memory bounds or general concurrency.
+
+Owned focused/gate targets, source export, monitoring records, logs, manifests,
+tutorial databases and container are removed. No owned verification process
+remains. The existing target, image and toolchains are preserved. Final
+documentation verification passes 786 local links; the two notes files remain
+below the retained evidence ceiling. Broader allocator-history/RSS, durability,
+sanitizer and general concurrency qualifications remain open, as does Windows
+implementation/runtime qualification. Nothing is pushed or published.
+
 ## Computed projection costs
 
 `5671e4c` adds [projection_cost.rs](../examples/projection_cost.rs), with
