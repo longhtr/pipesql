@@ -145,6 +145,16 @@ Declared-table construction admits all sources and producer outputs, then opens
 the sources against the prepared query's pinned catalog. Equality joins compose
 with projections, filters, other joins and aggregates.
 
+Read `Owner::admit_native` in [runtime.rs](../src/execution/runtime.rs) for the
+producer-to-owner decision. Its exhaustive match keeps each producer's admission
+explicit, and its interface has no effects recorder. Each non-scan producer
+reserves its output before constructing its controller. `Runtime::open_native`
+collects those owners, prepares aggregates, then consumes pending source
+admissions to open files. If a later controller refuses admission, earlier owners
+are dropped before any source opens; transferred inline charges remain in the
+runtime until its controller storage has been released. The
+[resource contract](resources.md) describes those charges and their limits.
+
 Grouping's accumulator minimum and construction share one checked byte
 calculation for typed arrays and expression scratch. The minimum uses one
 scratch lane; construction retains the existing bounded adaptive lane count.

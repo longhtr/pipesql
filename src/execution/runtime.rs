@@ -58,6 +58,109 @@ enum Owner<'db> {
 }
 
 impl<'db> Owner<'db> {
+    // This phase receives no effects recorder: it admits memory and controller
+    // state, while the runtime opens all sources only after every owner exists.
+    fn admit_native(
+        database: &'db Database,
+        query: &'db PreparedQuery<'db>,
+        plan: &PhysicalPlan<'_>,
+        pipeline: &Pipeline<'_>,
+        reservation: &mut Reservation<'db>,
+    ) -> Result<Self, Error> {
+        Ok(match pipeline.producer {
+            Producer::Scan(_) => {
+                Self::Pending(declared::admit(database, query, plan, pipeline, None)?)
+            }
+            Producer::Aggregate { .. } => {
+                Self::Aggregate(producer_output(database, query, pipeline)?)
+            }
+            Producer::Join {
+                kind,
+                left,
+                right,
+                left_key,
+                right_key,
+            } => {
+                let output = producer_output(database, query, pipeline)?;
+                let join = blocking::join::Join::new(
+                    database,
+                    plan.pipelines()[left.index()].output_columns(&query.plan),
+                    plan.pipelines()[right.index()].output_columns(&query.plan),
+                    (left_key, right_key),
+                    kind,
+                    reservation,
+                )?;
+                Self::Join { join, output }
+            }
+            Producer::Order { input, start, len } => {
+                let output = producer_output(database, query, pipeline)?;
+                let order = blocking::order::Order::new(
+                    database,
+                    plan.pipelines()[input.index()].output_columns(&query.plan),
+                    plan.order_columns(start, len),
+                    reservation,
+                )?;
+                Self::Order { order, output }
+            }
+            Producer::WindowCount { input } => {
+                let output = producer_output(database, query, pipeline)?;
+                Self::analytic(
+                    database,
+                    query,
+                    &plan.pipelines()[input.index()],
+                    output,
+                    reservation,
+                )?
+            }
+            Producer::Distinct { input, .. } => {
+                let output = producer_output(database, query, pipeline)?;
+                let order = blocking::order::Order::distinct(
+                    database,
+                    plan.pipelines()[input.index()].output_columns(&query.plan),
+                    reservation,
+                )?;
+                Self::Order { order, output }
+            }
+            Producer::SetOperation {
+                left,
+                right,
+                descriptor,
+            } => {
+                let output = producer_output(database, query, pipeline)?;
+                let bound = &query.plan.set_operations[usize::from(descriptor)];
+                let inputs = [
+                    &plan.pipelines()[left.index()],
+                    &plan.pipelines()[right.index()],
+                ];
+                match bound.kind() {
+                    frontend::SetKind::UnionAll => Self::Union {
+                        union: union::Union::new(bound, inputs),
+                        output,
+                    },
+                    frontend::SetKind::ExceptDistinct
+                    | frontend::SetKind::IntersectDistinct
+                    | frontend::SetKind::ExceptAll
+                    | frontend::SetKind::IntersectAll => Self::SortedSet {
+                        sorted_set: blocking::sorted_set::SortedSet::new(
+                            database,
+                            bound,
+                            inputs,
+                            reservation,
+                        )?,
+                        output,
+                    },
+                }
+            }
+            Producer::Limit { bounds, .. } => {
+                let output = producer_output(database, query, pipeline)?;
+                Self::Limit {
+                    limit: limit::Limit::new(bounds),
+                    output,
+                }
+            }
+        })
+    }
+
     fn analytic(
         database: &'db Database,
         query: &PreparedQuery<'_>,
@@ -347,97 +450,8 @@ impl<'db> Runtime<'db> {
             "native scan catalog admission",
         )?;
         for pipeline in plan.pipelines() {
-            let owner = match pipeline.producer {
-                Producer::Scan(_) => {
-                    Owner::Pending(declared::admit(database, query, plan, pipeline, None)?)
-                }
-                Producer::Aggregate { .. }
-                | Producer::Join { .. }
-                | Producer::SetOperation { .. }
-                | Producer::WindowCount { .. }
-                | Producer::Order { .. }
-                | Producer::Distinct { .. }
-                | Producer::Limit { .. } => {
-                    let output = producer_output(database, query, pipeline)?;
-                    if let Producer::Join {
-                        kind,
-                        left,
-                        right,
-                        left_key,
-                        right_key,
-                    } = pipeline.producer
-                    {
-                        let join = blocking::join::Join::new(
-                            database,
-                            plan.pipelines()[left.index()].output_columns(&query.plan),
-                            plan.pipelines()[right.index()].output_columns(&query.plan),
-                            (left_key, right_key),
-                            kind,
-                            &mut self.reservation,
-                        )?;
-                        Owner::Join { join, output }
-                    } else if let Producer::Order { input, start, len } = pipeline.producer {
-                        let order = blocking::order::Order::new(
-                            database,
-                            plan.pipelines()[input.index()].output_columns(&query.plan),
-                            plan.order_columns(start, len),
-                            &mut self.reservation,
-                        )?;
-                        Owner::Order { order, output }
-                    } else if let Producer::WindowCount { input } = pipeline.producer {
-                        Owner::analytic(
-                            database,
-                            query,
-                            &plan.pipelines()[input.index()],
-                            output,
-                            &mut self.reservation,
-                        )?
-                    } else if let Producer::Distinct { input, .. } = pipeline.producer {
-                        let order = blocking::order::Order::distinct(
-                            database,
-                            plan.pipelines()[input.index()].output_columns(&query.plan),
-                            &mut self.reservation,
-                        )?;
-                        Owner::Order { order, output }
-                    } else if let Producer::SetOperation {
-                        left,
-                        right,
-                        descriptor,
-                    } = pipeline.producer
-                    {
-                        let bound = &query.plan.set_operations[usize::from(descriptor)];
-                        let inputs = [
-                            &plan.pipelines()[left.index()],
-                            &plan.pipelines()[right.index()],
-                        ];
-                        match bound.kind() {
-                            frontend::SetKind::UnionAll => Owner::Union {
-                                union: union::Union::new(bound, inputs),
-                                output,
-                            },
-                            frontend::SetKind::ExceptDistinct
-                            | frontend::SetKind::IntersectDistinct
-                            | frontend::SetKind::ExceptAll
-                            | frontend::SetKind::IntersectAll => Owner::SortedSet {
-                                sorted_set: blocking::sorted_set::SortedSet::new(
-                                    database,
-                                    bound,
-                                    inputs,
-                                    &mut self.reservation,
-                                )?,
-                                output,
-                            },
-                        }
-                    } else if let Producer::Limit { bounds, .. } = pipeline.producer {
-                        Owner::Limit {
-                            limit: limit::Limit::new(bounds),
-                            output,
-                        }
-                    } else {
-                        Owner::Aggregate(output)
-                    }
-                }
-            };
+            let owner =
+                Owner::admit_native(database, query, plan, pipeline, &mut self.reservation)?;
             self.nodes.push(Node {
                 owner,
                 state: OutputState::Ready,
