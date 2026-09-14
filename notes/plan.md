@@ -101,6 +101,23 @@ by owned arithmetic failure, cancellation after rows and successful prepared-pla
 reuse with a fresh token. Both platforms pass exact output and a wrong-prefix
 negative control. Engine inputs remain unchanged.
 
+## Active milestone: partial-result allocation ownership
+
+Extend the existing public allocation observer with the ordered 257-row learning
+workload. Check healthy completion, cancellation after rows and late arithmetic
+failure through preparation, construction, per-step terminal cleanup, owned-error
+transfer and prepared release. Require literal result/prefix oracles, requested
+and usable headroom, actual allocation/free events and negative controls for
+wrong results and missing terminal observation. Integrate both pathname lengths
+into the existing ownership selection without new observation machinery.
+
+Keep production code unchanged unless the workload produces a concrete defect.
+Verify focused cells and enclosing ownership selections on macOS then constrained
+GNU arm64 Linux, plus affected maintenance/caller checks. Only an actual engine
+repair expands the enclosing gate scope. Retain the distinction between sampled
+allocation histories and broader physical-memory/concurrency qualifications.
+Finish compact evidence, local commits and owned cleanup without publication.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
