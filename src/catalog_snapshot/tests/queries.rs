@@ -548,7 +548,7 @@ fn check_catalog_text_queries(small_stack: bool) {
 #[test]
 fn catalog_query_reads_only_demanded_payloads() {
     use crate::QueryStep;
-    // Each independent fixture retains seven prepared pins, within the limit of eight.
+    // Each independent fixture retains eight prepared pins, at the limit.
     for function in ["BYTE_LENGTH", "CHAR_LENGTH"] {
         let parent = Fixture::directory();
         let path = parent.0.join("native-demand");
@@ -580,6 +580,7 @@ fn catalog_query_reads_only_demanded_payloads() {
         let demanded = [
         "FROM facts |> SELECT note",
         "FROM facts |> SELECT BYTE_LENGTH(note) AS width",
+        "FROM facts |> SELECT BYTE_LENGTH(note) AS width |> SELECT CAST(width AS DOUBLE) AS n",
         // Scalar short-circuiting follows source-payload loading. The fallback
         // computation is skipped, but this selected expression still reads its
         // potential source dependencies and must reject their corruption.

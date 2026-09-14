@@ -575,6 +575,20 @@ expression width adapts from 256 down to one lane under the same memory
 authority; insufficient room for one lane returns typed resource refusal before
 effects.
 
+Explicit numeric conversion follows the same path. The
+[parser](../src/frontend/parser.rs) retains a CAST frame until `AS` closes the
+numeric operand and names a supported target. The [binder](../src/frontend/binding.rs)
+emits one `ToDouble` instruction. Independent inference in
+[scalar.rs](../src/scalar.rs) derives DOUBLE without changing argument NULLability.
+Both the batch evaluator and the [row cursor](../src/scalar/evaluation.rs) evaluate
+the child first, promote an INT64 payload, and retain a DOUBLE payload unchanged.
+No arithmetic on an existing DOUBLE is necessary, so its exceptional bits survive.
+Compare `CAST(n + 1 AS DOUBLE)` with `CAST(n AS DOUBLE) + 1`: postfix instruction
+order places integer addition before conversion in the first expression. The
+second converts first and then adds in DOUBLE. The
+[runnable exercise](query-examples.md#choose-where-integer-arithmetic-becomes-approximate)
+makes this type boundary visible through precision loss.
+
 COALESCE uses the [numeric demand cursor](../src/scalar/evaluation.rs) to request
 only columns on the selected path. Each supplied value must match its declared
 type and NULLability before branch selection. Each fallback is a contiguous postfix subtree;

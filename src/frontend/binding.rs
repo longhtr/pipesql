@@ -442,6 +442,7 @@ fn bind_expression(
             ParsedOp::Negate => Op::Negate,
             ParsedOp::Abs => Op::Abs,
             ParsedOp::Sign => Op::Sign,
+            ParsedOp::ToDouble => Op::ToDouble,
             ParsedOp::Floor => Op::Floor,
             ParsedOp::Ceil => Op::Ceil,
             ParsedOp::Round => Op::Round,

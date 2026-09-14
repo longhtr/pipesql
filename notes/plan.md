@@ -136,6 +136,14 @@ Complete appropriate matching macOS/GNU arm64 Linux checks and fresh examples,
 then review, document, clean owned outputs and commit locally. No new allocation
 owner, allowance, persistent format or general cast framework is planned.
 
+Verification retains the 14-stage core gate on each platform, the complete
+ownership-only selection with two additional CAST/analytic cells, healthy native
+controls and independent aggregate/composition campaigns. Run macOS and GNU
+arm64 Linux sequentially on matching frozen inputs, followed by fresh declared,
+numeric-cast, STRING-length and query-flow examples in platform order. Native
+mutation and persistent formats are unchanged, so the earlier full native fault
+checkpoint remains distinct from this scoped qualification.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete

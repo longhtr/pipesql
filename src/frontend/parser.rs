@@ -122,6 +122,7 @@ pub(super) enum ParsedOp {
     Negate,
     Abs,
     Sign,
+    ToDouble,
     Floor,
     Ceil,
     Round,
@@ -184,6 +185,7 @@ impl BinaryCall {
 #[derive(Clone, Copy)]
 enum PendingOp {
     Paren,
+    Cast,
     // Call boundaries keep argument commas inside this frame. Closing the
     // second argument emits one binary instruction without recursive parsing.
     FirstArgument(BinaryCall),
@@ -205,6 +207,7 @@ impl PendingOp {
     fn precedence(self) -> u8 {
         match self {
             Self::Paren
+            | Self::Cast
             | Self::FirstArgument(_)
             | Self::SecondArgument(_)
             | Self::Abs
@@ -671,8 +674,9 @@ impl Parser<'_> {
                         expression.push(ParsedOp::Number(span), span)?;
                         operand = false;
                     }
-                    Kind::Identifier
-                        if (self.is_word("COALESCE")
+                    Kind::Identifier | Kind::Reserved
+                        if (self.is_word("CAST")
+                            || self.is_word("COALESCE")
                             || self.is_word("NULLIF")
                             || self.is_word("SAFE_DIVIDE")
                             || self.is_word("POW")
@@ -701,7 +705,9 @@ impl Parser<'_> {
                                 span: at,
                             });
                         }
-                        let call = if self.is_word("COALESCE") {
+                        let call = if self.is_word("CAST") {
+                            PendingOp::Cast
+                        } else if self.is_word("COALESCE") {
                             PendingOp::FirstArgument(BinaryCall::Coalesce)
                         } else if self.is_word("NULLIF") {
                             PendingOp::FirstArgument(BinaryCall::NullIf)
@@ -732,7 +738,7 @@ impl Parser<'_> {
                         } else {
                             PendingOp::FirstArgument(BinaryCall::SafeDivide)
                         };
-                        self.take(Kind::Identifier)?;
+                        self.take(kind)?;
                         self.take(Kind::LeftParen)?;
                         pending[depth] = call;
                         depth += 1;
@@ -801,6 +807,33 @@ impl Parser<'_> {
                     self.take(kind)?;
                     operand = true;
                 }
+                Kind::As if parentheses != 0 => {
+                    // AS terminates only this CAST operand. Drain its arithmetic
+                    // before consuming the target and closing this call frame.
+                    while depth != 0 && pending[depth - 1].precedence() != 0 {
+                        depth -= 1;
+                        expression.push(pending[depth].parsed(), at)?;
+                    }
+                    let keyword = self.take(Kind::As)?;
+                    if depth == 0 || !matches!(pending[depth - 1], PendingOp::Cast) {
+                        return Err(Error::Parse {
+                            message: "AS requires a CAST boundary",
+                            span: keyword,
+                        });
+                    }
+                    let supported = self.is_word("FLOAT64") || self.is_word("DOUBLE");
+                    let target = self.take(Kind::Identifier)?;
+                    if !supported {
+                        return Err(Error::Parse {
+                            message: "CAST target must be FLOAT64 or DOUBLE",
+                            span: target,
+                        });
+                    }
+                    self.take(Kind::RightParen)?;
+                    depth -= 1;
+                    parentheses -= 1;
+                    expression.push(ParsedOp::ToDouble, at)?;
+                }
                 Kind::Comma if parentheses != 0 => {
                     while depth != 0 && pending[depth - 1].precedence() != 0 {
                         depth -= 1;
@@ -826,6 +859,12 @@ impl Parser<'_> {
                     assert!(depth != 0);
                     depth -= 1;
                     match pending[depth] {
+                        PendingOp::Cast => {
+                            return Err(Error::Parse {
+                                message: "CAST requires AS FLOAT64 or AS DOUBLE",
+                                span: self.tokens.values[self.position].span,
+                            });
+                        }
                         PendingOp::FirstArgument(_) => {
                             return Err(Error::Parse {
                                 message: "binary scalar call requires two arguments",
@@ -1494,6 +1533,34 @@ mod tests {
                 })
             ));
         }
+    }
+
+    #[test]
+    fn numeric_cast_nesting_retains_operation_and_token_bounds() {
+        let wrap = |value: &str, count| {
+            format!(
+                "{}{}{}",
+                "CAST(".repeat(count),
+                value,
+                " AS DOUBLE)".repeat(count)
+            )
+        };
+        let parsed = parse_query(&format!("FROM facts |> SELECT {}", wrap("a", 31))).unwrap();
+        let expression = parsed.expression(parsed.projections[0].expression).unwrap();
+        assert_eq!(expression.len, 32);
+        assert!(
+            expression.ops[1..32]
+                .iter()
+                .all(|op| matches!(op, ParsedOp::ToDouble))
+        );
+        assert!(matches!(
+            parse_query(&format!("FROM facts |> SELECT {}", wrap("a+1", 30))),
+            Err(Error::Parse {
+                message: "scalar operation limit exceeded",
+                ..
+            })
+        ));
+        assert!(parse_query(&format!("FROM facts |> SELECT {}", wrap("a", 32))).is_err());
     }
 
     #[test]

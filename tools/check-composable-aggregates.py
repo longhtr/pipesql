@@ -214,6 +214,27 @@ class QueryChecks:
 
 def check_grouping(queries, rows):
     queries.composed(
+        "cast-precision-boundary",
+        "FROM lineitem |> LIMIT 1 |> SELECT CAST(9007199254740993 AS FLOAT64) AS rounded, CAST(9007199254740993 - 9007199254740992 AS DOUBLE) AS exact_first, CAST(9007199254740993 AS DOUBLE) - CAST(9007199254740992 AS DOUBLE) AS cast_first",
+        [["4340000000000000", "3ff0000000000000", "0000000000000000"]],
+    )
+    queries.composed(
+        "cast-before-integer-limit",
+        "FROM lineitem |> LIMIT 1 |> SELECT CAST(9223372036854775807 AS DOUBLE) + 1 AS n",
+        [["43e0000000000000"]],
+    )
+    queries.composed(
+        "cast-aggregate-identity",
+        "FROM lineitem |> AGGREGATE COUNT(*) AS entries |> SELECT CAST(entries AS FLOAT64) AS n |> AGGREGATE SUM(n) AS total",
+        [["40f0001000000000"]],  # Exactly 65,537 rows, independently fixed above.
+    )
+    queries.composed(
+        "cast-empty-aggregate",
+        "FROM lineitem |> AGGREGATE SUM(CAST(1 AS DOUBLE)) AS total",
+        [["null"]],
+        database="empty",
+    )
+    queries.composed(
         "byte-length-ascii",
         "FROM lineitem |> SELECT BYTE_LENGTH(l_returnflag) AS width |> AGGREGATE SUM(width) AS total",
         [[encoded(len(rows))]],
@@ -591,7 +612,7 @@ def check_numeric_failures(queries, work, encoder):
         [("sum", 0)],
         database="empty",
     )
-    for expr in [OVERFLOW_EXPRESSION, "l_quantity*(-(-9223372036854775808))"]:
+    for expr in [OVERFLOW_EXPRESSION, "l_quantity*(-(-9223372036854775808))", "CAST(9223372036854775807 + 1 AS DOUBLE)"]:
         call = queries.run("data", f"FROM lineitem |> AGGREGATE SUM({expr}) AS value")
         assert (
             call.returncode == 1

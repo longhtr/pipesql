@@ -187,6 +187,7 @@ pub(crate) enum Op {
     Negate,
     Abs,
     Sign,
+    ToDouble,
     Floor,
     Ceil,
     Round,
@@ -212,6 +213,11 @@ fn sign_double(value: f64) -> f64 {
 // signed-zero preservation to target-specific numeric instructions. Logarithms
 // and EXP own their zero decisions before the zero-preserving operations.
 fn double_unary(op: Op, value: f64) -> Result<f64, ArithmeticFailure> {
+    // Callers promote INT64 inputs before entering DOUBLE operations. An explicit
+    // conversion therefore retains this value without arithmetic or bit changes.
+    if op == Op::ToDouble {
+        return Ok(value);
+    }
     if value.is_nan() {
         return Ok(value);
     }
@@ -305,6 +311,7 @@ impl Expression {
                 Op::Negate
                 | Op::Abs
                 | Op::Sign
+                | Op::ToDouble
                 | Op::Floor
                 | Op::Ceil
                 | Op::Round
@@ -372,6 +379,7 @@ impl Expression {
                 Op::Negate
                 | Op::Abs
                 | Op::Sign
+                | Op::ToDouble
                 | Op::Floor
                 | Op::Ceil
                 | Op::Round
@@ -384,7 +392,14 @@ impl Expression {
                     }
                     if matches!(
                         op,
-                        Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Log10 | Op::Ln | Op::Exp
+                        Op::ToDouble
+                            | Op::Floor
+                            | Op::Ceil
+                            | Op::Round
+                            | Op::Sqrt
+                            | Op::Log10
+                            | Op::Ln
+                            | Op::Exp
                     ) {
                         types[depth - 1] = DataType::Double;
                     }
@@ -470,6 +485,7 @@ impl Expression {
                 Op::Negate
                 | Op::Abs
                 | Op::Sign
+                | Op::ToDouble
                 | Op::Floor
                 | Op::Ceil
                 | Op::Round
@@ -574,7 +590,14 @@ impl Expression {
                     valid[depth] = [u64::MAX; VALID_WORDS];
                     depth += 1;
                 }
-                Op::Floor | Op::Ceil | Op::Round | Op::Sqrt | Op::Log10 | Op::Ln | Op::Exp => {
+                Op::ToDouble
+                | Op::Floor
+                | Op::Ceil
+                | Op::Round
+                | Op::Sqrt
+                | Op::Log10
+                | Op::Ln
+                | Op::Exp => {
                     let values = &mut scratch[(depth - 1) * rows..depth * rows];
                     for (row, value) in values.iter_mut().enumerate() {
                         if valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
@@ -1431,6 +1454,107 @@ mod tests {
                 (Op::Ln, Err(ArithmeticFailure::LnDomain))
                     | (Op::Log10, Err(ArithmeticFailure::Log10Domain))
             ));
+        }
+    }
+
+    #[test]
+    fn to_double_converts_integer_boundaries_with_literal_bit_oracles() {
+        let column = SemanticColumn::new(42, DataType::Int64, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(column), Op::ToDouble]);
+        expression.len = 2;
+        expression.data_type = DataType::Double;
+        expression.validate(&[column]).unwrap();
+        for (value, expected) in [
+            (0, 0x0000_0000_0000_0000),
+            (1, 0x3ff0_0000_0000_0000),
+            (-1, 0xbff0_0000_0000_0000),
+            (9_007_199_254_740_991, 0x433f_ffff_ffff_ffff),
+            (9_007_199_254_740_992, 0x4340_0000_0000_0000),
+            (9_007_199_254_740_993, 0x4340_0000_0000_0000),
+            (9_007_199_254_740_994, 0x4340_0000_0000_0001),
+            (9_007_199_254_740_995, 0x4340_0000_0000_0002),
+            (-9_007_199_254_740_993, 0xc340_0000_0000_0000),
+            (-9_007_199_254_740_995, 0xc340_0000_0000_0002),
+            (i64::MIN, 0xc3e0_0000_0000_0000),
+            (i64::MAX, 0x43e0_0000_0000_0000),
+        ] {
+            let values = [value, i64::MAX];
+            let validity = [1];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Int64(&values), Some(&validity)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 2];
+            let output = expression
+                .evaluate_batch(&inputs, 0..2, &mut scratch)
+                .unwrap();
+            assert_eq!(output.value(0), Some(expected));
+            assert_eq!(output.value(1), None);
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Integer(value)).unwrap();
+            assert_eq!(cursor.next_column().unwrap(), None);
+            let Number::Double(actual) = cursor.value() else {
+                panic!("DOUBLE conversion");
+            };
+            assert_eq!(actual.to_bits(), expected);
+        }
+        expression.data_type = DataType::Int64;
+        assert!(expression.validate(&[column]).is_err());
+        expression.ops[0] = Op::ToDouble;
+        expression.ops[1] = Op::Empty;
+        expression.len = 1;
+        expression.data_type = DataType::Double;
+        assert!(expression.validate(&[]).is_err(), "missing CAST operand");
+    }
+
+    #[test]
+    fn to_double_preserves_double_bits_and_nulls_in_both_evaluators() {
+        let column = SemanticColumn::new(42, DataType::Double, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(column), Op::ToDouble]);
+        expression.len = 2;
+        expression.data_type = DataType::Double;
+        expression.validate(&[column]).unwrap();
+        for bits in [
+            0x0000_0000_0000_0000,
+            0x8000_0000_0000_0000,
+            0x0000_0000_0000_0001,
+            0x8000_0000_0000_0001,
+            0x3ff0_0000_0000_0000,
+            0xbff0_0000_0000_0000,
+            0x7fef_ffff_ffff_ffff,
+            0xffef_ffff_ffff_ffff,
+            0x7ff0_0000_0000_0000,
+            0xfff0_0000_0000_0000,
+            0x7ff0_0000_0000_0042,
+            0xfff8_0000_0000_0042,
+        ] {
+            let value = f64::from_bits(bits);
+            let values = [value, value];
+            let validity = [1];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), Some(&validity)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 2];
+            let output = expression
+                .evaluate_batch(&inputs, 0..2, &mut scratch)
+                .unwrap();
+            assert_eq!(output.value(0), Some(bits));
+            assert_eq!(output.value(1), None);
+            for input in [Number::Double(value), Number::Null] {
+                let mut cursor = Evaluation::new(&expression);
+                assert_eq!(cursor.next_column().unwrap(), Some(column));
+                cursor.supply(input).unwrap();
+                assert_eq!(cursor.next_column().unwrap(), None);
+                match (input, cursor.value()) {
+                    (Number::Null, Number::Null) => (),
+                    (Number::Double(_), Number::Double(actual)) => {
+                        assert_eq!(actual.to_bits(), bits)
+                    }
+                    _ => panic!("conversion changed value type or NULL"),
+                }
+            }
         }
     }
 

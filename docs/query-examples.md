@@ -52,6 +52,47 @@ Require one `row=int64:38`, `row_count=1`, `status=queried` and successful exit.
 The [execution trace](execution.md#trace-a-query-through-execution) follows this
 same query from producer admission to the final borrowed batch and cleanup.
 
+## Choose where integer arithmetic becomes approximate
+
+Run [numeric_cast.sql](../examples/numeric_cast.sql) against the sales table:
+
+```sh
+cargo run --release --offline --locked --bin pipesql -- query \
+  --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/numeric_cast.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+Require one row with three required DOUBLE columns, `row_count=1`,
+`status=queried` and successful exit:
+
+| Column | Value | DOUBLE bits |
+| --- | ---: | --- |
+| `rounded` | 9007199254740992 | `4340000000000000` |
+| `exact_first` | 1 | `3ff0000000000000` |
+| `cast_first` | 0 | `0000000000000000` |
+
+INT64 can distinguish 9007199254740993 from 9007199254740992. DOUBLE cannot retain
+that distinction: at this magnitude, adjacent representable values are two apart.
+The first column rounds the odd integer to its even neighbor. The second subtracts
+in INT64 and converts the exact difference. The third converts both integers
+before subtraction, so it subtracts equal DOUBLE values. CAST makes this decision
+explicit; it does not promise exact integer arithmetic in the result type.
+
+Overflow is a separate consequence of instruction order. For an INT64 `n` equal
+to 9223372036854775807, `CAST(n + 1 AS DOUBLE)` fails during the integer addition.
+`CAST(n AS DOUBLE) + 1` returns 9223372036854775808: the conversion rounds upward
+and the floating addition loses the increment. A demanded runtime failure retains
+its expression span; a failing constant on the right of a WHERE comparison can
+fail during preparation. NULL stays NULL, while an existing DOUBLE retains its bits.
+
+Follow [scalar expression evaluation](execution.md#scalar-expression-evaluation)
+through the parser, binder and two evaluators. The [public cast tests](../tests/catalog_lifecycle/cast.rs)
+exercise grouping collisions, materialized values and skipped or demanded errors.
+The [language contract](language.md#current-public-query-manifest) owns supported
+target spellings and the remaining conversion limits. Continue with the other
+queries below, then use this guide's final cleanup step.
+
 ## Transform columns while retaining the original values
 
 Before removing the database, run [examples/extend.sql](../examples/extend.sql)

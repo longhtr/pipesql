@@ -194,6 +194,11 @@ Their exceptional-value decisions and finite power kernel add no scratch, heap
 owner or admission allowance. Each call consumes two input slots and retains one
 output slot through the same batch and demanded-evaluation paths.
 
+Numeric CAST uses one existing unary instruction and result slot. Its parser
+frame shares the bounded pending-operation stack; INT64 promotion and DOUBLE bit
+retention add no allocation owner, scratch class, admission allowance or temporary
+storage. The ordinary demanded-input and terminal-release rules apply.
+
 COALESCE retains the same prepared expression and operation bound. A bounded
 row cursor derives fallback endpoints and result types from validated postfix
 subtrees and reuses the checked arithmetic primitives. Conditional batches reuse

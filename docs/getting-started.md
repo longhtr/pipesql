@@ -79,6 +79,10 @@ To try column transformations, numeric expressions, set operations or partition
 count, use [Explore queries on a declared table](query-examples.md). That guide
 creates its own sample database, so you can begin it after cleaning up this one.
 
+To see where exact integer arithmetic becomes approximate, try the
+[explicit conversion exercise](query-examples.md#choose-where-integer-arithmetic-becomes-approximate).
+It compares subtracting before and after a numeric CAST.
+
 ## Compare computed projection costs
 
 [examples/projection_cost.rs](../examples/projection_cost.rs) creates 32,768

@@ -88,7 +88,7 @@ separate from this query manifest.
 | `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN or positional set operations. Comma-separated FROM inputs remain unsupported. |
 | `FROM (pipe_query) [AS alias]` | Uses the child query’s ordinary outputs as an independent input. A JOIN may also use this form. See [table subqueries](#table-subqueries) for scope and ordering. |
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
-| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts numeric `ABS`/`SIGN`/`FLOOR`/`CEIL` (`CEILING`)/`ROUND`/`SQRT`/`LN`/`LOG10`/`EXP`, INT64 `DIV`/`MOD` and two-argument `POW` (`POWER`), `SAFE_DIVIDE`, `COALESCE` and `NULLIF`, bounded STRING and DATE constants, `BYTE_LENGTH`/`CHAR_LENGTH` projections and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
+| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts numeric `ABS`/`SIGN`/`FLOOR`/`CEIL` (`CEILING`)/`ROUND`/`SQRT`/`LN`/`LOG10`/`EXP`, INT64 `DIV`/`MOD` and two-argument `POW` (`POWER`), `SAFE_DIVIDE`, `COALESCE` and `NULLIF`, explicit numeric `CAST(... AS FLOAT64)` (`DOUBLE`), bounded STRING and DATE constants, `BYTE_LENGTH`/`CHAR_LENGTH` projections and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
 | `EXTEND expression [[AS] alias], ...` | Appends columns using the same expression profile as SELECT. Preserves all input columns, their identities and ranges. Ordinary expressions preserve order; analytic count clears it. Star expansion, reducing aggregate calls and other scalar forms remain unsupported. |
 | `SET name=expression, ...` | Replaces each named ordinary column in place with a fresh identity. Accepts direct references of any supported type and the nonanalytic SELECT expression profile. Every expression sees the original input; replacements can change type and NULLability. |
 | `DROP name, ...` | Removes all ordinary columns matching each name, including duplicate names. Rejects removal of the entire row. |
@@ -291,6 +291,33 @@ needed, while an unused expression or skipped COALESCE fallback remains unevalua
 STRING, DATE, untyped NULL and other arities remain rejected. The shared numeric
 operation and parser bounds apply. SIGN uses the existing scalar buffers and
 iterative evaluation.
+
+`CAST(expression AS FLOAT64)` and `CAST(expression AS DOUBLE)` convert one
+bounded INT64 or DOUBLE expression to DOUBLE. INT64 converts to the nearest
+representable DOUBLE, with ties to even. NULL propagates and result NULLability
+matches the argument. DOUBLE input bits remain unchanged, including signed zero,
+infinities and NaN payloads. This conversion introduces no domain or overflow
+error of its own; every INT64 value fits within DOUBLE's finite range.
+
+Range and precision are different constraints. Converting 9007199254740993
+produces 9007199254740992. Converting INT64 maximum produces
+9223372036854775808. Distinct integer grouping keys can therefore become equal.
+The argument evaluates in its own type before conversion:
+`CAST(n + 1 AS DOUBLE)` still fails on integer addition when `n` is INT64 maximum.
+`CAST(n AS DOUBLE) + 1` uses floating arithmetic and can round away that increment.
+Demanded argument errors retain the enclosing expression's owned source span.
+Constant predicate arguments can fail during preparation; runtime arguments retain
+ordinary conditional demand. SAFE_DIVIDE does not suppress an argument's errors.
+
+The [upstream FLOAT64 conversion contract](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/conversion_functions#cast_as_float64)
+describes potentially inexact integer conversion. The pinned
+[GoogleSQL type map](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/public/types/simple_type.cc#L87)
+exposes FLOAT64 externally and DOUBLE in internal product mode. PipeSQL adopts
+both target spellings; this does not claim that BigQuery accepts DOUBLE.
+Other targets, STRING/DATE sources, untyped NULL, formatting clauses and SAFE_CAST
+remain unsupported. CAST can nest within the existing numeric expression bounds
+and consume projected numeric identities. STRING-length calls still require their
+own projection stage. See the [conversion exercise](query-examples.md#choose-where-integer-arithmetic-becomes-approximate).
 
 `FLOOR(value)` returns the largest integral DOUBLE not greater than its converted
 argument; `CEIL(value)` returns the smallest integral DOUBLE not less than that

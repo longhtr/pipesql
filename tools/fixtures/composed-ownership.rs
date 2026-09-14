@@ -124,6 +124,8 @@ pub(super) fn analytic_shapes(
         "FROM facts |> SELECT t, COUNT(*) OVER () AS n |> SELECT BYTE_LENGTH(t) AS bytes, n",
         "FROM facts |> SELECT CHAR_LENGTH(t) AS characters |> SELECT characters, COUNT(*) OVER () AS n",
         "FROM facts |> SELECT t, COUNT(*) OVER () AS n |> SELECT CHAR_LENGTH(t) AS characters, n",
+        "FROM facts |> SELECT CAST(v AS DOUBLE) AS v |> SELECT v, COUNT(*) OVER () AS n",
+        "FROM facts |> SELECT v, COUNT(*) OVER () AS n |> SELECT CAST(v AS FLOAT64) AS v, n",
     ];
     println!("entered analytic ownership shapes");
     let path_bytes = std::fs::canonicalize(&path)?.as_os_str().len() + "/units".len();
@@ -194,7 +196,7 @@ pub(super) fn analytic_shapes(
                         2 => 19,
                         4 => 64,
                         3 => 4,
-                        5 | 11..=14 => 2,
+                        5 | 11..=16 => 2,
                         _ => 1,
                     };
                     assert_eq!(batch.column_count(), width);
@@ -224,6 +226,7 @@ pub(super) fn analytic_shapes(
                                         Value::Null
                                     }
                                 }
+                                (15 | 16, 0) => Value::Double(seen as f64),
                                 (6, _) => Value::Int64(262_144),
                                 (7 | 8, _) => Value::Int64(256),
                                 (9 | 10, _) => Value::Int64(768),
@@ -286,7 +289,7 @@ pub(super) fn analytic_shapes(
         );
     }
     db.close()?;
-    println!("analytic shapes passed: 15 cases; rows, attribution and release");
+    println!("analytic shapes passed: 17 cases; rows, attribution and release");
     Ok(())
 }
 

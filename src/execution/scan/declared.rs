@@ -464,13 +464,39 @@ mod tests {
         )
         .unwrap();
         let cancel = CancellationToken::new();
-        for (name, kind, capacity, projection) in [
-            ("ints", DataType::Int64, 278_496, "n"),
-            ("doubles", DataType::Double, 278_496, "n"),
-            ("dates", DataType::Date, 147_424, "n"),
-            ("strings", DataType::String, 540_640, "n"),
-            ("lengths", DataType::String, 540_640, "BYTE_LENGTH(n)"),
-            ("characters", DataType::String, 540_640, "CHAR_LENGTH(n)"),
+        for (name, kind, capacity, projection, computed_bytes) in [
+            ("ints", DataType::Int64, 278_496, "n", 0),
+            ("doubles", DataType::Double, 278_496, "n", 0),
+            ("dates", DataType::Date, 147_424, "n", 0),
+            ("strings", DataType::String, 540_640, "n", 0),
+            (
+                "lengths",
+                DataType::String,
+                540_640,
+                "BYTE_LENGTH(n)",
+                6_176,
+            ),
+            (
+                "characters",
+                DataType::String,
+                540_640,
+                "CHAR_LENGTH(n)",
+                6_176,
+            ),
+            (
+                "int_cast",
+                DataType::Int64,
+                278_496,
+                "CAST(n AS FLOAT64)",
+                10_304,
+            ),
+            (
+                "double_cast",
+                DataType::Double,
+                278_496,
+                "CAST(n AS DOUBLE)",
+                10_304,
+            ),
         ] {
             db.declare_table(
                 name,
@@ -496,14 +522,14 @@ mod tests {
             );
             assert!(scans[0].payloads[1..].iter().all(Option::is_none));
             drop(admitted);
-            if projection != "n" {
-                // One numeric result buffer: 256 payload words, four validity
-                // words and the existing 4-KiB allowance. No text copy or stack.
+            if computed_bytes != 0 {
+                // Lengths use one 260-word numeric buffer. CAST uses two and a
+                // 256-word evaluation stack. Both retain the 4-KiB allowance.
                 assert_eq!(
                     crate::execution::computed::BatchLayout::new(plan.scan())
                         .unwrap()
                         .bytes(),
-                    6_176
+                    computed_bytes
                 );
             }
             drop(plan);
