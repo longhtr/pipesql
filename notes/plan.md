@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `1145480` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 634 ordinary Rust tests per platform, 24 independent aggregate
+The complete 24-stage gates for `38f2332` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 639 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
@@ -25,42 +25,15 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-The [demanded execution-failure boundary](evidence.md#demanded-execution-failure-ownership)
-is complete. The wide nullable STRING LEFT JOIN now checks late arithmetic
-failures, repeated terminal errors and complete release with the owned error live.
-Both full gates, independent discovery and record reconciliation, and sequential
-fresh LEFT JOIN examples pass. No engine accounting or release-order defect was
-exposed. The base-ten, normal lifecycle and preparation-failure milestones remain
-closed. Exhaustive execution-allocation histories, arbitrary allocator/concurrency
-behavior, whole-process/RSS, Windows and broader durability/sanitizer qualification
-remain unfinished.
-
-## Active: bounded power expressions
-
-Support two-argument POW and its POWER alias for numeric inputs, returning DOUBLE
-through the existing bounded expression path. A compounding-rate query provides
-a useful analytical workload with independent mathematical references. No current
-ownership counterexample requires reopening the completed failure boundaries.
-
-The bounded upstream trace reconciles signature, alias, compliance cases and
-kernel behavior. Implementation reuses the binary call frames and numeric scratch;
-it adds no allocation owner or admission allowance. Explicit exceptional-value
-decisions precede the finite native power and its overflow check. The accepted
-language contract records conversion, demand, errors and approximate precision.
-
-Focused release checks pass 29 scalar tests, 48 binder tests, six replay tests
-including 34 forced-fallback variants, and all 143 public catalog tests. Tests
-preserve NULLs, represented parity, owned spans, skipped branches, exact program
-bounds, cancellation and stored exceptional values across reopen. An initial
-fixture incorrectly supplied nonfinite literals; typed-column inputs repair that
-test without weakening literal validation. Clippy passes. Allocation development
-controls retain the catalog census; they do not establish refusal-sweep coverage.
-
-The compounding example and its implementation reading path are documented.
-Complete matching frozen
-sequential macOS/GNU arm64 Linux gates, discovery and evidence reconciliation,
-sequential fresh examples, final review, owned-output cleanup and local commits.
-Keep historical evidence below 641,696 bytes and publication restrictions intact.
+The [bounded power expressions](evidence.md#bounded-power-expressions) are
+complete. POW and POWER share the existing binary numeric path, with explicit
+exceptional values, owned failures and approximate finite results. Both full
+gates, independent discovery and record reconciliation, and sequential fresh
+compounding examples pass. Prior language and ownership milestones remain closed
+unless a concrete affected defect or new workload changes their scope. Exhaustive
+execution-allocation histories, arbitrary allocator/concurrency behavior,
+whole-process/RSS, Windows and broader durability/sanitizer qualification remain
+unfinished.
 
 ## Next engineering priorities
 

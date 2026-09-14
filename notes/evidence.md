@@ -7,21 +7,21 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 711 frozen inputs retained in `1145480`
+Both complete 24-stage gates verify the 712 frozen inputs retained in `38f2332`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `5823e51d74cde2db2860bfb348e399de114c2c0f6e53f003064cf4e7c585b0d6`.
-Finalization changes only the two notes files. The other 709 inputs retain
-fingerprint `ea6729048045c04c1599697eb3b231ca06d4b9c5abfe37557f040a96d96a9b02`;
-all manifested inputs are tracked. Final local-link verification passes 680 links.
+gates: `bf19bd256d1156e7fb5706ee918f637469824b8591022020b9c1d68a67d665b9`.
+Finalization changes only the two notes files. The other 710 inputs retain
+fingerprint `6b377a2b1afb061948410e54be09c71c70e91785fa0f3b737218680cdc1eb02a`;
+all manifested inputs are tracked. Final local-link verification passes 689 links.
 
-Each platform executes 634 ordinary Rust tests, including all 141 public catalog
+Each platform executes 639 ordinary Rust tests, including all 143 public catalog
 tests, plus the separate lease subprocess. Discovery independently lists those
-634 tests across thirteen targets per platform. No ordinary test is ignored or
+639 tests across thirteen targets per platform. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 98 tooling tests, 44 independent codec fixtures and 678 local links.
+passes 98 tooling tests, 44 independent codec fixtures and 687 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311
 scenarios. Their complete records agree across platforms after excluding ambient
 database paths and composition stdout digests. Those digests are not portable
@@ -39,33 +39,88 @@ CLI limits, genesis, lease contention and independent column order pass. Linux
 retains two Darwin ACL repair-rename exclusions, one at each pathname length.
 
 Both receipts have zero finalization errors. The full gates run sequentially;
-stage times total 1,662.721 seconds on macOS and 434.184 seconds on Linux. Receipt
+stage times total 1,669.080 seconds on macOS and 436.620 seconds on Linux. Receipt
 SHA-256 values are respectively
-`cb358829c5a8c98e075c333a67d9a9b21c12e04827b3d86edfc9bf94b4bc0ae5` and
-`8ef1a7fd0aa855d4f64920bf0c1a45964305801b1ac09e4d8e527a9f1aa98253`.
+`9b68a3ef4dd2df0184a58537b8b11b15070024f4881313c21cbf8ae48ff58472` and
+`e116d7779a7afeb05ccc34b37e0d8735dbc58b01aaa262a986ad046610251e60`.
 These runs are verification observations, not performance benchmarks.
 
-Ninety-seven periodic resource samples observed normal memory pressure on an
-8 GiB host. Swap use ranged from 865.69 to 881.69 MiB, ending at 865.69. macOS
+One hundred seven periodic resource samples observed normal memory pressure on an
+8 GiB host. Swap use ranged from 801.69 to 825.69 MiB, ending at 801.69. macOS
 used at most two Cargo jobs and one for fresh examples. Docker used one CPU,
 one build job and a 2 GiB memory and memory-plus-swap limit. Seventeen container
-samples observed CPU up to 99.27% and memory up to 1.200 GiB. Networking was disabled
+samples observed CPU up to 100% and memory up to 1.182 GiB. Networking was disabled
 and sampled container network traffic was zero. Host disk samples ranged from
-zero to 183.32 MB/s; free disk stayed above 188.24 GiB. Host process, disk and
+zero to 157.98 MB/s; free disk stayed above 188.13 GiB. Host process, disk and
 network observations include unrelated applications. Monitoring commands reported
 no failures or timeouts, and no container OOM kill occurred. These observations
 do not qualify engine admission, usable-heap limits or whole-process/RSS bounds.
 
 The Linux image remains `pipesql-verification-rust:1.98.1-time`, digest
 `sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
-Fresh LEFT JOIN examples run sequentially on macOS and Linux after both complete
-gates. Each creates and reopens its database, then returns all three documented
-groups with a successful close and exit. The execution-failure record below
-retains the observed values and limits.
+Fresh declared-table and compounding examples run sequentially on macOS and
+Linux after both complete gates. Each creates and reopens its database, then
+returns all three documented compounded values with successful exit and
+`status=queried`. The power record below retains the observed values and limits.
 Owned gate outputs, source exports, logs, monitor, databases, isolated build
 outputs and the verification container are removed. Pre-existing target artifacts,
 the image and installed toolchains remain. Windows, broader durability,
 physical-memory and sanitizer qualification remain unfinished.
+
+### Bounded power expressions
+
+`38f2332` adds two-argument POW and its POWER alias through the existing binary
+call frames, binder, independent validators, batch scratch and demanded cursor.
+Both numeric inputs promote to DOUBLE before the power operation. NULLs remain
+NULL even for unity or zero-exponent identities. Explicit exceptional-value
+branches handle NaN precedence, infinities, signed zeros and represented exponent
+parity before finite native power. Finite domain and overflow failures retain
+operation `power` and owned source spans. No allocation owner, scratch allowance,
+persistent format or admission padding changes. The
+[language contract](../docs/language.md#current-public-query-manifest) owns the
+complete accepted form and approximate-precision limits.
+
+The pinned GoogleSQL signature, alias, compliance cases and kernel were inspected
+and agree on the accepted behavior. No upstream execution is claimed. Eleven
+finite references use 100-digit Decimal powers of the exact binary64 inputs,
+rounded once to binary64, with a two-ULP regression threshold. Forty-five literal
+vectors check identities, NaNs, infinities, parity, signed zeros and underflow;
+nine failure vectors distinguish finite domain errors from overflow. Batch and
+cursor paths both execute these checks, including NULL lanes with invalid hidden
+power payloads. An initial fixture supplied nonfinite
+literals and failed the existing validator; typed-column inputs corrected the
+fixture without weakening literal validation.
+
+Public checks exercise both names, mixed numeric types, conversion beyond 2^53
+and at INT64 extremes, NULL operands, malformed calls,
+INT64-only refusal, exact program bounds and prior argument errors. Demand checks
+retain discarded expressions, Boolean/COALESCE short-circuiting, SAFE_DIVIDE
+argument errors and owned UTF-8 spans after caller source and query release.
+Grouped, joined and set results, empty aggregates, cancellation, early drop and
+stored exceptional values across producers and reopen remain checked. A complete
+compounding query compares four results with independent exact rational answers,
+using a six-ULP bound for that query rather than a universal precision promise.
+
+Focused release verification passes 29 scalar, 48 binder, six replay and 143
+public catalog tests. Replay includes 34 literal-result fallback variants. Clippy
+passes with warnings denied. Allocation development controls pass, including
+fixed-buffer power error/cause formatting under denial; these controls alone
+make no refusal-sweep claim. Both complete gates above execute the full retained
+schedules. The catalog query now evaluates a finite power inside LOG10 while
+retaining its count of two. The native I/O query also evaluates a finite power
+while retaining its independent aggregate answer of nine. Both catalog censuses
+remain 1,056 and native I/O coverage remains 1,394 cells per platform.
+
+The [compounding tutorial](../docs/getting-started.md#compound-a-rate-over-several-periods)
+uses an initial quantity of 1,000 and three periods at rates of 5, 10 and 20 percent.
+Fresh runs on both platforms return nullable INT64/DOUBLE columns and exactly
+three rows in order: 1157.6250000000002, 1331.0000000000005 and 1727.9999999999998.
+Observed DOUBLE bits are `4092168000000001`, `4094cc0000000002` and
+`409affffffffffff`. Schema, row count/order, decimal/bit agreement, the independent
+mathematical bounds and successful completion are checked. Matching observations
+do not promise bit-identical repeated or cross-platform powers or exact decimal
+money arithmetic. Owned outputs are removed; broader platform, durability,
+concurrency and physical-memory qualifications remain unfinished.
 
 ### Demanded execution failure ownership
 
