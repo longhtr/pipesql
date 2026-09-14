@@ -7,8 +7,8 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `7eee0be` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 632 ordinary Rust tests per platform, 24 independent aggregate
+The complete 24-stage gates for `0f4c3b3` pass on matching frozen macOS and GNU
+arm64 Linux inputs: 634 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
 [checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
@@ -25,38 +25,25 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Active: bounded base-ten logarithms
+## Completed: bounded base-ten logarithms
 
-Add one-argument LOG10 for base-ten analytical scales through the existing unary
-numeric parser, binder, validators, batch scratch and demand cursor. Resolve the
-pinned upstream signature, exceptional values and approximate finite results
-before changing the kernel. Limit uncertain contract research to 20 minutes;
-reassess if it exposes incompatible semantics or a new ownership premise.
+`0f4c3b3` adds one-argument LOG10 through the existing unary expression owners.
+The [base-ten record](evidence.md#base-ten-logarithms) retains the independent
+references, demand/error checks, composition, admission and replay coverage.
+There is no new allocation owner, scratch buffer or persistent format.
 
-Independent finite reference vectors and public queries must challenge promotion,
-NULL, domain errors, owned spans, skipped demand, composition, bounded programs,
-admission, cancellation and replay. Add a runnable power-ratio scale example and
-a short reading path through real implementation owners. Do not add an expression
-framework, allocation owner or admission allowance.
+Both complete 24-stage macOS/GNU arm64 Linux gates pass on matching frozen inputs,
+with 634 ordinary Rust tests and 97 tooling tests per platform. Discovery,
+semantic/composition records and preparation/catalog prefix schedules are
+reconciled. Fresh declared-table and decibel examples pass sequentially on both
+platforms after both gates. Owned outputs are removed while pre-existing target
+artifacts, the verification image and toolchains remain.
 
-The implementation and authoritative contracts are in place. Focused release
-checks pass 26 scalar, 141 public catalog, 48 binder and 13 replay tests. Catalog
-allocation and derived native-I/O census controls pass; these are not prefix or
-failure coverage. An initial debug-profile selection aborted in a bounded-stack
-scenario; it is not passing evidence. A transcribed power-ratio reference was
-corrected from the independent Decimal calculation before the release tests.
-
-Complete sequential macOS/GNU arm64 Linux gates on matching frozen inputs remain.
-Reconcile discovery and independent results, run fresh relevant examples
-sequentially after both gates, review the final diff, remove owned outputs and
-make coherent local commits. Keep historical evidence below 641,696 bytes and
-preserve publication restrictions.
-
-The [failed preparation checks](evidence.md#failed-preparation-ownership),
-[normal lifecycle repair](evidence.md#transient-preparation-and-release-ownership)
-and prior language/resource work remain closed beyond a concrete new defect or
-affected workload. Arbitrary allocators, concurrent histories, whole-process/RSS,
-Windows and broader durability retain their documented limits.
+Completed language and ownership work remains closed beyond a concrete new defect
+or affected workload. Arbitrary allocators, concurrent histories, whole-process/RSS,
+Windows and broader durability retain their documented limits. Publication
+restrictions are unchanged. Reassess README's decision order before activating
+the next bounded milestone.
 
 ## Next engineering priorities
 

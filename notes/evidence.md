@@ -7,21 +7,21 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 710 frozen inputs retained in `7eee0be`
+Both complete 24-stage gates verify the 711 frozen inputs retained in `0f4c3b3`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `042c9709eed90e307ab24403e22c2471558ac116084438927f7296da2e5c0a5c`.
-Finalization changes only the two notes files. The other 708 inputs retain
-fingerprint `6755ffbc2fb911bdcfc8c12b0237d421af02c3ff2100452e7580103637c6d1b6`;
-all manifested inputs are tracked. Final local-link verification passes 669 links.
+gates: `2d0d4073a501e604a43000c79cf4ddd9dc8dc31470f221ab2b46c1fff14db33e`.
+Finalization changes only the two notes files. The other 709 inputs retain
+fingerprint `d1670e54d70d0f11a88757d0fdef3ebd27d94e9a466f2fbf683384111494e81b`;
+all manifested inputs are tracked. Final local-link verification passes 676 links.
 
-Each platform executes 632 ordinary Rust tests, including all 140 public catalog
+Each platform executes 634 ordinary Rust tests, including all 141 public catalog
 tests, plus the separate lease subprocess. Discovery independently lists those
-632 tests across thirteen targets per platform. No ordinary test is ignored or
+634 tests across thirteen targets per platform. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 97 tooling tests, 44 independent codec fixtures and 669 local links.
+passes 97 tooling tests, 44 independent codec fixtures and 675 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311
 scenarios. Their complete records agree across platforms after excluding ambient
 database paths and composition stdout digests. Those digests are not portable
@@ -29,42 +29,98 @@ semantic hashes; expected nonzero semantic-case exits remain part of the compari
 
 Both allocation campaigns retain positions 0–1,055 plus healthy control 1,056
 at both short and 384-byte database paths. All four ordered lists were reconciled
-explicitly. The caller's work ceiling remains 1,100. Both platforms also pass
-552 CLI allocation prefix cases. Native initialization passes 30 macOS and 80
-GNU/Linux cells; synchronization passes 241 cells and I/O passes 1,394 cells per
-platform. Interruption retains 76 append cuts, 46 recovery cuts and 249 independent
-graph checks. All 43 graph cases, two oracle controls, three CLI limits, genesis,
-lease contention and independent column order pass. Linux retains two Darwin
-ACL repair-rename exclusions, one at each pathname length.
+explicitly. The caller's work ceiling remains 1,100. The retained preparation
+census and complete prefixes 0–10 also agree at both lengths on both platforms.
+Both platforms pass 552 CLI allocation prefix cases. Native initialization passes
+30 macOS and 80 GNU/Linux cells; synchronization passes 241 cells and I/O passes
+1,394 cells per platform. Interruption retains 76 append cuts, 46 recovery cuts
+and 249 independent graph checks. All 43 graph cases, two oracle controls, three
+CLI limits, genesis, lease contention and independent column order pass. Linux
+retains two Darwin ACL repair-rename exclusions, one at each pathname length.
 
 Both receipts have zero finalization errors. The full gates run sequentially;
-stage times total 1,651.514 seconds on macOS and 432.433 seconds on Linux. Receipt
+stage times total 1,670.593 seconds on macOS and 433.538 seconds on Linux. Receipt
 SHA-256 values are respectively
-`d0a0502f464d2cc92cf1a6f367c1c53d3ab3fa88bcfa013af17d21d3fc90cce3` and
-`da1f0c0af15f440ce81be6a2a954ca70812b244c98584839f500050bfe629b73`.
+`9b467829d617dea90525fe75b9991181dc8927946a630bfcddafc4e843d4eebd` and
+`d01dcc2714c0d7d88c212047f98613e234693713ced885924965098b6f6a76a1`.
 These runs are verification observations, not performance benchmarks.
 
-Ninety-two periodic resource samples observed normal memory pressure on an
-8 GiB host. Periodic swap use ranged from 913.69 to 929.69 MiB, ending at 913.69;
-an initial host check observed 937.69 MiB. macOS used at most two Cargo jobs and
-one for the fresh example. Docker used one CPU, one build job and a 2 GiB memory
-and memory-plus-swap limit. Eighteen container samples observed CPU up to 99.10%
-and memory up to 1.185 GiB. Networking was disabled and sampled container network
-traffic was zero. Host disk samples ranged from zero to 169.77 MB/s; free disk
-stayed above 188.32 GiB. Host process, disk and network observations include
-unrelated applications. No container OOM kill occurred. These observations do
-not qualify engine admission, usable-heap limits or whole-process/RSS bounds.
+Ninety-four periodic resource samples observed normal memory pressure on an
+8 GiB host. Swap use ranged from 897.69 to 913.69 MiB, ending at 897.69. macOS
+used at most two Cargo jobs and one for fresh examples. Docker used one CPU,
+one build job and a 2 GiB memory and memory-plus-swap limit. Nineteen container
+samples observed CPU up to 99.87% and memory up to 1.213 GiB. Networking was disabled
+and sampled container network traffic was zero. Host disk samples ranged from
+zero to 183.62 MB/s; free disk stayed above 187.82 GiB. Host process, disk and
+network observations include unrelated applications. Monitoring commands reported
+no failures or timeouts, and no container OOM kill occurred. These observations
+do not qualify engine admission, usable-heap limits or whole-process/RSS bounds.
 
 The Linux image remains `pipesql-verification-rust:1.98.1-time`, digest
 `sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
-Fresh LEFT JOIN examples run sequentially on macOS and Linux after both complete
-gates. Each creates and reopens its database and returns exactly the documented
-three rows: unmatched total 90/count 2, north total 30/count 2 and south total
-30/count 1. Both processes exit successfully. Owned gate outputs, source exports,
-logs, monitor, databases, isolated build outputs and the verification container
-are removed. Pre-existing target artifacts, the image and installed toolchains
-remain. Windows, broader durability, physical-memory and sanitizer qualification
-remain unfinished.
+Fresh declared-table and decibel-scale examples run sequentially on macOS and
+Linux after both complete gates. Each creates and reopens its database; both
+then return the documented three power-ratio rows with successful exit and
+`status=queried`. The base-ten record below retains the observed values and limits.
+Owned gate outputs, source exports, logs, monitor, databases, isolated build
+outputs and the verification container are removed. Pre-existing target artifacts,
+the image and installed toolchains remain. Windows, broader durability,
+physical-memory and sanitizer qualification remain unfinished.
+
+### Base-ten logarithms
+
+`0f4c3b3` adds one-argument LOG10 through the bounded unary parser, binder and
+independent validators. INT64 promotes before evaluation, NULL propagates and
+finite nonpositive inputs produce `ArithmeticDomain` with operation
+`base-ten logarithm` and an owned source span. Negative infinity produces the
+profile's quiet NaN; positive infinity and input NaN bits retain their specified
+behavior. The shared logarithm kernel keeps LN's existing domain decisions.
+There is no new allocation owner, scratch buffer, admission allowance or persistent
+format. The [language contract](../docs/language.md#current-public-query-manifest)
+owns exact behavior, unsupported forms and approximate-precision limits.
+
+Pinned GoogleSQL prose, signature, compliance cases and kernel agree on these
+exceptional values. They were inspected, not executed upstream. Eleven independent
+finite LOG10 references use Python Decimal at precision 100 on the exact binary64
+inputs. The regression threshold is two ULPs for those values, without a universal
+accuracy promise. Five exact vectors check unity, infinities and NaN bits; five
+finite nonpositive inputs must error. Both batch evaluation and the demand cursor
+execute these checks, including a NULL lane with a hidden negative payload.
+LN retains its own literal reference values through the shared test driver.
+
+Public checks retain INT64 promotion boundaries, rejected types and arities,
+INT64-only argument refusal, skipped Boolean/COALESCE branches, demanded argument
+errors, UTF-8 byte spans after source release, empty aggregates and composition
+through grouping, joins and sets. A complete power-ratio query checks four literal
+Decimal references with a three-ULP regression threshold and exact positive zero.
+Shared tests cover stored exceptional bits across producers and reopen,
+cancellation, early drop, independent descriptor rejection and 31/32-call program
+admission. Forced grouping fallback now exercises 33 literal-result variants.
+
+Catalog allocation retains its count of two while LOG10(1) contributes zero.
+Native I/O retains its aggregate answer of nine while LOG10(n/n) contributes zero.
+The complete frozen campaigns preserve their independent refusal schedules,
+recovery checks and healthy controls. Fixed-buffer diagnostics also render the
+new operation and its matching cause kind while allocation is denied.
+
+Focused release checks pass 26 scalar, 141 public catalog, 48 binder and 13 replay
+tests. Initial development runs included an incorrect hand-transcribed power-ratio
+reference and a broad debug-profile selection that aborted with stack overflow;
+neither contributes passing evidence. Decimal calculation corrected the reference
+before release verification. Eleven temporary test directories left by the debug
+abort were identified and removed. The complete release gates above pass all
+ordinary tests and bounded-stack scenarios; debug-profile qualification is not
+claimed.
+
+The [decibel tutorial](../docs/getting-started.md#express-a-power-ratio-in-decibels)
+uses amounts 5, 10 and 20 as power measurements relative to 10 in the same units.
+Both fresh platform runs return nullable INT64/DOUBLE columns and exactly three
+rows: -3.010299956639812, positive zero and 3.010299956639812. Observed DOUBLE bits
+are `c008151824c7587f`, `0000000000000000` and `4008151824c7587f`. Schema, complete
+row order, row count, decimal/bit agreement and successful completion were checked.
+These matching observations do not promise bit-identical repeated or cross-platform
+logarithms. Owned examples and verification outputs are removed; publication
+restrictions are unchanged.
 
 ### Failed preparation ownership
 
