@@ -117,6 +117,25 @@ logical memory and no temporary use; the measurements retain their sample spread
 and do not justify an engine optimization. Fresh macOS/GNU arm64 Linux runs and
 wrong-total controls pass. All pre-existing non-Markdown inputs remain unchanged.
 
+## Active milestone: explicit numeric DOUBLE casts
+
+Add CAST of a bounded numeric expression to FLOAT64 or DOUBLE, producing the
+existing DOUBLE type. The pinned GoogleSQL type map recognizes both names;
+FLOAT64 is its external spelling and DOUBLE is its internal-mode spelling.
+PipeSQL adopts these two spellings for this bounded target. INT64 conversion can
+lose precision; DOUBLE input bits and NULL remain unchanged. Other targets,
+STRING/DATE sources, untyped NULL and SAFE_CAST remain outside this milestone.
+
+Use one unary ToDouble instruction and an explicit CAST boundary in the existing
+iterative parser. Preserve independent inference/validation, expression ownership,
+conditional demand, scratch, admission and replay. The learning path must show
+why casting before an addition differs from casting its result, including owned
+input-overflow spans. Verify literal bit oracles, exceptional values, invalid
+syntax/types, composition, demand, cancellation, refusal/release and forced replay.
+Complete appropriate matching macOS/GNU arm64 Linux checks and fresh examples,
+then review, document, clean owned outputs and commit locally. No new allocation
+owner, allowance, persistent format or general cast framework is planned.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
