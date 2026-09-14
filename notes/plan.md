@@ -35,6 +35,28 @@ closed. Exhaustive execution-allocation histories, arbitrary allocator/concurren
 behavior, whole-process/RSS, Windows and broader durability/sanitizer qualification
 remain unfinished.
 
+## Active: bounded power expressions
+
+Support two-argument POW and its POWER alias for numeric inputs, returning DOUBLE
+through the existing bounded expression path. A compounding-rate query provides
+a useful analytical workload with independent mathematical references. No current
+ownership counterexample requires reopening the completed failure boundaries.
+
+Limit the initial pinned-upstream signature, compliance and kernel trace to
+30 minutes. Resolve negative bases, zero, infinities, NaNs, overflow and underflow
+before choosing the accepted contract. Reassess if evidence conflicts or the
+existing binary call and numeric scratch owners cannot support it without broader
+changes. Do not add a second expression framework or new admission padding.
+
+Preserve NULL propagation, INT64 promotion, demand, skipped branches, owned error
+spans, operation/token bounds and independent validators. Verify kernel references,
+public composition, cancellation/release, replay and maintained allocation/native
+campaigns. Document the accepted profile and precision limits, plus a runnable
+compounding example and its implementation reading path. Complete matching frozen
+sequential macOS/GNU arm64 Linux gates, discovery and evidence reconciliation,
+sequential fresh examples, final review, owned-output cleanup and local commits.
+Keep historical evidence below 641,696 bytes and publication restrictions intact.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
