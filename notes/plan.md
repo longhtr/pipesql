@@ -71,6 +71,24 @@ including producer boundaries, borrowed batches, completion and terminal failure
 Fresh macOS/GNU arm64 Linux runs agree on total 38 and a demanded addition
 overflow with its exact source span. Engine inputs remain unchanged.
 
+## Active milestone: refuse invalid capacity before allocation
+
+The shared `resources::allocate` helper checks observed capacity after calling
+the allocator, but does not first reject a request above its admitted element
+ceiling. Move that refusal before `try_reserve_exact`, retaining checked byte
+diagnostics and the existing post-allocation check. Current public callers have
+not demonstrated an invalid request; the counterexample concerns the helper's
+internal boundary. No allowance or public API changes are needed.
+
+Use the existing diagnostic allocator with the real production helper to observe
+zero allocation attempts for oversized geometry, plus empty, exact-capacity and
+allocator-refusal controls. Require the previous helper to fail this observation.
+After focused checks, run sequential macOS/GNU arm64 Linux core gates, public
+ownership, lifecycle/catalog allocation controls and independent semantic/
+composition checks on frozen inputs, then fresh query-flow success and overflow
+examples. Preserve earlier unchanged native/persistence evidence with its exact
+scope. Finish documentation, evidence, cleanup and local commits.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
