@@ -85,6 +85,41 @@ span. It cannot resume to produce the total. Cancellation also terminates the
 query through this path. [Result ownership](#result-ownership) and the
 [public interface](interfaces.md) own the full lifetime and failure contracts.
 
+## Computed projection costs
+
+The [projection comparison](getting-started.md#compare-computed-projection-costs)
+extends the query trace with six successive additions. Both queries have a scan
+producer followed by a global aggregate. Fusing SELECT stages into a pipeline
+does not combine their scalar programs: the staged query retains six computed
+identities, while the single expression retains one.
+
+Follow `ScanCursor::decode_source` in [scan.rs](../src/execution/scan.rs) into
+`BatchScratch::evaluate` in [computed.rs](../src/execution/computed.rs). Dependency
+traversal selects the definitions needed for the final `adjusted` value. In this
+unconditional workload, evaluation visits each needed definition in order,
+constructs checked numeric inputs, runs its scalar program and copies the result
+and validity into that definition's batch buffer. The raw source is gathered
+once per selection. Later definitions borrow the earlier computed values.
+
+`BatchLayout::new` reserves one buffer for each needed source or computed value.
+Both queries need the raw amount and scalar stack depth two. The staged query
+also needs six computed buffers; the single expression needs one. Each buffer
+holds 256 eight-byte payloads and four eight-byte validity words, so the five
+extra buffers require 10,400 logical bytes. This is a batch-workspace equation,
+not a physical-memory bound. Other query owners and retained plans are separate.
+
+The staged form performs six checked program evaluations and six result copies
+per selection. The single expression performs all six additions within one
+program, followed by one result copy. The workload measures the complete query,
+including scan, aggregation and result validation, because those shared costs
+may outweigh the saved intermediate work.
+
+The comparison preserves addition order and uses small nonnullable integers.
+It does not justify automatic expression substitution across filters, conditional
+demand or materialization boundaries. Those changes must also preserve errors,
+source spans, shared definitions and resource admission. A measured difference
+can identify a candidate cost; it does not by itself justify an optimizer.
+
 ## Blocking operator ownership
 
 [`blocking.rs`](../src/execution/blocking.rs) owns sorted inputs and the run,

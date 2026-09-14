@@ -79,6 +79,48 @@ To try column transformations, numeric expressions, set operations or partition
 count, use [Explore queries on a declared table](query-examples.md). That guide
 creates its own sample database, so you can begin it after cleaning up this one.
 
+## Compare computed projection costs
+
+[examples/projection_cost.rs](../examples/projection_cost.rs) creates 32,768
+amounts by repeating integers 0 through 99. Two queries add one six times, then
+return COUNT and SUM. One uses six SELECT stages; the other uses one SELECT
+expression with the same left-to-right additions. All inputs and intermediates
+fit INT64. Run it with a fresh database path:
+
+```sh
+pipesql_projection_dir=$(mktemp -d)
+cargo run --release --offline --locked --example projection_cost -- "$pipesql_projection_dir/sales"
+```
+
+Require successful exit and the first line:
+
+```text
+verified rows=32768 total=1817536 samples=10 executions_per_sample=100 warmups=20
+```
+
+Every warmup and sample checks the complete aggregate row, requires `Finished`,
+and verifies that result destruction restores the shared reservation baseline.
+The two prepared queries stay live throughout. Both variants run twenty times
+before ten measured pairs; their order alternates between pairs. Each reported
+time averages one hundred checked executions. Setup and preparation have separate
+timings. Each execution includes result construction, execution, row
+validation, completion and destruction, but excludes printing and the final
+reservation check. These are warm repeated executions; no cache eviction is
+attempted.
+
+Compare the ten times and sampled additional logical memory, rather than picking
+the fastest sample. The example rejects observed temporary reservations. Its
+counters are not allocator-usable bytes, filesystem traffic or process RSS.
+Follow [the computed projection explanation](execution.md#computed-projection-costs)
+to connect the measurements to batch storage and evaluation. This fixed workload
+does not establish general query equivalence or a performance guarantee.
+
+Remove only the example directory when finished:
+
+```sh
+rm -r -- "$pipesql_projection_dir"
+```
+
 ## Observe grouping with less memory
 
 [The grouping example](../examples/grouping.rs) creates 8,192 sales rows across
