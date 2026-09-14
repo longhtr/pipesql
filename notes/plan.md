@@ -135,6 +135,28 @@ logical memory and no temporary use; the measurements retain their sample spread
 and do not justify an engine optimization. Fresh macOS/GNU arm64 Linux runs and
 wrong-total controls pass. All pre-existing non-Markdown inputs remain unchanged.
 
+## Active milestone: extract a calendar year
+
+Add the bounded projection `EXTRACT(YEAR FROM date)` so analytical queries can
+group DATE values by calendar year. Reuse the validated DateValue calendar
+conversion and existing typed computation, demand and batch owners. Accept a
+DATE column or existing bounded DATE constant expression; return INT64 with
+input nullability and fold constant inputs. Later stages can use the projected
+numeric identity. Other date parts and unsupported argument forms remain rejected.
+
+Confirm upstream semantics before implementation. The first falsifier is a
+literal set of calendar boundaries, including years 0001 and 9999, dates before
+the epoch, leap/century transitions and NULLs. Preserve owned rejection spans,
+source corruption detection, conditional demand, cancellation, admission and
+replay. Add no calendar algorithm, general expression framework, allocation owner,
+allowance or persistent format when existing owners suffice.
+
+Update logical-plan diagnostics, add a runnable year-grouping example and connect
+it to the date conversion owner. Finish focused checks, matching sequential
+macOS/GNU arm64 Linux core, semantic/composition and affected ownership checks,
+then sequential fresh examples, documentation, review and owned-output cleanup.
+Commit coherent verified changes and synchronize the reviewed checkpoint.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
