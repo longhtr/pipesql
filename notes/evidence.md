@@ -5,6 +5,87 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Overlapping report lifetimes
+
+`3e7156a` extends the existing [snapshot tests](../tests/catalog_lifecycle/snapshots.rs)
+with the retained event report and independent literal answers for eight,
+sixteen and twenty-four events. Two real reader threads stop after each adds
+its own spill storage, before rows are emitted. An admitted writer retains the
+third append. At 64 MB, a third report refuses shared memory admission with typed
+`native query workspace` fields; partial construction releases all its charges
+without changing the parked owners. Reclamation while the writer is held returns
+contention without advancing the generation.
+
+Four schedules vary publication before/after the first reader finishes and which
+reader finishes first. The older reader cancels; the newer reader completes.
+Both reopen their retained plans with fresh tokens. Exact schemas, complete
+nullable groups, commit receipts and generation increments agree. Each terminal
+transition reconciles memory against the other live owners; cancellation and
+completion release each parked reader's temporary storage separately. Reclamation
+can proceed between reader releases, and all reservations return to the resident
+baseline afterward. Fresh preparation and close/reopen produce the twenty-four
+event answer and retain all three durable receipts.
+
+A fifth scenario challenges pin protection. It identifies the old fixture catalog
+through a directory difference and the literal format tag, independently of the
+engine's reclamation traversal. After publication and reclamation, it deliberately
+unlinks that pinned catalog. The older reader's reopened cursor must return
+`Io(NotFound)`; restoring the object must let the same plan succeed. This control
+rejects the false positive in which an already open descriptor survives an
+erroneous unlink. Every wait has a thirty-second deadline; report progress loops
+are bounded. These are enumerated schedules, not arbitrary-race or scheduler
+coverage. The [lesson](../docs/event-report.md#follow-overlapping-readers) explains
+those lifetime and observation boundaries.
+
+Initial probes found that budgets of 8–32 MB admitted one parked report but could
+refuse a second. The 64 MB schedule admits both plus the writer and still refuses
+a third report. The second reader's spill checkpoint is measured after including
+the writer's temporary reservation, so writer storage cannot satisfy that check.
+No production engine code, API, format, allowance or validator changed.
+
+Sequential optimized macOS/GNU arm64 Linux verification passed the full catalog
+suite and both report examples: 175 catalog tests and four example tests on each
+platform, independently discovered across three executable artifacts. No test
+failed, was ignored or was filtered. Both new tests execute, covering the four
+healthy schedules and the unlink control. All-target warnings-denied Clippy,
+formatting, rustdoc, 101 tooling tests and 44 independent codec fixtures pass.
+The scoped runs took 185.620 seconds on macOS and 88.442 seconds on Linux.
+This test/documentation-only change does not replace the preceding full
+native/persistence gate record or broaden its qualifications.
+
+After both platform suites, eight fresh lessons ran sequentially on macOS then
+Linux: even/skewed reports at both budgets, empty/small reports, the original
+report and calendar lesson. Every process succeeded with empty stderr and exact
+complete stdout agreement. Rows, DOUBLE bits and sampled temporary quantities
+match the retained report checkpoints. Lesson execution took 20.971/12.504 seconds,
+excluding fresh builds; these are verification timings, not performance claims.
+
+The frozen 742-input manifest SHA-256 is
+`8fc5b674156535586329adb4601ecc5ef078b43e5ee69db60f0cc329adbb96d2`.
+Only the two notes files changed afterward; the other 740 inputs retain fingerprint
+`ee27ca18ed8ceca31b2ef83aad9219577ab445569d7c9ba69650b556557290d6`.
+
+| Artifact | macOS SHA-256 | GNU arm64 Linux SHA-256 |
+| --- | --- | --- |
+| Scoped verification receipt | `5acb2d184fd24d6e147fb579fb597688928ce571cbade293a7189627341093c2` | `47da54bec0e0db6a6c5d2d5a7996def131419c0f9c8af3e65cafe54025cba2cd` |
+| Fresh lesson receipt | `fd08f7d15f2c40a8609b62c4a37201aa4b8a38083554870a030b220573ee2e10` | `9a872f85b3d1dfbece90857c47ff74c9340ddc148efc87ac4e4d83b3b870d3cd` |
+| Fresh scaled-report binary | `abb5f0e9fa3289ffb4a6e35b171c93e84c9fdc8c9e9e7bf9b2ac2345110e9348` | `69911b611314d93a40633807f042add22e554803a832595877e6a939a1ad33f6` |
+
+Monitoring sampled CPU/RSS, memory pressure/swap, disk capacity/I/O and network.
+Host pressure was normal/warning; swap ranged from 1,697.25 to 3,490.44 MiB and
+available disk stayed above 185.21 GiB. Sampled disk throughput reached 220.81 MB/s;
+compiler/owned-process samples reached 96.8% CPU and 428,208 KiB RSS. Container
+samples reached 883.5 MiB with no OOM kill and zero network traffic. One Mac Cargo
+job and one Linux CPU/job were used; Linux retained uid/gid 1000, 2 GiB without
+extra swap, no network and native database storage. These observations do not
+qualify physical/RSS bounds. General concurrency, sanitizer coverage, Windows,
+broader durability and the combined-query macOS usable deficit remain unfinished.
+
+Final documentation verification passed 932 local links. Owned probes, databases,
+logs, source exports, manifests, build targets, monitoring outputs and the
+verification container were removed. No owned verification process remained;
+the original workspace target and preserved Linux image are unchanged.
+
 ## Composed report allocation histories
 
 `c78e814` repairs `General::assemble` and extends the existing

@@ -78,13 +78,20 @@ quality work is not deferred to the final gate.
 
 The active goal is **4. Exercise overlapping report lifetimes**.
 
+The [overlapping-report checkpoint](evidence.md#overlapping-report-lifetimes)
+`3e7156a` verifies four bounded thread schedules, shared-budget refusal,
+publication/reclamation, cancellation, pinned-plan reuse and an effective unlink
+control. Both platform catalog/example suites and fresh lessons pass. No engine
+repair was required; the preceding full native/persistence checkpoint remains
+unchanged.
+
 The report observer exposed an early reservation release during constructor
 failure. Keeping `Minimum` intact through fallible optional allocation repaired
 that boundary without changing an allowance. Both full platform gates and fresh
 lessons now pass; the [evidence record](evidence.md#composed-report-allocation-histories)
 owns the failure, repair, observation scope and retained limitations.
 
-Goals 1–3 have verified outcomes; six planned outcomes remain. Queue entries are
+Goals 1–4 have verified outcomes; five planned outcomes remain. Queue entries are
 not already activated goals. Activate one through the goal tool at a time.
 Prerequisites below name queue positions; existing narrower scenarios are inputs
 to these goals, not work to repeat for its own sake.
@@ -94,7 +101,7 @@ to these goals, not work to repeat for its own sake.
 | 1. Establish the composed report — [verified](evidence.md#composed-report-across-appends) | Current baseline | Run the sixteen-event public query against literal rows; deliberately alter one expected group and require rejection. | Add reusable, bounded fixture construction and an independent reference answer. Check all four types, LEFT JOIN multiplicity, nullable year groups, two append generations, schema, Finished and release. Explain the fixture and query beside their owners. Reuse [composed](../examples/composed.rs), [calendar](../examples/calendar_year.rs) and [snapshot](../tests/catalog_lifecycle/snapshots.rs) patterns. |
 | 2. Exercise scaled spill and refusal — [verified](evidence.md#scaled-report-spill-refusal-and-replay) | 1 | Compare one high-budget run with one admitted low-budget run and assert observed temporary storage. | Add the scaled profile, skew/NULL/empty variants and exact answers. Exercise memory and temp refusal, spill cancellation and replay using existing [grouping tests](../src/execution/aggregation/grouping/tests/replay.rs) and [resource contracts](../docs/resources.md). Repair any affected producer/admission defect; do not lower expectations to avoid the failing path. |
 | 3. Reconcile transient allocation histories — [verified](evidence.md#composed-report-allocation-histories) | 2 | Arm the existing observer around one preparation/execution/drop history for the report, then challenge it with a known wrong attribution. | Extend the [ownership caller](../tools/fixtures/composed-ownership.rs) for cold, reused and refused construction histories at both pathname lengths/platforms. Observe transient requested/usable quantities, live errors and release separately. Resolve any newly exposed engine ownership gap. Compare with the retained native-reuse limitation below without padding an allowance or claiming a general physical cap. |
-| 4. Exercise overlapping report lifetimes | 1–3 | Park two report readers at different generations, cancel one while a writer/reclaimer advances, then rerun both pinned plans with fresh tokens. | Extend the existing [real-thread snapshot scenario](../tests/catalog_lifecycle/snapshots.rs) with blocking report state, shared-budget refusal and bounded alternative publication/cancellation/completion orders. Require exact old/new rows, receipts, clean terminal ownership and healthy reuse. Retain bounded waits and a control that breaks pin protection. This is enumerated schedule evidence, not arbitrary-race freedom. |
+| 4. Exercise overlapping report lifetimes — [verified](evidence.md#overlapping-report-lifetimes) | 1–3 | Park two report readers at different generations, cancel one while a writer/reclaimer advances, then rerun both pinned plans with fresh tokens. | Extend the existing [real-thread snapshot scenario](../tests/catalog_lifecycle/snapshots.rs) with blocking report state, shared-budget refusal and bounded alternative publication/cancellation/completion orders. Require exact old/new rows, receipts, clean terminal ownership and healthy reuse. Retain bounded waits and a control that breaks pin protection. This is enumerated schedule evidence, not arbitrary-race freedom. |
 | 5. Recover the mixed append history | 1 and 4 | Interrupt one report-data append between an issuance/publication boundary and verify the public reopen outcome against independent history. | Extend the existing [interruption campaign](../tools/check-catalog-interruption.py) with the composed data and retained reader/receipt history where process lifetime permits. Cover relevant publication cuts and recovery-after-failure, inspect the persisted graph independently, and require a healthy subsequent append/report. Reuse process ownership and cut machinery; do not implement a second publisher. |
 | 6. Challenge query composition | 1–2 | Apply a harmless rename or legal projection boundary to the report and compare complete typed answers; a wrong-row oracle must fail. | Extend the [composition corpus](../tools/check-composable-aggregates.py) with bounded variants of identities, NULL predicates, source/derived inputs and numeric consumers. Include rejected near-misses and demanded spans. Use only equivalences guaranteed by the language; record covered dimensions and retain replayable failing inputs. No general fuzz framework is required. |
 | 7. Challenge corruption and failed recovery | 5 | Corrupt one referenced typed payload and one authoritative metadata field in fresh quiescent fixtures; demand must fail without silently choosing an older valid state. | Add composed-workload cases to existing [graph and corruption checks](../docs/verification.md#independent-catalog-inspection). Preserve skipped payload demand, bounded validation, failed-recovery outcomes and cleanup. Independently distinguish structural validity from the report's semantic result. Keep source and scratch corruption expectations with their actual owners. |
@@ -103,9 +110,9 @@ to these goals, not work to repeat for its own sake.
 
 ### Estimate and reassessment
 
-Six planned goals remain after verifying allocation histories. Budget **9–15
+Five planned goals remain after verifying overlapping reports. Budget **8–14
 remaining goals**, allowing three to nine bounded prerequisite repairs or necessary
-splits. The initial mapped estimate was 12–18. Goals 1 and 2 required no engine
+splits. The initial mapped estimate was 12–18. Goals 1, 2 and 4 required no engine
 repair; goal 3 exposed one concrete fault-path ownership defect and repaired it
 within that goal. That finding supports retaining contingency, but does not
 justify inventing an additional completed goal or expanding the queue.
@@ -114,7 +121,7 @@ explicit internal scope; it was not a reliable production-readiness estimate.
 
 This is a planning allowance, not a completion promise or a calendar estimate.
 An allocation-history explanation, concurrency defect or recovery repair can
-outweigh several feature goals. The first three goals now provide observed costs
+outweigh several feature goals. The first four goals now provide observed costs
 and failures; later discoveries update this same queue with their concrete reason.
 Do not manufacture goals to use the allowance. Retire a planned item only when
 its full outcome already has applicable evidence. Additional SQL functions,
