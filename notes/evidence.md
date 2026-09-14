@@ -5261,3 +5261,132 @@ Only notes changed after the freeze. The other 742 inputs retain fingerprint
 Owned measurement databases, exports, targets, logs and monitor outputs were
 removed with the container; no owned process remained. The original 342-file
 target and preserved verification image/toolchains were unchanged.
+
+
+## Final internal analytical checkpoint
+
+The nine-outcome analytical learning checkpoint is complete on macOS and GNU
+arm64 Linux. This is an internal educational checkpoint, not package publication,
+production certification or API/format stabilization. The package remains 0.0.0.
+The completed queue and acceptance criteria are retained at `081b1f8` in
+`notes/plan.md`; the current plan retains the unresolved qualifications.
+
+The evidence chain covers the [literal report](#composed-report-across-appends),
+[scaled spill/refusal/replay](#scaled-report-spill-refusal-and-replay),
+[allocation histories](#composed-report-allocation-histories),
+[overlapping lifetimes](#overlapping-report-lifetimes),
+[interrupted publication/recovery](#mixed-report-append-interruption-and-recovery),
+[composition and demand](#composed-report-identities-and-demand),
+[corruption and failed recovery](#report-corruption-and-failed-recovery), and
+[measured learning path](#report-cost-and-complete-learning-path). The final gate
+combines these retained cases on one frozen tree. The
+[event-report lesson](../docs/event-report.md) connects setup, complete answers,
+resource ownership, snapshots, publication outcomes, failure and cleanup.
+
+### Final tree and verification
+
+The audit checked public interfaces and claims, dependency and unsafe boundaries,
+change locality and lesson navigation. Since the composed-report work began, the
+production change is the grouped constructor's reservation-lifetime repair;
+Cargo dependencies and the filesystem implementation did not change. The engine
+retains `forbid(unsafe_code)`; native unsafe boundaries remain in the filesystem
+and CLI owners. No new dependency, framework or unsupported capability claim was
+introduced. The retained API/format and platform limitations remain explicit.
+
+Complete sequential gates used source revision `081b1f8` and 744 matching inputs.
+Manifest SHA-256:
+`b6f6af8bc8e1b3c368e442548f9df739dd0a514e5ce3229c5942a4132ec9ac4b`.
+Both receipts report full scope, all 24 stages passed, unchanged inputs, no
+finalization errors and successful process exit. Each platform discovered 687
+ordinary Rust tests across 21 targets, including 175 catalog tests and four
+report-example tests, with none ignored or filtered. The separate lease subprocess
+passed one test with six intentional filtered siblings. Both passed 103 tooling
+tests, 44 independent codec fixtures, 24 aggregate-semantic cases and 350
+composition records. Semantic records agree after database-path normalization;
+composition records agree after removing path-dependent digest fields only.
+
+Public catalog allocation prefixes 0–1055 and healthy control 1056 passed at
+both pathname lengths on both platforms. Report preparation prefixes 0–12 and
+healthy 13, construction prefixes 0–106 and healthy 107, and three complete
+report histories at each pathname length passed with the retained controls.
+Native initialization covered 30 macOS and 80 Linux cells; synchronization
+covered 241 per platform and native I/O covered 1,394 per platform. Linux retains
+the two Darwin ACL exclusions.
+
+The original interruption workload retained 76 append cuts, 46 recovery cuts
+and 249 independent graph checks. The report added 88 append cuts, 46 recovery
+cuts and 273 graph checks. All 528 emitted process outcomes agree across
+platforms: 256 intentional exit-86 cuts, six expected exit-101 outcomes and 266
+exit-0 outcomes. Intermediate unreferenced-name deletion order retains the
+[documented qualification](#mixed-report-append-interruption-and-recovery).
+The final graph campaign passed 48 cases, two original oracle controls and the
+report wrong-answer control, with retained CLI limits, genesis, lease and
+independent column-order checks. This includes all added overlap, replay,
+allocation, composition and corruption cases through their existing owners.
+
+### Fresh workflow and timing
+
+After both gates, fresh release builds and workflows ran sequentially on macOS
+then Linux. Each platform passed 18 scenarios: eight ordinary lessons, eight
+measured scaled-report cases and two intended refusals. Ordinary lessons cover
+even/skewed at both budgets, empty/small at low budget, event report and calendar
+year. Measured cases cover even, skewed, small and empty at both budgets. Every
+successful run checked complete answers and Finished; ordinary stderr was empty.
+All complete stdout hashes agree across platforms. Each measured run emitted the
+five expected phases, and corresponding temporary-byte and reclaimed-name counts
+agree. Insufficient query workspace was refused; an invalid measurement option
+was rejected before creating a database. Successful execution totals, excluding
+builds, were 40.732 seconds on macOS and 29.128 seconds on Linux.
+
+| Gate stage | macOS seconds | Linux seconds |
+| --- | ---: | ---: |
+| Public allocation | 731.279 | 128.003 |
+| Rust tests, including compilation | 479.337 | 174.658 |
+| Native I/O | 293.702 | 55.292 |
+| All 24 stages | 1,842.482 | 587.029 |
+
+These three stages account for 91% of the total time difference. Repeated durable
+filesystem operations are a plausible major contributor: the native boundary
+uses F_FULLFSYNC on macOS and fsync within the Linux container's filesystem.
+There was no syscall-duration profile to establish exclusive attribution. This
+mixed compilation, subprocess and storage workload is not a platform query-speed
+benchmark or evidence of equivalent power-loss guarantees. One fresh large
+measured report illustrates the distinction: ingestion took 2.532/0.314 seconds
+on macOS/Linux, while execution took 0.590/0.900 seconds.
+
+| Receipt | SHA-256 |
+| --- | --- |
+| macOS complete gate | `00ce0d141f68d8bd320ccdf2b5fa8bfde2cd0fb0ca5a108f718cb0315e546c74` |
+| Linux complete gate | `d20f4bad26545eb473e1cb81debfc785187b445a99803adab52c5b4ecdfa72ab` |
+| macOS fresh scenarios | `81029b6e3448d52b07bb33a8f0129a469d10ffa54db5b33e027d00b18826fcf3` |
+| Linux fresh scenarios | `6196066b994d2d9adf8a6868907c04d0751fb9ec873d175149f872280d0f250e` |
+
+Fresh scaled-report artifact SHA-256 identities were
+`43faf8c7319393c5d973ae338fbf60ce9ad9d7b8c14adcefd0090e8070e61305` (macOS) and
+`fa6f0c606430e45c05e24056259db9630273ed223dfc17ed19c7a422026c3561` (Linux).
+Receipt identities identify this observation; reproducing timings or identical
+platform binaries is not an acceptance criterion.
+
+### Resources, cleanup and limits
+
+Host/process CPU, memory pressure, swap, disk capacity/I/O and network were
+sampled during sustained work. Free-memory percentage reached 31%; swap ranged
+1,778.38–2,427.06 MiB. Docker peaked at 1,319.936 MiB with no OOM and zero network
+traffic. Separate one-second disk observations included 17.10–25.47 MB/s; the
+periodic iostat samples were since-boot averages, not instantaneous peak I/O.
+Cargo used one job. Linux used uid/gid 1000, one CPU, 2 GiB without additional
+swap, networking disabled and native container database storage.
+
+The unresolved macOS combined-query usable-allocation deficit, arbitrary
+allocator-history and whole-process/RSS bounds, general concurrency/sanitizer
+coverage, broader filesystem/power-loss durability, stable API/format upgrades
+and Windows implementation/runtime remain outside this result. In particular,
+the strict combined-query diagnostic is not newly qualified as passing. See the
+[retained qualifications](plan.md#qualifications-that-remain-outside-this-internal-claim).
+
+Final documentation verification passed 934 local links after consolidating the
+completed queue. Only the two notes changed after the freeze. The other 742 inputs retain
+fingerprint `81a85f90b806adef50d05998bf922750a961dd21b06048aedd4015156391ac54`.
+Owned exports, targets, databases, receipts, logs and monitoring outputs were
+removed, and the verification container and monitor stopped. The original
+342-file target and preserved verification image/toolchains were unchanged.
