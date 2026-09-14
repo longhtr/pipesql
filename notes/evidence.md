@@ -5,9 +5,99 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Blocking controller lifetimes
+
+`df0cace` repairs order and sorted-set controllers, which had the same inline-charge
+lifetime mismatch as joins: their reservations belonged to fields inside the allocation they
+charged. The runtime now retains those existing charges after construction and
+until physical controller release. Order's shared constructor covers ORDER BY,
+DISTINCT, UNION DISTINCT and retained-row partition count. The runtime forwards
+its reservation through declared admission and legacy partition-count admission.
+No allowance, payload allocation, persistent format or
+operator algorithm changes.
+
+The existing physical-capacity regressions independently require a 3,000-byte
+order transfer or a 6,096-byte sorted-set transfer on the tested 64-bit target,
+alongside actual buffer capacities at every retained transition. A control built
+from `59cd4d9` with only the two updated test files rejects the old implementation:
+one order check and three sorted-set checks fail with zero transferred bytes;
+the other 23 blocking tests pass. With the repair, all 27 blocking tests pass
+sequentially. These focused runs intentionally filter the other 411 library tests.
+The control is reconstructable from that retained production revision and the
+test changes; no source archive is required.
+
+Both platforms pass the 14-stage core gate, the public allocator caller's
+`--ownership-only` selection, and the independent aggregate-semantic and composition
+campaigns against one stock CLI per platform. These are scoped checks, not a
+complete 24-stage gate. The [tool map](../tools/README.md) owns the commands;
+`cargo build --release --offline --locked --workspace --bins --examples` builds
+the CLI and fresh example artifacts with warnings denied. macOS arm64 Darwin
+25.6.0 and GNU arm64 Linux 7.0.12-linuxkit use Rust 1.98.1 and offline locked inputs.
+Linux uses uid/gid 1000, glibc 2.36 and native overlay database storage.
+
+The 712-input manifest is
+`a83d43847f75d0ba43cf178f45ecc4184f561cd8f71893db9a09d16698530f78`.
+The exported source and every before/after manifest agree. Only the two notes
+files change afterward; the other 710 inputs retain fingerprint
+`6409dfe52a513c8a9b58eecdffddbd69d3fba02b615cacdd1b662ef01d33f8ba`.
+Each platform executes all 640 ordinary Rust tests, including 143 catalog tests,
+with none ignored or filtered. Independent discovery lists seven nonempty targets
+and six zero-test examples. The separate lease child passes with its six
+intentional filtered siblings. Maintenance passes 99 tooling tests, 44 independent
+codec fixtures and 700 local links. Final documentation verification passes 703
+local links.
+
+At both pathname lengths on both platforms, public ownership retains all eleven
+analytical shapes, six wide set cases, complete join results and lifecycle
+checks. All fourteen negative controls reject. Join construction retains its
+353-allocation census, prefixes 0–352 and healthy control 353. Minimum requested
+and usable headroom remains 4,096/1,400 bytes on macOS and 4,096/3,648 on Linux.
+Preparation refusals, demanded arithmetic failures, overlapping owners and the
+other retained ownership shapes also pass. This does not add exhaustive
+allocation-refusal coverage for ordering or sorted set construction. Their
+independent transfer/capacity checks, exact minima, failure/cancellation paths and
+successful public workloads establish the repaired enclosing lifetime.
+
+The 24 semantic records and 311 composition records agree across platforms after
+removing only ambient database output paths and composition stdout digests. All
+expected failure outcomes remain part of that comparison. Core stage times total
+397.678 seconds on macOS and 159.324 seconds on Linux; public ownership, stock
+build and semantic/composition checks total 108.880 and 94.240 seconds respectively.
+Core receipt SHA-256 values are
+`4a902dc5d3c66c2a51894bec251c18b17016a83f285cedc19dcb3d9151e2492c` and
+`a908b608bf88f185df15f25ae47ba11a4e176063ca2da8805d1da5fd33ce2e2c`.
+Public-check receipt SHA-256 values are
+`a00833d16d8cbdbd423ca99116db0e2e29be3413fa87c6be655312e96e3331a8` and
+`5ee6a68a1f2badd8f8f1738958fdbc2e92a31e2b7fce7159a340a9bb9aee9cfa`.
+These elapsed times are verification costs, not performance benchmarks.
+
+After both platform checks, fresh examples run sequentially on macOS and Linux.
+Declared-table setup and LEFT JOIN complete with their documented rows. Partition
+count returns `(north, 5, 3)`, `(north, 10, 3)` and `(south, 20, 3)`; repeated-region
+difference returns NULL, 1 and 3. Both CLI queries require exact row counts,
+`status=queried` and successful exit. The [reading path](../docs/getting-started.md#count-the-complete-input-beside-each-row)
+connects this behavior to controller storage and independently owned sort buffers.
+
+Forty resource samples observe normal and warning host pressure. Swap ranges
+from 1,432 to 1,648 MiB and ends at 1,432. macOS uses at most two Cargo jobs;
+Linux uses one CPU, one job, a 2 GiB memory/memory-plus-swap limit and disabled
+networking. Eleven container samples observe CPU up to 100.12%, memory up to
+1.214 GiB and zero network traffic. Free host disk remains above 188.34 GiB;
+sampled disk I/O ranges from zero to 131.95 MB/s. Completed development builds
+are removed before platform verification. Monitoring commands have no failures
+or timeouts, and no container OOM kill occurs. These observations include other
+host applications and do not qualify engine admission, usable heap or RSS.
+
+Owned builds, exports, databases, logs, monitoring outputs and the verification
+container are removed. The pre-existing target, installed toolchains and preserved
+verification image remain. Native effect wrappers and persistent publication are
+unchanged; their prior full-gate evidence remains attached to its exact inputs.
+The combined-history usable-heap counterexample, broader durability, concurrency,
+sanitizer, physical-memory and Windows qualifications remain unresolved.
+
 ## Full verification checkpoint
 
-This complete checkpoint predates the blocking-controller extension below;
+This complete checkpoint predates the blocking-controller extension above;
 changed source requires its own verification record.
 
 Both complete 24-stage gates verify the 712 frozen inputs retained in `1e5cfdc`
@@ -80,32 +170,6 @@ removed. Pre-existing target artifacts, the image and installed toolchains remai
 Windows, broader durability, physical-memory and sanitizer qualification remain
 unfinished.
 
-### Blocking controller lifetimes
-
-Order and sorted-set controllers had the same inline-charge lifetime mismatch
-as joins: their reservations belonged to fields inside the allocation they
-charged. The runtime now retains those existing charges after construction and
-until physical controller release. Order's shared constructor covers ORDER BY,
-DISTINCT, UNION DISTINCT and retained-row partition count in both declared and
-legacy admission paths. No allowance, payload allocation, persistent format or
-operator algorithm changes.
-
-The existing physical-capacity regressions independently require a 3,000-byte
-order transfer or a 6,096-byte sorted-set transfer on the tested 64-bit target,
-alongside actual buffer capacities at every retained transition. A control built
-from `59cd4d9` with only the two updated test files rejects the old implementation:
-one order check and three sorted-set checks fail with zero transferred bytes;
-the other 23 blocking tests pass. With the repair, all 27 blocking tests pass
-sequentially. These focused runs intentionally filter the other 411 library tests.
-The control is reconstructable from that retained production revision and the
-test changes; no source archive is required.
-
-Platform verification is pending. Its scope is the core gate, public ownership,
-aggregate semantics/composition and fresh examples. Native effect wrappers and
-persistent publication are unchanged; their earlier full-gate evidence remains
-attached to its exact inputs, not promoted to this changed tree. The separate
-combined-history usable-heap counterexample remains unresolved.
-
 ### Failed wide-join construction
 
 The initial 64-column nullable STRING LEFT JOIN execute-only census observed
@@ -142,8 +206,8 @@ retain separate fresh callers. The strict combined history remains replayable as
 claim. A fresh post-gate macOS replay fails with exit 101, 349 allocations,
 nine frees, requested headroom 16,528 and usable headroom -220,030 bytes. The same
 fresh Linux history completes with exit zero; that observation does not establish
-a general bound. Ordering and sorted-set controller lifetimes require a separate
-affected boundary review before extension.
+a general bound. The affected ordering and sorted-set lifetimes are repaired in
+the blocking-controller extension above.
 
 ### Bounded power expressions
 

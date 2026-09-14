@@ -7,14 +7,15 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `1e5cfdc` pass on matching frozen macOS and GNU
-arm64 Linux inputs: 640 ordinary Rust tests per platform, 24 independent aggregate
-semantic cases and 311 composition cases, plus the applicable allocation
-and native campaigns. The
-[checkpoint](evidence.md#full-verification-checkpoint) records exact inputs,
-controls and limits. Linux retains two Darwin ACL exclusions. The
-[platform matrix](../docs/testing.md#platform-status) distinguishes implementation,
-execution and qualification; a passing gate does not establish release readiness.
+The [blocking-controller lifetime repair](evidence.md#blocking-controller-lifetimes)
+in `df0cace` passes matching macOS and GNU arm64 Linux scoped verification:
+14-stage core gates, 640 ordinary Rust tests per platform, public ownership,
+24 independent aggregate-semantic cases, 311 composition cases and fresh examples.
+Independent physical-size controls reject the prior implementation. These checks
+establish the affected boundary; they do not constitute a complete 24-stage gate.
+The previous [full checkpoint](evidence.md#full-verification-checkpoint) remains
+attached to `1e5cfdc`. The [platform matrix](../docs/testing.md#platform-status)
+distinguishes implementation, execution and qualification.
 
 Use the [language manifest](../docs/language.md#current-public-query-manifest),
 [implementation reading path](../docs/README.md#learn-the-implementation),
@@ -45,30 +46,9 @@ examples. The prepared query remains independently owned while errors are live.
 The combined construction-refusal and changed-width demanded-expression history
 still exposes a macOS native usable-heap deficit, with requested ownership covered.
 Its fresh Linux replay completes. Keep that strict diagnostic available without
-a passing or general physical-memory claim. Ordering and sorted-set controllers
-share the inline-charge lifetime pattern; their enclosing ownership is the next
-concrete architectural boundary to resolve before extending those consumers.
-
-## Active milestone: blocking controller lifetimes
-
-Make the inline-charge lifetime consistent across join, order, DISTINCT,
-partition count and sorted set controllers. Their nested sorters own payload
-allocations, but their inline fields occupy an enclosing controller vector.
-That vector must be freed before its charge is released. Use the existing
-reservation transfer and runtime owner; preserve admission totals and allocation
-order. A new execution framework is unnecessary for this boundary.
-
-Extend the independent physical-capacity regressions to check the transferred
-controller sizes and retain exact-minimum admission, refusal before I/O, replay,
-cancellation and terminal cleanup. Exercise affected public construction/release
-histories on macOS and GNU/Linux, with negative controls and complete results.
-The 27 focused blocking tests pass, and the updated physical-size oracles reject
-the prior implementation in four checks. Complete the 14-stage core gate, public
-ownership selection, aggregate semantics/composition and fresh examples on both
-platforms against frozen inputs. Report that scope without promoting an earlier
-full gate to changed inputs. Explain the ownership path beside its implementation, commit coherent
-changes locally and remove owned outputs. Keep the separate native usable-heap
-counterexample unresolved unless new evidence explains and repairs it.
+a passing or general physical-memory claim. Join, ordering and sorted-set
+controllers now retain their inline charges through physical release. Broader
+allocator histories still need their own evidence.
 
 ## Next engineering priorities
 
