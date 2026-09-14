@@ -108,6 +108,24 @@ owned-error transfer and prepared release. Both pathname lengths and platforms
 pass the complete ownership selection and sixteen negative controls. Production
 inputs remain unchanged; broader allocator/RSS qualifications remain open.
 
+## Active milestone: STRING character-length projections
+
+Add bounded CHAR_LENGTH beside BYTE_LENGTH through one typed STRING-length
+computation with an explicit unit. Reuse the existing projection identities,
+validators, demand, batch/row evaluation and resource owners. Literal inputs fold;
+column inputs borrow checked text. Count Unicode scalar values and teach their
+difference from encoded bytes and displayed grapheme clusters. Keep the existing
+bounded projection profile; do not add aliases, nested STRING calls or a generic
+expression framework.
+
+Verify independent Unicode/NULL/boundary oracles, rejection spans, both validators,
+composed and forced-replay paths, source demand and corruption, cancellation,
+admission and allocation ownership. Complete appropriate matching macOS/GNU arm64
+Linux checks and fresh examples sequentially. Preserve byte-length semantics,
+resource allowances, formats, open qualifications and publication restrictions.
+Finish implementation, learning paths, compact evidence, local commits and owned
+cleanup.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
