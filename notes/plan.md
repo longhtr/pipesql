@@ -76,7 +76,7 @@ quality work is not deferred to the final gate.
 
 ### Ordered checkpoint goals
 
-The active goal is **5. Recover the mixed append history**.
+The active goal is **6. Challenge query composition**.
 
 The [mixed-append checkpoint](evidence.md#mixed-report-append-interruption-and-recovery)
 `a002bb1` verifies the report's complete append/recovery cut history and healthy
