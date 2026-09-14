@@ -5,6 +5,91 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Borrowed logical-plan explanations
+
+`2244948` adds `PreparedQuery::logical_plan()` and the public borrowed
+`LogicalPlan` formatter. The [runnable preparation example](../docs/frontend.md#inspect-the-prepared-plan)
+uses the existing sales setup and `query-flow.sql`. It prints the actual logical
+relations, source occurrences, input edges, visible identities, postfix scalar
+program and final output position, then verifies one nullable INT64 total of 38.
+Logical structure remains distinct from physical scheduling, demand and costs.
+Names absent from the retained plan are not reconstructed; diagnostic text and
+labels remain unstable.
+
+The formatter owns only a shared Plan reference and writes directly to its sink.
+It has no database, execution or catalog effect authority and adds no allocation
+owner, pin, allowance or format change. Source comparison with `61ce436` retains
+every pre-existing production file except the public entry point and exports in
+`src/frontend.rs` and `src/lib.rs`. Plan and PreparedQuery storage fields, parser,
+binder, independent validators, scalar evaluation, execution and native owners
+remain unchanged. The new formatting module handles existing semantic variants
+directly, without a visitor framework or another query representation.
+
+Six public tests retain literal complete reports for projections, grouping,
+repeated output positions, joins, positional union and legacy input. Additional
+literal lines cover scalar operations, typed constants, STRING measurement,
+nullable LEFT JOIN outputs, structural operators and lowered filter decisions.
+Every byte-capacity cut of one report propagates sink failure immediately;
+the complete sink is its control. Formatting preserves logical reservations and
+the prepared snapshot across append, followed by normal execution and release.
+One initial join oracle incorrectly counted a source alias as a node. Existing
+binder inspection confirms that FROM aliases enter source scope directly; the
+corrected expectation follows retained nodes rather than original syntax.
+
+Sequential macOS and GNU arm64 Linux 14-stage core gates pass 669 ordinary Rust
+tests per platform, discovered across eighteen targets: seven nonempty suites
+and eleven empty example harnesses. macOS has 445 library, 15 CLI, 165 catalog,
+10 execution, seven lifecycle, six load and 21 filesystem tests. Linux has 447
+library and 19 filesystem tests, with the remaining counts equal. No ordinary
+test is ignored or filtered. The separate lease subprocess passes one test with
+six intentional filtered siblings. Each platform also passes 100 tooling tests,
+44 independent codec fixtures, warnings-denied Clippy, Rustdoc and doc tests.
+Stage times total 469.692 s on macOS and 185.344 s on Linux.
+
+The maintained ownership selection passes on both platforms and pathname lengths,
+including seventeen analytic cases, six wide-set cases, construction prefixes
+0–352 and healthy control 353, and all sixteen negative controls. The existing
+partial-result observer now covers successful and failed formatting into fixed
+caller storage. The healthy selection's twelve formatting intervals per platform report zero
+allocation and free events; nonzero preparation events provide positive controls
+for the same observer. No arbitrary allocator-history or process/RSS claim follows.
+The separate aggregate-semantic/composition and native fault campaigns are not
+repeated; their preceding checkpoints retain their recorded scope.
+
+Fresh examples run after verification, macOS then Linux. Declared setup returns
+the expected north/south totals. The logical-plan example produces all ten
+expected lines, empty stderr and exit 0 on both platforms. Its complete stdout
+SHA-256 is `b76051675e8902a55a7124159f6768425cda4f407a9d1033c98eaec0bc8c2d1a`.
+The example checks schema, one complete row, Finished and logical owner release.
+
+Both platforms use frozen 733-input manifest
+`85f4def06c54ca5efe2ee7164d120fdbe079d6a9783a5d19d9b360c0e13db671`.
+Only the two notes files change afterward. The other 731 inputs retain fingerprint
+`9366445815f0868fb2da0d448dc41e98278a2a7f37d9b1a9fddd12b61af799f4`.
+
+| Artifact SHA-256 | macOS | GNU arm64 Linux |
+| --- | --- | --- |
+| Core receipt | `039907f3d48d198bb53d80f69bf05b3a3a5cd2c3e54b4ef26c2867dfa1511eab` | `2450765d8777dd73d695699a5a46b4764de89fa16cdeb5c2a9c2beeb1c6daf7a` |
+| Ownership driver | `55c315fc3755cc64c21380871ca778c259a7a8c75a33e1ff17832f3a7f853db8` | `f96c1488a460a77fa56775cd27464886dcef18c5157f18cc94f6462d23a877c3` |
+| Ownership log | `b8fce7262e4846392bf78b7bc47c4b62a82dfdb4ee7a488c387c8274f65ebe8a` | `3c3ff0790f90c01574fb5f01779bd6e4757f92f3a7d1240bbe54113ad429c423` |
+| Logical-plan example | `b9b2d6c5d37cac79b9f520eaf4869d854cc8deeffadcad79a2f7a11866b71272` | `d7d9c86ddf162279838e9c26ef0bef988dfd16f116faf5ca91978e6b1930f474` |
+
+Monitoring records 144 host and 29 Docker samples. Host pressure is normal/warning,
+swap spans 1,174.94–2,012.69 MiB, free disk stays above 186.16 GiB and sampled
+I/O spans 0–170.26 MB/s. Relevant Rust/build processes peak at 100% CPU and
+810,880 KiB RSS. Docker peaks at 104.12% sampled CPU and 1.252 GiB memory, with
+no OOM and zero network traffic. Host en0 counters grow by 395,455,722 input and
+45,423,071 output bytes, including unrelated traffic. Both platforms use one
+Cargo job; Linux uses uid/gid 1000, one CPU, 2 GiB without extra swap, read-only
+source and native database storage. These are observations, not admission or
+whole-process bounds.
+
+All owned logs, manifests, exports, targets, tutorial databases, monitoring and
+the verification container are removed. No owned verification process remains;
+the original workspace target, toolchains and image remain. The unresolved
+allocator, concurrency, durability and Windows qualifications are unchanged.
+Final documentation verification passes 875 local links.
+
 ## SQL equality and stored DOUBLE bits
 
 `55c6216` adds [a runnable equality tutorial](../docs/equality.md) and
