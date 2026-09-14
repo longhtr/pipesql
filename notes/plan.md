@@ -143,6 +143,22 @@ logical memory and no temporary use; the measurements retain their sample spread
 and do not justify an engine optimization. Fresh macOS/GNU arm64 Linux runs and
 wrong-total controls pass. All pre-existing non-Markdown inputs remain unchanged.
 
+## Active milestone: define a finite analytical learning checkpoint
+
+Define an internal checkpoint around one useful end-to-end analytical workload,
+clear interfaces and ownership, teachable implementation flows and observable
+failure/resource behavior on macOS and GNU/Linux. This does not activate a
+release, stabilize a format or replace the production criteria.
+
+Audit current contracts and evidence before fixing the remaining queue. Map each
+unmet criterion to a bounded outcome, prerequisite, inexpensive falsifier and
+sufficient verification. The provisional planning estimate is 20–35 additional
+goals, including this audit; revise it if the mapped gaps warrant a different
+range. Resource, concurrency and recovery findings carry the largest uncertainty.
+Keep this plan as the working owner, link existing contracts and evidence, and
+avoid duplicate roadmaps or reopening closed features without an affected case.
+Finish with a reviewed, verified documentation checkpoint and repository sync.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
