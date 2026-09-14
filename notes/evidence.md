@@ -5,6 +5,97 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Composed report allocation histories
+
+`c78e814` repairs `General::assemble` and extends the existing
+[ownership caller](../tools/fixtures/composed-ownership.rs), observer and campaign.
+The retained sixteen-event report produces thirteen literal groups. Three complete
+histories include cold preparation, partial-result drop, spill cancellation,
+retained-plan reuse and healthy continuation after preparation/construction
+refusal. Both short and 384-byte paths run through the stock library on macOS
+and GNU arm64 Linux. Caller row storage stays outside the armed observer.
+
+The first constructor sweep exposed a real requested-ownership defect at prefix
+97, refusing the `hash group owner` allocation. All 97 successful allocations
+were freed and endpoint counters balanced, but transient requested headroom was
+-25,186 bytes and usable headroom was -36,085 bytes. `General::assemble` had
+unpacked `Minimum` before fallible optional construction; reverse local drop
+order released the reservation while fallback buffers remained live. The repair
+keeps that owner intact until all fallible construction finishes. It changes no
+allowance, allocation framework, validator, public API or persistent format.
+The [lesson](../docs/event-report.md#follow-a-failed-allocation) follows this
+ownership boundary beside the implementation.
+
+Both platforms now pass preparation prefixes 0–12 with healthy control 13 and
+construction prefixes 0–106 with healthy control 107, at both pathname lengths.
+Errors remain live while heap counters, reservations, descriptors and formatting
+under allocation denial are checked. Successful allocation and pre-free samples
+reconcile separately from terminal counters. Minimum constructor headroom is
+4,096 requested bytes on both platforms, and 2,488/4,096 usable bytes on
+macOS/Linux. Complete and interrupted executions balance allocation/free events;
+prepared-owner drop and final descriptors, memory and temporary release agree.
+
+Four added controls reject wrong resident attribution and missing preparation,
+construction or cancelled-terminal observation. The terminal control initially
+exposed a harness hole: checking for some frees accepted an incomplete trace.
+Requiring balanced execution allocation/free counts closes it. The independent
+campaign parser requires complete prefix sequences, phase order, exact row counts,
+headroom and release; its unit test rejects eleven damaged records. All twenty
+ownership controls fail at their intended oracle on both platforms.
+
+The complete sequential 24-stage gates pass on identical frozen inputs:
+
+- 685 ordinary Rust tests per platform, independently discovered across 21
+  targets; none failed, ignored or filtered. macOS/Linux library counts are
+  449/451 and filesystem counts 21/19. Both include 173 catalog tests. The separate
+  lease subprocess passes one test with six intentionally filtered siblings.
+- 101 tooling tests, 44 independently reproduced codec fixtures, 24 independent
+  semantic cases and 326 composition records. Cross-platform records agree after
+  removing only database-path stdout lines and composition digest fields.
+- Catalog allocation prefixes 0–1055 and healthy control 1056 at both pathname
+  lengths; initialization 30 macOS/80 Linux cells, synchronization 241 cells and
+  native I/O 1,394 cells per platform. Linux retains two Darwin ACL exclusions.
+- 76 append cuts, 46 recovery cuts, 249 independent graph checks, 43 graph cases,
+  two oracle controls and retained CLI, genesis, lease and column-order checks.
+
+Both receipts confirm unchanged inputs and successful target/case cleanup.
+The gates took 1,825.462 seconds on macOS and 512.602 seconds on Linux.
+After both gates, eight fresh lessons ran sequentially on macOS then Linux:
+even/skewed 131,072-event reports at both budgets, empty/small reports, the original
+report and calendar lesson. Every process succeeded with empty stderr and exact
+cross-platform stdout agreement, including DOUBLE bits. Results and sampled temp
+quantities match the preceding scaled-report record. Execution of these lessons
+took 20.335/12.261 seconds, excluding fresh builds; these are verification timings.
+
+The frozen 742-input manifest SHA-256 is
+`02a5a68b3fefa0b9039a2c54a2c109971216df2baf59c967a95e3333fbf7a58e`.
+Only the two notes files changed afterward; the other 740 inputs retain fingerprint
+`9522ba94f8bd0f59aa38711232df7fdfd565baa5ac655c5477ac3bbcc6814094`.
+
+| Artifact | macOS SHA-256 | GNU arm64 Linux SHA-256 |
+| --- | --- | --- |
+| Full gate receipt | `fa68387e8378142886b036e539d1848e5d5c24879dbec7be007bb8d8667bf435` | `e536de85b6f7a33eccd918243aa558e10663fb17af3caa497aff37a902c054b6` |
+| Fresh lesson receipt | `572aa58d2a76c4631e6bb5a06889ce84090020b9468c2fef583a545d00c2d79e` | `3a6cb1704c2e06a909c3004c35a1301f2caba5a603349431c9640b488ca38183` |
+| Fresh scaled-report binary | `48971416fe7715bae0233f838331163488bcb36f93ec457a6d6523a964b74dcb` | `69911b611314d93a40633807f042add22e554803a832595877e6a939a1ad33f6` |
+
+Monitoring sampled host CPU/RSS, memory pressure/swap, disk capacity/I/O and
+network during sustained work. Pressure was normal/warning, swap ranged from
+1,217.38 to 2,187.12 MiB and available disk stayed above 185.71 GiB. Sampled disk
+throughput reached 221.96 MB/s; compiler/owned-process samples reached 99.9% CPU
+and 556,992 KiB RSS. Container samples reached 1.300 GiB with no OOM kill and zero
+network traffic. One Mac Cargo job and one Linux CPU/job were used. Linux retained
+uid/gid 1000, 2 GiB without extra swap, no network and native database storage.
+
+These observations qualify the bounded report histories, not arbitrary allocator
+reuse or physical/RSS caps. The separate combined-query macOS usable deficit
+remains unqualified; its strict diagnostic is unchanged. General concurrency,
+Windows and broader durability limits remain in the [plan](plan.md).
+
+Final documentation verification passed 927 local links. Owned logs, manifests,
+source exports, diagnostic/build targets, tutorial databases, monitoring outputs
+and the verification container were removed. No owned verification process
+remained. The original workspace target and preserved Linux image are unchanged.
+
 ## Scaled report spill, refusal and replay
 
 `8eeaa08` adds [scaled_report.rs](../examples/scaled_report.rs) and extends the
