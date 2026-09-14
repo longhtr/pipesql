@@ -743,7 +743,7 @@ The existing 160-token, 4,096-byte query, 64-column source-pool, and 64-column
 public-row bounds still apply. These bounds can reject a query before its argument
 count reaches the source-occurrence capacity.
 
-The [tutorial](getting-started.md#combine-pipeline-results) demonstrates positional
+The [tutorial](query-examples.md#combine-pipeline-results) demonstrates positional
 names and duplicates. [Resources](resources.md#union-all-admission) owns admission
 and replay ownership.
 

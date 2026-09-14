@@ -5,6 +5,32 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## First tutorial and optional queries
+
+The first declared-table walkthrough now reaches cleanup directly after its main
+example. Seventeen optional query sections move intact to
+[the query guide](../docs/query-examples.md), which creates its own sample database
+and cleans it up independently. The documentation index and current inbound links
+follow that owner; the other independent workloads remain in place.
+
+The moved collection matches all 22,986 bytes from `c35003d`, including query
+commands, expected results, reading paths and qualifications. Its SHA-256 is
+`8bc60d8c9e06ddf3aa6b2fe7460659d829d66e6138d24cf63fe25f14a237886c`.
+Only Markdown changes; executable inputs remain unchanged from `df0cace`.
+Its scoped platform evidence below is retained without a new full-gate claim.
+
+Fresh macOS setup runs for the first tutorial and query guide both return the two
+documented region totals. EXTEND and partition count each return all three
+expected rows with exact row counts, successful exit and `status=queried`.
+Both temporary database directories are removed by the documented cleanup command.
+The isolated stock build and walkthrough take 46.751 seconds with one Cargo job.
+Two host observations show normal pressure, swap use of 1,561.94 then 1,553.94 MiB,
+and at least 188.46 GiB free disk. These samples are not peak resource bounds.
+Maintenance passes 99 tooling tests and 44 codec fixtures; final documentation
+verification passes 713 local links. Owned outputs are removed; the pre-existing
+target and installed toolchains remain. No runtime campaign is repeated for this
+movement of unchanged examples.
+
 ## Blocking controller lifetimes
 
 `df0cace` repairs order and sorted-set controllers, which had the same inline-charge
@@ -75,7 +101,7 @@ After both platform checks, fresh examples run sequentially on macOS and Linux.
 Declared-table setup and LEFT JOIN complete with their documented rows. Partition
 count returns `(north, 5, 3)`, `(north, 10, 3)` and `(south, 20, 3)`; repeated-region
 difference returns NULL, 1 and 3. Both CLI queries require exact row counts,
-`status=queried` and successful exit. The [reading path](../docs/getting-started.md#count-the-complete-input-beside-each-row)
+`status=queried` and successful exit. The [reading path](../docs/query-examples.md#count-the-complete-input-beside-each-row)
 connects this behavior to controller storage and independently owned sort buffers.
 
 Forty resource samples observe normal and warning host pressure. Swap ranges
@@ -253,7 +279,7 @@ retaining its count of two. The native I/O query also evaluates a finite power
 while retaining its independent aggregate answer of nine. Both catalog censuses
 remain 1,056 and native I/O coverage remains 1,394 cells per platform.
 
-The [compounding tutorial](../docs/getting-started.md#compound-a-rate-over-several-periods)
+The [compounding tutorial](../docs/query-examples.md#compound-a-rate-over-several-periods)
 uses an initial quantity of 1,000 and three periods at rates of 5, 10 and 20 percent.
 Fresh runs on both platforms return nullable INT64/DOUBLE columns and exactly
 three rows in order: 1157.6250000000002, 1331.0000000000005 and 1727.9999999999998.
@@ -358,7 +384,7 @@ abort were identified and removed. The complete release gates above pass all
 ordinary tests and bounded-stack scenarios; debug-profile qualification is not
 claimed.
 
-The [decibel tutorial](../docs/getting-started.md#express-a-power-ratio-in-decibels)
+The [decibel tutorial](../docs/query-examples.md#express-a-power-ratio-in-decibels)
 uses amounts 5, 10 and 20 as power measurements relative to 10 in the same units.
 Both fresh platform runs return nullable INT64/DOUBLE columns and exactly three
 rows: -3.010299956639812, positive zero and 3.010299956639812. Observed DOUBLE bits
@@ -511,7 +537,7 @@ the tutorial's positive amounts 5, 10 and 20: AVG consumes their logarithms, the
 EXP in a later pipe stage restores the original units. The mathematical answer
 is exactly 10. Both fresh native runs are one ULP above it; those matching bits
 do not establish repeated or cross-platform bit identity. The
-[learning path](../docs/getting-started.md#compute-a-geometric-mean) explains the
+[learning path](../docs/query-examples.md#compute-a-geometric-mean) explains the
 NULL behavior, complete result and implementation owners.
 
 Catalog allocation still requires count two, preserving the original 1.75 ratio
@@ -595,7 +621,7 @@ schedules and healed outcomes. No allocation owner, expression framework,
 persistent format or admission allowance changed.
 
 The [logarithm example](../examples/logarithm.sql) and
-[tutorial](../docs/getting-started.md#compare-amounts-on-a-logarithmic-scale) filter
+[tutorial](../docs/query-examples.md#compare-amounts-on-a-logarithmic-scale) filter
 positive sales amounts and average their natural logarithms. The values 5, 10
 and 20 have mean logarithm ln(10). Both fresh native-storage runs verify table
 creation, one nullable DOUBLE row, and `status=queried`, observing
@@ -635,7 +661,7 @@ retain every refusal/I/O position. No allocation owner, expression framework,
 persistent format or admission allowance changed.
 
 The [square-root example](../examples/square_root.sql) and
-[tutorial](../docs/getting-started.md#compute-a-root-mean-square-amount) use the
+[tutorial](../docs/query-examples.md#compute-a-root-mean-square-amount) use the
 ordinary sales database. Squares 25, 100 and 400 have mean 175; SQRT returns one
 nullable DOUBLE row with value 13.228756555322953 and bits `402a751f9447b724`.
 Fresh native-storage runs verify table creation, complete schema/row output and
@@ -668,7 +694,7 @@ retain every allocation/I/O position. No new allocation owner, expression framew
 persistent format or admission allowance was introduced.
 
 The [nearest-rounding example](../examples/nearest_rounding.sql) and
-[tutorial](../docs/getting-started.md#group-measurements-into-buckets) use the ordinary
+[tutorial](../docs/query-examples.md#group-measurements-into-buckets) use the ordinary
 sales database and return three groups: NULL with a NULL total and count one,
 zero with total five and count one, and one with total 30 and count two. Fresh native-storage runs on both platforms
 verify successful creation, schema, exact DOUBLE bits, complete rows and
@@ -730,7 +756,7 @@ of nine. All allocation prefixes and observed I/O failure positions execute;
 healthy controls alone were not treated as failure coverage.
 
 The [rounding example](../examples/rounding.sql) and
-[tutorial](../docs/getting-started.md#group-measurements-into-buckets) return three
+[tutorial](../docs/query-examples.md#group-measurements-into-buckets) return three
 groups: NULL with count one, bucket zero with total 15/count two, and bucket one
 with total 20/count one. Both platforms verify schema, exact DOUBLE bits, complete
 rows, successful exit and `status=queried` on fresh databases.
@@ -811,7 +837,7 @@ covered. No extra campaign runner was added. The full catalog allocation census
 remains 1,056 at both pathname lengths.
 
 The fresh [classification example](../examples/sign.sql) and
-[tutorial](../docs/getting-started.md#classify-measurements-by-sign) return the four
+[tutorial](../docs/query-examples.md#classify-measurements-by-sign) return the four
 documented NULL, negative, zero and positive groups on both platforms. Setup,
 query schema, every row, count, successful exit and terminal `status=queried`
 were checked before removing the example builds and databases.
@@ -844,7 +870,7 @@ NOT IN and NOT BETWEEN while retaining their independent row/count outcomes and
 failure schedules. No extra runner or runtime representation was introduced.
 
 The fresh [exclusion example](../examples/negated-membership.sql) and
-[tutorial](../docs/getting-started.md#filter-by-membership) return only `south, 20`
+[tutorial](../docs/query-examples.md#filter-by-membership) return only `south, 20`
 on both platforms. Setup output, query schema, row, count, successful process
 exit and terminal `status=queried` match; the NULL amount is excluded. Example
 builds and databases were removed after these checks.
@@ -1552,7 +1578,7 @@ ownership. Cancellation paths and the armed catalog allocation caller include
 constants. The old text-projection rejection becomes an unsupported STRING
 arithmetic check; nonreserved DATE names remain usable as column aliases.
 
-The [constant tutorial](../docs/getting-started.md#add-constant-labels-and-dates)
+The [constant tutorial](../docs/query-examples.md#add-constant-labels-and-dates)
 runs from fresh databases on both platforms: north/5, north/10 and south/20 each
 receive `reported` and `2000-02-29`, with successful completion. An additional
 stock-CLI check uses `FROM sales AS f |> EXTEND 'joined' AS tag |> JOIN sales AS r
@@ -1603,7 +1629,7 @@ numeric, STRING, DATE and NULL paths. The catalog allocation caller now uses
 membership in its derived join while preserving its independent count. Both
 full campaigns cover every current refusal prefix and healthy control.
 
-The [tutorial](../docs/getting-started.md#filter-by-membership) runs from fresh
+The [tutorial](../docs/query-examples.md#filter-by-membership) runs from fresh
 databases on both platforms. `examples/membership.sql` returns north/5 followed
 by south/20 and completes successfully; its negation completes with zero rows.
 An initial empty exact test selection and a composition run whose CLI changed
@@ -1913,7 +1939,7 @@ checkpoint above extends that caller and records its larger census.
 Cancellation, exact admission refusal, invalid scope/identity controls, typed
 copies, and the 65-value sorting regression execute in the Rust suites.
 
-The revised [tutorial](../docs/getting-started.md#transform-columns-while-retaining-the-original-values)
+The revised [tutorial](../docs/query-examples.md#transform-columns-while-retaining-the-original-values)
 runs from the frozen source on both platforms with fresh native-filesystem
 databases. The declared example prints the expected north/south totals. The
 transformation query returns `(north, 5, 10, 11)`, `(north, 10, 20, 21)`, and
@@ -1970,7 +1996,7 @@ cargo test --release --offline --locked --lib frontend:: -- --test-threads=1
 cargo test --release --offline --locked --test catalog_lifecycle computed:: -- --test-threads=1
 ```
 
-The [learning example](../docs/getting-started.md#transform-columns-while-retaining-the-original-values)
+The [learning example](../docs/query-examples.md#transform-columns-while-retaining-the-original-values)
 ran from fresh databases on macOS and Linux. Both returned the same schema and
 three expected rows, then `row_count=3`, `status=queried`, and exit zero. Its SQL,
 setup program, and expected values are maintained inputs. Successful raw output

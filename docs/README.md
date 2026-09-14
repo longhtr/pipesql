@@ -8,6 +8,8 @@ restrictions.
 ## Use PipeSQL
 
 - [Create and query a declared table](getting-started.md): a complete Rust example.
+- [Explore queries on a declared table](query-examples.md): runnable queries,
+  expected results and implementation reading paths.
 - [Language](language.md#current-public-query-manifest): supported queries and limits.
 - [Public interfaces](interfaces.md): API ownership, CLI commands, errors, and recovery.
 
@@ -18,7 +20,7 @@ preparation](frontend.md#trace-a-query-through-preparation). Keep the
 corresponding source open as you read: follow `bind_plan` into
 `Binder::bind_stage`, then inspect one projection or aggregate operation. The
 example connects SQL names to typed column identities before introducing the
-compact plan representation. Try the [EXTEND example](getting-started.md#transform-columns-while-retaining-the-original-values)
+compact plan representation. Try the [EXTEND example](query-examples.md#transform-columns-while-retaining-the-original-values)
 to follow preserved columns, new definitions, and alias scope.
 
 Continue with [Planning](planning.md) for demanded inputs and the producer

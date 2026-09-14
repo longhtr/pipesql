@@ -50,18 +50,10 @@ a passing or general physical-memory claim. Join, ordering and sorted-set
 controllers now retain their inline charges through physical release. Broader
 allocator histories still need their own evidence.
 
-## Active milestone: complete the first tutorial before optional examples
-
-The declared-table walkthrough delays its finish and cleanup section until after
-roughly 500 lines of optional query examples. Move that collection into a guide
-with its own setup and cleanup, and link it from the completed first tutorial and
-documentation index. Preserve query text, results, reading paths, qualifications
-and current inbound links. Keep the other independent workloads in place.
-
-Verify links and preserved commands, then run a fresh declared-table and
-representative-query walkthrough. Confirm executable inputs are unchanged before
-reusing their runtime evidence; document movement does not require repeating
-engine or native campaigns. Review and commit locally and remove owned outputs.
+The [first-tutorial cleanup](evidence.md#first-tutorial-and-optional-queries) is
+complete. Optional queries have their own setup, cleanup and maintained guide;
+the first declared-table flow now finishes before those choices. Executable inputs
+remain unchanged, and fresh setup, representative queries and cleanup pass.
 
 ## Next engineering priorities
 
