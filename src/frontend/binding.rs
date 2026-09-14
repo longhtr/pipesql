@@ -15,6 +15,7 @@ use super::{
     SourceOccurrence, SourceSpan, Stage, bind_error, initial_outputs, text,
 };
 use crate::date::DatePart;
+use crate::string_length::Unit as StringLengthUnit;
 use std::mem::size_of;
 
 mod admission;
@@ -450,7 +451,7 @@ fn bind_expression(
             ParsedOp::Exp => Op::Exp,
             ParsedOp::Empty
             | ParsedOp::WindowCount
-            | ParsedOp::ByteLength
+            | ParsedOp::StringLength(_)
             | ParsedOp::String(_)
             | ParsedOp::Date(_)
             | ParsedOp::DateInterval { .. }
@@ -1503,21 +1504,28 @@ impl Binder<'_, '_> {
         let ops = &syntax.ops[..usize::from(syntax.len)];
         let constant = match ops {
             [ParsedOp::WindowCount] => return Ok(Computation::WindowCount),
-            [ParsedOp::Column(span), ParsedOp::ByteLength] => {
+            [ParsedOp::Column(span), ParsedOp::StringLength(unit)] => {
                 let column = self
                     .facts()
                     .column(self.resolve(*span)?)
-                    .ok_or(Error::Corrupt("byte-length input has no semantic facts"))?;
+                    .ok_or(Error::Corrupt("STRING-length input has no semantic facts"))?;
                 if column.data_type() != DataType::String {
-                    return Err(bind_error("BYTE_LENGTH requires a STRING column", *span));
+                    let message = match unit {
+                        StringLengthUnit::Bytes => "BYTE_LENGTH requires a STRING column",
+                        StringLengthUnit::UnicodeScalars => "CHAR_LENGTH requires a STRING column",
+                    };
+                    return Err(bind_error(message, *span));
                 }
-                return Ok(Computation::ByteLength(column));
+                return Ok(Computation::StringLength {
+                    input: column,
+                    unit: *unit,
+                });
             }
-            [ParsedOp::String(span), ParsedOp::ByteLength] => {
+            [ParsedOp::String(span), ParsedOp::StringLength(unit)] => {
                 let (value, _) = crate::text_literal::TextLiteral::parse(text(self.source, *span))
                     .map_err(|message| bind_error(message, *span))?;
                 let mut expression = Expression::EMPTY;
-                expression.ops[0] = Op::Integer(value.as_str().len() as i64);
+                expression.ops[0] = Op::Integer(unit.measure(value.as_str()) as i64);
                 expression.len = 1;
                 expression.data_type = DataType::Int64;
                 return Ok(Computation::Numeric(expression));

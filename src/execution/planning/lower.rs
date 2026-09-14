@@ -320,7 +320,7 @@ fn base_position(
             ))?;
         match &definition.expression {
             frontend::Computation::Numeric(_)
-            | frontend::Computation::ByteLength(_)
+            | frontend::Computation::StringLength { .. }
             | frontend::Computation::Constant(_)
             | frontend::Computation::WindowCount => {
                 return Ok((MAX_ROW_VALUES + index) as u8);

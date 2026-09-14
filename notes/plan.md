@@ -124,7 +124,9 @@ admission and allocation ownership. Complete appropriate matching macOS/GNU arm6
 Linux checks and fresh examples sequentially. Preserve byte-length semantics,
 resource allowances, formats, open qualifications and publication restrictions.
 Finish implementation, learning paths, compact evidence, local commits and owned
-cleanup.
+cleanup. The expanded corruption fixture initially exceeded eight snapshot pins;
+run each measurement unit with its own seven-pin fixture. Preserve the limit and
+use focused checks before the enclosing gates.
 
 ## Next engineering priorities
 

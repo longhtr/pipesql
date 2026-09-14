@@ -49,6 +49,8 @@ fn check_loaded_queries(path: &Path) {
     let byte_lengths =
         "FROM lineitem |> SELECT BYTE_LENGTH(l_returnflag) AS width, BYTE_LENGTH('é') AS unicode";
     let conditional_lengths = "FROM lineitem |> AGGREGATE COUNT(*) AS entries GROUP BY l_returnflag |> SELECT BYTE_LENGTH(l_returnflag) AS width, BYTE_LENGTH('é') AS unicode |> SELECT COALESCE(width, 9223372036854775807 + 1) AS width, unicode";
+    let char_lengths = byte_lengths.replace("BYTE_LENGTH", "CHAR_LENGTH");
+    let conditional_char_lengths = conditional_lengths.replace("BYTE_LENGTH", "CHAR_LENGTH");
     for source in [
         Q6,
         Q1,
@@ -56,6 +58,8 @@ fn check_loaded_queries(path: &Path) {
         &q1_limit,
         byte_lengths,
         conditional_lengths,
+        &char_lengths,
+        &conditional_char_lengths,
     ] {
         let query = database.prepare(source).unwrap();
         let cancellation = CancellationToken::new();
@@ -69,6 +73,11 @@ fn check_loaded_queries(path: &Path) {
                         assert_eq!(batch.column_count(), 2);
                         assert_eq!(batch.value(0, 0), Some(Value::Int64(1)));
                         assert_eq!(batch.value(0, 1), Some(Value::Int64(2)));
+                    }
+                    if source == char_lengths || source == conditional_char_lengths {
+                        assert_eq!(batch.column_count(), 2);
+                        assert_eq!(batch.value(0, 0), Some(Value::Int64(1)));
+                        assert_eq!(batch.value(0, 1), Some(Value::Int64(1)));
                     }
                     rows += batch.len();
                 }

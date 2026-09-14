@@ -130,10 +130,45 @@ rows is twelve. Require one row with INT64 values `5, 5, 12`, `row_count=1`,
 Byte length measures encoded size, not displayed characters. BYTE_LENGTH is a
 complete projection expression in this profile; compute it first, then use its
 identity in a later arithmetic or aggregate stage. Follow
-[STRING byte-length evaluation](execution.md#string-byte-length-evaluation) to
+[STRING length evaluation](execution.md#string-length-evaluation) to
 see where borrowed text becomes an owned numeric value. The
 [language manifest](language.md#current-public-query-manifest) owns accepted forms
 and NULL behavior.
+
+## Compare bytes and Unicode scalars
+
+Run [character_length.sql](../examples/character_length.sql) against the same
+sales database:
+
+```sh
+target/release/pipesql query --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/character_length.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+The query uses one source row to compare four literals:
+
+| Text | UTF-8 bytes | Unicode scalars |
+| --- | --- | --- |
+| `é` | 2 | 1 |
+| `e` followed by U+0301 (combining acute accent) | 3 | 2 |
+| `😀` | 4 | 1 |
+| `👩‍💻` (woman, zero-width joiner, laptop) | 11 | 3 |
+
+Require one row with INT64 values `2, 1, 3, 2, 4, 1, 11, 3`, `row_count=1`,
+`status=queried` and successful exit. All eight outputs are nonnullable.
+
+CHAR_LENGTH counts Unicode scalars, which need not match visible characters.
+The first two literals can look identical, but the function does not normalize
+one representation into the other. The joined emoji contains three scalars.
+BYTE_LENGTH answers a different concrete question: how many bytes encode this
+text in UTF-8?
+
+These literal calls fold during preparation. Compare the previous example's
+`BYTE_LENGTH(region)` with `CHAR_LENGTH(region)` to follow a column-valued call:
+its typed input retains STRING identity, and execution borrows the text to
+produce an INT64. Follow [STRING length evaluation](execution.md#string-length-evaluation)
+through the binder, shared measurement and batch/row readers.
 
 ## Filter by membership
 

@@ -470,6 +470,7 @@ mod tests {
             ("dates", DataType::Date, 147_424, "n"),
             ("strings", DataType::String, 540_640, "n"),
             ("lengths", DataType::String, 540_640, "BYTE_LENGTH(n)"),
+            ("characters", DataType::String, 540_640, "CHAR_LENGTH(n)"),
         ] {
             db.declare_table(
                 name,

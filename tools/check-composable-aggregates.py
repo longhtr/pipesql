@@ -229,6 +229,22 @@ def check_grouping(queries, rows):
         [["null"]],
         database="empty",
     )
+    queries.composed(
+        "char-length-ascii",
+        "FROM lineitem |> SELECT CHAR_LENGTH(l_returnflag) AS width |> AGGREGATE SUM(width) AS total",
+        [[encoded(len(rows))]],
+    )
+    queries.composed(
+        "char-length-unicode-literal",
+        "FROM lineitem |> SELECT CHAR_LENGTH('é') AS width |> SELECT width + 1 AS width |> AGGREGATE SUM(width) AS total",
+        [[encoded(2 * len(rows))]],
+    )
+    queries.composed(
+        "char-length-empty",
+        "FROM lineitem |> SELECT CHAR_LENGTH(l_returnflag) AS width |> AGGREGATE SUM(width) AS total",
+        [["null"]],
+        database="empty",
+    )
     queries.aggregate("global", GLOBAL_SQL, rows, [], [("sum", 0), ("avg", 0), ("count", 0)])
     queries.aggregate(
         "empty-global",

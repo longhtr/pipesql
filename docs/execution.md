@@ -120,20 +120,25 @@ demand or materialization boundaries. Those changes must also preserve errors,
 source spans, shared definitions and resource admission. A measured difference
 can identify a candidate cost; it does not by itself justify an optimizer.
 
-## STRING byte-length evaluation
+## STRING length evaluation
 
-Run [the byte-length query](query-examples.md#measure-text-in-bytes) alongside
-`Computation::ByteLength` in [frontend.rs](../src/frontend.rs). This computation
-retains one STRING input identity and produces INT64 with the input's nullability.
+Run [the byte-length query](query-examples.md#measure-text-in-bytes) and
+[character comparison](query-examples.md#compare-bytes-and-unicode-scalars) alongside
+`Computation::StringLength` in [frontend.rs](../src/frontend.rs). This computation
+retains one STRING input identity and an explicit measurement unit. It produces
+INT64 with the input's nullability.
 The binder folds literal arguments into ordinary integer programs. Independent
 semantic validation rejects a missing or non-STRING input and inconsistent
 output facts; physical validation checks that the output position names the
 computation rather than its raw STRING input.
 
-In [computed.rs](../src/execution/computed.rs), `byte_length` borrows a checked
-source value or a retained STRING constant. It counts UTF-8 bytes without copying
-text. `BatchScratch::evaluate` stores the number and validity in the admitted
-numeric buffer; `RowValues` serves the same operation after a producer boundary.
+In [computed.rs](../src/execution/computed.rs), `string_length` borrows a checked
+source value or a retained STRING constant. The pure
+[measurement unit](../src/string_length.rs) selects UTF-8 byte length or Unicode
+scalar count without copying text. Literal folding uses the same
+measurement; independent test expectations use literal counts.
+`BatchScratch::evaluate` stores the number and validity in the admitted numeric
+buffer; `RowValues` serves the same operation after a producer boundary.
 Numeric consumers can then use the projected identity without accepting STRING
 payloads into their kernels. [Workspace admission](resources.md#computed-scan-workspace)
 charges the result buffer separately from the source's text payload.
@@ -565,7 +570,7 @@ expression's potential raw dependencies before evaluation. COALESCE can therefor
 skip an arithmetic failure while corruption in a potential source dependency
 still fails the scan. Boolean filter branches can skip their entire expression
 and its payload reads. This distinction also applies when a skipped numeric
-value depends on a BYTE_LENGTH projection.
+value depends on a STRING-length projection.
 
 NULLIF also requests operands through that cursor, so an earlier argument failure
 precedes a later computed dependency's failure. Both operands are demanded even

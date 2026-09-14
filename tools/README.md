@@ -136,9 +136,10 @@ The caller samples requested/usable admission after every step and independently
 reconciles nonheap allowances at admission, first spill, emission and completion.
 Count-only cases require zero temporary consumption; typed input and the second
 stage of the consecutive-count case retain spill coverage. Both pathname lengths
-run all thirteen cases; a one-byte attribution error must fail. The two
-BYTE_LENGTH cases measure nullable Unicode lengths before and after analytic
-spooling, with complete results, requested/usable ownership and release checks.
+run all fifteen cases; a one-byte attribution error must fail. BYTE_LENGTH and
+CHAR_LENGTH each measure nullable Unicode text before and after analytic
+spooling, with independent byte/scalar expectations, complete results,
+requested/usable ownership and release checks.
 Composed-reader bound failures are reported after the
 barrier participants join. This selection also checks the complete append
 allocation-size ranges and full-width maximum-column growth, reuse, publication,

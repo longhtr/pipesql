@@ -122,6 +122,8 @@ pub(super) fn analytic_shapes(
         "FROM facts |> UNION ALL (FROM facts) |> INTERSECT ALL (FROM facts |> UNION ALL (FROM facts |> WHERE v<256)) |> SELECT COUNT(*) OVER () AS n",
         "FROM facts |> SELECT BYTE_LENGTH(t) AS bytes |> SELECT bytes, COUNT(*) OVER () AS n",
         "FROM facts |> SELECT t, COUNT(*) OVER () AS n |> SELECT BYTE_LENGTH(t) AS bytes, n",
+        "FROM facts |> SELECT CHAR_LENGTH(t) AS characters |> SELECT characters, COUNT(*) OVER () AS n",
+        "FROM facts |> SELECT t, COUNT(*) OVER () AS n |> SELECT CHAR_LENGTH(t) AS characters, n",
     ];
     println!("entered analytic ownership shapes");
     let path_bytes = std::fs::canonicalize(&path)?.as_os_str().len() + "/units".len();
@@ -192,7 +194,7 @@ pub(super) fn analytic_shapes(
                         2 => 19,
                         4 => 64,
                         3 => 4,
-                        5 | 11 | 12 => 2,
+                        5 | 11..=14 => 2,
                         _ => 1,
                     };
                     assert_eq!(batch.column_count(), width);
@@ -225,9 +227,9 @@ pub(super) fn analytic_shapes(
                                 (6, _) => Value::Int64(262_144),
                                 (7 | 8, _) => Value::Int64(256),
                                 (9 | 10, _) => Value::Int64(768),
-                                (11 | 12, 0) => {
+                                (11..=14, 0) => {
                                     if seen % 2 == 0 {
-                                        Value::Int64(128)
+                                        Value::Int64(if case <= 12 { 128 } else { 64 })
                                     } else {
                                         Value::Null
                                     }
@@ -284,7 +286,7 @@ pub(super) fn analytic_shapes(
         );
     }
     db.close()?;
-    println!("analytic shapes passed: 13 cases; rows, attribution and release");
+    println!("analytic shapes passed: 15 cases; rows, attribution and release");
     Ok(())
 }
 

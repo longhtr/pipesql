@@ -548,33 +548,36 @@ fn check_catalog_text_queries(small_stack: bool) {
 #[test]
 fn catalog_query_reads_only_demanded_payloads() {
     use crate::QueryStep;
-    let parent = Fixture::directory();
-    let path = parent.0.join("native-demand");
-    let config = crate::Config::new(4_000_000, 2_000_000).unwrap();
-    let db = Database::create_catalog_with_effects(&path, config, &mut Effects::default()).unwrap();
-    let table = TableId::new(17).unwrap();
-    let cancel = CancellationToken::new();
-    db.catalog_writer()
-        .unwrap()
-        .create_table(
-            "facts",
-            table,
-            &declarations(),
-            &cancel,
-            &mut Effects::default(),
-        )
-        .unwrap();
-    let receipt = db
-        .catalog_writer()
-        .unwrap()
-        .append(table, &append_columns(), &cancel, &mut Effects::default())
-        .unwrap();
-    let filtered = [
+    // Each independent fixture retains seven prepared pins, within the limit of eight.
+    for function in ["BYTE_LENGTH", "CHAR_LENGTH"] {
+        let parent = Fixture::directory();
+        let path = parent.0.join("native-demand");
+        let config = crate::Config::new(4_000_000, 2_000_000).unwrap();
+        let db =
+            Database::create_catalog_with_effects(&path, config, &mut Effects::default()).unwrap();
+        let table = TableId::new(17).unwrap();
+        let cancel = CancellationToken::new();
+        db.catalog_writer()
+            .unwrap()
+            .create_table(
+                "facts",
+                table,
+                &declarations(),
+                &cancel,
+                &mut Effects::default(),
+            )
+            .unwrap();
+        let receipt = db
+            .catalog_writer()
+            .unwrap()
+            .append(table, &append_columns(), &cancel, &mut Effects::default())
+            .unwrap();
+        let filtered = [
         ("FROM facts |> WHERE amount < 0 |> SELECT note", None),
         ("FROM facts |> EXTEND BYTE_LENGTH(note) AS width |> WHERE amount < 0 |> SELECT width", None),
         ("FROM facts |> EXTEND BYTE_LENGTH(note) AS width |> WHERE amount IS NOT NULL OR width > 0 |> AGGREGATE COUNT(*) AS n", Some(4)),
-    ].map(|(sql, expected)| (crate::frontend::prepare_catalog(&db, sql).unwrap(), expected));
-    let demanded = [
+    ].map(|(sql, expected)| (crate::frontend::prepare_catalog(&db, &sql.replace("BYTE_LENGTH", function)).unwrap(), expected));
+        let demanded = [
         "FROM facts |> SELECT note",
         "FROM facts |> SELECT BYTE_LENGTH(note) AS width",
         // Scalar short-circuiting follows source-payload loading. The fallback
@@ -583,70 +586,71 @@ fn catalog_query_reads_only_demanded_payloads() {
         "FROM facts |> SELECT BYTE_LENGTH(note) AS width |> SELECT COALESCE(1, width) AS chosen |> WHERE chosen < 0",
         "FROM facts |> EXTEND BYTE_LENGTH(note) AS width |> WHERE width IS NULL |> SELECT amount",
     ]
-    .map(|sql| crate::frontend::prepare_catalog(&db, sql).unwrap());
-    // Independent format-6 corruption: retain unit metadata and corrupt only
-    // the payload described by stable STRING identity 29.
-    let name = object(receipt.transaction().sequence(), 1).name();
-    let file = path
-        .join(UNITS_NAME)
-        .join(std::str::from_utf8(&name).unwrap());
-    let mut bytes = fs::read(&file).unwrap();
-    let descriptor = bytes[64..128]
-        .as_chunks::<32>()
-        .0
-        .iter()
-        .find(|entry| u32::from_le_bytes(entry[..4].try_into().unwrap()) == 29)
-        .unwrap();
-    let offset = u64::from_le_bytes(descriptor[8..16].try_into().unwrap()) as usize;
-    bytes[offset] ^= 1;
-    fs::write(&file, bytes).unwrap();
-    for (query, expected) in &filtered {
-        let before = db.reserved_memory_bytes();
-        let mut running = db.execute(query, &cancel).unwrap();
-        let mut finished = false;
-        let mut seen = false;
-        for _ in 0..128 {
-            match running.step() {
-                QueryStep::Progress => {}
-                QueryStep::Rows(batch) => {
-                    assert!(!seen);
-                    assert_eq!(batch.len(), 1);
-                    assert_eq!(batch.value(0, 0), expected.map(crate::Value::Int64));
-                    seen = true;
+    .map(|sql| crate::frontend::prepare_catalog(&db, &sql.replace("BYTE_LENGTH", function)).unwrap());
+        // Independent format-6 corruption: retain unit metadata and corrupt only
+        // the payload described by stable STRING identity 29.
+        let name = object(receipt.transaction().sequence(), 1).name();
+        let file = path
+            .join(UNITS_NAME)
+            .join(std::str::from_utf8(&name).unwrap());
+        let mut bytes = fs::read(&file).unwrap();
+        let descriptor = bytes[64..128]
+            .as_chunks::<32>()
+            .0
+            .iter()
+            .find(|entry| u32::from_le_bytes(entry[..4].try_into().unwrap()) == 29)
+            .unwrap();
+        let offset = u64::from_le_bytes(descriptor[8..16].try_into().unwrap()) as usize;
+        bytes[offset] ^= 1;
+        fs::write(&file, bytes).unwrap();
+        for (query, expected) in &filtered {
+            let before = db.reserved_memory_bytes();
+            let mut running = db.execute(query, &cancel).unwrap();
+            let mut finished = false;
+            let mut seen = false;
+            for _ in 0..128 {
+                match running.step() {
+                    QueryStep::Progress => {}
+                    QueryStep::Rows(batch) => {
+                        assert!(!seen);
+                        assert_eq!(batch.len(), 1);
+                        assert_eq!(batch.value(0, 0), expected.map(crate::Value::Int64));
+                        seen = true;
+                    }
+                    QueryStep::Finished => {
+                        finished = true;
+                        break;
+                    }
+                    _ => panic!("filtered query read undemanded text"),
                 }
-                QueryStep::Finished => {
-                    finished = true;
-                    break;
-                }
-                _ => panic!("filtered query read undemanded text"),
             }
+            assert!(finished);
+            assert_eq!(seen, expected.is_some());
+            drop(running);
+            assert_eq!(db.reserved_memory_bytes(), before);
         }
-        assert!(finished);
-        assert_eq!(seen, expected.is_some());
-        drop(running);
-        assert_eq!(db.reserved_memory_bytes(), before);
-    }
-    for query in &demanded {
-        let before = db.reserved_memory_bytes();
-        let mut running = db.execute(query, &cancel).unwrap();
-        let mut failed = false;
-        for _ in 0..128 {
-            match running.step() {
-                QueryStep::Progress => {}
-                QueryStep::Failed(Error::Corrupt(_)) => {
-                    failed = true;
-                    break;
+        for query in &demanded {
+            let before = db.reserved_memory_bytes();
+            let mut running = db.execute(query, &cancel).unwrap();
+            let mut failed = false;
+            for _ in 0..128 {
+                match running.step() {
+                    QueryStep::Progress => {}
+                    QueryStep::Failed(Error::Corrupt(_)) => {
+                        failed = true;
+                        break;
+                    }
+                    _ => panic!("corrupt demanded text escaped"),
                 }
-                _ => panic!("corrupt demanded text escaped"),
             }
+            assert!(failed);
+            assert!(matches!(
+                running.step(),
+                QueryStep::Failed(Error::Corrupt(_))
+            ));
+            drop(running);
+            assert_eq!(db.reserved_memory_bytes(), before);
         }
-        assert!(failed);
-        assert!(matches!(
-            running.step(),
-            QueryStep::Failed(Error::Corrupt(_))
-        ));
-        drop(running);
-        assert_eq!(db.reserved_memory_bytes(), before);
     }
 }
 

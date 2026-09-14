@@ -678,14 +678,17 @@ and allocates no such buffer. Every evaluation resets readiness for its
 selection; source replay also invalidates cached values. Batch output owns
 copies, never references into this scratch.
 
-BYTE_LENGTH borrows the checked STRING value from its source or an owned
-projection constant. Its numeric result needs one ordinary payload/validity
+BYTE_LENGTH and CHAR_LENGTH borrow the checked STRING value from its source or
+an owned projection constant. Each numeric result needs one ordinary payload/validity
 buffer; it needs neither a copied text buffer nor a numeric expression stack.
 A scan computing only one length therefore reserves 6,176 computed-workspace
 bytes: 256 payload words, four validity words and the existing 4,096-byte
 allowance. The demanded STRING payload remains separately admitted by the scan.
 Later numeric computations can borrow the stored length through the usual
 dependency mapping. No allocation owner or conservative workspace ceiling changes.
+BYTE_LENGTH reads the byte count; CHAR_LENGTH traverses the bounded UTF-8 value
+to count Unicode scalars. Neither measurement allocates. Character counting runs
+within the existing row/batch work quantum and cancellation schedule.
 
 ### Native paths, stack, and I/O
 

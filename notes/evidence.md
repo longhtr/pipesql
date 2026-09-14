@@ -142,7 +142,7 @@ numeric kernels receive only the resulting integer. Independent semantic and
 physical validators retain their own rejection rules. No allocation owner,
 format, admission allowance or numeric-expression framework changes. The
 [learning query](../docs/query-examples.md#measure-text-in-bytes) and
-[evaluation trace](../docs/execution.md#string-byte-length-evaluation) connect the
+[evaluation trace](../docs/execution.md#string-length-evaluation) connect the
 public result to these owners.
 
 Focused checks cover UTF-8 bytes versus characters, empty and 65,536-byte text,

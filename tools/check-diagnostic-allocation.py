@@ -308,7 +308,7 @@ def check_ownership(work, run, failures):
             failures.append(f"incomplete partial result ownership checks: {label}")
         analytic = run("analytic-shapes", f"analytic-{label}", length)
         print(analytic.stdout + analytic.stderr, end="", flush=True)
-        if "analytic shapes passed: 13 cases; rows, attribution and release" not in analytic.stdout:
+        if "analytic shapes passed: 15 cases; rows, attribution and release" not in analytic.stdout:
             failures.append(f"incomplete analytic allocation checks: {label}")
         wide = run("wide-set-shapes", f"wide-sets-{label}", length)
         print(wide.stdout + wide.stderr, end="", flush=True)

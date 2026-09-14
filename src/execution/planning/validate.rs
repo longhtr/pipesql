@@ -444,7 +444,7 @@ fn identity_at(
         if !matches!(
             definition.expression,
             frontend::Computation::Numeric(_)
-                | frontend::Computation::ByteLength(_)
+                | frontend::Computation::StringLength { .. }
                 | frontend::Computation::Constant(_)
                 | frontend::Computation::WindowCount
         ) {

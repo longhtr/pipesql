@@ -12,6 +12,9 @@ mod boolean;
 #[path = "catalog_lifecycle/byte_length.rs"]
 mod byte_length;
 
+#[path = "catalog_lifecycle/char_length.rs"]
+mod char_length;
+
 #[path = "catalog_lifecycle/computed.rs"]
 mod computed;
 

@@ -41,6 +41,7 @@ mod resources;
 mod scalar;
 mod scratch;
 mod storage_format;
+mod string_length;
 mod success_index;
 mod table_data;
 mod text_literal;

@@ -1,5 +1,6 @@
 //! Bounded syntax and source spans. Parsing does not resolve names or read a database.
 use crate::scalar::MAX_OPS;
+use crate::string_length::Unit as StringLengthUnit;
 
 mod boolean;
 use super::lexer::{Kind, Tokens, ZERO_SPAN, lex};
@@ -97,7 +98,7 @@ pub(super) enum ParsedOp {
     String(SourceSpan),
     Date(SourceSpan),
     WindowCount,
-    ByteLength,
+    StringLength(StringLengthUnit),
     // Separate interval and unit tokens keep every operation within eight
     // bytes; DATE support must not enlarge the shared parser arena.
     DateInterval {
@@ -580,7 +581,14 @@ impl Parser<'_> {
             );
             return Ok(expression);
         }
-        if self.is_word("BYTE_LENGTH") && next == Some(Kind::LeftParen) {
+        if (self.is_word("BYTE_LENGTH") || self.is_word("CHAR_LENGTH"))
+            && next == Some(Kind::LeftParen)
+        {
+            let unit = if self.is_word("BYTE_LENGTH") {
+                StringLengthUnit::Bytes
+            } else {
+                StringLengthUnit::UnicodeScalars
+            };
             let call = self.take(Kind::Identifier)?;
             self.take(Kind::LeftParen)?;
             let mut argument_parentheses = 0;
@@ -598,7 +606,7 @@ impl Parser<'_> {
             for _ in 0..argument_parentheses + 1 + parentheses {
                 self.take(Kind::RightParen)?;
             }
-            expression.push(ParsedOp::ByteLength, call)?;
+            expression.push(ParsedOp::StringLength(unit), call)?;
             expression.span = span(
                 usize::from(self.tokens.values[first].span.start),
                 usize::from(self.tokens.values[self.position - 1].span.end),

@@ -13,7 +13,7 @@ impl Drop for Directory {
 }
 
 #[test]
-fn byte_length_output_rejects_a_raw_string_position() {
+fn string_length_output_rejects_a_raw_string_position() {
     let directory = Directory(std::env::temp_dir().join(format!(
         "pipesql-physical-byte-length-{}",
         std::process::id()
@@ -23,15 +23,16 @@ fn byte_length_output_rejects_a_raw_string_position() {
         crate::Config::new(4_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
-    let query = db
-        .prepare("FROM lineitem |> SELECT BYTE_LENGTH(l_returnflag) AS bytes")
-        .unwrap();
-    let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
-    validate_physical(&plan, &query, &db, RootState::Empty, 0).unwrap();
-    // Legacy ordinal four stores returnflag. It cannot stand in for the
-    // computed INT64 output even though that computation reads this field.
-    plan.pipelines[0].columns[0] = 4;
-    assert!(validate_physical(&plan, &query, &db, RootState::Empty, 0).is_err());
+    for function in ["BYTE_LENGTH", "CHAR_LENGTH"] {
+        let sql = format!("FROM lineitem |> SELECT {function}(l_returnflag) AS length");
+        let query = db.prepare(&sql).unwrap();
+        let mut plan = lower(&db, &query, RootState::Empty, 0).unwrap();
+        validate_physical(&plan, &query, &db, RootState::Empty, 0).unwrap();
+        // Legacy ordinal four stores returnflag. It cannot stand in for the
+        // computed INT64 output even though that computation reads this field.
+        plan.pipelines[0].columns[0] = 4;
+        assert!(validate_physical(&plan, &query, &db, RootState::Empty, 0).is_err());
+    }
 }
 
 #[test]

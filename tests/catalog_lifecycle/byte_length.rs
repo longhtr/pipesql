@@ -151,65 +151,79 @@ fn byte_length_crosses_join_group_and_set_materialization() {
 }
 
 #[test]
-fn byte_length_rejects_unsupported_forms_with_owned_spans() {
+fn string_length_rejects_unsupported_forms_with_owned_spans() {
     let (_directory, db) = super::null_predicate::fixture().unwrap();
     let baseline = db.reserved_memory_bytes();
-    for expression in [
-        "BYTE_LENGTH()",
-        "BYTE_LENGTH(s, s)",
-        "BYTE_LENGTH(id)",
-        "BYTE_LENGTH(n)",
-        "BYTE_LENGTH(d)",
-        "BYTE_LENGTH(NULL)",
-        "BYTE_LENGTH(1)",
-        "BYTE_LENGTH(BYTE_LENGTH(s))",
-        "BYTE_LENGTH(s) + 1",
-        "1 + BYTE_LENGTH(s)",
-        "BYTE_LENGTH('123456789012345678901234567890123')",
-        "BYTE_LENGTH('\\uD800')",
-    ] {
-        let sql = format!("FROM facts |> EXTEND {expression} AS unused |> LIMIT 0 |> SELECT id");
-        let error = match db.prepare(&sql) {
-            Ok(_) => panic!("unsupported expression accepted: {sql}"),
-            Err(error) => error,
-        };
-        let span = match error {
-            Error::Parse { span, .. } | Error::Bind { span, .. } => span,
-            other => panic!("unexpected rejection: {other}"),
-        };
-        assert!(
-            span.start() <= span.end() && span.end() <= sql.len(),
-            "{sql}"
-        );
-        assert!(sql.is_char_boundary(span.start()) && sql.is_char_boundary(span.end()));
-        if matches!(
-            expression,
-            "BYTE_LENGTH(id)" | "BYTE_LENGTH(n)" | "BYTE_LENGTH(d)"
-        ) {
-            let argument = expression
-                .strip_prefix("BYTE_LENGTH(")
-                .unwrap()
-                .strip_suffix(')')
-                .unwrap();
-            assert_eq!(&sql[span.start()..span.end()], argument);
+    for function in ["BYTE_LENGTH", "CHAR_LENGTH"] {
+        for expression in [
+            "BYTE_LENGTH()",
+            "BYTE_LENGTH(s, s)",
+            "BYTE_LENGTH(id)",
+            "BYTE_LENGTH(n)",
+            "BYTE_LENGTH(d)",
+            "BYTE_LENGTH(NULL)",
+            "BYTE_LENGTH(1)",
+            "BYTE_LENGTH(BYTE_LENGTH(s))",
+            "BYTE_LENGTH(s) + 1",
+            "1 + BYTE_LENGTH(s)",
+            "BYTE_LENGTH('123456789012345678901234567890123')",
+            "BYTE_LENGTH('\\uD800')",
+        ] {
+            let expression = expression.replace("BYTE_LENGTH", function);
+            let sql =
+                format!("FROM facts |> EXTEND {expression} AS unused |> LIMIT 0 |> SELECT id");
+            let error = match db.prepare(&sql) {
+                Ok(_) => panic!("unsupported expression accepted: {sql}"),
+                Err(error) => error,
+            };
+            let span = match &error {
+                Error::Parse { span, .. } | Error::Bind { span, .. } => *span,
+                other => panic!("unexpected rejection: {other}"),
+            };
+            assert!(
+                span.start() <= span.end() && span.end() <= sql.len(),
+                "{sql}"
+            );
+            assert!(sql.is_char_boundary(span.start()) && sql.is_char_boundary(span.end()));
+            if matches!(
+                expression.as_str(),
+                "BYTE_LENGTH(id)"
+                    | "BYTE_LENGTH(n)"
+                    | "BYTE_LENGTH(d)"
+                    | "CHAR_LENGTH(id)"
+                    | "CHAR_LENGTH(n)"
+                    | "CHAR_LENGTH(d)"
+            ) {
+                let argument = expression
+                    .strip_prefix(function)
+                    .unwrap()
+                    .strip_prefix('(')
+                    .unwrap()
+                    .strip_suffix(')')
+                    .unwrap();
+                assert_eq!(&sql[span.start()..span.end()], argument);
+            }
+            drop(sql);
+            assert!(!error.to_string().is_empty());
+            assert_eq!(db.reserved_memory_bytes(), baseline);
         }
-        drop(sql);
+        assert!(matches!(
+            db.prepare(&format!("FROM facts |> AGGREGATE SUM({function}(s)) AS n")),
+            Err(Error::Parse { .. }) | Err(Error::Bind { .. })
+        ));
         assert_eq!(db.reserved_memory_bytes(), baseline);
     }
-    assert!(matches!(
-        db.prepare("FROM facts |> AGGREGATE SUM(BYTE_LENGTH(s)) AS n"),
-        Err(Error::Parse { .. }) | Err(Error::Bind { .. })
-    ));
-    assert_eq!(db.reserved_memory_bytes(), baseline);
 }
 
 #[test]
-fn byte_length_cancellation_and_abandonment_release_query_owners() {
+fn string_length_cancellation_and_abandonment_release_query_owners() {
     let (_directory, db) = super::text_filter::fixture();
     let baseline = db.reserved_memory_bytes();
     for sql in [
         "FROM texts |> SELECT BYTE_LENGTH(category) AS width",
         "FROM texts |> ORDER BY id |> SELECT BYTE_LENGTH(category) AS width",
+        "FROM texts |> SELECT CHAR_LENGTH(category) AS width",
+        "FROM texts |> ORDER BY id |> SELECT CHAR_LENGTH(category) AS width",
     ] {
         let prepared = db.prepare(sql).unwrap();
         let retained = db.reserved_memory_bytes();

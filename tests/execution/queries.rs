@@ -37,7 +37,7 @@ fn every_admitted_key_pair_survives_public_load_reopen_scan_and_grouping() {
     for (sql, ordered) in [
         ("FROM lineitem |> SELECT l_returnflag, l_linestatus", false),
         (
-            "FROM lineitem |> SELECT l_returnflag, l_linestatus, BYTE_LENGTH(l_returnflag) AS bytes",
+            "FROM lineitem |> SELECT l_returnflag, l_linestatus, BYTE_LENGTH(l_returnflag) AS bytes, CHAR_LENGTH(l_returnflag) AS characters",
             false,
         ),
         (Q1, true),
@@ -57,8 +57,9 @@ fn every_admitted_key_pair_survives_public_load_reopen_scan_and_grouping() {
                             panic!("STRING keys");
                         };
                         actual.push((flag.as_str().as_bytes()[0], status.as_str().as_bytes()[0]));
-                        if batch.column_count() == 3 {
+                        if batch.column_count() == 4 {
                             assert_eq!(batch.value(row, 2), Some(Value::Int64(1)));
+                            assert_eq!(batch.value(row, 3), Some(Value::Int64(1)));
                         }
                         if ordered {
                             assert_eq!(batch.value(row, 9), Some(Value::Int64(1)));
