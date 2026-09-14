@@ -214,6 +214,43 @@ def complete_preparation_failures(output):
     )
 
 
+def complete_construction_failures(output):
+    census = re.findall(r"^join construction census allocations=(\d+)$", output, re.MULTILINE)
+    completed = re.findall(
+        r"^wide left join construction failures passed: prefixes=0\.\.=(\d+); live errors and release$",
+        output, re.MULTILINE,
+    )
+    if len(census) != 1 or completed != census or not 1 < int(census[0]) <= 512:
+        return False
+    count = int(census[0])
+    records = re.findall(
+        r"^join construction prefix=(\d+) calls=(\d+) refusals=(\d+) samples=(.+)$",
+        output, re.MULTILINE,
+    )
+    if [int(row[0]) for row in records] != list(range(count + 1)):
+        return False
+    for prefix, calls, refusals, sample in records:
+        prefix, calls, refusals = map(int, (prefix, calls, refusals))
+        if prefix < count:
+            if calls <= prefix or refusals == 0:
+                return False
+        elif (calls, refusals) != (count, 0):
+            return False
+        if prefix == 0:
+            if sample != "none":
+                return False
+            continue
+        match = re.fullmatch(
+            r"Samples \{ allocations: (\d+), frees: (\d+), requested_headroom: (-?\d+), usable_headroom: (-?\d+) \}", sample
+        )
+        if match is None:
+            return False
+        allocations, frees, requested, usable = map(int, match.groups())
+        if allocations != prefix or (prefix < count and frees != prefix) or min(requested, usable) < 0:
+            return False
+    return True
+
+
 def complete_execution_failures(output):
     completed = re.findall(
         r"^wide left join execution failures passed: 3 demanded errors; external work, owned spans and release$",
@@ -259,6 +296,12 @@ def check_ownership(work, run, failures):
             failures.append(f"incomplete join preparation refusal trace: {label}")
         if not complete_execution_failures(joined.stdout):
             failures.append(f"incomplete join execution failure trace: {label}")
+        construction = run("wide-left-join-construction", f"join-construction-{label}", length)
+        print(construction.stdout + construction.stderr, end="", flush=True)
+        if (not complete_construction_failures(construction.stdout)
+                or "wide left join passed: 64 columns, 11 pairs; rows, ownership and release" not in construction.stdout
+                or "wide left join lifecycle passed: preparation, finished release, two abandonments" not in construction.stdout):
+            failures.append(f"incomplete join construction refusal trace: {label}")
         prepared = run("prepared-aggregate-shapes", f"prepared-aggregates-{label}", length)
         print(prepared.stdout + prepared.stderr, end="", flush=True)
         if "prepared aggregate shapes passed: 14 accepted and 54 rejected; attribution, rows and release" not in prepared.stdout:
@@ -349,6 +392,7 @@ def check_ownership(work, run, failures):
         ("wide-left-join-lifecycle-negative", "missing transient join lifecycle events: preparation"),
         ("wide-left-join-failure-negative", "missing failed preparation events: prefix=1"),
         ("wide-left-join-execution-negative", "missing failed execution events"),
+        ("wide-left-join-construction-negative", "missing failed construction events: prefix=1"),
         ("wide-set-attribution-negative", "wide set usable ownership attribution"),
         ("append-allocation-shapes-negative", "append allocation rounding"),
         ("ownership-negative", "complete-row oracle"),

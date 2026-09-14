@@ -121,6 +121,36 @@ class AllocationInterpretation(unittest.TestCase):
             with self.subTest(output=invalid):
                 self.assertFalse(check(invalid))
 
+    def test_construction_refusal_trace_requires_owned_prefixes_and_control(self):
+        census = "join construction census allocations=3\n"
+        rows = ["join construction prefix=0 calls=1 refusals=1 samples=none\n"]
+        rows += [f"join construction prefix={prefix} calls={min(prefix + 1, 3)} "
+                 f"refusals={int(prefix < 3)} samples=Samples {{ allocations: {prefix}, frees: {prefix}, "
+                 "requested_headroom: 32, usable_headroom: 16 }\n" for prefix in range(1, 4)]
+        complete = ("wide left join construction failures passed: prefixes=0..=3; "
+                    "live errors and release\n")
+        valid = census + "".join(rows) + complete
+        check = ALLOCATION["complete_construction_failures"]
+        self.assertTrue(check(valid))
+        for invalid in [
+            "", "".join(rows) + complete, census + "".join(rows),
+            census + "".join(rows[1:]) + complete,
+            census + "".join(rows[:-1]) + complete,
+            census + "".join(rows[:2] + rows[1:]) + complete,
+            census + "".join(reversed(rows)) + complete,
+            valid + complete, census + valid,
+            valid.replace("prefix=1 calls=2 refusals=1", "prefix=1 calls=2 refusals=0"),
+            valid.replace("prefix=3 calls=3 refusals=0", "prefix=3 calls=4 refusals=1"),
+            valid.replace("prefixes=0..=3", "prefixes=0..=4"),
+            valid.replace("samples=none", "samples=missing"),
+            valid.replace("allocations: 1", "allocations: 0"),
+            valid.replace("frees: 2", "frees: 1"),
+            valid.replace("requested_headroom: 32", "requested_headroom: -1"),
+            valid.replace("usable_headroom: 16", "usable_headroom: -1"),
+        ]:
+            with self.subTest(output=invalid):
+                self.assertFalse(check(invalid))
+
     def test_execution_failure_trace_requires_every_demand_and_live_release(self):
         expressions = ["LOG10(ABS(r.id-3))", "SAFE_DIVIDE(1, LOG10(ABS(r.id-3)))",
                        "COALESCE(NULLIF(1, 1), LOG10(ABS(r.id-3)))"]

@@ -11,7 +11,8 @@ mutation. Callers request reservations and inspect admitted bytes through
 methods; they do not manipulate atomics or reservation fields.
 `MemoryAuthority::reserve` returns a `Reservation` whose drop releases its
 charge. `split` transfers part of that charge without making it available to
-competing callers, and `shrink_to` returns unused capacity. Temporary storage
+competing callers. `transfer_to` moves admitted bytes between reservations of the
+same authority without changing its total; `shrink_to` returns unused capacity. Temporary storage
 has a separate authority with explicit release because unresolved files can
 outlive the operation that created them.
 
@@ -255,6 +256,17 @@ return the retained error without rebuilding runtime owners. `into_error` moves
 the error out and releases the handle charge. The prepared query remains an
 independent owner until dropped; error metadata does not keep that plan alive.
 The [interface contract](interfaces.md) owns error and source-span lifetimes.
+
+Execution construction can fail before returning a result. The prepared query
+remains independent while the physical plan, partially admitted sources and
+controllers unwind. A join's controller vector contains its sorter metadata.
+Dropping those fields does not yet free the vector, so their inline charges
+transfer to the [runtime reservation](../src/execution/runtime.rs) before source
+opening. That reservation drops after the node and controller allocations.
+[Join construction](../src/execution/blocking/join.rs) transfers existing charges;
+it does not increase admission or change payload capacity. Run-buffer release
+subtracts only physically freed payloads, whether inline state remains charged
+locally or has transferred to the runtime.
 
 The query's accounted-memory report includes every live hash text reservation.
 During growth this includes both the retained arena and its replacement; copying

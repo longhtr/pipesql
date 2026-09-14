@@ -21,7 +21,13 @@ fn join<'a, 'db>(result: &'a mut QueryResult<'db, '_>) -> &'a mut Join<'db> {
     runtime.first_join_mut()
 }
 
-fn check_physical_account(join: &Join<'_>) {
+fn check_physical_account(result: &mut QueryResult<'_, '_>) {
+    let State::Running(runtime) = &result.state else {
+        panic!("live join");
+    };
+    let inline = runtime.controller_inline_bytes(&result.plan);
+    assert_eq!(inline, size_of::<Join<'_>>() as u64);
+    let join = join(result);
     fn bytes<T>(v: &Vec<T>) -> usize {
         v.capacity() * size_of::<T>()
     }
@@ -46,7 +52,7 @@ fn check_physical_account(join: &Join<'_>) {
     }
     assert_eq!(
         physical as u64 + creation,
-        join.memory_bytes(),
+        join.memory_bytes() + inline,
         "inline owner and actual allocation capacities are charged once"
     );
 }
@@ -136,7 +142,7 @@ fn join_exact_admission_precedes_io_and_reconciles_each_transition() {
                 let mut observed = vec![];
                 let mut done = false;
                 for _ in 0..STEPS {
-                    check_physical_account(join(&mut result));
+                    check_physical_account(&mut result);
                     assert_eq!(
                         db.reserved_memory_bytes(),
                         baseline + pressure.bytes() + result.accounted_memory_bytes()

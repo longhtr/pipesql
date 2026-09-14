@@ -1133,6 +1133,9 @@ pub(super) enum WideJoinControl {
     MissingPreparation,
     MissingFailedPreparation,
     MissingFailedExecution,
+    MissingConstruction,
+    Construction,
+    ConstructionSequence,
 }
 
 pub(super) fn wide_left_join_shape(
@@ -1252,13 +1255,35 @@ pub(super) fn wide_left_join_shape(
         memory,
         matches!(control, WideJoinControl::MissingFailedPreparation),
     );
-    check_failed_join_execution(
-        &db,
-        SOURCE,
-        before,
-        memory,
-        matches!(control, WideJoinControl::MissingFailedExecution),
-    );
+    if matches!(
+        control,
+        WideJoinControl::Construction
+            | WideJoinControl::ConstructionSequence
+            | WideJoinControl::MissingConstruction
+    ) {
+        check_failed_join_construction(
+            &db,
+            SOURCE,
+            before,
+            memory,
+            matches!(control, WideJoinControl::MissingConstruction),
+        );
+    }
+    // Refusal and demanded-expression cells have separate allocator histories.
+    // The optional combined history retains a native usable-size diagnostic;
+    // it is not covered by the fresh-cell qualification.
+    if !matches!(
+        control,
+        WideJoinControl::Construction | WideJoinControl::MissingConstruction
+    ) {
+        check_failed_join_execution(
+            &db,
+            SOURCE,
+            before,
+            memory,
+            matches!(control, WideJoinControl::MissingFailedExecution),
+        );
+    }
     let preparation =
         super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
     let query = if matches!(control, WideJoinControl::MissingPreparation) {
@@ -1588,6 +1613,120 @@ fn check_failed_join_preparation(
     );
 }
 
+// Keep preparation outside the fault prefix and subtract its fixed ownership.
+// Only execute() may allocate while armed; no result has been stepped yet.
+fn check_failed_join_construction(
+    db: &Database,
+    source: &str,
+    before: Live,
+    memory: u64,
+    missing_observation: bool,
+) {
+    use super::{CALLS, REFUSED, workload};
+    const ALLOCATION_LIMIT: usize = 512;
+    let cancel = CancellationToken::new();
+    let query = db.prepare(source).unwrap();
+    let prepared = Live::now();
+    let prepared_memory = db.reserved_memory_bytes();
+    assert_eq!(prepared_memory, memory + query.accounted_memory_bytes());
+    let observer = super::transient_ownership::Observer::new(
+        db,
+        prepared_memory,
+        prepared.requested,
+        prepared.usable,
+    );
+    let baseline = workload::arm(None, ALLOCATION_LIMIT);
+    let result = observer.during(|| db.execute(&query, &cancel));
+    workload::suspend_faults();
+    let census = CALLS.load(Ordering::Relaxed);
+    assert!(census > 1 && census <= ALLOCATION_LIMIT);
+    assert_eq!(REFUSED.load(Ordering::Relaxed), 0);
+    drop(result.expect("healthy join construction census"));
+    workload::finish("join construction census", baseline);
+    assert_eq!(Live::now(), prepared);
+    assert_eq!(db.reserved_memory_bytes(), prepared_memory);
+    check_join_phase("construction census", observer.samples(), true);
+    for prefix in 0..=census {
+        let observer = super::transient_ownership::Observer::new(
+            db,
+            prepared_memory,
+            prepared.requested,
+            prepared.usable,
+        );
+        let baseline = workload::arm(Some(prefix), ALLOCATION_LIMIT);
+        let result = if missing_observation && prefix == 1 {
+            db.execute(&query, &cancel)
+        } else {
+            observer.during(|| db.execute(&query, &cancel))
+        };
+        if let Err(error) = &result {
+            // No caller allocation, including descriptor enumeration, is allowed
+            // until all construction owners and their charges are reconciled.
+            assert_eq!(LIVE_REQUESTED.load(Ordering::Relaxed), prepared.requested);
+            assert_eq!(LIVE_USABLE.load(Ordering::Relaxed), prepared.usable);
+            assert_eq!(db.reserved_memory_bytes(), prepared_memory);
+            assert_eq!(db.reserved_temp_bytes(), 0);
+            assert!(workload::format_error(Some(error)));
+        }
+        workload::suspend_faults();
+        let calls = CALLS.load(Ordering::Relaxed);
+        let refusals = REFUSED.load(Ordering::Relaxed);
+        if prefix < census {
+            let error = match result {
+                Err(error) => error,
+                Ok(_) => panic!("join construction accepted a refused allocation"),
+            };
+            assert!(
+                matches!(&error, Error::Resource { .. })
+                    || matches!(&error, Error::Io { source, .. }
+                        if source.kind() == std::io::ErrorKind::OutOfMemory),
+                "join construction allocation outcome: {error}"
+            );
+            assert!(calls > prefix && refusals > 0);
+            // Check native descriptors too, with the returned error still live.
+            assert_eq!(Live::now(), prepared);
+            workload::finish("join construction refusal", baseline);
+            drop(error);
+        } else {
+            assert_eq!(calls, census);
+            assert_eq!(refusals, 0);
+            let result = result.expect("full-prefix join construction control");
+            assert_eq!(
+                db.reserved_memory_bytes(),
+                prepared_memory + result.accounted_memory_bytes()
+            );
+            drop(result);
+            workload::finish("join construction control", baseline);
+        }
+        assert_eq!(Live::now(), prepared);
+        assert_eq!(db.reserved_memory_bytes(), prepared_memory);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        let samples = observer.samples();
+        assert!(
+            samples.allocations == prefix && (prefix == census || samples.frees == prefix),
+            "missing failed construction events: prefix={prefix}: {samples:?}"
+        );
+        assert!(
+            samples.requested_headroom >= 0 && samples.usable_headroom >= 0,
+            "failed join construction ownership: prefix={prefix}: {samples:?}"
+        );
+        if prefix == 0 {
+            println!("join construction prefix=0 calls={calls} refusals={refusals} samples=none");
+        } else {
+            println!(
+                "join construction prefix={prefix} calls={calls} refusals={refusals} samples={samples:?}"
+            );
+        }
+    }
+    drop(query);
+    assert_eq!(Live::now(), before);
+    assert_eq!(db.reserved_memory_bytes(), memory);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    println!(
+        "wide left join construction failures passed: prefixes=0..={census}; live errors and release"
+    );
+}
+
 // Caller query text is gone before execution. Each step has its own observer so
 // earlier successful allocations cannot hide an unobserved failure transition.
 fn check_failed_join_execution(
@@ -1625,7 +1764,10 @@ fn check_failed_join_execution(
             samples.allocations > 0,
             "missing failed-query construction events"
         );
-        assert!(samples.requested_headroom >= 0 && samples.usable_headroom >= 0);
+        assert!(
+            samples.requested_headroom >= 0 && samples.usable_headroom >= 0,
+            "demanded construction: {samples:?}"
+        );
         let mut peak_temp = 0;
         let mut failed = false;
         for step in 1..200_000 {
@@ -1714,7 +1856,10 @@ fn check_failed_join_execution(
         assert_eq!(db.reserved_temp_bytes(), 0);
         let samples = release.samples();
         assert_eq!((samples.allocations, samples.frees), (0, 0));
-        assert!(samples.requested_headroom >= 0 && samples.usable_headroom >= 0);
+        assert!(
+            samples.requested_headroom >= 0 && samples.usable_headroom >= 0,
+            "demanded construction: {samples:?}"
+        );
     }
     println!(
         "wide left join execution failures passed: 3 demanded errors; external work, owned spans and release"

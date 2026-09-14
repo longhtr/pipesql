@@ -45,6 +45,22 @@ require typed refusal, nonnegative requested/usable headroom and exact release
 while each error remains live. Keep the prepared query fixed and retain the
 independent 11-pair healthy result and all existing negative controls.
 
+The initial trace found a requested-byte deficit during destruction of the
+5,992-byte join controller vector: nested inline reservations released before
+the vector. Transfer those existing charges to the enclosing runtime account.
+The unchanged 353-allocation construction census now passes both pathname
+prefix sweeps and the negative observation control; full platform gates are pending.
+
+A separate combined allocator history (the full refusal sweep followed by a
+changed-width demanded expression) exposed Darwin usable extents beyond
+logical charges: a 3,817,440-byte request occupied 3,899,392 bytes. Requested
+ownership remained covered. Keep construction and existing demanded-error
+qualification in independent fresh callers, and retain the combined history as
+an explicit diagnostic with no passing claim. This is a concrete instance of the
+open native usable-heap qualification, not a repaired physical-memory bound.
+Ordering and sorted-set controller allocations share the inline-charge pattern;
+trace and qualify those enclosing lifetimes as follow-up work before extending them.
+
 Repair a demonstrated ownership defect at its owner; do not add admission padding
 or an instrumentation framework. Complete focused checks, sequential full macOS
 and GNU arm64 Linux gates on matching frozen inputs, independent discovery and

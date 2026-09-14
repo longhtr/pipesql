@@ -736,6 +736,15 @@ Change LEFT JOIN to JOIN to see those two facts disappear. A later
 `WHERE r.name IS NULL` would retain only unmatched rows; placing a filter inside
 the right input instead changes which dimension rows can match. See the
 [execution trace](execution.md#equality-joins) for matching and duplicate replay.
+To follow construction and failure cleanup, start at
+[`Database::execute`](../src/execution/admission.rs), then the
+[runtime admissions](../src/execution/runtime.rs) and
+[join controller](../src/execution/blocking/join.rs). Sources open only after
+operator admission. The runtime keeps the controller's inline charge until its
+vector is physically freed, including when source opening fails before the first
+result step. The [resource contract](resources.md#join-ordering-and-distinct-admission)
+explains payload and temporary ownership.
+
 The [default-region query](../examples/default-region.sql) uses
 `COALESCE(r.id, 0)` to put unmatched facts in region 0. Run it against the same
 database:

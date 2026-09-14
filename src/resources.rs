@@ -182,6 +182,24 @@ impl Reservation<'_> {
         })
     }
 
+    // Move an existing charge to the owner that outlives its physical storage.
+    // The authority's total never changes, so no competing admission sees a gap.
+    pub(crate) fn transfer_to(&mut self, destination: &mut Self, bytes: u64) -> Result<(), Error> {
+        if !std::ptr::eq(self.authority, destination.authority) {
+            return Err(Error::Corrupt("reservation transfer crosses authorities"));
+        }
+        let remaining = self.bytes.checked_sub(bytes).ok_or(Error::Corrupt(
+            "reservation transfer exceeds admitted bytes",
+        ))?;
+        let combined = destination
+            .bytes
+            .checked_add(bytes)
+            .ok_or(Error::Corrupt("reservation transfer overflow"))?;
+        self.bytes = remaining;
+        destination.bytes = combined;
+        Ok(())
+    }
+
     // Release only unused capacity; the retained physical owner still has bytes.
     pub(crate) fn shrink_to(&mut self, bytes: u64) {
         let unused = self
@@ -260,6 +278,29 @@ mod tests {
             }
         }
         assert_eq!(super::buffer_capacity(usize::MAX), None);
+    }
+
+    #[test]
+    fn reservation_transfer_preserves_admission_and_retains_destination_charge() {
+        let authority = MemoryAuthority::new(100);
+        let other = MemoryAuthority::new(100);
+        let mut source = authority.reserve(60, "source").unwrap();
+        let mut destination = authority.reserve(40, "destination").unwrap();
+        let mut foreign = other.reserve(0, "foreign").unwrap();
+        assert!(source.transfer_to(&mut foreign, 1).is_err());
+        assert!(source.transfer_to(&mut destination, 61).is_err());
+        assert_eq!(
+            (source.bytes(), destination.bytes(), foreign.bytes()),
+            (60, 40, 0)
+        );
+        source.transfer_to(&mut destination, 60).unwrap();
+        assert_eq!((source.bytes(), destination.bytes()), (0, 100));
+        assert_eq!(authority.reserved(), 100);
+        assert!(authority.reserve(1, "concurrent admission").is_err());
+        drop(source);
+        assert_eq!(authority.reserved(), 100);
+        drop(destination);
+        assert_eq!(authority.reserved(), 0);
     }
 
     #[test]

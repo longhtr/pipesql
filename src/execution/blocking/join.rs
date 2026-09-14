@@ -89,6 +89,7 @@ impl<'db> Join<'db> {
         right: impl Iterator<Item = SemanticColumn>,
         keys: (u8, u8),
         kind: JoinKind,
+        runtime: &mut Reservation<'db>,
     ) -> Result<Vec<Self>, Error> {
         let left = RowLayout::for_join(left, usize::from(keys.0))?;
         let right = RowLayout::for_join(right, usize::from(keys.1))?;
@@ -119,6 +120,16 @@ impl<'db> Join<'db> {
             replayed: false,
             reservation,
         });
+        // Runtime releases this charge after the controller vector is freed,
+        // including when opening a later native source fails before execution.
+        let join = &mut owner[0];
+        join.reservation.transfer_to(
+            runtime,
+            (size_of::<Self>() - 2 * size_of::<SortedInput<'_>>()) as u64,
+        )?;
+        for side in &mut join.sides {
+            side.transfer_inline_to(runtime)?;
+        }
         Ok(owner)
     }
 

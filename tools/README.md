@@ -256,7 +256,47 @@ other failed calls must observe all successful allocations and their frees.
 fail event coverage. The supervisor independently rejects incomplete, duplicated
 or reordered prefix traces and requires the final healthy control.
 
-`check_failed_join_execution` then replaces the unique `text60` output with a
+`check_failed_join_construction` runs in a separate fresh
+`wide-left-join-construction` caller at both pathname lengths. The prepared query
+is fixed and excluded from the observer's baseline. A healthy execute-only census
+sets the complete prefix sweep, bounded by 512 allocations of campaign work.
+Refusal stays armed through heap/charge reconciliation and fixed-buffer error
+formatting. Descriptor checks follow with the error live. Every successful
+allocation in a refused prefix must have an observed free and nonnegative
+headroom. The full-prefix result reconciles its public charge, and the complete
+11-pair join and lifecycle checks follow the sweep. The
+`wide-left-join-construction-negative` mode omits prefix-one observation; the
+supervisor must reject it and incomplete or invalid prefix records.
+
+The raw caller also retains `wide-left-join-construction-sequence`, which follows
+the complete sweep with the changed-width demanded-expression histories. This is
+an unresolved native usable-heap diagnostic, excluded from passing fresh-cell
+qualification. It uses the same strict guards; no deficit is suppressed. To replay
+it, build the ordinary disposable caller with the supervisor's existing helper:
+
+```sh
+python3 -B - <<'PY'
+from pathlib import Path
+import runpy
+import subprocess
+import sys
+import tempfile
+
+sys.path.insert(0, "tools")
+allocation = runpy.run_path("tools/check-diagnostic-allocation.py")
+with tempfile.TemporaryDirectory(prefix="pipesql-construction-sequence-") as name:
+    work = Path(name).resolve()
+    allocation["build_driver"](work)
+    subprocess.run([str(work / "driver"), str(work / "history"),
+                    "wide-left-join-construction-sequence"], check=True, timeout=20)
+PY
+```
+
+A nonzero result is a diagnostic failure, not a passing gate. The
+[evidence](../notes/evidence.md#failed-wide-join-construction) records the observed
+Darwin extent and scope of the repair.
+
+`check_failed_join_execution` replaces the unique `text60` output with a
 numeric expression, retaining 64 columns and the other wide nullable STRINGs.
 Three expressions demand the same late LOG10 domain error directly, through a
 SAFE_DIVIDE argument and through a COALESCE fallback. Query text is freed before

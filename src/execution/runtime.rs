@@ -155,7 +155,8 @@ pub(super) struct Runtime<'db> {
     parents: [Option<u8>; MAX_PIPELINES],
     active: usize,
     phase: Phase,
-    // Node and controller vectors drop before their shared reservation.
+    // Node and aggregate vectors, and transferred join-controller inline storage,
+    // drop before their shared reservation.
     reservation: Reservation<'db>,
 }
 
@@ -366,6 +367,7 @@ impl<'db> Runtime<'db> {
                             plan.pipelines()[right.index()].output_columns(&query.plan),
                             (left_key, right_key),
                             kind,
+                            &mut self.reservation,
                         )?;
                         Owner::Join { join, output }
                     } else if let Producer::Order { input, start, len } = pipeline.producer {
@@ -517,6 +519,11 @@ impl<'db> Runtime<'db> {
         }
         assert_eq!(remaining.bytes(), 0);
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(super) fn controller_inline_bytes(&self, plan: &PhysicalPlan<'_>) -> u64 {
+        self.reservation.bytes() - Self::required_bytes(plan)
     }
 
     pub(super) fn memory_bytes(&self) -> u64 {

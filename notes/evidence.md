@@ -67,6 +67,42 @@ outputs and the verification container are removed. Pre-existing target artifact
 the image and installed toolchains remain. Windows, broader durability,
 physical-memory and sanitizer qualification remain unfinished.
 
+### Failed wide-join construction
+
+The initial 64-column nullable STRING LEFT JOIN execute-only census observed
+353 allocations. On macOS, refusing prefix 345 returned a typed filesystem-path
+out-of-memory error and fully released construction at return, but the scoped
+observer found requested headroom -1,344 and usable headroom -2,760. The first
+deficit occurred before freeing the 5,992-byte join controller vector, after its
+nested inline reservations had dropped. Entry/exit reconciliation alone missed
+this lifetime error.
+
+The repair transfers existing controller and sorter inline charges to the runtime
+reservation, which outlives the node and controller vectors. It adds no allowance
+or payload allocation. Run-buffer release returns only freed payload capacity;
+inline charge can remain local or belong to the runtime. The bounded prefix
+fixture keeps preparation outside fault injection, checks typed live errors and
+physical-free ordering, and retains the complete 11-pair healthy oracle. Focused
+short/384-byte sweeps and their missing-observer control pass. Full platform
+verification is pending. An initial library run used default parallel test
+threads and failed the process-global descriptor oracle in reclamation; that run
+is not passing evidence. Its join-account oracle also exposed the moved inline
+charge and now checks both the runtime transfer and independent physical sizes.
+All seven join tests and the selected reclamation test then pass in the retained
+sequential mode. Maintenance passes 99 tooling tests, 44 independent codec
+fixtures and 698 local links. The sequential test mode remains required.
+
+A second experiment combined the refusal sweep with the existing changed-width
+LOG10 failure query in one caller. Requested ownership remained covered, but
+Darwin usable headroom reached -219,998: one 3,817,440-byte request occupied
+3,899,392 usable bytes. This allocator-history counterexample remains unresolved;
+no hard usable-heap/RSS bound is claimed. Construction and demanded-error gates
+retain separate fresh callers. The strict combined history remains replayable as
+`wide-left-join-construction-sequence`, with instructions in the
+[tool map](../tools/README.md). It is a diagnostic with no passing qualification
+claim. Ordering and sorted-set controller lifetimes require a separate affected
+boundary review before extension.
+
 ### Bounded power expressions
 
 `38f2332` adds two-argument POW and its POWER alias through the existing binary

@@ -94,6 +94,16 @@ impl<'db> SortedInput<'db> {
         })
     }
 
+    // A heap-allocated controller's inline fields remain live after its fields
+    // have dropped. Their charge must follow the enclosing allocation instead.
+    fn transfer_inline_to(&mut self, destination: &mut Reservation<'db>) -> Result<(), Error> {
+        self.reservation.transfer_to(
+            destination,
+            (size_of::<Self>() - size_of::<RowSort<'_>>()) as u64,
+        )?;
+        self.sort.transfer_inline_to(destination)
+    }
+
     fn memory_bytes(&self) -> u64 {
         self.reservation.bytes()
             + self.sort.memory_bytes()
@@ -804,12 +814,15 @@ impl<'db> RunBuffer<'db> {
             self.spans.is_empty(),
             "flush the final run before releasing its arena"
         );
+        let payload_bytes = self.bytes.capacity()
+            + (self.spans.capacity() + self.work.capacity()) * size_of::<RecordSpan>();
         drop(std::mem::take(&mut self.bytes));
         drop(std::mem::take(&mut self.spans));
         drop(std::mem::take(&mut self.work));
-        // The arena is no longer needed during disk merging or reduction. Keep
-        // the inline fields charged until their containing owner is destroyed.
-        self.reservation.shrink_to(size_of::<Self>() as u64);
+        // Release only the freed arena. Inline storage may still be charged here
+        // or have transferred to the runtime that owns its enclosing allocation.
+        self.reservation
+            .shrink_to(self.reservation.bytes() - payload_bytes as u64);
         self.phase = RunPhase::Released;
     }
 }
@@ -1084,6 +1097,24 @@ pub(super) struct RowSort<'db> {
 }
 
 impl<'db> RowSort<'db> {
+    fn transfer_inline_to(&mut self, destination: &mut Reservation<'db>) -> Result<(), Error> {
+        self.reservation.transfer_to(
+            destination,
+            (size_of::<Self>() - size_of::<RunBuffer<'_>>() - size_of::<MergePasses<'_>>()) as u64,
+        )?;
+        self.buffer
+            .reservation
+            .transfer_to(destination, size_of::<RunBuffer<'_>>() as u64)?;
+        self.merge.reservation.transfer_to(
+            destination,
+            (size_of::<MergePasses<'_>>() - size_of::<PairMerge<'_>>()) as u64,
+        )?;
+        self.merge
+            .pair
+            .reservation
+            .transfer_to(destination, size_of::<PairMerge<'_>>() as u64)
+    }
+
     pub(super) fn memory_bytes(&self) -> u64 {
         self.reservation.bytes()
             + self.buffer.reservation.bytes()

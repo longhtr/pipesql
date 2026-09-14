@@ -484,6 +484,26 @@ The complete healthy join must still return all literal rows after these
 failures. Disabling one failed-call observation must fail coverage; missing,
 duplicated, reordered or incorrectly refused trace records must be rejected.
 
+For execution construction, keep the prepared query fixed outside allocation
+refusal and subtract its requested/usable heap and logical charge from each
+observation. Census `Database::execute` without stepping the result, then refuse
+every prefix through the healthy control under a 512-allocation campaign ceiling.
+Every failed prefix must return a typed allocation error and physically free each
+successful allocation before its charge disappears. Reconcile heap and charges,
+and format the live error, while refusal remains armed. Suspend faults only for
+caller descriptor counting and reporting. Check exact release with the error live
+and after dropping it; the healthy control must reconcile the result's charge.
+Require the ordered trace, nonnegative headroom and a negative control omitting
+one failed-call observation. The complete literal 11-pair join and lifecycle
+checks must follow the sweep.
+
+Run this construction campaign and the demanded-expression campaign in separate
+fresh callers at each pathname length. Their allocator histories are independent
+qualification inputs. The retained combined-history diagnostic can expose native
+usable extents beyond logical charges; it has no passing qualification claim.
+The [resource contract](resources.md#interpret-composed-memory-observations)
+distinguishes that unresolved native limit from requested ownership and release.
+
 Also demand numeric errors during execution of the wide join after a public
 `Progress` or `Rows` result with live temporary storage. Keep 64 output fields by
 replacing one STRING payload. Check direct LOG10 failure, a demanded SAFE_DIVIDE
