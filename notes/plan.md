@@ -25,6 +25,25 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
+## Active: failed preparation ownership
+
+Trace partial catalog/binder/plan construction and retained errors within a
+30-minute investigation. Extend the existing wide nullable STRING LEFT JOIN
+caller to observe failed preparation: measure the successful allocation census,
+refuse every prefix including zero, retain a healthy full-prefix control and
+check a demanded late-binding arithmetic error with its exact owned source span.
+Exercise both pathname lengths, restore heap/descriptors/reservations with the
+error live and after release, and preserve complete healthy rows, independent
+equations, calibration and phase-coverage controls. Repair a concrete deficit
+at its owner without padding allowances or adding an instrumentation framework.
+
+Complete focused checks and matching frozen sequential macOS/GNU arm64 Linux
+gates, reconcile discovery and semantic/allocation evidence, then run fresh
+examples sequentially. Document the failure ownership flow and limits, remove
+owned outputs, review the diff and commit locally. Normal lifecycle work remains
+closed beyond these failure histories; broader allocator, concurrency, RSS,
+Windows, durability and sanitizer qualifications remain open. Do not publish.
+
 ## Completed: transient preparation and release ownership
 
 `d84c30b` admits the two previously uncharged catalog-read paths during query
