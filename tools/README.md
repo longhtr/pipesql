@@ -59,6 +59,80 @@ must retain allocation, fault-arm, syscall, and cleanup order when edited.
 incomplete output, failed processes, and missing allocation coverage. Run it
 through the maintenance check, then run the affected stock campaigns.
 
+## Measure synchronization in a verification caller
+
+Use this diagnostic when a storage-heavy campaign is slow. It builds the existing
+allocation caller once and compares fresh stock and observed runs. The observer
+in [sync-timing.c](fixtures/sync-timing.c) forwards each native synchronization
+call unchanged and sums its elapsed nanoseconds. It measures F_FULLFSYNC on
+macOS and fsync on Linux. Other synchronization primitives are counted separately.
+Unexpected Darwin fcntl signatures fail closed.
+
+Run from the repository root with the ordinary native prerequisites. The command
+uses one Cargo job and removes its owned build and databases when finished:
+
+```sh
+CARGO_BUILD_JOBS=1 RUSTFLAGS='-D warnings' python3 -B - <<'PY'
+from pathlib import Path
+import re
+import runpy
+import sys
+import tempfile
+import time
+
+sys.path.insert(0, "tools")
+from check_process import run
+from check_support import native_library, observer_environment
+
+allocation = runpy.run_path("tools/check-diagnostic-allocation.py")
+root = Path.cwd()
+with tempfile.TemporaryDirectory(prefix="pipesql-sync-timing-") as name:
+    work = Path(name).resolve()
+    allocation["build_driver"](work)
+    observer = native_library(work, "sync-timing.c", "sync_timing")
+    for repeat in range(3):
+        for mode in ("allocation-capacity", "catalog-control", "catalog-after-0"):
+            outputs = []
+            for measured in ((False, True) if repeat % 2 == 0 else (True, False)):
+                path = work / f"case-{repeat}-{mode}-{int(measured)}"
+                started = time.monotonic()
+                result = run(
+                    [str(work / "driver"), str(path), mode],
+                    cwd=root, timeout=30, capture_output=True, text=True, check=True,
+                    env=observer_environment(observer) if measured else None,
+                )
+                elapsed = time.monotonic() - started
+                outputs.append(result.stdout)
+                if measured:
+                    record = re.fullmatch(
+                        r"sync_timing calls=(\d+) nanoseconds=(\d+) other_calls=0\n",
+                        result.stderr,
+                    )
+                    assert record, result.stderr
+                    calls, nanoseconds = map(int, record.groups())
+                    assert (calls == 0) == (mode == "allocation-capacity")
+                    assert calls == 0 or nanoseconds > 0
+                    print(mode, f"wall={elapsed:.6f}s", record[0].strip())
+                else:
+                    assert not result.stderr, result.stderr
+                    print(mode, f"stock_wall={elapsed:.6f}s")
+            assert outputs[0] == outputs[1], mode
+PY
+```
+
+The existing caller checks its outcomes; the supervisor requires matching stdout,
+a complete timing record, a zero-call control and positive observation of the
+catalog calls. An observed run is diagnostic evidence, not another passing fault
+campaign. Compare repeated timings and reverse run order before attributing a
+small difference to the observer. Process startup, non-synchronization work and
+cleanup outside the child are not included in the native-call sum. Concurrent
+calls contribute summed durations, which can exceed process wall time.
+
+A slow synchronization call locates time in the OS/storage path; it does not
+identify which filesystem, virtualization or device layer caused the wait, nor
+establish power-loss protection. The [timing investigation](../notes/evidence.md#verification-time-discrepancy)
+records the tested environments and limits.
+
 ## Fixture encoders
 
 `check-fixtures.py` is the supported comparison entry point. It calls the current

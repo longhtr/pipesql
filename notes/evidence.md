@@ -5348,8 +5348,9 @@ builds, were 40.732 seconds on macOS and 29.128 seconds on Linux.
 These three stages account for 91% of the total time difference. Repeated durable
 filesystem operations are a plausible major contributor: the native boundary
 uses F_FULLFSYNC on macOS and fsync within the Linux container's filesystem.
-There was no syscall-duration profile to establish exclusive attribution. This
-mixed compilation, subprocess and storage workload is not a platform query-speed
+At that checkpoint there was no syscall-duration profile to establish exclusive
+attribution. The later [timing investigation](#verification-time-discrepancy)
+measures representative synchronization calls. This mixed compilation, subprocess and storage workload is not a platform query-speed
 benchmark or evidence of equivalent power-loss guarantees. One fresh large
 measured report illustrates the distinction: ingestion took 2.532/0.314 seconds
 on macOS/Linux, while execution took 0.590/0.900 seconds.
@@ -5390,3 +5391,176 @@ fingerprint `81a85f90b806adef50d05998bf922750a961dd21b06048aedd4015156391ac54`.
 Owned exports, targets, databases, receipts, logs and monitoring outputs were
 removed, and the verification container and monitor stopped. The original
 342-file target and preserved verification image/toolchains were unchanged.
+
+
+## Verification time discrepancy
+
+The timing investigation explains the dominant cost in representative slow gate
+cases: repeated native synchronization, including database setup and healthy
+continuation. It does not establish an OS defect or rank platform durability.
+The earlier 1,842.482/587.029-second full gates remain historical observations;
+no full gate was repeated and no exact decomposition of every historical second
+is claimed. The three largest stage differences remain allocation, Rust tests
+and native I/O. The new measurements locate their representative storage costs
+instead of inferring a cause from stage names.
+
+### Method and results
+
+The starting tree was `d9655a1`. A frozen 744-input export included only the active
+plan update beyond that revision; its manifest SHA-256 was
+`534e2dc569b30cccbddcdad58324892de8f1c38c12d223c7540826e477ba9224`.
+The same engine, existing allocation/native I/O callers and pinned toolchains ran
+on native macOS and GNU arm64 Linux. Both used one Cargo job. Linux retained one
+CPU, uid/gid 1000, 2 GiB without extra swap, networking disabled and native
+container database storage. Live database paths were fresh for each case.
+
+First, 100 direct and 100 supervised no-op launches ran per platform, followed
+by three repetitions of 11 existing allocation/I/O cases. macOS process-group
+cleanup never entered its PermissionError/ps fallback. All measured group-signal
+calls across those launches and builds totaled 2.7 ms on macOS and 0.7 ms on
+Linux. Fifty no-op launches took 85–112 ms on macOS and 12–13 ms on Linux. This
+rules out that fallback as a substantial cost in these observations; it does not
+claim the fallback never runs in other process histories.
+
+A forwarding observer then timed the native synchronization calls without
+changing their arguments, results or failure positions. Each of the 11 cases
+ran three stock/observed pairs per platform. Existing caller assertions passed,
+and paired stdout agreed. Representative medians were:
+
+| Case | Calls on each platform | macOS stock wall, ms | Linux stock wall, ms | macOS observed sync, ms | Linux observed sync, ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Healthy catalog | 75 | 264.6 | 38.3 | 229.2 | 29.1 |
+| Allocation refusal at prefix 0, including healing | 33 | 113.9 | 17.8 | 101.3 | 11.9 |
+| Allocation refusal at prefix 528 | 69 | 243.0 | 32.2 | 194.3 | 23.0 |
+| Native create | 17 | 46.9 | 6.6 | 30.0 | 5.0 |
+| Native load | 35 | 114.7 | 15.2 | 85.9 | 11.7 |
+| Native derived query | 62 | 258.9 | 30.7 | 186.7 | 21.4 |
+
+Stock wall and synchronization times come from different paired processes;
+do not subtract their medians as an exact within-run decomposition. Within the
+observed cases above, synchronization accounted for roughly 69–79% of macOS
+wall time. Repetition varied, so there is no claimed zero-cost observer or
+precise universal multiplier. The final documented replay reverses pair order
+on its middle repetition and includes a zero-synchronization control.
+
+The Rust timing was separated into a build and direct execution. After the
+stock library build, compiling all workspace/all-target test executables with
+`cargo test --release --offline --locked --workspace --all-targets --no-run`
+took 118.211 seconds on macOS and 103.512 seconds on Linux. Child user/system CPU
+was 111.886/4.086 and 99.395/3.497 seconds, respectively. These builds used fresh
+owned targets initially populated by the library; they are not a reconstruction
+of the earlier gate's cache or host-pressure state.
+
+Direct execution selected `database::tests::` with one test thread. macOS ran
+25 tests; Linux first ran 27 because of its two additional pathname-scratch
+cases. A second Linux pair explicitly skipped `pathname_scratch` to compare the
+same 25 test names. Every selected test passed, none was ignored, and unrelated
+tests were intentionally filtered. This is focused evidence, not a rerun of all
+687 ordinary tests. The common 25-test stock runs took 19.661 seconds on macOS
+and 2.592 seconds on Linux. Observed runs took 19.079 and 2.478 seconds and made
+exactly 7,758 synchronization calls each, totaling 15.436 and 1.819 seconds.
+The original 27-test Linux pair also passed, with 7,792 observed calls.
+
+Temporary phase markers in the existing native I/O caller separated entry/setup,
+the armed operation and post-operation checks. Markers were placed at main entry,
+immediately before `io_probe_start` and immediately after `io_probe_stop`; the
+forwarding observer sampled cumulative counters without allocating per call.
+The resulting call counts agreed on both platforms:
+
+| Case | Setup calls | Armed-operation calls | Follow-up calls |
+| --- | ---: | ---: | ---: |
+| Standard byte-I/O control | 0 | 0 | 0 |
+| Create | 0 | 13 | 4 |
+| Load | 13 | 18 | 4 |
+| Q1 | 31 | 0 | 4 |
+| Derived query | 42 | 5 | 15 |
+| Derived query refused at its first observed read | 42 | 0 | 15 |
+
+The Q1 setup took 96.3 ms on macOS, including 87.2 ms in synchronization; its
+armed query took 1.7 ms. The derived fixture's setup took 143.9 ms, including
+127.3 ms in synchronization. Thus a query-labeled fault case can mostly measure
+its durable fixture construction. The phase variant was an exploratory
+observation, not a maintained profiler or an additional passing campaign.
+The retained total-call observer and replay below reproduce the principal
+attribution without needing that variant or removed outputs.
+
+### Disposition and retained reproduction
+
+No engine or gate behavior changed. Fresh creation is itself under test in the
+allocation sweep; native I/O cases also deliberately verify setup and healthy
+continuation. These observations do not justify suppressing synchronization,
+removing failure positions or reusing fixtures with different allocator histories.
+No redundant operation was demonstrated. A future fixture-reuse proposal would
+need to show equivalent case state, fault reachability, isolation and cleanup,
+then measure the complete affected campaign before claiming an improvement.
+
+[The retained diagnostic](../tools/README.md#measure-synchronization-in-a-verification-caller)
+uses the existing build, supervision and caller owners plus the small
+[synchronization observer](../tools/fixtures/sync-timing.c). It forwards real
+F_FULLFSYNC calls on macOS and fsync calls on Linux, preserves native errors,
+and reports other synchronization primitives separately. It is optional and
+outside the full gate. It sums native-call elapsed time, including any scheduling
+or storage wait within those calls; it cannot identify physical disk latency,
+prove flush completion at the device, or account for another process's calls.
+Concurrent durations can sum to more than process wall time.
+
+The documented command was run from fresh builds on both platforms. Each ran
+18 cells: three repetitions of stock/observed allocation-capacity, healthy-catalog
+and prefix-zero cases, with reversed middle pair order. Complete stdout agreed;
+zero/positive call controls and timing-record checks passed, with no other-sync
+calls. A separate native control performed a successful flush and an invalid-fd
+flush under the observer; both platforms retained success, failure and EBADF,
+and reported exactly two calls. These controls qualify the diagnostic's tested
+forwarding behavior, not power-loss durability or the existing fault campaigns.
+
+The initial 30-minute measurement allowance was sufficient. No broader OS or
+storage experiment was needed to decide the current action. Native macOS and
+Docker's Linux filesystem are different storage paths; locating most sampled
+time inside synchronization does not distinguish filesystem, virtualization,
+cache and device contributions. Neither speed nor the API names rank durability.
+
+
+### Verification, resources and cleanup
+
+The retained observer compiled with warnings denied on macOS 26.6.2 (25G83),
+arm64/APFS, and Linux 7.0.12-linuxkit aarch64 with an overlayfs container database
+path. The latter is native container storage, not bare-metal Linux or a
+host-shared database mount. The original image and toolchains were preserved.
+Maintenance verification passed 103 tooling tests and 44 independent codec
+fixtures. No existing Rust, allocation, native-failure or graph gate was changed.
+The documentation check passed 941 local links after the final plan update.
+
+Removing the 105 owned diagnostic database directories took 0.083 seconds on
+macOS and 0.024 seconds on Linux. Build-target removal was separate. CPU, memory
+pressure/swap, disk capacity and one-second I/O samples, and network counters were
+observed during sustained work. Free-memory percentage reached 38%; swap ranged
+2,239.06–2,287.06 MiB. Docker peaked at 1,248.256 MiB with no OOM and zero network
+traffic. These are environment observations, not engine admission or RSS bounds.
+
+| Observation receipt | SHA-256 |
+| --- | --- |
+| macOS initial cases and supervision | `bbb97ac9cbb60e60e8b3bb1a986bb2166b4c01f7a5a1bbd422aa92874a0c734d` |
+| Linux initial cases and supervision | `a23b8839a66d2682f802e98de852a05a3105d19f002691b035c4d6edc219c786` |
+| macOS paired synchronization cases | `b134fdf3c3eb5121548823a8d916b3dc6087ea2d95cbd582a889b41b130c40d4` |
+| Linux paired synchronization cases | `87048dbfb58e0cc54fdf85cbfeff16423e12c3334c557291db431e2a16743212` |
+| macOS common Rust tests | `e26e144eb69cdc6d1c3ff4e10749b2845aa3028039d21776b84f1028c94b0b7c` |
+| Linux common Rust tests | `00046cef9928b2a202539fad954d6b156cd78e5418cbc299fb162578f95e4085` |
+| macOS documented replay | `5035251570e30febced6e0d4343a1e806b57da33000f7d2d93384eef9bbd535a` |
+| Linux documented replay | `d5ac8a795014a193da1981ebe48027ec22a5df89a559060a0d33ed224e80cbcc` |
+
+The original allocation caller hashes were
+`e9f3f22a5db5abe44920357de7821b14af058f808c545ed17478f59355363b05` (macOS) and
+`97e2751df4c2d6de1de6a7139e8463a6d188858c0ee0769e361fc6896222174b` (Linux).
+Final observer-library hashes were
+`65d9d1a269bdd14c19508e0c28e50a5eace693e414a656c74c7b053029689219` (macOS) and
+`4c89d0dc16fa989ffa69759eaa29dfdc6376b024d00796b96632a5a0c0c05b8b` (Linux).
+Hashes identify observations; the retained caller, observer and documented
+command provide the principal reproduction inputs. Timing values are not fixed
+acceptance constants.
+
+Only the optional observer, its usage instructions and the two notes changed.
+Owned exports, test builds, diagnostic variants, databases, logs, receipts and
+monitoring outputs were removed; the container and monitor were stopped. The
+original 342-file target, verification image and installed toolchains were
+unchanged. All broader resource, concurrency, sanitizer, durability, filesystem,
+API/format and Windows qualifications remain open as previously recorded.

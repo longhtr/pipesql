@@ -32,6 +32,15 @@ Earlier language, tooling, append, reader and grouped-allocation work remains
 closed unless a concrete defect or new workload changes its scope. No historical
 archive is required.
 
+The [verification timing investigation](evidence.md#verification-time-discrepancy)
+is complete. Representative macOS/Linux cases perform the same synchronization
+calls, with most observed time spent inside those calls. Build times were much
+closer, and observed process cleanup was negligible. The optional
+[timing diagnostic](../tools/README.md#measure-synchronization-in-a-verification-caller)
+retains a small reproducible measurement; engine and gate behavior are unchanged.
+The underlying filesystem/virtualization/device contribution and comparative
+power-loss durability remain unqualified. No investigation goal remains active.
+
 ## Internal analytical learning checkpoint
 
 This is the internal checkpoint informally called “0.0.1 level.” It does not
