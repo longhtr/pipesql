@@ -12,7 +12,8 @@ outcomes are verified; no checkpoint goal remains. The final tested source is
 `081b1f8`. Its [complete verification record](evidence.md#final-internal-analytical-checkpoint)
 covers matching 24-stage macOS/GNU arm64 Linux gates, 687 ordinary Rust tests per
 platform, 103 tooling tests, 44 codec fixtures, 24 semantic cases, 350 composition
-records and 18 fresh scenarios per platform. Only these notes changed afterward.
+records and 18 fresh scenarios per platform. Engine sources remain at that
+checkpoint; subsequent work adds timing diagnostics and clarifies qualification.
 
 The [event-report lesson](../docs/event-report.md) is the entry point: build typed
 events and dimensions, append, reopen, report, retain an older snapshot, compare
@@ -32,14 +33,21 @@ Earlier language, tooling, append, reader and grouped-allocation work remains
 closed unless a concrete defect or new workload changes its scope. No historical
 archive is required.
 
-The [verification timing investigation](evidence.md#verification-time-discrepancy)
-is complete. Representative macOS/Linux cases perform the same synchronization
-calls, with most observed time spent inside those calls. Build times were much
-closer, and observed process cleanup was negligible. The optional
-[timing diagnostic](../tools/README.md#measure-synchronization-in-a-verification-caller)
-retains a small reproducible measurement; engine and gate behavior are unchanged.
-The underlying filesystem/virtualization/device contribution and comparative
-power-loss durability remain unqualified. No investigation goal remains active.
+## Synchronization comparison
+
+The [root-cause investigation](evidence.md#virtual-disk-synchronization-root-cause)
+is complete. The observed Docker disk uses a weaker host synchronization policy
+than native macOS PipeSQL. Changing only that policy in a controlled Linux VM
+reproduced the slowdown with both raw writes and the stock catalog caller. The
+[retained experiment](../tools/README.md#compare-virtual-disk-synchronization-guarantees)
+and qualification contract now make that distinction explicit. No engine or full
+gate behavior changed; the completed analytical checkpoint stays closed.
+
+Fresh creation's four recovery calls remain an optimization candidate, not an
+explanation of the platform gap or an activated implementation milestone. Any
+future change needs strict initial-state and lease validation, an end-to-end
+benefit, and persistent-boundary qualification. There is no remaining task in the
+synchronization investigation. Broader qualifications below remain unresolved.
 
 ## Internal analytical learning checkpoint
 

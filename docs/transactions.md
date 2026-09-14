@@ -217,6 +217,10 @@ the same publication and recovery authorities on both native implementations.
 Their Linux runtime tests include simulated effect failures and process death;
 those checks do not establish power-loss durability or native failure coverage.
 The [platform matrix](testing.md#platform-status) separates these scopes.
+For a virtualized filesystem, the virtual disk's host synchronization policy is
+also a premise; see the [verification contract](verification.md#linked-native-effects).
+A guest flush acknowledged under a weaker host policy cannot establish the
+full-device guarantee required here.
 
 Every engine synchronization barrier performs one native call through the
 private filesystem boundary. Darwin uses F_FULLFSYNC with no fsync/barrier-only

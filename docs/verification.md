@@ -606,7 +606,17 @@ is active before failure coverage can pass.
 
 Linux [`fsync`](https://man7.org/linux/man-pages/man2/fsync.2.html) requires a
 separate directory synchronization for directory entries; device and filesystem
-premises remain part of durability qualification. Neither the
+premises remain part of durability qualification. A virtual disk adds a host
+synchronization policy to those premises. Apple Virtualization's
+[fsync mode](https://developer.apple.com/documentation/virtualization/vzdiskimagesynchronizationmode/fsync)
+has weaker drive-cache guarantees than its
+[full mode](https://developer.apple.com/documentation/virtualization/vzdiskimagesynchronizationmode/full).
+Guest fsync success does not override that policy. Record the active virtual-disk
+mode before comparing synchronization latency or qualifying durability. A guest
+fault campaign can still verify engine call ordering and failure handling while
+the host policy prevents a full-device durability claim. The
+[controlled comparison](../notes/evidence.md#virtual-disk-synchronization-root-cause)
+records one observed instance. Neither the
 [dynamic loader](https://man7.org/linux/man-pages/man8/ld.so.8.html) nor
 [symbol forwarding](https://man7.org/linux/man-pages/man3/dlsym.3.html) instruments
 kernel internals or qualifies another libc/static-linking configuration.

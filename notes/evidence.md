@@ -5513,11 +5513,12 @@ flush under the observer; both platforms retained success, failure and EBADF,
 and reported exactly two calls. These controls qualify the diagnostic's tested
 forwarding behavior, not power-loss durability or the existing fault campaigns.
 
-The initial 30-minute measurement allowance was sufficient. No broader OS or
-storage experiment was needed to decide the current action. Native macOS and
-Docker's Linux filesystem are different storage paths; locating most sampled
-time inside synchronization does not distinguish filesystem, virtualization,
-cache and device contributions. Neither speed nor the API names rank durability.
+The initial investigation stopped after locating the waiting. That answered a
+narrower question than why the platform gap existed or whether it was justified.
+The [subsequent controlled investigation](#virtual-disk-synchronization-root-cause)
+supersedes that stopping decision and identifies an unequal virtual-disk
+synchronization premise. The timings above remain observations of their original
+configurations; they are not comparisons under equal durability guarantees.
 
 
 ### Verification, resources and cleanup
@@ -5564,3 +5565,191 @@ monitoring outputs were removed; the container and monitor were stopped. The
 original 342-file target, verification image and installed toolchains were
 unchanged. All broader resource, concurrency, sanitizer, durability, filesystem,
 API/format and Windows qualifications remain open as previously recorded.
+
+## Virtual-disk synchronization root cause
+
+The dominant storage-wait comparison had unequal host synchronization guarantees.
+Native macOS PipeSQL requested F_FULLFSYNC. The observed Docker Apple
+Virtualization backend configured its writable disk with
+VZDiskImageSynchronizationModeFsync, a best-effort host policy. Changing only
+that policy in an isolated Linux VM reproduced the slowdown in both direct
+block writes and the existing PipeSQL catalog caller. The earlier gate timings
+therefore do not demonstrate that macOS is intrinsically slower or worse at the
+same durability requirement.
+
+This resolves the principal cause, not every second of the historical full gate.
+The original gates also include compilation, process startup, guest filesystem
+work and other costs. No exact reconstruction of removed historical logs, no
+bare-metal Linux comparison and no controlled-power result is claimed.
+
+### Trace the actual host policy
+
+The observed host was macOS 26.6.2 (25G83), arm64, with APFS database storage.
+Docker Desktop 4.89.0 used its Apple Virtualization backend, engine 29.7.2 and
+Linux 7.0.12-linuxkit. The live backend command attached Docker.raw as its writable
+disk, and its startup log reported caching enabled. The container database path
+used overlayfs on that virtual disk. Native container storage avoids the
+host-shared pathname problem; it does not bypass the VM's disk policy.
+
+The installed `com.docker.virtualization` binary had SHA-256
+`9309519ad607c9bab980aaaa2b15a428740f0c74889e106f878ace9a4cbdf6f9`.
+Disassembly and Mach-O fixups established the following chain:
+
+1. `_add_disk` at `0x1006e166c` calls the attachment helper at `0x1006e1748`.
+2. Its receiver class reference at `0x100fe08f8` binds to
+   VZDiskImageStorageDeviceAttachment.
+3. Immediately before the call at `0x1006e17e0`, `mov x5, #0x2` and
+   `mov x4, x5` set synchronization and caching to 2.
+4. The called stub at `0x1006e5528` loads selector reference `0x100fe06f0`.
+   Its fixup points to `0x100d7f8de`, the selector
+   `initWithURL:readOnly:cachingMode:synchronizationMode:error:`.
+
+On this arm64 Objective-C call, x4 is cachingMode and x5 is synchronizationMode.
+The installed Virtualization SDK header defines Cached as 2, Full as 1 and Fsync
+as 2. `otool -tvV`, `otool -v -s __TEXT __objc_stubs`,
+`otool -v -s __TEXT __objc_methname` and `xcrun dyld_info -fixups` reproduce the
+chain for this binary. Addresses and the selected policy must be rechecked after
+an application update; this is an observed configuration, not a universal Docker
+setting or an inference from the word “cache.”
+
+Apple documents [full mode](https://developer.apple.com/documentation/virtualization/vzdiskimagesynchronizationmode/full)
+as synchronizing through the drive cache to permanent storage. Its
+[fsync mode](https://developer.apple.com/documentation/virtualization/vzdiskimagesynchronizationmode/fsync)
+has best-effort guarantees; the SDK explicitly distinguishes it from draining
+the drive's internal cache. The guest's Linux fsync call cannot strengthen the
+host attachment policy. This establishes a weaker advertised guarantee, not an
+observation that a particular write was lost. The native full-flush path also
+remains conditional on the OS, filesystem and device honoring their contracts.
+
+### Controlled experiments
+
+Small-file probes first removed PipeSQL from the measurement. Each platform ran
+three repetitions of 128 calls per primitive/workload, reversing primitive order
+on the middle repetition. Every file was fresh, initialized and synchronized
+before timing, read back afterward and removed. The directory workload created
+and unlinked one child per iteration. Native macOS median dirty-file flushes were
+0.020 ms for fsync, 0.340 ms for F_BARRIERFSYNC and 2.995 ms for F_FULLFSYNC.
+Directory medians were 0.001, 0.281 and 3.726 ms, respectively. Docker guest fsync
+medians were 0.0765 ms for dirty files and 0.2965 ms for directories. Unchanged-file
+and no-flush controls demonstrated that the dirty full-flush cost was not a
+fixed per-call application overhead. These initial probes motivated the causal
+experiment; different filesystems still confounded a direct platform comparison.
+
+The [retained experiment](../tools/README.md#compare-virtual-disk-synchronization-guarantees)
+then held the guest kernel, program, CPU, memory, cached attachment and initial
+disk bytes fixed. Only the data attachment's synchronization mode changed. Each
+VM had one CPU, 256 MiB, no network device, a read-only ext4 boot disk and a fresh
+writable disk. Init mounted devices and forked a worker with uid/gid 1000. Both
+modes had the same entropy device, so a newly booted kernel did not wait for its
+first random seed inside a measured database operation.
+
+The raw-block probe used aligned 4 KiB O_DIRECT writes and timed fsync separately,
+with 128 samples per workload and checked readback. The catalog probe used the
+unchanged optimized allocation caller on a fresh ext4 disk. This is direct ext4,
+not Docker overlayfs. Its existing assertions checked allocation refusal,
+continuation and query results. Three repetitions per mode ran in alternating
+order; all complete catalog outputs agreed. The final retained replay produced:
+
+| Workload | Host fsync policy | Host full policy |
+| --- | ---: | ---: |
+| Raw unchanged-data flush, median ms/call | 0.0175 | 0.0235 |
+| Raw dirty-data flush, median ms/call | 0.0413 | 3.9293 |
+| Allocation-capacity control, median wall ms | 7.73 | 6.52 |
+| Healthy catalog, median wall ms | 22.46 | 538.03 |
+| Prefix-zero refusal and healing, median wall ms | 10.07 | 238.70 |
+
+The small control did not acquire the storage-heavy slowdown. Dirty raw flushes
+were about 95 times slower with full mode; the healthy catalog was about 24 times
+slower. These ratios describe this controlled experiment, not a full-gate
+prediction. An earlier exploratory repetition measured 22.36/545.12 ms for the
+healthy catalog, consistent with the retained result.
+
+Fresh native macOS runs of the same caller had medians of 274.21 ms for healthy
+catalog and 114.84 ms for prefix-zero refusal/healing. All nine selected cells
+passed. The first allocation-capacity launch took 568.8 ms; its later launches
+took 8.4 and 5.0 ms. That cold-launch observation remains in the record rather
+than being attributed to storage. The isolated full-policy Linux catalog was
+slower than native macOS in these observations. This defeats the earlier
+unqualified ranking; differences in filesystem and VM execution still prevent a
+general operating-system ranking.
+
+The Linux kernel SHA-256 was
+`6747bf2ef8eebe6d5b0c45278b55b8f91524e671597a4553523b8ece6af5d9bb`.
+The final replay built the stock caller from unchanged engine sources at
+`8f88fee`; its driver SHA-256 was
+`97e2751df4c2d6de1de6a7139e8463a6d188858c0ee0769e361fc6896222174b`.
+The native macOS driver SHA-256 was
+`06bced1e4df554cd33d131b9aa07015cf79a445adb50ef6f266760be6220cfbf`.
+Absolute build paths affect artifacts; cross-platform byte identity is not
+claimed. The retained guest/controller hashes were
+`91812ca6d933e7de046d2011aea0bcdf7059c55e215cf00cacec0c5f14cba9cd` and
+`2f82b91f6aeef689207296ab22f08fccfab0fb07d9daf79537af7bc1ebfe6ef8`.
+
+Initial VM attempts exposed two setup mistakes before successful measurements:
+the Docker kernel has CONFIG_BLK_DEV_INITRD disabled, and it automatically mounts
+devtmpfs. The retained setup uses a separate boot disk and accepts an already
+mounted devtmpfs while checking the raw device type. An initial catalog VM lacked
+an entropy device and included roughly one second of first-random-seed waiting;
+those exploratory timings are not the table above. Failed setup attempts are not
+passing experiments. The final unformatted-disk negative control confirmed that
+a guest failure can shut down the VM normally; the supervisor requires the
+PROBE_OK marker as well as successful process completion.
+
+### Disposition and verification
+
+The repair is to the comparison and its qualification, not to the engine's flush
+primitive. The transaction and verification contracts now explicitly include a
+virtual disk's host policy. Existing Linux semantic, native-failure and
+process-interruption results remain valid within their recorded scope. They do
+not establish full-device persistence under this weaker host policy. No Docker
+setting, production synchronization primitive, gate membership or fault position
+changed. Repeating a full gate on the same unequal configuration would not answer
+this causal question, so the unchanged engine gates were not rerun.
+
+The create/append/reopen trace also identified a separate optimization candidate.
+Fresh `finish_create` writes and synchronizes the initial namespace, then invokes
+recover-capable validation. On pristine state that recovery synchronizes the
+root directory, rewrites/synchronizes the fence and synchronizes the units and
+private directories: four calls. Replacing recovery requires preserving expected
+lease/database identity and strict initial-state validation. Existing reopen
+barriers also cover prior failed synchronization and cannot be removed merely
+because names look settled. No engine change was retained: reducing this call
+count does not explain the platform latency gap, and its durability proof and
+full qualification are separate work. No speedup from that candidate is claimed.
+
+The broader lesson is concrete: time spent inside a syscall identifies a boundary,
+not the cause of waiting. Trace the guarantee through virtualization, then vary
+that policy with the caller held fixed. Stopping at syscall attribution left the
+original question unanswered; the controlled policy change resolved it.
+
+The final documented replay passed 12 positive VM runs: 12 raw-workload records
+and 18 stock catalog/control executions. Its unformatted-disk rejection control
+also passed. Both retained C/Objective-C fixtures compiled with warnings denied.
+Maintenance verification passed 103 tooling tests and 44 independent codec
+fixtures; the documentation check found no broken local links. These focused
+checks do not stand in for an unrun full engine gate.
+
+The final replay receipt SHA-256 was
+`2ece565099fc8390a6b85dbc1918f1f05cddd9ed4002d169aa789c9e1050bec7`;
+the fresh macOS caller receipt was
+`6b2acff22eab0a281f220449eb6d9fe761d72fa592f3caa8ef3d2be43a9588e2`.
+The procedures and source reproduce the observations; removed receipts are not
+required inputs. No historical archive was recreated.
+
+Live monitoring covered CPU, memory pressure, swap, free space, one-second disk
+I/O samples and network counters. Observed free-memory percentages ranged from
+35 to 71; swap ranged from 2,095.06 to 2,199.06 MiB. Owned containers peaked at
+854.9 MiB sampled memory and 100.63% CPU, with zero network traffic. Host disk free
+space stayed above 188.45 GiB. Builds used one Cargo job and the same preserved
+image, one container CPU, uid/gid 1000, a 2 GiB memory/swap limit and no networking.
+The separate experimental guest had 256 MiB configured RAM; this is not a claim
+about its total host RSS. No resource observation qualifies engine admission or
+physical-memory bounds.
+
+All owned containers, VM disks, source exports, targets, temporary binaries,
+receipts and monitoring output were removed after their processes finished.
+The original workspace target remained at 342 files with maximum modification
+time 1789272882.6037393. The preserved verification image retained SHA-256
+`520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
+Installed toolchains, unrelated containers and Docker's disks/settings were
+unchanged.

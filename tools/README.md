@@ -131,7 +131,167 @@ calls contribute summed durations, which can exceed process wall time.
 A slow synchronization call locates time in the OS/storage path; it does not
 identify which filesystem, virtualization or device layer caused the wait, nor
 establish power-loss protection. The [timing investigation](../notes/evidence.md#verification-time-discrepancy)
-records the tested environments and limits.
+records the tested environments and limits. Before comparing platforms, also
+check the virtual-disk policy using the diagnostic below. Equal guest call counts
+do not imply equal host synchronization guarantees.
+
+## Compare virtual-disk synchronization guarantees
+
+A guest `fsync` cannot provide a stronger guarantee than its virtual disk's host
+policy. Apple Virtualization distinguishes [full synchronization](https://developer.apple.com/documentation/virtualization/vzdiskimagesynchronizationmode/full)
+from [best-effort fsync](https://developer.apple.com/documentation/virtualization/vzdiskimagesynchronizationmode/fsync).
+Use this optional diagnostic to change that policy while keeping the guest
+kernel, program, CPU, memory, caching mode and initial disk bytes fixed.
+
+The [host controller](fixtures/virtual-disk-sync-host.m) boots a Linux guest with
+one CPU, 256 MiB, no network device and a read-only boot disk. The
+[guest probe](fixtures/virtual-disk-sync-guest.c) runs as init to mount its private
+devices, then measures with uid/gid 1000. Its raw-block workload separates 128
+unchanged-data flushes from 128 aligned writes followed by flushes, with readback
+checks. Its catalog workload runs the existing allocation caller's zero-sync,
+healthy-catalog and prefix-zero refusal/healing controls. An entropy device keeps
+initial random-seed waiting out of database startup. Boot and unmount are outside
+the reported intervals; catalog intervals include fork, execution and wait.
+
+Run on an Apple silicon Mac with the command-line SDK, codesign and Docker. Set
+`PIPESQL_VM_IMAGE` to an already provisioned GNU arm64 image containing the pinned
+Rust toolchain, Python, a static C toolchain, glibc and `mkfs.ext4`. Set
+`PIPESQL_VM_KERNEL` to a local arm64 Linux kernel with virtio block/console/entropy,
+devtmpfs and ext4 built in. This diagnostic does not download a kernel or image,
+change Docker settings, or attach Docker's own disk. Each writable image below
+is a new expendable file.
+
+Run from the repository root. The command uses the existing library build helper,
+requires every child to succeed, compares complete catalog output across modes,
+reverses mode order on the middle repetition, and removes its container and files:
+
+```sh
+python3 -B - <<'PY'
+from pathlib import Path
+import os
+import re
+import shutil
+import sys
+import tempfile
+import uuid
+
+sys.path.insert(0, "tools")
+from check_process import run
+
+root = Path.cwd().resolve()
+image = os.environ["PIPESQL_VM_IMAGE"]
+kernel = Path(os.environ["PIPESQL_VM_KERNEL"]).resolve(strict=True)
+container = "pipesql-sync-" + uuid.uuid4().hex[:12]
+
+def checked(*command, **options):
+    return run(list(map(str, command)), cwd=root, check=True, timeout=180, **options)
+
+with tempfile.TemporaryDirectory(prefix="pipesql-virtual-sync-") as name:
+    work = Path(name).resolve()
+    started = False
+    try:
+        checked("docker", "image", "inspect", "--format", "{{.Id}}", image)
+        checked("docker", "run", "-d", "--name", container,
+                "--user", "1000:1000", "--cpus", "1", "--memory", "2g",
+                "--memory-swap", "2g", "--network", "none",
+                "-e", "CARGO_BUILD_JOBS=1", "-e", "RUSTFLAGS=-D warnings",
+                "--mount", f"type=bind,source={root},target=/source,readonly",
+                image, "sleep", "infinity")
+        started = True
+        checked("docker", "exec", "-w", "/source", container,
+                "python3", "-B", "-c", r'''
+from pathlib import Path
+import runpy
+import shutil
+import subprocess
+import sys
+sys.path.insert(0, "tools")
+work = Path("/tmp/probe")
+work.mkdir()
+runpy.run_path("tools/check-diagnostic-allocation.py")["build_driver"](work)
+boot = work / "root"
+boot.mkdir()
+for name in ("dev", "proc", "tmp"):
+    (boot / name).mkdir()
+subprocess.run(["cc", "-static", "-O2", "-Wall", "-Wextra", "-Wconversion",
+                "-Werror", "tools/fixtures/virtual-disk-sync-guest.c",
+                "-o", str(boot / "init")], check=True)
+shutil.copy2(work / "driver", boot / "driver")
+for name in ("/lib/ld-linux-aarch64.so.1",
+             "/lib/aarch64-linux-gnu/libgcc_s.so.1",
+             "/lib/aarch64-linux-gnu/libm.so.6",
+             "/lib/aarch64-linux-gnu/libc.so.6"):
+    destination = boot / name.lstrip("/")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(name, destination)
+subprocess.run(["mkfs.ext4", "-q", "-F", "-d", str(boot),
+                str(work / "boot.raw"), "65536"], check=True)
+subprocess.run(["mkfs.ext4", "-q", "-F", str(work / "data.raw"), "32768"], check=True)
+''')
+        for image_name in ("boot.raw", "data.raw"):
+            checked("docker", "cp", f"{container}:/tmp/probe/{image_name}", work / image_name)
+        checked("cc", "-fobjc-arc", "-Wall", "-Wextra", "-Werror",
+                "-framework", "Foundation", "-framework", "Virtualization",
+                root / "tools/fixtures/virtual-disk-sync-host.m", "-o", work / "host")
+        entitlement = work / "entitlements.plist"
+        entitlement.write_text('<plist version="1.0"><dict>'
+                               '<key>com.apple.security.virtualization</key>'
+                               '<true/></dict></plist>')
+        checked("codesign", "--force", "--sign", "-", "--entitlements", entitlement, work / "host")
+        expected_catalog = None
+        for repeat in range(3):
+            modes = ("fsync", "full") if repeat != 1 else ("full", "fsync")
+            for workload in ("raw", "catalog"):
+                for mode in modes:
+                    disk = work / f"{repeat}-{workload}-{mode}.raw"
+                    if workload == "raw":
+                        with disk.open("xb") as output:
+                            output.truncate(16 * 1024 * 1024)
+                    else:
+                        shutil.copyfile(work / "data.raw", disk)
+                    result = checked(work / "host", kernel, work / "boot.raw", disk,
+                                     mode, workload, capture_output=True, text=True)
+                    lines = result.stdout.splitlines()
+                    assert lines.count("PROBE_OK") == 1, result
+                    assert "IDENTITY uid=1000 gid=1000" in lines, result
+                    assert not any("PROBE_ERROR" in line for line in lines), result
+                    records = [line for line in lines if line.startswith(("RAW ", "CATALOG "))]
+                    assert len(records) == (2 if workload == "raw" else 3), result
+                    if workload == "catalog":
+                        output = [line for line in lines if not line.startswith(
+                            ("CATALOG ", "IDENTITY ", "PROBE_OK"))]
+                        if expected_catalog is None:
+                            expected_catalog = output
+                        assert output == expected_catalog, (output, expected_catalog)
+                    assert re.search(r"cache=2 sync=" + ("1" if mode == "full" else "2"),
+                                     result.stderr), result
+                    print(f"repeat={repeat} workload={workload} mode={mode}",
+                          *records, sep="\n", flush=True)
+                    disk.unlink()
+        # An unformatted catalog disk must fail in the guest even when the VM
+        # shuts down normally. A zero host exit code alone is insufficient.
+        disk = work / "unformatted.raw"
+        with disk.open("xb") as output:
+            output.truncate(16 * 1024 * 1024)
+        rejected = checked(work / "host", kernel, work / "boot.raw", disk,
+                           "fsync", "catalog", capture_output=True, text=True)
+        assert "PROBE_ERROR operation=mount-data" in rejected.stdout, rejected
+        assert "PROBE_OK" not in rejected.stdout, rejected
+        print("unformatted-disk rejection control passed", flush=True)
+    finally:
+        if started:
+            checked("docker", "rm", "-f", container)
+PY
+```
+
+Require the complete guest output and successful VM shutdown. A shutdown alone
+can follow a failed guest check. These are controlled latency experiments, not
+power-loss tests or additional passing fault campaigns. The raw-block test has
+no guest filesystem; the catalog test uses ext4 directly, whereas Docker may add
+a container filesystem layer. Neither provides a numerical prediction for an
+entire gate or a general ranking of operating systems. The
+[comparison record](../notes/evidence.md#virtual-disk-synchronization-root-cause)
+connects the controlled result to the observed Docker configuration.
 
 ## Fixture encoders
 
