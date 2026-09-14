@@ -7,6 +7,14 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
+The [calendar-year projections](evidence.md#calendar-year-projections) are
+complete in `a2fed93`. Matching macOS/GNU arm64 Linux core gates pass 680 ordinary
+Rust tests, the expanded ownership selection, 24 semantic cases and 326
+composition records. Fresh calendar, declared-table, logical-plan and STRING
+measurement examples pass. The [calendar lesson](../docs/calendar-year.md)
+connects the existing Gregorian decoder to typed projection and grouping;
+no allocation owner, allowance or persistent format changes.
+
 The [borrowed logical-plan explanation](evidence.md#borrowed-logical-plan-explanations)
 is complete in `2244948`. The public view exposes validated semantic relationships
 without adding engine effects or allocation ownership. Matching macOS/GNU arm64
@@ -134,38 +142,6 @@ release across 1,020 executions per platform. Both variants observe the same
 logical memory and no temporary use; the measurements retain their sample spread
 and do not justify an engine optimization. Fresh macOS/GNU arm64 Linux runs and
 wrong-total controls pass. All pre-existing non-Markdown inputs remain unchanged.
-
-## Active milestone: extract a calendar year
-
-Add the bounded projection `EXTRACT(YEAR FROM date)` so analytical queries can
-group DATE values by calendar year. Reuse the validated DateValue calendar
-conversion and existing typed computation, demand and batch owners. Accept a
-DATE column or existing bounded DATE constant expression; return INT64 with
-input nullability and fold constant inputs. Later stages can use the projected
-numeric identity. Other date parts and unsupported argument forms remain rejected.
-
-Confirm upstream semantics before implementation. The first falsifier is a
-literal set of calendar boundaries, including years 0001 and 9999, dates before
-the epoch, leap/century transitions and NULLs. Preserve owned rejection spans,
-source corruption detection, conditional demand, cancellation, admission and
-replay. Add no calendar algorithm, general expression framework, allocation owner,
-allowance or persistent format when existing owners suffice.
-
-Update logical-plan diagnostics, add a runnable year-grouping example and connect
-it to the date conversion owner. Finish focused checks, matching sequential
-macOS/GNU arm64 Linux core, semantic/composition and affected ownership checks,
-then sequential fresh examples, documentation, review and owned-output cleanup.
-Commit coherent verified changes and synchronize the reviewed checkpoint.
-
-Implementation and focused checks now cover stored calendar boundaries, folded
-constants, identities, materialization, owned errors, cancellation, independent
-validator mutations, corrupted DATE demand and forced grouping replay. The
-[calendar lesson](../docs/calendar-year.md) checks a fresh five-row database.
-Matching macOS/GNU arm64 Linux core gates pass 680 ordinary tests, 100 tooling
-tests and 44 codec fixtures. Both ownership campaigns, 24 semantic cases, 326
-composition records and sequential fresh examples pass. Final evidence, cleanup
-and checkpoint commits remain. The ownership selection includes two DATE
-extraction shapes and retains independent missing-marker controls.
 
 ## Next engineering priorities
 

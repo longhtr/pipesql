@@ -5,6 +5,107 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Calendar-year projections
+
+`a2fed93` adds bounded EXTRACT(YEAR FROM date) projections. The
+[calendar lesson](../docs/calendar-year.md) follows stored DATE input through
+its existing Gregorian decoder, typed INT64 projection and grouped execution.
+The parser and binder reuse constant DATE syntax and shifts; runtime reads a
+checked source/materialized DATE or owned DATE constant. Literal extraction
+folds during preparation. The shared typed-input lookup keeps both DATE and
+STRING out of numeric input buffers. No calendar algorithm, allocation owner,
+admission allowance, persistent format or general expression framework was added.
+
+Eight public tests cover literal years 0001 and 9999, negative epoch offsets,
+leap/century boundaries, the Gregorian/ISO-year distinction, NULLs, retained DATE
+values and reopen. Constant tests release SQL before execution, retain the eight
+DATE-shift nesting limit and reject the ninth shift and invalid intermediates.
+Typed identities compose with arithmetic, predicates, aggregation, joins,
+ordering and set materialization. Demanded arithmetic keeps its owned span;
+COALESCE and Boolean skips retain their distinct evaluation/loading behavior.
+Cancellation, abandoned results and a literal logical-plan report are checked.
+Independent semantic/physical mutations reject wrong types, nullability, scope,
+producer provenance and raw DATE positions used as extracted INT64 outputs.
+
+The corrupted-DATE fixture keeps metadata/checksums and changes a demanded
+payload. A false earlier filter and skipped Boolean branch complete without
+reading it; direct extraction, numeric conversion, selected COALESCE dependencies
+and NULL tests fail before rows. The native admission fixture checks the existing
+147,424-byte DATE payload capacity and a 6,176-byte runtime extraction workspace,
+including exact admission and one-byte-short refusal before I/O. Two added
+forced-replay variants retain a DATE constant across sorting or create it after
+sorting, then extract its year and feed grouping; literal totals are 4007 and
+2007. All 42 retained replay variants pass. Focused checks caught an ambiguous
+fixture alias and a stale ownership-census marker; their corrections preserved
+name resolution and independent missing-marker controls.
+
+Sequential macOS and GNU arm64 Linux 14-stage core gates pass 680 ordinary Rust
+tests each across nineteen discovered targets: seven nonempty suites and twelve
+empty example harnesses. macOS has 448 library, 15 CLI, 173 catalog, 10 execution,
+seven lifecycle, six load and 21 filesystem tests. Linux has 450 library and
+19 filesystem tests; other counts agree. No ordinary test is ignored or filtered.
+The separate lease subprocess passes one test with six intentional filtered
+siblings. Both platforms pass 100 tooling tests, 44 independent codec fixtures,
+warnings-denied Clippy and Rustdoc, and the zero-case doc-test harnesses.
+Stage totals are 473.066 s on macOS and 175.712 s on Linux.
+
+Both complete ownership selections pass nineteen analytic cases and six wide-set
+cases at each pathname length, construction-refusal prefixes 0–352 and healthy
+control 353, partial-result/formatter observations and all sixteen negative
+controls. The two added analytic shapes check year 1969 before and after spooling
+with complete rows, requested/usable attribution and release. Stock CLIs pass
+24 independent semantic cases and 326 composition records; only the documented
+database-path and output-digest fields are normalized for cross-platform
+comparison. The year corpus uses independent Python calendar expectations and
+literal boundary/shift results. Native fault/interruption campaigns were not
+rerun; their preceding checkpoint and broader qualifications remain separate.
+
+Fresh examples run after both platform campaigns, macOS then Linux. Calendar
+input yields four groups: NULL/40/1, 1999/10/1, 2000/25/2 and 2001/30/1, followed
+by `status=finished`. Declared-table output remains north 15/3/2 and south 20/1/1;
+the logical-plan example retains its literal report and total 38. BYTE_LENGTH
+returns 5/5/12; the character lesson returns 2/1/3/2/4/1/11/3. All executions exit
+zero with empty stderr, exact expected results and terminal completion.
+
+| Receipt/artifact | macOS SHA-256 | GNU arm64 Linux SHA-256 |
+| --- | --- | --- |
+| Core receipt | `ec5befab63970a65d0f7274f2167fba08590b4b9d7c1dae373c9e75a99392ce1` | `9ae3fd8679021f1aa9f7219b5010efaff4876b0e0da7fb17ca69d7ca1fa27347` |
+| Ownership driver | `740a30c8496f17fbd80da00f9890e7ae5882b6078a5fcf71d2269a0bdbe06891` | `b5066604514bea8c44d621ad2ae74c7511b27de32c05f3f127ee74b29f2539b9` |
+| Ownership log | `af5c728496f236f0a3e28cc1d89bc8807fa51ec49df9ded02775a8c447bccef6` | `bdbf1540b7c01b4482839a1a2cc617f65fb5b1f350c308da40fa313035067917` |
+| Stock CLI | `34c02f5414535132d9f778561d016654672565e569558032a5856d9b9b780fde` | `e0315e1a34fbb5b2fff910d28899685b6069b3620222156c8572fdb3a908a64b` |
+| Semantic records | `cb2a492fdb3b94612b168935c9abd3f9dfeb0a2ee70f31478455f5b37bfc51be` | `db060c05a5ecf80f4fc3208c2cd186030c97b1ec2d3f7f903e3e6d516ede48f0` |
+| Composition records | `093bfd9613dd1e0e997331a7655778bdfc9dfe33943372fcf63a4eacc51ac6b3` | `47410590779d00f8d5596291a48ad66c6789e349e9dfa7a929e0f0713f1244a3` |
+| Calendar example | `bfa0b1a63acc5a5777ffd81f2359d3c4d767edd7a2d43153841ea95bb868f0f2` | `1d34a00a0a0d681a13513e8e0e404ec799e292261f441042875a9b00abaf8cb6` |
+
+Calendar stdout is identical at
+`717f9259b7a91ac02a731a8718eef5f71cdea7d2a501cf524921df6f92f2fd75`.
+Both gates use frozen 737-input manifest
+`36631a08fa2aa47f80217efc84c736d38ab7f8499694c96ce73a9d12e0db52ac`;
+before/after manifests match. Final changes are limited to both notes files,
+the language summary entry and resource prose distinguishing runtime column
+extraction from folded constants. Those documentation changes receive a fresh
+link check. The other 733 inputs retain fingerprint
+`b41aba08586de9bb8eb002b795e957bbd2f741745a880c09b2008c22c6eb0947`.
+
+Verification uses Rust 1.98.1, one Mac Cargo job and the preserved Linux image
+`sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`,
+uid/gid 1000, one CPU/job, 2 GiB memory without additional swap, networking
+disabled and native container database storage. The monitor records 124 host
+and 28 Docker samples: normal/warning pressure, swap 1738.44–1964.62 MiB, free
+disk at least 185.55 GiB and sampled disk traffic 0–147.25 MB/s. Observed rustc
+peaks are 99.4% CPU and 730,096 KiB RSS. Docker reaches 100.78% CPU and 1.231 GiB,
+with no OOM kill or network traffic. Host en0 increases by 201,828,822 inbound
+and 38,599,250 outbound bytes, including unrelated traffic. These observations
+do not qualify engine admission, arbitrary allocator histories or whole-process
+RSS. The existing usable-heap, concurrency, durability and Windows limitations
+remain open.
+
+Owned logs, targets, exports, example databases, monitor and verification
+container are removed after recording results. The original target tree,
+installed toolchains and preserved image remain. No package is published and no
+history is rewritten. The verified repository checkpoint may be synchronized
+under the current publication policy.
+
 ## Borrowed logical-plan explanations
 
 `2244948` adds `PreparedQuery::logical_plan()` and the public borrowed
