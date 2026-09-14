@@ -11,6 +11,7 @@ restrictions.
 - [Explore queries on a declared table](query-examples.md): runnable queries,
   expected results and implementation reading paths.
 - [Handle partial query results](query-results.md): rows, terminal errors, cancellation and plan reuse.
+- [Compare equality with stored bits](equality.md): signed zeros, NaNs, NULLs, grouping and join pairs.
 - [Language](language.md#current-public-query-manifest): supported queries and limits.
 - [Public interfaces](interfaces.md): API ownership, CLI commands, errors, and recovery.
 

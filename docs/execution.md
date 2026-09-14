@@ -453,6 +453,13 @@ comparison also treats two NaNs as equal. Ordered values reuse their equality
 comparison. Both the legacy scan kernels and general row producers apply the
 same comparison and enclosing Boolean negation, without a new branch buffer.
 
+Use the [equality example](equality.md) to compare these decisions with grouping
+and join results on the same stored bits. `PhysicalFilter` in
+[predicate.rs](../src/execution/predicate.rs) handles NULL before invoking
+`Comparison::test` in [frontend.rs](../src/frontend.rs). The comparison decision
+therefore receives present numeric values, including NaNs; ordinary equality and
+the not-distinct relation deliberately differ for those values.
+
 Boolean filters use validated forward decisions over the same leaf kernels. Row
 producers share the lazy `RowValues::retains` interpreter. A linear AND scan
 keeps its existing selection path. A branching scan adds one next-decision byte
@@ -806,6 +813,14 @@ predicates or computations. The first row of each group may publish one complete
 output row. The previous key advances even when a downstream predicate rejects
 the representative, so duplicate rows cannot re-enter the relation. Empty input
 finishes without output. Raw payloads remain unchanged.
+
+In [record.rs](../src/execution/blocking/record.rs), `compare_values` places NULLs,
+NaNs and signed zeros in their respective equivalence classes. `RowLayout::hash`
+normalizes NaN and zero bits for lookup so equivalent keys hash alike; encoded
+payloads retain the original representation. DISTINCT's emission path in
+[order.rs](../src/execution/blocking/order.rs) keeps a representative from those
+payloads. The [equality example](equality.md#compare-the-result-classes) checks
+both class membership and preservation without depending on representative choice.
 
 All keys fit the shared 64-field row frame, including 65,536-byte STRING values.
 Each step consumes at most one bounded row or one sorter quantum. The
