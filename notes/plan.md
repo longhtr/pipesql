@@ -7,15 +7,15 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The [STRING character-length projections](evidence.md#string-character-length-projections)
-are complete in `de6d92b`. CHAR_LENGTH shares one typed STRING-length computation
-and pure byte/scalar measurement with BYTE_LENGTH. Matching macOS/GNU arm64 Linux
-core gates pass 652 ordinary Rust tests, complete public ownership and healthy
-allocation controls, 24 semantic cases, 317 composition records and fresh paired
-examples. No allocation owner, allowance or persistent format changes. Independent
-Unicode expectations and the learning path distinguish scalars from grapheme
-clusters and literal folding from borrowed column evaluation.
-
+The [explicit numeric DOUBLE casts](evidence.md#explicit-numeric-double-casts)
+are complete in `1fcd7bd`. CAST makes integer-to-DOUBLE conversion explicit while
+retaining numeric argument demand, NULLability and existing DOUBLE bits. The
+learning exercise shows how conversion order changes precision and overflow.
+Matching macOS/GNU arm64 Linux core gates pass 661 ordinary Rust tests, complete
+public ownership and healthy controls, 24 semantic cases, 322 composition records
+and fresh paired examples. No allocation owner, allowance or persistent format
+changes. The earlier [STRING character-length work](evidence.md#string-character-length-projections)
+and [stored text workload](evidence.md#stored-text-measurement-costs) remain closed.
 
 The [allocation-capacity preflight](evidence.md#allocation-capacity-preflight)
 in `51bd731`, with campaign integration in `7078729`, passes matching macOS
@@ -116,33 +116,6 @@ release across 1,020 executions per platform. Both variants observe the same
 logical memory and no temporary use; the measurements retain their sample spread
 and do not justify an engine optimization. Fresh macOS/GNU arm64 Linux runs and
 wrong-total controls pass. All pre-existing non-Markdown inputs remain unchanged.
-
-## Active milestone: explicit numeric DOUBLE casts
-
-Add CAST of a bounded numeric expression to FLOAT64 or DOUBLE, producing the
-existing DOUBLE type. The pinned GoogleSQL type map recognizes both names;
-FLOAT64 is its external spelling and DOUBLE is its internal-mode spelling.
-PipeSQL adopts these two spellings for this bounded target. INT64 conversion can
-lose precision; DOUBLE input bits and NULL remain unchanged. Other targets,
-STRING/DATE sources, untyped NULL and SAFE_CAST remain outside this milestone.
-
-Use one unary ToDouble instruction and an explicit CAST boundary in the existing
-iterative parser. Preserve independent inference/validation, expression ownership,
-conditional demand, scratch, admission and replay. The learning path must show
-why casting before an addition differs from casting its result, including owned
-input-overflow spans. Verify literal bit oracles, exceptional values, invalid
-syntax/types, composition, demand, cancellation, refusal/release and forced replay.
-Complete appropriate matching macOS/GNU arm64 Linux checks and fresh examples,
-then review, document, clean owned outputs and commit locally. No new allocation
-owner, allowance, persistent format or general cast framework is planned.
-
-Verification retains the 14-stage core gate on each platform, the complete
-ownership-only selection with two additional CAST/analytic cells, healthy native
-controls and independent aggregate/composition campaigns. Run macOS and GNU
-arm64 Linux sequentially on matching frozen inputs, followed by fresh declared,
-numeric-cast, STRING-length and query-flow examples in platform order. Native
-mutation and persistent formats are unchanged, so the earlier full native fault
-checkpoint remains distinct from this scoped qualification.
 
 ## Next engineering priorities
 

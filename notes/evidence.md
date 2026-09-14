@@ -5,6 +5,99 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Explicit numeric DOUBLE casts
+
+`1fcd7bd` adds CAST of a bounded numeric expression to FLOAT64 or DOUBLE.
+The [language contract](../docs/language.md#current-public-query-manifest) owns
+accepted spellings and conversion semantics. The iterative parser closes a CAST
+frame at AS and emits one unary ToDouble operation. Existing inference, independent
+validators, batch evaluation and the demand cursor preserve typed input evaluation,
+NULLability and DOUBLE bits without a new allocation owner, allowance or format.
+The [exercise](../docs/query-examples.md#choose-where-integer-arithmetic-becomes-approximate)
+contrasts exact subtraction before conversion with subtraction after rounding.
+
+Literal bit oracles cover 2^53 neighbors, negative ties, INT64 extrema, signed
+zeros, subnormals, finite extrema, infinities and NaN payloads. Public tests cover
+owned preparation, nullable schema, nested calls, typed replacements, joins,
+sets, grouping collisions, materialization, reopen, invalid source/target spans,
+input overflow, skipped COALESCE and Boolean branches, SAFE_DIVIDE argument errors,
+cancellation, abandonment and release. Constant predicate overflow remains a
+preparation error. Parser checks admit 31 nested casts within the existing
+32-operation/160-token bounds and reject excess operations or tokens. Both small
+stack scenarios execute nested CAST with a skipped overflowing fallback.
+
+Focused checks pass for both evaluators, all six public cast tests, exact native
+admission/refusal, corrupted STRING dependencies consumed through numeric CAST,
+forced grouping replay and small-stack execution. The admission oracle retains
+278,496 native payload bytes and independently requires 10,304 computed bytes
+for a direct numeric CAST; a one-byte shortfall refuses before native I/O. Two
+new replay variants convert before or after a sorted producer and still require
+fallback replay without reopening sources. Initial test-only failures were a
+Debug formatter for QueryStep and an unsupported arithmetic WHERE left operand;
+the latter test now names its EXTEND result before comparing it. No language
+boundary was broadened to accommodate the test.
+
+Sequential matching macOS and GNU arm64 Linux 14-stage core gates pass:
+661 ordinary Rust tests on each platform, discovered across sixteen targets
+(seven nonempty suites and nine empty example harnesses). macOS has 443 library,
+15 CLI, 159 catalog, 10 execution, seven lifecycle, six load and 21 filesystem
+tests; Linux has 445 library and 19 filesystem tests with the other counts equal.
+No ordinary test is ignored or filtered. The separate lease subprocess passes
+one test with its six intentional filtered siblings. Each gate also passes
+100 tooling tests, 44 independent codec fixtures, warnings-denied Clippy,
+Rustdoc and doc tests. Stage times total 467.710 s on macOS and 175.409 s on Linux.
+
+The complete ownership selection passes seventeen analytic and six wide-set
+cases at both pathname lengths, construction refusal prefixes 0–352 and healthy
+control 353, preparation refusal prefixes and sixteen negative controls. CAST
+analytic cells 15/16 each return 512 rows in 8,133 steps, observe 42,184 temporary
+bytes and release all owners. Minimum usable headroom is 7,648 bytes on macOS
+and 8,880 on Linux at both pathname lengths. All 29 healthy allocation-control
+cells pass per platform, including catalog control 1056 at both lengths; these
+controls do not repeat the catalog allocation-prefix sweep. Linux retains its
+two Darwin ACL exclusions. All 24 independent aggregate-semantic cases and 322
+composition records agree after removing only database-path stdout lines from
+semantic records and artifact digests from composition records.
+
+Fresh examples run after the campaigns, sequentially on macOS then Linux.
+Declared-table setup returns the documented north/south totals. Numeric CAST
+returns one row of three required DOUBLE values: 9007199254740992, 1 and 0,
+with bits `4340000000000000`, `3ff0000000000000` and `0000000000000000`.
+BYTE_LENGTH returns nullable INT64 5, 5 and 12; the character-length example
+returns eight required INT64 values 2, 1, 3, 2, 4, 1, 11 and 3. Query-flow
+returns nullable INT64 38. Every invocation completes with the expected schema,
+rows, Finished-equivalent CLI status and successful exit.
+
+Both gates use the frozen 728-input manifest
+`3f4901e824b24a9efcf8090a9ca796a1ce1876b554e16e507a242d644aa78823`.
+Only the two notes files change afterward; the other 726 inputs retain fingerprint
+`7b132df79b459435f475c59ee4b155b30c10ab460835d4da12c9c6efdddc080f`.
+
+| Artifact SHA-256 | macOS | GNU arm64 Linux |
+| --- | --- | --- |
+| Core receipt | `392b32c48e7e98c50da52227e807c21880dcd2240906ad2a54873112cb1ab3ee` | `5671f4a42c028e717725080ff4ee1bea68f1d70918ac375acdaf1ef29408ff2f` |
+| Stock CLI | `0b7b9998c3fb4f2158745e3c8e2a3c49eaaadd55a1b1d53de872df4ef69c58ed` | `5eec924de8789425291dd38d660901fa03235721662630682e7eab5d29714fcb` |
+| Ownership driver | `499df543ed129803aa02fcf8c1e0cb19c1e9d7cfc64edd5001fb9b08a56ef45c` | `b7e577f573b61f6412bff4535a5e371d9a21631b53ae9c035a8173b7f46ae7ea` |
+| Ownership log | `c9e9b1ebed8505eddfa2592db202153921a38424a0dc80771db0898f6c278fc5` | `0cd459037373090d54e8132c98ce4d8497c953987dc4e18d6d84eda9bd82401d` |
+
+Monitoring records 130 host and 25 Docker samples. Host pressure is normal/warning,
+swap spans 1,626.38–1,826.25 MiB, free disk stays above 186.33 GiB and sampled
+I/O spans 0–197.09 MB/s. Relevant host processes peak at 100% CPU and 713,552 KiB
+RSS; Docker samples peak at 108.56% CPU and 1.24 GiB memory, with no OOM and zero
+network traffic. Host en0 counters grow by 451,587,395 input and 19,284,005 output
+bytes, including unrelated traffic. Each platform uses one Cargo job; Linux uses
+uid/gid 1000, one CPU, 2 GiB without extra swap, networking disabled and native
+database storage. Sampling can miss short peaks and does not qualify engine
+admission or whole-process RSS. Arbitrary allocator histories, concurrency,
+sanitizers, broader durability and Windows qualification remain open. The earlier
+[full native checkpoint](#full-verification-checkpoint) remains distinct from
+these scoped checks; native mutation and persistent formats are unchanged.
+
+Owned targets, databases, exports, manifests, logs, monitoring outputs and the
+verification container were removed. The existing workspace target, installed
+toolchains and preserved verification image are unchanged; no owned verification
+process remains. Final documentation verification passes 842 local links.
+
 ## Stored text measurement costs
 
 `529306d` adds [text_cost.rs](../examples/text_cost.rs) and its
