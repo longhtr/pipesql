@@ -194,3 +194,12 @@ status; it introduces no ignored or separately selected test.
 The [analytic counter tests](../src/execution/count.rs) check zero-field admission,
 the row bound, cancellation and replay. Runtime replay also exercises that owner
 after partial and complete emission in the retained-output grouping tests.
+
+## Composed report example
+
+The public-library checks in [event_report.rs](../examples/event_report.rs) run
+with `cargo test --release --offline --locked --example event_report`. They cover
+literal joined/yearly answers, two append generations, reopen, numeric bit
+patterns, schema and reservation release. A deliberately altered expected group
+must fail before a healthy rerun. The [input helper](../examples/support/event_data.rs)
+owns bounded caller buffers; literal expected groups remain in the example.

@@ -10,6 +10,7 @@ restrictions.
 - [Create and query a declared table](getting-started.md): a complete Rust example.
 - [Explore queries on a declared table](query-examples.md): runnable queries,
   expected results and implementation reading paths.
+- [Compare a report across appends](event-report.md): typed joins, yearly totals, and pinned answers.
 - [Handle partial query results](query-results.md): rows, terminal errors, cancellation and plan reuse.
 - [Compare equality with stored bits](equality.md): signed zeros, NaNs, NULLs, grouping and join pairs.
 - [Language](language.md#current-public-query-manifest): supported queries and limits.
