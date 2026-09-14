@@ -62,6 +62,23 @@ reuse in those cells. It does not identify the original query's freed block or
 explain its entire aggregate deficit. The strict combined-query diagnostic and
 unqualified usable-heap/RSS status remain; no admission padding was added.
 
+## Active milestone: explicit producer admission
+
+`Runtime::open_native` mixes a long producer-classification chain with source
+opening. Its final branch implicitly constructs an aggregate owner. Move producer
+admission to one exhaustive match on `Producer` under `Owner`, with no effects
+recorder parameter. Keep catalog scratch, all owner admissions, aggregate
+preparation and source opening visible in the runtime operation.
+
+Preserve output-before-controller allocation, admission totals and order,
+transferred inline-charge lifetimes, stack bounds and every failure/replay path.
+Use the existing independent exact-minimum, capacity, fault and result tests.
+After focused checks, run sequential macOS and GNU/Linux core gates, public
+ownership and independent semantic/composition checks on matching frozen inputs,
+then fresh examples. Report that scope rather than a new full gate. Explain the
+phase boundary beside its implementation, review and commit locally, and remove
+owned outputs. No new public API, allowance, framework or state wrapper is needed.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
