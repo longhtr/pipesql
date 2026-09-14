@@ -4968,3 +4968,83 @@ The maintained process-group tests exercise live descendants, timeout, and
 interruption. Any future parallel supervisor must preserve owned descendants,
 bounded outputs, failure propagation, and cleanup before it can replace this
 simpler execution order.
+
+## Composed report identities and demand
+
+Implementation `651fde1` extends the existing composition campaign with 24 report
+records. The retained public event-report example constructs the database in an
+owned target; independent literal grouped rows and measurement bits define the
+campaign answers. No engine, persistent format, resource allowance or native
+observer changed.
+
+The first case round-trips a rename and checks all thirteen typed groups and the
+complete schema. A deliberately wrong total must be rejected without recording a
+successful observation. The corpus covers legal projection and derived-input
+boundaries, outer ordering, NULL year/label/total predicates, empty labels,
+RENAME versus SET range identities, integer arithmetic beyond DOUBLE's exact
+integer range, stored negative-zero bits, unused computations, Boolean
+short-circuiting and skipped COALESCE arguments. Two bind near-misses and two
+argument-domain failures require exact diagnostic categories and byte spans.
+The latter retain the full owned expression span through SAFE_DIVIDE/COALESCE.
+One independent tooling test challenges wrong names, types, nullability and
+missing schema. Existing wrong-row, incomplete-output and failed-process controls
+remain. SQL cases are retained in the campaign; an explicit work directory keeps
+the current query and fixtures available on failure.
+
+A development predicate initially placed a function on the comparison's left
+side, outside the accepted predicate grammar. Defining it with EXTEND first
+exercised the intended short-circuit contract and passed. This was a test-input
+repair, not an engine defect or language expansion. The report lesson explains
+identity and demand through the actual queries rather than a new framework.
+
+Frozen macOS and GNU arm64 Linux checks ran sequentially on 743 matching inputs:
+`77dab3020856eabf5d6325fe15857673746ec84e0fdf563c7fcd2c01d9c8bc6b`.
+Five affected stages passed: Rust formatting, maintenance, optimized stock CLI
+build, independent aggregate semantics and the complete composition corpus.
+Each platform discovered 103 tooling tests, reproduced 44 independent codec
+fixtures, passed 24 semantic cases and produced 350 composition records. Records
+agree after normalizing only semantic database-path lines and composition output
+digests. The stock CLI was identified before and after each campaign. Frozen
+inputs remained unchanged and gate-owned target/database cleanup passed.
+Stage time totals were 279.337 seconds on macOS and 93.398 seconds on Linux.
+The disposable Mac wrapper incorrectly passed the successful receipt dictionary
+to `sys.exit`, producing exit 1 after all stages and finalization passed. Its
+return handling was corrected; the Linux wrapper exited 0. The Mac claim rests
+on inspected individual stage results and the successful integrity/cleanup
+receipt, not that wrapper exit. No passed stage was repeated to conceal it.
+
+After both platforms finished, eight fresh lessons ran first on macOS, then
+Linux: even and skewed scaled reports at 32,000,000 and 8,000,000 query-memory
+bytes, empty and small profiles at 8,000,000, the event report and calendar year.
+All exited 0 with empty stderr and Finished markers; output hashes agree exactly.
+Execution took 20.678 and 13.029 seconds, respectively, excluding fresh builds.
+Documentation verification passed 942 local links before the evidence update
+and 944 after recording the checkpoint.
+Ordinary Rust suites and native failure campaigns were not rerun for these
+Python/documentation changes; the preceding full and scoped checkpoints retain
+their original scope.
+
+Receipt SHA-256 values:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| macOS affected stages | `0b8e990041e9514eb3e921c4abb63c927ebfd4bd02da5b432681207f61c00a4f` |
+| Linux affected stages | `5f450d8dfa07f52d94db5e5cd490d9a3cb2e23e44a930312fb6818b35b72c597` |
+| macOS fresh lessons | `68de78c8d8f1131fe346c6b9caf9e8d1c281c204724d206754a2f9a0e37676c9` |
+| Linux fresh lessons | `d136fd49f3301dbc3d81c7d273e9d6a2dd376f8198b522d7937ed2f32920556b` |
+
+Host observations sampled CPU, free-memory percentage, swap, disk capacity/I/O
+and network counters. Free memory reached 33%; sampled swap was
+1,541.56–2,097.44 MiB. Another application's video encoding substantially
+consumed host CPU; Cargo remained at one job. Docker peaked at 849.4 MiB with no
+OOM and zero network traffic. Linux used uid/gid 1000, one CPU/job, 2 GiB without
+extra swap and native container database storage. These observations do not
+qualify engine admission or physical/RSS bounds. The unresolved combined-query
+macOS usable-allocation deficit and broader concurrency, durability, sanitizer,
+filesystem and Windows qualifications remain unchanged.
+
+Only the two notes files changed after the freeze. The other 741 inputs retain
+fingerprint `92391ad914299b05c71d106355515f46cf21b18ed899a51339febb0bf61792b4`.
+Owned exports, targets, databases, logs, monitoring outputs and the verification
+container were removed. The original 342-file workspace target and preserved
+verification image were unchanged. No owned verification process remained.
