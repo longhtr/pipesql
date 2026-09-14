@@ -236,29 +236,47 @@ class AllocationInterpretation(unittest.TestCase):
             self.assertIn((("reader-allocation-shapes", "reader-arena-path384", 384),
                            {"mmap_threshold": 67_108_864}), run.call_args_list)
 
-    def test_pathname_scope_runs_only_its_cells_and_common_mutex_control(self):
-        run = Mock(return_value=subprocess.CompletedProcess(
-            [], 0, "native mutex contention passed without Rust allocation\n", ""
-        ))
-        sweep = Mock()
-        ownership = Mock(side_effect=AssertionError("unrequested ownership campaign"))
-        with patch.object(ALLOCATION["sys"], "platform", "linux"), patch.dict(
-            ALLOCATION["main"].__globals__, {
+    def test_pathname_scope_requires_capacity_and_mutex_controls(self):
+        capacity = ("allocation capacity passed: 3 preflight refusals; "
+                    "empty, denied, exact and spare-capacity controls\n")
+        mutex = "native mutex contention passed without Rust allocation\n"
+        for capacity_output, capacity_exit, mutex_output, error in [
+            (capacity, 0, mutex, None),
+            ("", 0, mutex, "missing allocation capacity preflight evidence"),
+            (capacity, 101, mutex, "allocation-capacity: exit=101"),
+            (capacity, 0, "", "missing native mutex contention evidence"),
+        ]:
+            def execute(command, **options):
+                output, status = {
+                    "allocation-capacity": (capacity_output, capacity_exit),
+                    "mutex": (mutex_output, 0),
+                }[command[-1]]
+                return subprocess.CompletedProcess(command, status, output, "")
+
+            native = Mock(side_effect=execute)
+            sweep = Mock()
+            ownership = Mock(side_effect=AssertionError("unrequested ownership campaign"))
+            with self.subTest(error=error), patch.object(
+                ALLOCATION["sys"], "platform", "linux"
+            ), patch.dict(ALLOCATION["main"].__globals__, {
                 "build_driver": Mock(),
                 "catalog_allocation_limit": Mock(return_value=128),
-                "run_cell": run,
+                "run_process": native,
                 "check_allocation_prefixes": sweep,
                 "check_ownership": ownership,
-            }
-        ), redirect_stdout(io.StringIO()):
-            ALLOCATION["main"](["--pathname-only"])
-        ownership.assert_not_called()
-        self.assertEqual(run.call_count, 1)
-        self.assertEqual(run.call_args.args[2:], ("mutex", "mutex"))
-        self.assertEqual(sweep.call_args.args[1], [
-            ("create-expanded", "short", None), ("open-expanded", "short", None)
-        ])
-        self.assertFalse(sweep.call_args.args[3])
+            }), redirect_stdout(io.StringIO()):
+                if error is None:
+                    ALLOCATION["main"](["--pathname-only"])
+                else:
+                    with self.assertRaisesRegex(SystemExit, error):
+                        ALLOCATION["main"](["--pathname-only"])
+            ownership.assert_not_called()
+            self.assertEqual([call.args[0][-1] for call in native.call_args_list],
+                             ["allocation-capacity", "mutex"])
+            self.assertEqual(sweep.call_args.args[1], [
+                ("create-expanded", "short", None), ("open-expanded", "short", None)
+            ])
+            self.assertFalse(sweep.call_args.args[3])
 
     def run_sweep(self, *, controls_only=False, full_prefix_healthy=True, refusals=True):
         modes = []
