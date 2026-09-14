@@ -5,6 +5,98 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Allocation-capacity preflight
+
+`51bd731` makes `resources::allocate` reject requested elements above their
+admitted ceiling before `Vec::try_reserve_exact`. Requested-byte overflow reports
+the existing maximal required-byte diagnostic. Valid geometry, allocator refusal
+and the returned-capacity check retain their behavior. No allowance, allocation
+owner, public API or persistent format changes. Reviewed production calls supply
+equal request and ceiling values, including the legacy scan's constant aliases.
+This closes an invalid-internal-geometry boundary, not a demonstrated public-query
+failure. The [resource contract](../docs/resources.md#admission-protocol) separates
+reservation, preflight, physical allocation and release.
+
+The [capacity probe](../tools/fixtures/allocation-capacity.rs) includes the actual
+production helper and uses the existing diagnostic allocator. A request for two
+`u64` elements under a one-element ceiling reaches the old helper's allocator
+once. The observer denies that attempt, and the zero-call assertion rejects the
+old helper with exit 101. The final probe is checked against the `88fd4ca`
+resource source and then the repaired source, using the same allocator and
+unchanged public-library error type. Three repaired cases refuse before any
+allocator call: two elements under ceiling one, one under zero, and overflowing
+requested-byte geometry. Four controls cover an empty vector, real allocator
+denial, exact capacity and a valid request below its ceiling. Returned vectors
+are dropped before their reservations. The existing four resource tests also
+pass; 434 unrelated library tests are filtered only in that focused run.
+
+The first core attempt stops at maintenance because the mocked pathname campaign
+supplies only its former mutex marker. It runs no ordinary Rust tests and is not
+passing evidence. `7078729` updates that integration test to require both common
+controls and to reject missing capacity/mutex evidence or a nonzero capacity exit
+even when a success marker is printed. All fifteen campaign-interpretation tests
+pass, including these additional subcases. The final core gates pass all fourteen
+stages, 99 tooling tests and 44 independent codec fixtures on each platform.
+Independent executable discovery confirms 640 ordinary Rust tests, including
+143 catalog tests, across thirteen targets: seven nonempty and six zero-test
+examples. No ordinary test is ignored or filtered. The separate lease subprocess
+passes its one test with six intentional sibling filters.
+
+Both public ownership campaigns pass eleven analytic and six wide-set shapes at
+both pathname lengths, the retained wide-join lifecycle/failure observations,
+overlapping owners and fourteen negative controls. Join construction still has
+353 allocations: every refusal prefix 0–352 and healthy control 353 pass at both
+pathname lengths. Both `--ownership-only` and `--controls-only` execute all seven
+new capacity-probe cases. The latter selection passes 29 healthy filesystem,
+lifecycle, load, query, catalog and recovery control cells per platform. Catalog
+construction still counts 1,056 allocations. Linux's two expanded-path controls
+replace the two unavailable Darwin ACL recovery cells. These healthy controls
+are not another complete catalog/lifecycle allocation-prefix sweep.
+
+The unchanged stock CLI on each platform passes 24 independent aggregate-semantic
+cases and 311 composition records. Records agree after removing only semantic
+stdout database-path lines and composition stdout-digest fields. Sequential fresh
+declared setup and [query-flow.sql](../examples/query-flow.sql) return one nullable
+INT64 row, 38, complete status and exit zero. Its demanded-overflow variant has
+no row or success marker, exits one and retains the same addition span, bytes
+50..80. Fresh normal/failure records agree after database-path normalization.
+
+Replay uses the existing core gate, diagnostic-allocation `--ownership-only` and
+`--controls-only` selections, then a stock CLI build, semantic/composition
+commands and query-flow setup. Frozen inputs at `7078729` total 716 files, with
+manifest SHA-256
+`58409c1b600b0048a7bce8fe7d36695178f15774df26c6aed4469963ebdf2683`.
+Both final core gates and public campaigns have matching before/after manifests;
+the Linux Git export matches. Only the two notes files change afterward; the
+other 714 inputs retain fingerprint
+`4ed6dddde7df2a1adbd34c41b4dff6e400088179f3524b7829cf888e70744e69`.
+
+| Record | macOS | GNU arm64 Linux |
+| --- | --- | --- |
+| Core elapsed seconds | 453.148 | 168.439 |
+| Core receipt SHA-256 | `4150f1e6a38ac50682d439757c325a2c1f7673e093dbd298659acbd995780087` | `3d43fd691eabe83ea4ad5a79c7287794fb626fb355fadbb679d4f7b42316162d` |
+| Public campaigns/build elapsed seconds | 131.270 | 118.096 |
+| Public receipt SHA-256 | `6137d0b4f47af1b517f39313d107ebb5381556bfe94fb8fd21f95251ad66c2eb` | `dbba34ed5f19b0f0ed27dd968cc590fde3f6f326a05ff877813a58da124bbbf3` |
+| Stock CLI SHA-256 | `9048fb525a208e0dfd8fadb03556df7930f60bac344b2d0990429020ebb7af69` | `b9fb374e503c89f07554c345053dac428ea0b1c76d8f9788b379dbe9403ce1ed` |
+
+Verification uses Rust 1.98.1, one Cargo job per platform and the preserved image
+`sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
+Linux uses uid/gid 1000, one CPU, 2 GiB memory without additional swap, networking
+disabled and native database storage. Ninety-seven host samples observe normal/
+warning pressure, swap 1,450.94–2,342.50 MiB ending at 2,189.62 MiB, over
+186.85 GiB free disk and sampled I/O 0–187.67 MB/s. Twenty-three container samples
+reach 104.4% reported CPU and 1.208 GiB memory, with zero network traffic and no
+OOM kill. These observations do not qualify engine admission or whole-process
+bounds. Owned logs, manifests, source exports, targets, databases, monitoring and
+container outputs are removed; existing target, toolchains and image are preserved.
+Final documentation verification passes 750 local links.
+
+This is scoped verification. Earlier native/persistence and full allocation-prefix
+evidence retain their original inputs and limits. The combined native usable-heap
+deficit, arbitrary allocator/concurrency and whole-process/RSS bounds, broader
+durability, Windows and general sanitizer/race qualification remain open. Nothing
+is pushed or published.
+
 ## Query execution walkthrough
 
 `7450500` connects the preparation example to a concrete
