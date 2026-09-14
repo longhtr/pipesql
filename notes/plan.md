@@ -106,6 +106,13 @@ on macOS and constrained GNU arm64 Linux, then fresh examples sequentially.
 Finish learning paths, evidence, local commits and owned cleanup with broader
 qualifications and publication restrictions preserved.
 
+The corrupted-payload control distinguishes existing scan behavior from scalar
+short-circuiting: Boolean branches can skip payload reads, while a selected
+COALESCE expression loads potential raw dependencies before evaluating its
+chosen branch. Retain both outcomes without promising new source-I/O laziness.
+A post-sort STRING constant feeding length and then numeric arithmetic also
+needs explicit coverage of the row resolver's constant dependencies.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete

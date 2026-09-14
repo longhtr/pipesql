@@ -213,6 +213,22 @@ class QueryChecks:
 
 
 def check_grouping(queries, rows):
+    queries.composed(
+        "byte-length-ascii",
+        "FROM lineitem |> SELECT BYTE_LENGTH(l_returnflag) AS width |> AGGREGATE SUM(width) AS total",
+        [[encoded(len(rows))]],
+    )
+    queries.composed(
+        "byte-length-unicode-literal",
+        "FROM lineitem |> SELECT BYTE_LENGTH('é') AS width |> SELECT width + 1 AS width |> AGGREGATE SUM(width) AS total",
+        [[encoded(3 * len(rows))]],
+    )
+    queries.composed(
+        "byte-length-empty",
+        "FROM lineitem |> SELECT BYTE_LENGTH(l_returnflag) AS width |> AGGREGATE SUM(width) AS total",
+        [["null"]],
+        database="empty",
+    )
     queries.aggregate("global", GLOBAL_SQL, rows, [], [("sum", 0), ("avg", 0), ("count", 0)])
     queries.aggregate(
         "empty-global",

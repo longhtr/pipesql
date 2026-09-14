@@ -1,7 +1,7 @@
 use super::order::{integers, query};
 use super::*;
 
-fn fixture() -> (Directory, Database) {
+pub(super) fn fixture() -> (Directory, Database) {
     let directory = Directory::new();
     let db = Database::create_empty(&directory.database(), config()).unwrap();
     let cancel = CancellationToken::new();

@@ -88,7 +88,7 @@ separate from this query manifest.
 | `FROM table [AS alias]` | Returns the named source’s columns, or feeds the following stages. Legacy databases expose only `lineitem`. The table name supplies the range name when AS is absent. Additional sources enter through JOIN or positional set operations. Comma-separated FROM inputs remain unsupported. |
 | `FROM (pipe_query) [AS alias]` | Uses the child query’s ordinary outputs as an independent input. A JOIN may also use this form. See [table subqueries](#table-subqueries) for scope and ordering. |
 | `AS alias` | Names the current row as a range and replaces earlier range names. It preserves values, ordinary output names and column identities. |
-| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts numeric `ABS`/`SIGN`/`FLOOR`/`CEIL` (`CEILING`)/`ROUND`/`SQRT`/`LN`/`LOG10`/`EXP`, INT64 `DIV`/`MOD` and two-argument `POW` (`POWER`), `SAFE_DIVIDE`, `COALESCE` and `NULLIF`, bounded STRING and DATE constants and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
+| `SELECT expression [AS alias], ...` | Selects visible columns or computes INT64/DOUBLE expressions using literals, parentheses, unary `+`/`-`, and binary `+`, `-`, `*`, `/`. Also accepts numeric `ABS`/`SIGN`/`FLOOR`/`CEIL` (`CEILING`)/`ROUND`/`SQRT`/`LN`/`LOG10`/`EXP`, INT64 `DIV`/`MOD` and two-argument `POW` (`POWER`), `SAFE_DIVIDE`, `COALESCE` and `NULLIF`, bounded STRING and DATE constants, `BYTE_LENGTH` projections and `COUNT(*) OVER ()` described below. Star expansion and other scalar expressions remain unsupported. |
 | `EXTEND expression [[AS] alias], ...` | Appends columns using the same expression profile as SELECT. Preserves all input columns, their identities and ranges. Ordinary expressions preserve order; analytic count clears it. Star expansion, reducing aggregate calls and other scalar forms remain unsupported. |
 | `SET name=expression, ...` | Replaces each named ordinary column in place with a fresh identity. Accepts direct references of any supported type and the nonanalytic SELECT expression profile. Every expression sees the original input; replacements can change type and NULLability. |
 | `DROP name, ...` | Removes all ordinary columns matching each name, including duplicate names. Rejects removal of the entire row. |
@@ -201,8 +201,8 @@ operation, after its checked integer children. A NULL operand produces NULL;
 otherwise either signed-zero denominator raises `DivisionByZero`, including with
 a nonfinite numerator. Finite operands producing infinity raise
 `ArithmeticOverflow`; underflow and nonfinite operands otherwise follow IEEE-754.
-Scalar calls beyond ABS, SIGN, FLOOR, CEIL, CEILING, ROUND, SQRT, LN, LOG10, EXP, DIV, MOD, SAFE_DIVIDE, COALESCE, NULLIF and the DATE forms below, other scalar
-expression forms and NULL literals are unsupported.
+Scalar calls are limited to the forms described in this manifest. Other scalar
+expression forms and bare NULL literals are unsupported.
 
 These division rules follow the pinned
 [signatures](https://github.com/google/googlesql/blob/0e7d7073ed0360be587a5efa0fa78abeee00f17b/googlesql/common/builtin_function_internal_2.cc#L1490),
@@ -526,6 +526,24 @@ SELECT, EXTEND and SET accept STRING constants and DATE constants, including
 parentheses around the constant. They are nonnullable and own their values in
 the prepared plan. STRING arithmetic, column-valued DATE calls and untyped NULL
 projections remain unsupported.
+
+BYTE_LENGTH accepts one visible STRING column or one bounded STRING literal as
+the complete expression in SELECT, EXTEND or SET. It returns INT64 UTF-8 byte
+length: `BYTE_LENGTH('é')` is 2 and `BYTE_LENGTH('雪')` is 3. Empty strings return
+zero; nullable columns propagate NULL. Literal lengths fold during preparation,
+after the ordinary quoted-token validation. The result owns no borrowed text.
+The [GoogleSQL byte-length reference](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/string_functions#byte_length)
+owns the upstream meaning; PipeSQL admits only this bounded STRING profile.
+
+Use the projected INT64 identity for arithmetic, predicates and aggregate
+arguments in later stages. `BYTE_LENGTH(s) + 1`, `SUM(BYTE_LENGTH(s))`, nested
+calls, untyped NULL and non-STRING arguments remain unsupported. The BYTES type,
+OCTET_LENGTH alias and character-counting LENGTH/CHAR_LENGTH are not admitted.
+Parentheses around the call or its column/literal argument are accepted.
+Demanded source reads retain their corruption and cancellation behavior. Unused
+lengths and skipped Boolean branches do not demand their text payloads. COALESCE
+skips scalar evaluation; [scan payload loading](execution.md#scalar-expression-evaluation)
+can still read the selected expression's potential dependencies.
 
 DATE literals and constant DATE_ADD/DATE_SUB accept checked INT64 intervals in
 DAY, MONTH or YEAR units, with at most eight nested calls. Month/year shifts

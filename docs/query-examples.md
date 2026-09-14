@@ -111,6 +111,30 @@ text and folds the calendar operation into an owned constant. The
 numeric scratch, and the output batch copies the text into admitted storage.
 The prepared query does not retain its caller's SQL string.
 
+## Measure text in bytes
+
+Run [byte_length.sql](../examples/byte_length.sql) after the sales-table setup:
+
+```sh
+target/release/pipesql query --database "$pipesql_example_dir/sales" \
+  --query-file "$PWD/examples/byte_length.sql" \
+  --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+```
+
+The query projects each region's UTF-8 byte length and the byte length of the
+literal `雪`, then aggregates those numeric identities. Both `north` and `south`
+occupy five bytes. The literal occupies three bytes, so its total across four
+rows is twelve. Require one row with INT64 values `5, 5, 12`, `row_count=1`,
+`status=queried` and successful exit.
+
+Byte length measures encoded size, not displayed characters. BYTE_LENGTH is a
+complete projection expression in this profile; compute it first, then use its
+identity in a later arithmetic or aggregate stage. Follow
+[STRING byte-length evaluation](execution.md#string-byte-length-evaluation) to
+see where borrowed text becomes an owned numeric value. The
+[language manifest](language.md#current-public-query-manifest) owns accepted forms
+and NULL behavior.
+
 ## Filter by membership
 
 Run [examples/membership.sql](../examples/membership.sql) against the same sales

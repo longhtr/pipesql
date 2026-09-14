@@ -845,6 +845,9 @@ impl Constant {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Computation {
     Copy(SemanticColumn),
+    // Borrows a typed STRING input and produces one numeric value without
+    // copying text or introducing STRING payloads into the numeric kernel.
+    ByteLength(SemanticColumn),
     Numeric(Expression),
     Constant(Constant),
     WindowCount,
@@ -852,12 +855,13 @@ pub(crate) enum Computation {
 
 impl Computation {
     pub(crate) fn columns(&self) -> impl Iterator<Item = SemanticColumn> {
-        let (copy, expression) = match self {
-            Self::Copy(column) => (Some(*column), None),
+        let (single, expression) = match self {
+            Self::Copy(column) | Self::ByteLength(column) => (Some(*column), None),
             Self::Numeric(expression) => (None, Some(expression)),
             Self::Constant(_) | Self::WindowCount => (None, None),
         };
-        copy.into_iter()
+        single
+            .into_iter()
             .chain(expression.into_iter().flat_map(|expression| {
                 expression.ops[..usize::from(expression.len)]
                     .iter()
@@ -874,9 +878,9 @@ impl Computation {
     pub(crate) fn numeric(&self) -> Result<&Expression, Error> {
         match self {
             Self::Numeric(expression) => Ok(expression),
-            Self::Copy(_) | Self::Constant(_) | Self::WindowCount => Err(Error::Corrupt(
-                "nonnumeric computation reached a numeric kernel",
-            )),
+            Self::Copy(_) | Self::ByteLength(_) | Self::Constant(_) | Self::WindowCount => Err(
+                Error::Corrupt("nonnumeric computation reached a numeric kernel"),
+            ),
         }
     }
 
@@ -885,13 +889,13 @@ impl Computation {
             Self::Copy(column) => column.data_type(),
             Self::Numeric(expression) => expression.data_type,
             Self::Constant(value) => value.data_type(),
-            Self::WindowCount => DataType::Int64,
+            Self::ByteLength(_) | Self::WindowCount => DataType::Int64,
         }
     }
 
     fn nullable(&self) -> bool {
         match self {
-            Self::Copy(column) => column.nullable(),
+            Self::Copy(column) | Self::ByteLength(column) => column.nullable(),
             Self::Numeric(expression) => expression.nullable(),
             Self::Constant(_) | Self::WindowCount => false,
         }
@@ -901,6 +905,14 @@ impl Computation {
         match self {
             Self::Copy(column) if available.contains(column) => Ok(()),
             Self::Copy(_) => Err(Error::Corrupt("copy input outside scope")),
+            Self::ByteLength(column)
+                if column.data_type() == DataType::String && available.contains(column) =>
+            {
+                Ok(())
+            }
+            Self::ByteLength(_) => Err(Error::Corrupt(
+                "byte length requires an available STRING input",
+            )),
             Self::Numeric(expression) => expression.validate(available),
             Self::WindowCount => Ok(()),
             Self::Constant(value) if value.valid() => Ok(()),

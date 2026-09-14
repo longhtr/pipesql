@@ -450,6 +450,7 @@ fn bind_expression(
             ParsedOp::Exp => Op::Exp,
             ParsedOp::Empty
             | ParsedOp::WindowCount
+            | ParsedOp::ByteLength
             | ParsedOp::String(_)
             | ParsedOp::Date(_)
             | ParsedOp::DateInterval { .. }
@@ -1502,6 +1503,25 @@ impl Binder<'_, '_> {
         let ops = &syntax.ops[..usize::from(syntax.len)];
         let constant = match ops {
             [ParsedOp::WindowCount] => return Ok(Computation::WindowCount),
+            [ParsedOp::Column(span), ParsedOp::ByteLength] => {
+                let column = self
+                    .facts()
+                    .column(self.resolve(*span)?)
+                    .ok_or(Error::Corrupt("byte-length input has no semantic facts"))?;
+                if column.data_type() != DataType::String {
+                    return Err(bind_error("BYTE_LENGTH requires a STRING column", *span));
+                }
+                return Ok(Computation::ByteLength(column));
+            }
+            [ParsedOp::String(span), ParsedOp::ByteLength] => {
+                let (value, _) = crate::text_literal::TextLiteral::parse(text(self.source, *span))
+                    .map_err(|message| bind_error(message, *span))?;
+                let mut expression = Expression::EMPTY;
+                expression.ops[0] = Op::Integer(value.as_str().len() as i64);
+                expression.len = 1;
+                expression.data_type = DataType::Int64;
+                return Ok(Computation::Numeric(expression));
+            }
             [ParsedOp::String(span)] => {
                 let (value, _) = crate::text_literal::TextLiteral::parse(text(self.source, *span))
                     .map_err(|message| bind_error(message, *span))?;

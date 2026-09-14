@@ -97,6 +97,7 @@ pub(super) enum ParsedOp {
     String(SourceSpan),
     Date(SourceSpan),
     WindowCount,
+    ByteLength,
     // Separate interval and unit tokens keep every operation within eight
     // bytes; DATE support must not enlarge the shared parser arena.
     DateInterval {
@@ -573,6 +574,31 @@ impl Parser<'_> {
             }
             let mut expression = ParsedExpression::EMPTY;
             expression.push(ParsedOp::WindowCount, count)?;
+            expression.span = span(
+                usize::from(self.tokens.values[first].span.start),
+                usize::from(self.tokens.values[self.position - 1].span.end),
+            );
+            return Ok(expression);
+        }
+        if self.is_word("BYTE_LENGTH") && next == Some(Kind::LeftParen) {
+            let call = self.take(Kind::Identifier)?;
+            self.take(Kind::LeftParen)?;
+            let mut argument_parentheses = 0;
+            while self.peek() == Kind::LeftParen {
+                self.take(Kind::LeftParen)?;
+                argument_parentheses += 1;
+            }
+            let mut expression = ParsedExpression::EMPTY;
+            let argument = if self.peek() == Kind::Quoted {
+                ParsedOp::String(self.take(Kind::Quoted)?)
+            } else {
+                ParsedOp::Column(self.column()?)
+            };
+            expression.push(argument, call)?;
+            for _ in 0..argument_parentheses + 1 + parentheses {
+                self.take(Kind::RightParen)?;
+            }
+            expression.push(ParsedOp::ByteLength, call)?;
             expression.span = span(
                 usize::from(self.tokens.values[first].span.start),
                 usize::from(self.tokens.values[self.position - 1].span.end),

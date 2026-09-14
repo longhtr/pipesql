@@ -1,6 +1,8 @@
 //! Demand evaluation inside a producer, without crossing materialization boundaries.
 use super::{Error, Pipeline, Value};
-use crate::frontend::{Computation, DataType, MAX_COLUMNS, MAX_COMPUTED, MAX_ROW_VALUES};
+use crate::frontend::{
+    Computation, DataType, MAX_COLUMNS, MAX_COMPUTED, MAX_ROW_VALUES, SemanticColumn,
+};
 use crate::scalar::{Evaluation, MAX_OPS, Number, NumericInput, NumericValues, Op};
 
 // One live producer step owns these fixed arrays. The result reserves their
@@ -58,6 +60,12 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
         if let Computation::Constant(value) = &definition.expression {
             return Ok(value.value());
         }
+        if let Computation::ByteLength(column) = definition.expression {
+            return number(
+                byte_length(self.plan, column, &mut self.raw)?,
+                DataType::Int64,
+            );
+        }
         if self.plan.has_conditional_work() {
             return self.conditional_value(target);
         }
@@ -71,6 +79,15 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
                 continue;
             }
             let current = &self.plan.computed[index];
+            if matches!(current.expression, Computation::Constant(_)) {
+                // BYTE_LENGTH reads its owned text constant directly. That
+                // dependency has no numeric program or cached numeric payload.
+                continue;
+            }
+            if let Computation::ByteLength(column) = current.expression {
+                cache[index] = Some(byte_length(self.plan, column, &mut self.raw)?);
+                continue;
+            }
             if matches!(current.expression, Computation::WindowCount) {
                 let count = self
                     .partition_count
@@ -155,6 +172,11 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
                 continue;
             }
             let definition = &self.plan.computed[index];
+            if let Computation::ByteLength(column) = definition.expression {
+                cache[index] = Some(byte_length(self.plan, column, &mut self.raw)?);
+                depth -= 1;
+                continue;
+            }
             if matches!(definition.expression, Computation::WindowCount) {
                 let count = self
                     .partition_count
@@ -241,6 +263,35 @@ impl<'a, 'query, F> RowValues<'a, 'query, F> {
             }
         }
         Ok(true)
+    }
+}
+
+fn byte_length<'row>(
+    plan: &Pipeline<'_>,
+    column: SemanticColumn,
+    mut raw: impl FnMut(u8) -> Result<Value<'row>, Error>,
+) -> Result<Option<u64>, Error> {
+    let slot = plan.slots[column.identity().value() as usize];
+    let value = if usize::from(slot) < MAX_ROW_VALUES {
+        raw(slot)?
+    } else {
+        // Copies map back to their input. The only computed STRING producer
+        // within this pipeline is an owned constant; materialized text is raw.
+        let definition = plan
+            .computed
+            .get(usize::from(slot) - MAX_ROW_VALUES)
+            .ok_or(Error::Corrupt("byte-length input slot"))?;
+        let Computation::Constant(value) = &definition.expression else {
+            return Err(Error::Corrupt("byte-length input is not stored text"));
+        };
+        value.value()
+    };
+    match value {
+        Value::Null if column.nullable() => Ok(None),
+        Value::String(value) => i64::try_from(value.as_str().len())
+            .map(|length| Some(length as u64))
+            .map_err(|_| Error::Corrupt("STRING byte length exceeds INT64")),
+        _ => Err(Error::Corrupt("byte-length input type or nullability")),
     }
 }
 
@@ -357,7 +408,19 @@ impl BatchLayout {
                 count += 1;
             }
         }
-        let needed = plan.dependencies(&targets[..count])?;
+        let mut needed = plan.dependencies(&targets[..count])?;
+        // Length borrows checked text directly; numeric scratch stores only its
+        // result. A validated STRING input cannot also be a numeric-kernel input.
+        for (index, definition) in plan.computed.iter().enumerate() {
+            if needed[MAX_ROW_VALUES + index]
+                && let Computation::ByteLength(column) = definition.expression
+            {
+                let slot = usize::from(plan.slots[column.identity().value() as usize]);
+                if slot < MAX_ROW_VALUES {
+                    needed[slot] = false;
+                }
+            }
+        }
         let mut layout = Self::EMPTY;
         for (slot, needed) in needed.iter().enumerate() {
             if *needed {
@@ -372,11 +435,13 @@ impl BatchLayout {
                 layout.mapping[slot] = layout.buffers;
                 layout.buffers += 1;
                 if slot >= MAX_ROW_VALUES {
-                    let depth = plan.computed[slot - MAX_ROW_VALUES]
-                        .expression
-                        .numeric()?
-                        .stack_depth();
-                    layout.depth = layout.depth.max(depth as u8);
+                    match &plan.computed[slot - MAX_ROW_VALUES].expression {
+                        Computation::ByteLength(_) => (),
+                        computation => {
+                            let depth = computation.numeric()?.stack_depth();
+                            layout.depth = layout.depth.max(depth as u8);
+                        }
+                    }
                 }
             }
         }
@@ -460,6 +525,23 @@ impl BatchScratch {
             }
             let definition = &plan.computed[index];
             if matches!(definition.expression, Computation::Constant(_)) {
+                self.ready[slot] = true;
+                continue;
+            }
+            if let Computation::ByteLength(column) = definition.expression {
+                let offset = usize::from(self.layout.mapping[slot]) * WORDS_PER_COLUMN;
+                let (values, validity) = data
+                    .get_mut(offset..offset + WORDS_PER_COLUMN)
+                    .ok_or(Error::Corrupt("byte-length output buffer mapping"))?
+                    .split_at_mut(ROWS);
+                validity.fill(0);
+                for (lane, &row) in selection.iter().enumerate() {
+                    let value = byte_length(plan, column, |slot| raw(slot, row as usize))?;
+                    values[lane] = value.unwrap_or(0);
+                    if value.is_some() {
+                        validity[lane / 64] |= 1 << (lane % 64);
+                    }
+                }
                 self.ready[slot] = true;
                 continue;
             }

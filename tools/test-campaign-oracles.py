@@ -178,7 +178,7 @@ class AllocationInterpretation(unittest.TestCase):
 
     def test_ownership_requires_joined_and_allocator_observations(self):
         marker = ("joined shapes passed: 2 budgets; complete rows, step ownership and release\n"
-                  "analytic shapes passed: 11 cases; rows, attribution and release\n"
+                  "analytic shapes passed: 13 cases; rows, attribution and release\n"
                   "wide set shapes passed: 6 cases; complete rows, step ownership and release\n"
                   "wide left join passed: 64 columns, 11 pairs; rows, ownership and release")
         calibration = "transient ownership calibration passed: hidden allocation detected; entry/exit agree"

@@ -569,10 +569,21 @@ fn catalog_query_reads_only_demanded_payloads() {
         .unwrap()
         .append(table, &append_columns(), &cancel, &mut Effects::default())
         .unwrap();
-    let filtered =
-        crate::frontend::prepare_catalog(&db, "FROM facts |> WHERE amount < 0 |> SELECT note")
-            .unwrap();
-    let demanded = crate::frontend::prepare_catalog(&db, "FROM facts |> SELECT note").unwrap();
+    let filtered = [
+        ("FROM facts |> WHERE amount < 0 |> SELECT note", None),
+        ("FROM facts |> EXTEND BYTE_LENGTH(note) AS width |> WHERE amount < 0 |> SELECT width", None),
+        ("FROM facts |> EXTEND BYTE_LENGTH(note) AS width |> WHERE amount IS NOT NULL OR width > 0 |> AGGREGATE COUNT(*) AS n", Some(4)),
+    ].map(|(sql, expected)| (crate::frontend::prepare_catalog(&db, sql).unwrap(), expected));
+    let demanded = [
+        "FROM facts |> SELECT note",
+        "FROM facts |> SELECT BYTE_LENGTH(note) AS width",
+        // Scalar short-circuiting follows source-payload loading. The fallback
+        // computation is skipped, but this selected expression still reads its
+        // potential source dependencies and must reject their corruption.
+        "FROM facts |> SELECT BYTE_LENGTH(note) AS width |> SELECT COALESCE(1, width) AS chosen |> WHERE chosen < 0",
+        "FROM facts |> EXTEND BYTE_LENGTH(note) AS width |> WHERE width IS NULL |> SELECT amount",
+    ]
+    .map(|sql| crate::frontend::prepare_catalog(&db, sql).unwrap());
     // Independent format-6 corruption: retain unit metadata and corrupt only
     // the payload described by stable STRING identity 29.
     let name = object(receipt.transaction().sequence(), 1).name();
@@ -589,40 +600,54 @@ fn catalog_query_reads_only_demanded_payloads() {
     let offset = u64::from_le_bytes(descriptor[8..16].try_into().unwrap()) as usize;
     bytes[offset] ^= 1;
     fs::write(&file, bytes).unwrap();
-    let mut running = db.execute(&filtered, &cancel).unwrap();
-    let mut finished = false;
-    for _ in 0..32 {
-        match running.step() {
-            QueryStep::Progress => {}
-            QueryStep::Finished => {
-                finished = true;
-                break;
+    for (query, expected) in &filtered {
+        let before = db.reserved_memory_bytes();
+        let mut running = db.execute(query, &cancel).unwrap();
+        let mut finished = false;
+        let mut seen = false;
+        for _ in 0..128 {
+            match running.step() {
+                QueryStep::Progress => {}
+                QueryStep::Rows(batch) => {
+                    assert!(!seen);
+                    assert_eq!(batch.len(), 1);
+                    assert_eq!(batch.value(0, 0), expected.map(crate::Value::Int64));
+                    seen = true;
+                }
+                QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                _ => panic!("filtered query read undemanded text"),
             }
-            _ => panic!("filtered query read undemanded text"),
         }
+        assert!(finished);
+        assert_eq!(seen, expected.is_some());
+        drop(running);
+        assert_eq!(db.reserved_memory_bytes(), before);
     }
-    assert!(finished);
-    drop(running);
-    let before = db.reserved_memory_bytes();
-    let mut running = db.execute(&demanded, &cancel).unwrap();
-    let mut failed = false;
-    for _ in 0..32 {
-        match running.step() {
-            QueryStep::Progress => {}
-            QueryStep::Failed(Error::Corrupt(_)) => {
-                failed = true;
-                break;
+    for query in &demanded {
+        let before = db.reserved_memory_bytes();
+        let mut running = db.execute(query, &cancel).unwrap();
+        let mut failed = false;
+        for _ in 0..128 {
+            match running.step() {
+                QueryStep::Progress => {}
+                QueryStep::Failed(Error::Corrupt(_)) => {
+                    failed = true;
+                    break;
+                }
+                _ => panic!("corrupt demanded text escaped"),
             }
-            _ => panic!("corrupt demanded text escaped"),
         }
+        assert!(failed);
+        assert!(matches!(
+            running.step(),
+            QueryStep::Failed(Error::Corrupt(_))
+        ));
+        drop(running);
+        assert_eq!(db.reserved_memory_bytes(), before);
     }
-    assert!(failed);
-    assert!(matches!(
-        running.step(),
-        QueryStep::Failed(Error::Corrupt(_))
-    ));
-    drop(running);
-    assert_eq!(db.reserved_memory_bytes(), before);
 }
 
 #[test]

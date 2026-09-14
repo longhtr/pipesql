@@ -46,7 +46,17 @@ fn check_loaded_queries(path: &Path) {
     let resident = database.reserved_memory_bytes();
     let deep_limit = format!("FROM lineitem{}", " |> LIMIT 1 OFFSET 0".repeat(16));
     let q1_limit = format!("{} |> LIMIT 1", Q1.trim().trim_end_matches(';'));
-    for source in [Q6, Q1, &deep_limit, &q1_limit] {
+    let byte_lengths =
+        "FROM lineitem |> SELECT BYTE_LENGTH(l_returnflag) AS width, BYTE_LENGTH('é') AS unicode";
+    let conditional_lengths = "FROM lineitem |> AGGREGATE COUNT(*) AS entries GROUP BY l_returnflag |> SELECT BYTE_LENGTH(l_returnflag) AS width, BYTE_LENGTH('é') AS unicode |> SELECT COALESCE(width, 9223372036854775807 + 1) AS width, unicode";
+    for source in [
+        Q6,
+        Q1,
+        &deep_limit,
+        &q1_limit,
+        byte_lengths,
+        conditional_lengths,
+    ] {
         let query = database.prepare(source).unwrap();
         let cancellation = CancellationToken::new();
         let mut result = database.execute(&query, &cancellation).unwrap();
@@ -54,7 +64,14 @@ fn check_loaded_queries(path: &Path) {
         let mut finished = false;
         for _ in 0..1024 {
             match result.step() {
-                QueryStep::Rows(batch) => rows += batch.len(),
+                QueryStep::Rows(batch) => {
+                    if source == byte_lengths || source == conditional_lengths {
+                        assert_eq!(batch.column_count(), 2);
+                        assert_eq!(batch.value(0, 0), Some(Value::Int64(1)));
+                        assert_eq!(batch.value(0, 1), Some(Value::Int64(2)));
+                    }
+                    rows += batch.len();
+                }
                 QueryStep::Progress => (),
                 QueryStep::Finished => {
                     finished = true;

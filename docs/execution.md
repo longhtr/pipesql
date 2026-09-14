@@ -120,6 +120,33 @@ demand or materialization boundaries. Those changes must also preserve errors,
 source spans, shared definitions and resource admission. A measured difference
 can identify a candidate cost; it does not by itself justify an optimizer.
 
+## STRING byte-length evaluation
+
+Run [the byte-length query](query-examples.md#measure-text-in-bytes) alongside
+`Computation::ByteLength` in [frontend.rs](../src/frontend.rs). This computation
+retains one STRING input identity and produces INT64 with the input's nullability.
+The binder folds literal arguments into ordinary integer programs. Independent
+semantic validation rejects a missing or non-STRING input and inconsistent
+output facts; physical validation checks that the output position names the
+computation rather than its raw STRING input.
+
+In [computed.rs](../src/execution/computed.rs), `byte_length` borrows a checked
+source value or a retained STRING constant. It counts UTF-8 bytes without copying
+text. `BatchScratch::evaluate` stores the number and validity in the admitted
+numeric buffer; `RowValues` serves the same operation after a producer boundary.
+Numeric consumers can then use the projected identity without accepting STRING
+payloads into their kernels. [Workspace admission](resources.md#computed-scan-workspace)
+charges the result buffer separately from the source's text payload.
+
+Dependency traversal retains the STRING source when the length is demanded.
+A prior Boolean result can skip a later branch and its source payload. A present
+COALESCE value skips fallback computation, but scalar short-circuiting follows
+payload loading as described under
+[scalar evaluation](#scalar-expression-evaluation). A demanded NULL test still
+reads its input: nullability facts do not suppress source corruption. The retained
+[corrupted-payload test](../src/catalog_snapshot/tests/queries.rs) distinguishes
+skipped text from demanded failures using the same damaged stored column.
+
 ## Blocking operator ownership
 
 [`blocking.rs`](../src/execution/blocking.rs) owns sorted inputs and the run,
@@ -531,6 +558,14 @@ with the cached value. This keeps dependency traversal iterative and leaves
 unselected aggregate finalization untouched. Scans with conditional computations
 fill their existing batch buffers through this row resolver. Aggregate arguments
 use the same cursor over their already materialized inputs.
+
+Scalar evaluation and source-payload loading have separate demand boundaries.
+Once a scan selects a scalar expression for a filter or output, it loads that
+expression's potential raw dependencies before evaluation. COALESCE can therefore
+skip an arithmetic failure while corruption in a potential source dependency
+still fails the scan. Boolean filter branches can skip their entire expression
+and its payload reads. This distinction also applies when a skipped numeric
+value depends on a BYTE_LENGTH projection.
 
 NULLIF also requests operands through that cursor, so an earlier argument failure
 precedes a later computed dependency's failure. Both operands are demanded even

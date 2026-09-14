@@ -360,6 +360,52 @@ fn repeated_aggregate_legacy_empty_chain_respects_identity_limit() {
 }
 
 #[test]
+fn byte_length_definitions_reject_invalid_types_scope_and_nullability() {
+    let (_temp, db) = database(4_000_000);
+    for mutation in 0..6 {
+        let mut query = db
+            .prepare("FROM lineitem |> SELECT BYTE_LENGTH(l_returnflag) AS bytes")
+            .unwrap();
+        validate(&query.plan).unwrap();
+        let definition = &mut query.plan.computed[0];
+        let Computation::ByteLength(input) = definition.expression else {
+            panic!("typed byte-length computation");
+        };
+        match mutation {
+            0 => definition.expression = Computation::ByteLength(SourceColumn::QUANTITY.semantic()),
+            1 => {
+                definition.expression = Computation::ByteLength(SemanticColumn::new(
+                    input.identity().value(),
+                    DataType::String,
+                    true,
+                ))
+            }
+            2 => {
+                definition.expression =
+                    Computation::ByteLength(SemanticColumn::new(99, DataType::String, false))
+            }
+            3 => {
+                definition.column = SemanticColumn::new(
+                    definition.column.identity().value(),
+                    DataType::Double,
+                    false,
+                )
+            }
+            4 => {
+                definition.column =
+                    SemanticColumn::new(definition.column.identity().value(), DataType::Int64, true)
+            }
+            5 => definition.input = RelationId(16),
+            _ => unreachable!(),
+        }
+        assert!(
+            validate(&query.plan).is_err(),
+            "byte-length mutation {mutation}"
+        );
+    }
+}
+
+#[test]
 fn computed_definitions_reject_invalid_scope_identity_and_provenance() {
     let (_temp, database) = database(4_000_000);
     for sql in [

@@ -9,6 +9,9 @@ mod append;
 #[path = "catalog_lifecycle/boolean.rs"]
 mod boolean;
 
+#[path = "catalog_lifecycle/byte_length.rs"]
+mod byte_length;
+
 #[path = "catalog_lifecycle/computed.rs"]
 mod computed;
 

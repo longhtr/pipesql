@@ -464,11 +464,12 @@ mod tests {
         )
         .unwrap();
         let cancel = CancellationToken::new();
-        for (name, kind, capacity) in [
-            ("ints", DataType::Int64, 278_496),
-            ("doubles", DataType::Double, 278_496),
-            ("dates", DataType::Date, 147_424),
-            ("strings", DataType::String, 540_640),
+        for (name, kind, capacity, projection) in [
+            ("ints", DataType::Int64, 278_496, "n"),
+            ("doubles", DataType::Double, 278_496, "n"),
+            ("dates", DataType::Date, 147_424, "n"),
+            ("strings", DataType::String, 540_640, "n"),
+            ("lengths", DataType::String, 540_640, "BYTE_LENGTH(n)"),
         ] {
             db.declare_table(
                 name,
@@ -480,7 +481,7 @@ mod tests {
                 &cancel,
             )
             .unwrap();
-            let sql = format!("FROM {name} |> SELECT n");
+            let sql = format!("FROM {name} |> SELECT {projection}");
             let query = db.prepare(&sql).unwrap();
             let plan =
                 planning::lower(&db, &query, query.snapshot.as_ref().unwrap().state(), 0).unwrap();
@@ -494,6 +495,16 @@ mod tests {
             );
             assert!(scans[0].payloads[1..].iter().all(Option::is_none));
             drop(admitted);
+            if projection != "n" {
+                // One numeric result buffer: 256 payload words, four validity
+                // words and the existing 4-KiB allowance. No text copy or stack.
+                assert_eq!(
+                    crate::execution::computed::BatchLayout::new(plan.scan())
+                        .unwrap()
+                        .bytes(),
+                    6_176
+                );
+            }
             drop(plan);
             let before = db.reserved_memory_bytes();
             let rows = db.execute(&query, &cancel).unwrap();
