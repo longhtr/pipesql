@@ -50,6 +50,19 @@ a passing or general physical-memory claim. Join, ordering and sorted-set
 controllers now retain their inline charges through physical release. Broader
 allocator histories still need their own evidence.
 
+## Active milestone: complete the first tutorial before optional examples
+
+The declared-table walkthrough delays its finish and cleanup section until after
+roughly 500 lines of optional query examples. Move that collection into a guide
+with its own setup and cleanup, and link it from the completed first tutorial and
+documentation index. Preserve query text, results, reading paths, qualifications
+and current inbound links. Keep the other independent workloads in place.
+
+Verify links and preserved commands, then run a fresh declared-table and
+representative-query walkthrough. Confirm executable inputs are unchanged before
+reusing their runtime evidence; document movement does not require repeating
+engine or native campaigns. Review and commit locally and remove owned outputs.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
