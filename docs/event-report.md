@@ -143,6 +143,30 @@ starts the same report with room for one hash group. It requires disk fallback,
 observed replay of the retained join, complete literal rows and final release.
 This distinguishes the mechanism from the public caller's observation of spill.
 
+## Follow overlapping readers
+
+The [snapshot tests](../tests/catalog_lifecycle/snapshots.rs) run two report
+readers on separate threads. The older plan sees eight events; the newer plan
+sees sixteen. Each reader stops after adding its own spill storage, before it
+emits a row. An admitted writer retains a third append while both readers are
+parked. A third report must refuse shared memory admission and release its
+partial construction without disturbing either reader or the writer.
+
+Four explicit schedules change whether publication happens before or after the
+first reader finishes, and which reader finishes first. The older reader cancels;
+the newer reader completes. Both execute their retained plans again with fresh
+cancellation tokens. Reclamation preserves their pinned catalogs and receipts,
+while a fresh plan after publication sees all twenty-four events. Close/reopen
+must preserve that answer and the three append receipts.
+
+The control deliberately unlinks the old pinned catalog in a disposable fixture.
+Its reopened cursor must report the missing input; restoring that object must
+allow the same plan to succeed. This challenges a subtle false positive: an open
+file descriptor can survive unlinking, so finishing only the original cursor
+would not prove that the snapshot remained reopenable. These bounded schedules
+exercise real threads, shared ownership and release; they do not prove arbitrary
+race freedom or replace broader concurrency qualification.
+
 ## Follow a failed allocation
 
 The [allocation campaign](../tools/README.md) runs this report through the stock

@@ -336,3 +336,399 @@ fn concurrent_readers_keep_generations_through_reclamation_and_early_drop() {
     assert_eq!(db.reserved_temp_bytes(), 0);
     db.close().unwrap();
 }
+
+#[path = "../../examples/support/event_data.rs"]
+mod event_data;
+
+type ReportGroup = (Option<i64>, Option<&'static str>, i64, i64, Option<i64>);
+
+// Literal answers, independent of fixture construction and production evaluation.
+const OLD_REPORT: &[ReportGroup] = &[
+    (None, Some(""), 1, 1, Some(5)),
+    (None, Some("north"), 1, 1, Some(7)),
+    (Some(1999), Some("north"), 1, 1, Some(10)),
+    (Some(2000), None, 2, 1, Some(30)),
+    (Some(2000), Some("south"), 2, 2, Some(15)),
+    (Some(2000), Some("南"), 2, 2, Some(15)),
+    (Some(2001), Some("north"), 1, 0, None),
+];
+const NEW_REPORT: &[ReportGroup] = &[
+    (None, None, 1, 1, Some(11)),
+    (None, Some(""), 1, 1, Some(5)),
+    (None, Some("north"), 1, 1, Some(7)),
+    (None, Some("south"), 1, 0, None),
+    (None, Some("南"), 1, 0, None),
+    (Some(1999), Some("north"), 2, 2, Some(8)),
+    (Some(2000), None, 3, 2, Some(33)),
+    (Some(2000), Some(""), 2, 2, Some(9)),
+    (Some(2000), Some("south"), 2, 2, Some(15)),
+    (Some(2000), Some("南"), 2, 2, Some(15)),
+    (Some(2001), Some("north"), 2, 1, Some(13)),
+    (Some(2001), Some("south"), 1, 1, Some(40)),
+    (Some(2001), Some("南"), 1, 1, Some(40)),
+];
+
+fn append_report(db: &Database, events: &[event_data::Event]) -> pipesql::Commit {
+    let cancel = CancellationToken::new();
+    let mut writer = db
+        .begin_append(
+            "events",
+            AppendLimits {
+                batches: 1,
+                encoded_bytes: 4096,
+            },
+            &cancel,
+        )
+        .unwrap();
+    event_data::write_events(&mut writer, events, &cancel).unwrap();
+    writer.commit(&cancel).unwrap()
+}
+
+fn report_rows(expected: &[ReportGroup]) -> Vec<Vec<Cell>> {
+    let mut rows: Vec<_> = expected
+        .iter()
+        .map(|&(year, label, entries, present, total)| {
+            vec![
+                year.map_or(Cell::Null, Cell::Integer),
+                label.map_or(Cell::Null, |label| Cell::Text(label.to_owned())),
+                Cell::Integer(entries),
+                Cell::Integer(present),
+                total.map_or(Cell::Null, Cell::Integer),
+            ]
+        })
+        .collect();
+    rows.sort_unstable();
+    rows
+}
+
+fn park_report(db: &Database, result: &mut QueryResult<'_, '_>, prior_temp: u64) -> u64 {
+    for _ in 0..1024 {
+        assert!(
+            matches!(result.step(), QueryStep::Progress),
+            "report emitted before its spill checkpoint"
+        );
+        if db.reserved_temp_bytes() > prior_temp {
+            return db.reserved_temp_bytes() - prior_temp;
+        }
+    }
+    panic!("report did not reach spill checkpoint");
+}
+
+fn prepare_report(db: &Database) -> pipesql::PreparedQuery<'_> {
+    let query = db
+        .prepare(include_str!("../../examples/event_report.sql"))
+        .unwrap();
+    assert_eq!(query.result_column_count(), 5);
+    for (index, (name, data_type, nullable)) in [
+        ("calendar_year", DataType::Int64, true),
+        ("label", DataType::String, true),
+        ("entries", DataType::Int64, false),
+        ("present", DataType::Int64, false),
+        ("total", DataType::Int64, true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let column = query.result_column(index).unwrap();
+        assert_eq!(
+            (column.name, column.data_type, column.nullable),
+            (Some(name), data_type, nullable)
+        );
+    }
+    query
+}
+
+fn verify_report(
+    db: &Database,
+    mut result: QueryResult<'_, '_>,
+    expected: &[ReportGroup],
+) -> Result<(), Error> {
+    let outside_memory = db.reserved_memory_bytes() - result.accounted_memory_bytes();
+    let mut rows: Vec<Vec<Cell>> = Vec::new();
+    for _ in 0..1024 {
+        match result.step() {
+            QueryStep::Progress => (),
+            QueryStep::Rows(batch) => {
+                for row in 0..batch.len() {
+                    rows.push(
+                        (0..batch.column_count())
+                            .map(|column| owned_cell(batch.value(row, column).unwrap()))
+                            .collect(),
+                    );
+                }
+            }
+            QueryStep::Finished => {
+                rows.sort_unstable();
+                assert_eq!(rows, report_rows(expected));
+                drop(result);
+                assert_eq!(db.reserved_memory_bytes(), outside_memory);
+                return Ok(());
+            }
+            QueryStep::Failed(_) => {
+                let error = result.into_error().expect("owned report error");
+                assert_eq!(db.reserved_memory_bytes(), outside_memory);
+                return Err(error);
+            }
+        }
+    }
+    panic!("small report exceeded bounded progress allowance");
+}
+
+// The current 24-event answer is independent of the two pinned answers. The
+// third append repeats the first eight inputs; it does not replace either view.
+const LATEST_REPORT: &[ReportGroup] = &[
+    (None, None, 1, 1, Some(11)),
+    (None, Some(""), 2, 2, Some(10)),
+    (None, Some("north"), 2, 2, Some(14)),
+    (None, Some("south"), 1, 0, None),
+    (None, Some("南"), 1, 0, None),
+    (Some(1999), Some("north"), 3, 3, Some(18)),
+    (Some(2000), None, 5, 3, Some(63)),
+    (Some(2000), Some(""), 2, 2, Some(9)),
+    (Some(2000), Some("south"), 4, 4, Some(30)),
+    (Some(2000), Some("南"), 4, 4, Some(30)),
+    (Some(2001), Some("north"), 3, 1, Some(13)),
+    (Some(2001), Some("south"), 1, 1, Some(40)),
+    (Some(2001), Some("南"), 1, 1, Some(40)),
+];
+
+#[test]
+fn overlapping_reports_preserve_pins_through_publication_and_cancellation() {
+    for publish_first in [true, false] {
+        for older_first in [true, false] {
+            overlapping_reports(publish_first, older_first, false);
+        }
+    }
+}
+
+#[test]
+fn overlapping_report_control_detects_unlinked_pinned_catalog() {
+    overlapping_reports(true, true, true);
+}
+
+fn overlapping_reports(publish_first: bool, older_first: bool, unlink_old_catalog: bool) {
+    let directory = Directory::new();
+    let path = directory.database();
+    let config = Config::new(64_000_000, 32_000_000).unwrap();
+    let db = Database::create_empty(&path, config).unwrap();
+    let cancel = CancellationToken::new();
+    event_data::declare(&db, &cancel).unwrap();
+    let prior_names: std::collections::BTreeSet<_> = std::fs::read_dir(path.join("units"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    let first = append_report(&db, &event_data::EVENTS[..8]);
+    let old = prepare_report(&db);
+    // Identify the newly published catalog by the literal format tag and
+    // directory difference, independently of the engine's graph traversal.
+    let catalogs: Vec<_> = std::fs::read_dir(path.join("units"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| !prior_names.contains(path))
+        .filter(|path| std::fs::read(path).unwrap().starts_with(b"PSQLCATL"))
+        .collect();
+    assert_eq!(catalogs.len(), 1);
+    let old_catalog = &catalogs[0];
+    let second = append_report(&db, &event_data::EVENTS[8..]);
+    let new = prepare_report(&db);
+    let resident =
+        db.reserved_memory_bytes() - old.accounted_memory_bytes() - new.accounted_memory_bytes();
+    let timeout = std::time::Duration::from_secs(30);
+    let (old_ready_tx, old_ready_rx) = std::sync::mpsc::sync_channel(1);
+    let (old_resume_tx, old_resume_rx) = std::sync::mpsc::sync_channel(1);
+    let (new_ready_tx, new_ready_rx) = std::sync::mpsc::sync_channel(1);
+    let (new_resume_tx, new_resume_rx) = std::sync::mpsc::sync_channel(1);
+    let third = std::thread::scope(|scope| {
+        let reader_db = &db;
+        let old_worker = scope.spawn(move || {
+            let token = CancellationToken::new();
+            let mut result = reader_db.execute(&old, &token).unwrap();
+            let own_temp = park_report(reader_db, &mut result, 0);
+            old_ready_tx.send(()).unwrap();
+            old_resume_rx.recv_timeout(timeout).unwrap();
+            let outside_memory =
+                reader_db.reserved_memory_bytes() - result.accounted_memory_bytes();
+            let outside_temp = reader_db.reserved_temp_bytes() - own_temp;
+            token.cancel();
+            assert!(matches!(result.step(), QueryStep::Failed(Error::Cancelled)));
+            assert!(matches!(result.into_error(), Some(Error::Cancelled)));
+            assert_eq!(reader_db.reserved_memory_bytes(), outside_memory);
+            assert_eq!(reader_db.reserved_temp_bytes(), outside_temp);
+            // A fresh cursor must reopen the pinned graph. Retaining only an
+            // already open descriptor could conceal an erroneous unlink.
+            let token = CancellationToken::new();
+            let verified = reader_db
+                .execute(&old, &token)
+                .and_then(|result| verify_report(reader_db, result, OLD_REPORT));
+            (old, verified)
+        });
+        old_ready_rx.recv_timeout(timeout).unwrap();
+        let mut writer = db
+            .begin_append(
+                "events",
+                AppendLimits {
+                    batches: 1,
+                    encoded_bytes: 4096,
+                },
+                &cancel,
+            )
+            .unwrap();
+        event_data::write_events(&mut writer, &event_data::EVENTS[..8], &cancel).unwrap();
+        // Include the writer's temporary reservation before observing the second
+        // reader; its first spill must add its own temporary storage.
+        let prior_temp = db.reserved_temp_bytes();
+        let new_worker = scope.spawn(move || {
+            let token = CancellationToken::new();
+            let mut result = reader_db.execute(&new, &token).unwrap();
+            let own_temp = park_report(reader_db, &mut result, prior_temp);
+            new_ready_tx.send(()).unwrap();
+            new_resume_rx.recv_timeout(timeout).unwrap();
+            let outside_temp = reader_db.reserved_temp_bytes() - own_temp;
+            verify_report(reader_db, result, NEW_REPORT).unwrap();
+            assert_eq!(reader_db.reserved_temp_bytes(), outside_temp);
+            verify_report(
+                reader_db,
+                reader_db.execute(&new, &CancellationToken::new()).unwrap(),
+                NEW_REPORT,
+            )
+            .unwrap();
+        });
+        new_ready_rx.recv_timeout(timeout).unwrap();
+        let parked = (db.reserved_memory_bytes(), db.reserved_temp_bytes());
+        let extra = prepare_report(&db);
+        match db.execute(&extra, &cancel) {
+            Err(Error::Resource {
+                owner,
+                required,
+                limit,
+            }) => {
+                assert_eq!(owner, "native query workspace");
+                assert_eq!(limit, config.memory_limit_bytes());
+                assert!(required > limit);
+            }
+            _ => panic!("third report must refuse shared memory admission"),
+        }
+        drop(extra);
+        assert_eq!(
+            (db.reserved_memory_bytes(), db.reserved_temp_bytes()),
+            parked
+        );
+        assert!(matches!(
+            db.reclaim(&cancel),
+            Err(Error::Contention("catalog writer"))
+        ));
+        assert_eq!(db.generation(), second.generation());
+        let publish = || {
+            let receipt = writer.commit(&cancel).unwrap();
+            assert_eq!(receipt.generation(), second.generation() + 1);
+            let published = (db.reserved_memory_bytes(), db.reserved_temp_bytes());
+            assert!(db.reclaim(&cancel).unwrap() > 0);
+            assert_eq!(
+                (db.reserved_memory_bytes(), db.reserved_temp_bytes()),
+                published
+            );
+            receipt
+        };
+        let finish_old = || {
+            assert!(old_catalog.exists(), "reclamation removed a pinned catalog");
+            let removed = unlink_old_catalog.then(|| {
+                let bytes = std::fs::read(old_catalog).unwrap();
+                std::fs::remove_file(old_catalog).unwrap();
+                bytes
+            });
+            old_resume_tx.send(()).unwrap();
+            let (old, verified) = old_worker.join().unwrap();
+            if let Some(bytes) = removed {
+                assert!(
+                    matches!(verified, Err(Error::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound),
+                    "pin control must fail at reopened catalog input"
+                );
+                std::fs::write(old_catalog, bytes).unwrap();
+                std::fs::File::open(old_catalog)
+                    .unwrap()
+                    .sync_all()
+                    .unwrap();
+                verify_report(
+                    &db,
+                    db.execute(&old, &CancellationToken::new()).unwrap(),
+                    OLD_REPORT,
+                )
+                .unwrap();
+            } else {
+                verified.unwrap();
+            }
+            drop(old);
+        };
+        let finish_new = || {
+            new_resume_tx.send(()).unwrap();
+            new_worker.join().unwrap();
+        };
+        let third = match (publish_first, older_first) {
+            (true, true) => {
+                let receipt = publish();
+                finish_old();
+                assert!(db.reserved_memory_bytes() < parked.0);
+                assert!(db.reclaim(&cancel).unwrap() > 0);
+                finish_new();
+                receipt
+            }
+            (true, false) => {
+                let receipt = publish();
+                finish_new();
+                assert!(db.reserved_memory_bytes() < parked.0);
+                assert!(db.reclaim(&cancel).unwrap() > 0);
+                finish_old();
+                receipt
+            }
+            (false, true) => {
+                finish_old();
+                assert!(db.reserved_memory_bytes() < parked.0);
+                let receipt = publish();
+                finish_new();
+                receipt
+            }
+            (false, false) => {
+                finish_new();
+                assert!(db.reserved_memory_bytes() < parked.0);
+                let receipt = publish();
+                finish_old();
+                receipt
+            }
+        };
+        for receipt in [first, second, third] {
+            assert_eq!(
+                db.resolve_commit(receipt.transaction()).unwrap(),
+                CommitResolution::Durable(receipt)
+            );
+        }
+        third
+    });
+    assert_eq!(db.generation(), third.generation());
+    assert_eq!(db.reserved_memory_bytes(), resident);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    assert!(db.reclaim(&cancel).unwrap() > 0);
+    assert_eq!(db.reclaim(&cancel).unwrap(), 0);
+    let latest = prepare_report(&db);
+    verify_report(&db, db.execute(&latest, &cancel).unwrap(), LATEST_REPORT).unwrap();
+    drop(latest);
+    assert_eq!(db.reserved_memory_bytes(), resident);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    db.close().unwrap();
+    let reopened = Database::open(&path, config).unwrap();
+    for receipt in [first, second, third] {
+        assert_eq!(
+            reopened.resolve_commit(receipt.transaction()).unwrap(),
+            CommitResolution::Durable(receipt)
+        );
+    }
+    let latest = prepare_report(&reopened);
+    verify_report(
+        &reopened,
+        reopened.execute(&latest, &cancel).unwrap(),
+        LATEST_REPORT,
+    )
+    .unwrap();
+    drop(latest);
+    assert_eq!(reopened.reserved_temp_bytes(), 0);
+    reopened.close().unwrap();
+}
