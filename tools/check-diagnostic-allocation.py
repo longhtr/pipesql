@@ -214,6 +214,29 @@ def complete_preparation_failures(output):
     )
 
 
+def complete_execution_failures(output):
+    completed = re.findall(
+        r"^wide left join execution failures passed: 3 demanded errors; external work, owned spans and release$",
+        output, re.MULTILINE,
+    )
+    records = re.findall(
+        r"^wide left join demanded failure: expression=(.+); step=(\d+); temporary=(\d+); "
+        r"Samples \{ allocations: (\d+), frees: (\d+), requested_headroom: (-?\d+), usable_headroom: (-?\d+) \}$",
+        output, re.MULTILINE,
+    )
+    return (
+        len(completed) == 1
+        and [record[0] for record in records] == [
+            "LOG10(ABS(r.id-3))",
+            "SAFE_DIVIDE(1, LOG10(ABS(r.id-3)))",
+            "COALESCE(NULLIF(1, 1), LOG10(ABS(r.id-3)))",
+        ]
+        and all(1 < int(step) < 200_000 and int(temporary) > 0 and int(frees) > 0
+                and int(requested) >= 0 and int(usable) >= 0
+                for _, step, temporary, _, frees, requested, usable in records)
+    )
+
+
 def check_ownership(work, run, failures):
     for label, length in [("short", None), ("path384", 384)]:
         analytic = run("analytic-shapes", f"analytic-{label}", length)
@@ -234,6 +257,8 @@ def check_ownership(work, run, failures):
             failures.append(f"incomplete transient join lifecycle: {label}")
         if not complete_preparation_failures(joined.stdout):
             failures.append(f"incomplete join preparation refusal trace: {label}")
+        if not complete_execution_failures(joined.stdout):
+            failures.append(f"incomplete join execution failure trace: {label}")
         prepared = run("prepared-aggregate-shapes", f"prepared-aggregates-{label}", length)
         print(prepared.stdout + prepared.stderr, end="", flush=True)
         if "prepared aggregate shapes passed: 14 accepted and 54 rejected; attribution, rows and release" not in prepared.stdout:
@@ -323,6 +348,7 @@ def check_ownership(work, run, failures):
         ("wide-left-join-observer-negative", "transient ownership calibration missed uncharged allocation"),
         ("wide-left-join-lifecycle-negative", "missing transient join lifecycle events: preparation"),
         ("wide-left-join-failure-negative", "missing failed preparation events: prefix=1"),
+        ("wide-left-join-execution-negative", "missing failed execution events"),
         ("wide-set-attribution-negative", "wide set usable ownership attribution"),
         ("append-allocation-shapes-negative", "append allocation rounding"),
         ("ownership-negative", "complete-row oracle"),

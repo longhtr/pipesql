@@ -43,11 +43,19 @@ eleven-pair/64-column healthy oracle, calibration, nonheap equations and all exi
 admission, cancellation, replay, publication, recovery and cleanup checks. Repair
 only concrete owner defects; add no admission padding or engine instrumentation.
 
-Document the actual failure flow and limits. Run focused checks and matching
-frozen sequential macOS/GNU arm64 Linux gates, reconcile discovery and independent
-evidence, then run fresh relevant examples sequentially. Review the final diff,
-remove owned outputs and make coherent local commits. Keep historical evidence
-below 641,696 bytes and preserve publication restrictions.
+The owner trace and focused public allocation selection pass. Each of the three
+error histories follows external work, frees 334 allocations in the failing step
+and restores the prepared heap/descriptor baseline before returning the error.
+The result retains only its inline handle charge. The omitted-step observation
+control fails for missing failure frees; all retained ownership controls pass.
+No engine accounting or release-order defect was exposed. Fourteen campaign-oracle
+tests pass, including missing, duplicate, reordered and invalid failure records.
+
+The failure flow and limits are documented. Matching frozen sequential
+macOS/GNU arm64 Linux gates, discovery/evidence reconciliation and sequential fresh
+examples remain. Review the final diff, remove owned outputs and make coherent
+local commits. Keep historical evidence below 641,696 bytes and preserve
+publication restrictions.
 
 The [base-ten milestone](evidence.md#base-ten-logarithms), normal lifecycle and
 preparation-failure checks remain closed beyond this demanded execution-failure

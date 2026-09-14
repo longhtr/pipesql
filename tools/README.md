@@ -256,6 +256,24 @@ other failed calls must observe all successful allocations and their frees.
 fail event coverage. The supervisor independently rejects incomplete, duplicated
 or reordered prefix traces and requires the final healthy control.
 
+`check_failed_join_execution` then replaces the unique `text60` output with a
+numeric expression, retaining 64 columns and the other wide nullable STRINGs.
+Three expressions demand the same late LOG10 domain error directly, through a
+SAFE_DIVIDE argument and through a COALESCE fallback. Query text is freed before
+execution. A fresh observer for each step prevents construction events from
+standing in for failure coverage. Each error must follow live external work and
+free runtime owners in the failing call with nonnegative requested/usable headroom.
+Heap and descriptors already match the prepared baseline while the failed result
+remains live; its charge equals its inline handle size. Repeated failure has no
+heap events. Error extraction releases the handle charge, and prepared-query
+release restores the original baseline while the error remains live.
+`wide-left-join-execution-negative` observes construction but omits step
+observations; the missing failure frees must reject it. The supervisor requires
+all three complete histories, positive external storage and observed frees, valid
+step counts and nonnegative headroom. The complete literal healthy join follows
+these errors. This is selected demanded-error coverage, not an exhaustive
+execution-allocation sweep.
+
 The same selection runs the nullable self-join, aggregation, and ordering workload
 at 2.2 MB and 12 MB. `joined_shapes` in
 [`composed-ownership.rs`](fixtures/composed-ownership.rs) checks all 4,096 descending

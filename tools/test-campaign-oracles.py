@@ -121,6 +121,31 @@ class AllocationInterpretation(unittest.TestCase):
             with self.subTest(output=invalid):
                 self.assertFalse(check(invalid))
 
+    def test_execution_failure_trace_requires_every_demand_and_live_release(self):
+        expressions = ["LOG10(ABS(r.id-3))", "SAFE_DIVIDE(1, LOG10(ABS(r.id-3)))",
+                       "COALESCE(NULLIF(1, 1), LOG10(ABS(r.id-3)))"]
+        rows = [f"wide left join demanded failure: expression={expression}; step=20; temporary=4096; "
+                "Samples { allocations: 0, frees: 10, requested_headroom: 32, usable_headroom: 16 }\n"
+                for expression in expressions]
+        complete = ("wide left join execution failures passed: 3 demanded errors; "
+                    "external work, owned spans and release\n")
+        valid = "".join(rows) + complete
+        check = ALLOCATION["complete_execution_failures"]
+        self.assertTrue(check(valid))
+        for invalid in [
+            "", complete, "".join(rows), "".join(rows[1:]) + complete,
+            "".join(rows[:-1]) + complete, "".join(reversed(rows)) + complete,
+            valid + complete, rows[0] + valid,
+            valid.replace("step=20", "step=1"),
+            valid.replace("step=20", "step=200000"),
+            valid.replace("temporary=4096", "temporary=0"),
+            valid.replace("frees: 10", "frees: 0"),
+            valid.replace("requested_headroom: 32", "requested_headroom: -1"),
+            valid.replace("usable_headroom: 16", "usable_headroom: -1"),
+        ]:
+            with self.subTest(output=invalid):
+                self.assertFalse(check(invalid))
+
     def test_ownership_requires_joined_and_allocator_observations(self):
         marker = ("joined shapes passed: 2 budgets; complete rows, step ownership and release\n"
                   "analytic shapes passed: 11 cases; rows, attribution and release\n"
@@ -169,6 +194,8 @@ class AllocationInterpretation(unittest.TestCase):
             self.assertEqual(sum(message.startswith("incomplete prepared aggregate allocation checks:")
                                  for message in failures), 2)
             self.assertEqual(sum(message.startswith("incomplete join preparation refusal trace:")
+                                 for message in failures), 2)
+            self.assertEqual(sum(message.startswith("incomplete join execution failure trace:")
                                  for message in failures), 2)
             # A zero exit and other completion markers cannot stand in for
             # observing each explicitly selected native allocation regime.

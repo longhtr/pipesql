@@ -1132,6 +1132,7 @@ pub(super) enum WideJoinControl {
     DisabledObserver,
     MissingPreparation,
     MissingFailedPreparation,
+    MissingFailedExecution,
 }
 
 pub(super) fn wide_left_join_shape(
@@ -1250,6 +1251,13 @@ pub(super) fn wide_left_join_shape(
         before,
         memory,
         matches!(control, WideJoinControl::MissingFailedPreparation),
+    );
+    check_failed_join_execution(
+        &db,
+        SOURCE,
+        before,
+        memory,
+        matches!(control, WideJoinControl::MissingFailedExecution),
     );
     let preparation =
         super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
@@ -1577,6 +1585,139 @@ fn check_failed_join_preparation(
     check_join_phase("late preparation error", samples, true);
     println!(
         "wide left join preparation failures passed: prefixes=0..={census}; live errors, owned span and release"
+    );
+}
+
+// Caller query text is gone before execution. Each step has its own observer so
+// earlier successful allocations cannot hide an unobserved failure transition.
+fn check_failed_join_execution(
+    db: &Database,
+    source: &str,
+    before: Live,
+    memory: u64,
+    missing_observation: bool,
+) {
+    use super::transient_ownership::Observer;
+    for expression in [
+        "LOG10(ABS(r.id-3))",
+        "SAFE_DIVIDE(1, LOG10(ABS(r.id-3)))",
+        "COALESCE(NULLIF(1, 1), LOG10(ABS(r.id-3)))",
+    ] {
+        // text60 belongs only to the right source. Replacing one payload keeps
+        // 64 output fields while retaining the other wide nullable STRINGs.
+        let sql = format!("# 雪\n{source} |> DROP text60 |> EXTEND {expression} AS failed_value");
+        let start = sql.find(expression).unwrap();
+        let end = start + expression.len();
+        let query = db.prepare(&sql).unwrap();
+        drop(sql);
+        assert_eq!(query.result_column_count(), 64);
+        let output = query.result_column(63).unwrap();
+        assert_eq!(
+            (output.data_type, output.nullable),
+            (DataType::Double, true)
+        );
+        let prepared_live = Live::now();
+        let cancel = CancellationToken::new();
+        let execution = Observer::new(db, memory, before.requested, before.usable);
+        let mut result = execution.during(|| db.execute(&query, &cancel)).unwrap();
+        let samples = execution.samples();
+        assert!(
+            samples.allocations > 0,
+            "missing failed-query construction events"
+        );
+        assert!(samples.requested_headroom >= 0 && samples.usable_headroom >= 0);
+        let mut peak_temp = 0;
+        let mut failed = false;
+        for step in 1..200_000 {
+            assert_eq!(
+                db.reserved_memory_bytes(),
+                memory + query.accounted_memory_bytes() + result.accounted_memory_bytes(),
+            );
+            let observer = Observer::new(db, memory, before.requested, before.usable);
+            match if missing_observation {
+                result.step()
+            } else {
+                observer.during(|| result.step())
+            } {
+                QueryStep::Progress | QueryStep::Rows(_) => (),
+                QueryStep::Failed(Error::ArithmeticDomain { operation, span }) => {
+                    assert_eq!(*operation, "base-ten logarithm");
+                    assert_eq!((span.start(), span.end()), (start, end));
+                    failed = true;
+                }
+                _ => panic!("missing demanded join domain error"),
+            }
+            let samples = observer.samples();
+            assert!(
+                samples.requested_headroom >= 0 && samples.usable_headroom >= 0,
+                "failed join step ownership: {samples:?}",
+            );
+            if failed {
+                assert!(peak_temp > 0, "join error must follow external work");
+                assert_eq!(Live::now(), prepared_live);
+                assert_eq!(
+                    result.accounted_memory_bytes(),
+                    std::mem::size_of_val(&result) as u64
+                );
+                assert!(samples.frees > 0, "missing failed execution events");
+                assert_eq!(db.reserved_temp_bytes(), 0);
+                assert_eq!(
+                    db.reserved_memory_bytes(),
+                    memory + query.accounted_memory_bytes() + result.accounted_memory_bytes(),
+                );
+                println!(
+                    "wide left join demanded failure: expression={expression}; step={step}; temporary={peak_temp}; {samples:?}"
+                );
+                break;
+            }
+            peak_temp = peak_temp.max(db.reserved_temp_bytes());
+        }
+        assert!(failed, "bounded join execution must reach its domain error");
+        // A repeated step keeps the same error without reacquiring runtime owners.
+        let retained = Live::now();
+        let charge = db.reserved_memory_bytes();
+        let repeated = Observer::new(db, memory, before.requested, before.usable);
+        let QueryStep::Failed(Error::ArithmeticDomain { operation, span }) =
+            repeated.during(|| result.step())
+        else {
+            panic!("failed result lost its terminal error");
+        };
+        assert_eq!(*operation, "base-ten logarithm");
+        assert_eq!((span.start(), span.end()), (start, end));
+        assert_eq!(repeated.samples().allocations, 0);
+        assert_eq!(repeated.samples().frees, 0);
+        assert_eq!(Live::now(), retained);
+        assert_eq!(db.reserved_memory_bytes(), charge);
+        let release = Observer::new(db, memory, before.requested, before.usable);
+        let error = release
+            .during(|| result.into_error())
+            .expect("owned terminal error");
+        assert_eq!(
+            db.reserved_memory_bytes(),
+            memory + query.accounted_memory_bytes()
+        );
+        let prepared_release = Observer::new(db, memory, before.requested, before.usable);
+        prepared_release.during(|| drop(query));
+        check_join_phase("failed prepared release", prepared_release.samples(), false);
+        let Error::ArithmeticDomain { operation, span } = &error else {
+            panic!("owned join domain error");
+        };
+        assert_eq!(*operation, "base-ten logarithm");
+        assert_eq!((span.start(), span.end()), (start, end));
+        assert_eq!(Live::now(), before);
+        assert_eq!(db.reserved_memory_bytes(), memory);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        assert!(super::workload::format_error(Some(&error)));
+        drop(error);
+        assert_eq!(Live::now(), before);
+        assert_eq!(db.reserved_memory_bytes(), memory);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        let samples = release.samples();
+        assert_eq!((samples.allocations, samples.frees), (0, 0));
+        assert!(samples.requested_headroom >= 0 && samples.usable_headroom >= 0);
+    }
+    println!(
+        "wide left join execution failures passed: 3 demanded errors; external work, owned spans and release"
     );
 }
 

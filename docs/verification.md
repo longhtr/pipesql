@@ -484,6 +484,24 @@ The complete healthy join must still return all literal rows after these
 failures. Disabling one failed-call observation must fail coverage; missing,
 duplicated, reordered or incorrectly refused trace records must be rejected.
 
+Also demand numeric errors during execution of the wide join after a public
+`Progress` or `Rows` result with live temporary storage. Keep 64 output fields by
+replacing one STRING payload. Check direct LOG10 failure, a demanded SAFE_DIVIDE
+argument and a demanded COALESCE fallback. Free caller query text before execution
+and check the exact owned UTF-8 span through repeated failure and error extraction.
+
+Observe construction allocations and use a fresh observer for each step, requiring
+nonnegative requested/usable headroom throughout. The failing call must report
+physical frees; it need not allocate. Its returned heap and descriptors must
+already equal the post-preparation baseline, with only the result's handle-size
+charge remaining above the prepared query. Repeated failure and handle release
+must have no heap events. Drop the prepared query and check full release with the
+error still live, then again after error release. Keep construction observed in
+a negative control that omits step observations; missing failure frees must reject
+it. The supervisor must reject incomplete or duplicate histories, absent external
+work, missing frees, negative headroom and out-of-bound step counts. These selected
+demanded errors do not qualify every execution-allocation refusal history.
+
 Recovery allocation checks cover short/384-byte paths, empty/data missing-peer
 repair, corrupt roots, and Darwin repair-rename permission failure. The
 supervisor must remove its owned ACL after child failure or timeout. Check exact

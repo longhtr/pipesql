@@ -164,6 +164,8 @@ impl QueryResult<'_, '_> {
                     self.reservation.shrink_to(RESULT_BYTES);
                 }
                 Err(error) => {
+                    // Replacing Running drops its buffers and scratch before
+                    // plan/handle charges shrink. The inline error survives.
                     self.state = State::Failed(error);
                     self.plan.clear();
                     self.reservation.shrink_to(RESULT_BYTES);

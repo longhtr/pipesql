@@ -242,6 +242,16 @@ separately owned physical-plan, workspace, and aggregate allocations. The
 scratch charge is released at completion or failure; the terminal handle retains
 only its own size.
 
+On a demanded arithmetic failure, [QueryResult::step](../src/execution.rs)
+replaces the running state with the inline error. Dropping the runtime destroys
+its nodes, partial output batches and temporary owners before their reservations.
+The physical plan then frees its pipeline vector before releasing that charge;
+only afterward does the result shrink to its handle size. Repeated failed steps
+return the retained error without rebuilding runtime owners. `into_error` moves
+the error out and releases the handle charge. The prepared query remains an
+independent owner until dropped; error metadata does not keep that plan alive.
+The [interface contract](interfaces.md) owns error and source-span lifetimes.
+
 The query's accounted-memory report includes every live hash text reservation.
 During growth this includes both the retained arena and its replacement; copying
 must finish before the old allocation and reservation are released.
