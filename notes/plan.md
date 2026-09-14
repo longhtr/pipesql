@@ -75,6 +75,8 @@ quality work is not deferred to the final gate.
 
 ### Ordered remaining goals
 
+The active goal is **1. Establish the composed report**.
+
 These are nine bounded outcomes, not nine already activated goals. Activate one
 through the goal tool at a time. Prerequisites below name queue positions; the
 first goal has no unfinished prerequisite. Existing narrower scenarios are inputs
