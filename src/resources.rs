@@ -219,8 +219,9 @@ impl Drop for Reservation<'_> {
     }
 }
 
-/// Allocate within an already admitted capacity ceiling. This checks the allocator
-/// result but does not reserve memory; the caller must retain the matching charge.
+/// Allocate within an already admitted capacity ceiling. Reject excess demand
+/// before allocation and check the returned capacity afterward. This does not
+/// reserve memory; the caller must retain the matching charge.
 pub(crate) fn allocate<T>(
     requested: usize,
     ceiling: usize,
@@ -230,6 +231,16 @@ pub(crate) fn allocate<T>(
     let bytes = ceiling
         .checked_mul(size_of::<T>())
         .ok_or(Error::Corrupt("allocation geometry overflow"))?;
+    if requested > ceiling {
+        return Err(Error::Resource {
+            owner,
+            required: requested
+                .checked_mul(size_of::<T>())
+                .and_then(|value| u64::try_from(value).ok())
+                .unwrap_or(u64::MAX),
+            limit: bytes as u64,
+        });
+    }
     let mut values = Vec::new();
     values
         .try_reserve_exact(requested)

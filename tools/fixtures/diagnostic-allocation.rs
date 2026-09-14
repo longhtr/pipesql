@@ -1,4 +1,4 @@
-//! Disposable allocator-fault probe around the unmodified public rlib.
+//! Public-library allocator probes and a direct production allocation-helper check.
 use pipesql::{CancellationToken, Config, Database, Error, TransactionId};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::fmt::{self, Write};
@@ -111,6 +111,8 @@ unsafe impl GlobalAlloc for Allocator {
 #[global_allocator]
 static ALLOCATOR: Allocator = Allocator;
 
+#[path = "allocation-capacity.rs"]
+mod allocation_capacity;
 #[path = "catalog-allocation.rs"]
 mod catalog;
 #[path = "grouping-ownership.rs"]
@@ -258,6 +260,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::path::PathBuf::from(args.next().expect("owned probe directory"));
     let mode = args.next().expect("probe mode");
     assert!(args.next().is_none());
+    if mode == "allocation-capacity" {
+        allocation_capacity::run();
+        return Ok(());
+    }
     if mode == "analytic-shapes" || mode == "analytic-attribution-negative" {
         return ownership::analytic_shapes(&root, mode == "analytic-attribution-negative");
     }

@@ -86,7 +86,7 @@ recorded revision after a path move.
 | Runner | Owned boundary |
 | --- | --- |
 | `check-filesystem-abi.py` | Native SDK/decoder agreement and independent pthread extent/minimum controls. |
-| `check-diagnostic-allocation.py` | Public library construction, errors, queries, catalog recovery, and composed ownership under allocator refusal. |
+| `check-diagnostic-allocation.py` | Allocation-capacity preflight and public library construction, errors, queries, catalog recovery, and composed ownership under allocator refusal. |
 | `check-cli-allocation.py` | CLI startup, parsing, output, publication tokens, and allocation refusal. |
 | `check-native-initialization.py` | Darwin root-stat and Linux lstat/readlink observation, refusal, and overlapping callers. |
 | `check-native-sync.py` | Linked synchronization calls, refusal, and healed outcomes. |
@@ -99,6 +99,16 @@ recorded revision after a path move.
 These runners compile and execute code. C/Rust callers live in
 `fixtures/`; they are development scaffolding with their own unsafe and process
 ownership, not shipped adapters.
+
+Every diagnostic-allocation selection first runs
+[`allocation-capacity.rs`](fixtures/allocation-capacity.rs). It includes the
+production resource helper directly, using the same allocator observer as the
+public rlib probes. Three oversized requests must refuse before any allocation
+attempt, including requested-byte overflow. Empty, exact/spare-capacity and actual
+allocator-refusal controls distinguish preflight refusal from a disabled observer
+or unconditional rejection. Reservations remain live until returned vectors are
+dropped. This checks an internal capacity boundary; public query probes continue
+to use the stock rlib.
 
 Use `python3 -B tools/check-diagnostic-allocation.py --ownership-only` to
 reconcile prepared queries, parked readers, and an append. The

@@ -24,6 +24,13 @@ For significant retained growth:
 4. publish mutation only after allocation succeeds; and
 5. drop the physical owner before releasing its charge.
 
+`allocate` receives an element request and an already admitted capacity ceiling.
+It refuses an excessive request before contacting the allocator, then checks the
+allocator's actual vector capacity before returning it. These are separate
+checks: valid requested geometry does not itself establish the returned capacity.
+The helper owns neither a budget nor a reservation; its caller must keep the
+physical allocation covered through release.
+
 Reject the next value before overflow, narrowing, allocation, I/O, or partial
 publication. Accounts identify owner, purpose, unit, lifetime, revocability, and
 cleanup state. Reservation transfer is explicit; blocked producers retain no

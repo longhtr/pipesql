@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Fresh public-library allocation refusal, bounded and supervised outside Cargo.
 
+The same observer checks a directly included private production capacity helper.
 The allocator is unsafe caller scaffolding; engine unsafe_code=forbid remains.
-Each cell first measures its expected-outcome allocation census, then denies after
-EVERY permitted prefix, including zero and a full-prefix control. Workload cells
+Allocation-prefix cells first measure their expected-outcome census, then deny
+after EVERY permitted prefix, including zero and a full-prefix control. Workload cells
 cross refusal with real construction permission failure and demanded corruption;
 healed public reopen/retry checks follow the continuing-fault safety phase.
 """
@@ -625,6 +626,14 @@ def main(argv=None):
         build_driver(work)
         failures = []
         run = partial(run_cell, work, failures)
+        capacity = run("allocation-capacity", "allocation-capacity")
+        expected_capacity = (
+            "allocation capacity passed: 3 preflight refusals; "
+            "empty, denied, exact and spare-capacity controls"
+        )
+        if expected_capacity not in capacity.stdout:
+            failures.append("missing allocation capacity preflight evidence")
+        print(capacity.stdout, end="", flush=True)
         native_result = run("mutex", "mutex")
         if (
             "native mutex contention passed without Rust allocation"
