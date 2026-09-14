@@ -7,64 +7,119 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 710 frozen inputs retained in `22a62bf`
+Both complete 24-stage gates verify the 710 frozen inputs retained in `a72e3c6`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `db28d674ff90347c70dca0eb0dbc68b602cbbc0bd098433d6f956e4561085e84`.
+gates: `48f4a9a086c28857d99c9def9ed006b3d6b680a549b9e1521e212b194baa8fd9`.
 Finalization changes only the two notes files. The other 708 inputs retain
-fingerprint `25b9dcee29cc231a940888843589505b7eb35c3a7779b39ff2c6d21c0766e1c0`;
-all manifested inputs are tracked. Final local-link verification passes.
+fingerprint `8cbd32ecce6a24ef05b9e6769753a7f6f30d8462472e9742ff52e78b51d4fc57`;
+all manifested inputs are tracked. Final local-link verification passes 669 links.
 
 Each platform executes 632 ordinary Rust tests, including all 140 public catalog
 tests, plus the separate lease subprocess. Discovery independently lists those
 632 tests across thirteen targets per platform. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 96 tooling tests, 44 independent codec fixtures and 663 local links.
+passes 96 tooling tests, 44 independent codec fixtures and 666 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311
 scenarios. Their complete records agree across platforms after excluding ambient
 database paths and composition stdout digests. Those digests are not portable
 semantic hashes; expected nonzero semantic-case exits remain part of the comparison.
 
-Both allocation campaigns retain positions 0–1055 and healthy control 1056 at
-each pathname length; all four ordered lists were reconciled explicitly. The
-caller's work ceiling remains 1,100. Both platforms also pass 552 CLI allocation
-prefix cases. Native initialization passes 30 macOS and 80 GNU/Linux cells;
-synchronization passes 241 cells and I/O passes 1,394 cells per platform.
-Interruption retains 76 append cuts, 46 recovery cuts and 249 independent graph
-checks. All 43 graph cases, two oracle controls, three CLI limits, genesis, lease
-contention and independent column order pass. Linux retains the two Darwin ACL
-repair-rename exclusions, one at each pathname length.
+Both allocation campaigns retain positions 0–1,055 plus healthy control 1,056
+at both short and 384-byte database paths. All four ordered lists were reconciled
+explicitly. The caller's work ceiling remains 1,100. Both platforms also pass
+552 CLI allocation prefix cases. Native initialization passes 30 macOS and 80
+GNU/Linux cells; synchronization passes 241 cells and I/O passes 1,394 cells per
+platform. Interruption retains 76 append cuts, 46 recovery cuts and 249 independent
+graph checks. All 43 graph cases, two oracle controls, three CLI limits, genesis,
+lease contention and independent column order pass. Linux retains two Darwin
+ACL repair-rename exclusions, one at each pathname length.
 
 Both receipts have zero finalization errors. The full gates run sequentially;
-stage times total 1,609.948 seconds on macOS and 449.873 seconds on Linux. Receipt
+stage times total 1,656.740 seconds on macOS and 433.266 seconds on Linux. Receipt
 SHA-256 values are respectively
-`4057f1a988e676a41aab9aedc639a24a90644b1c8c95046e72995c0816a87f3c` and
-`710dd5c66632a3db11f0ab8fd372bbc69cb37fd33912e66328b1607250c7a37b`.
+`24bc72f5a15dcb1fe335b8d598e7315582dcf0073d60afa521b9179695659ad9` and
+`2908f7936c023c06e2537d0215db63036d8c1c186e456adfa13a66d956075ede`.
 These runs are verification observations, not performance benchmarks.
 
-Ninety-six periodic resource samples observed normal memory pressure on an 8 GiB
-host and 961.75–1,788.88 MiB of swap use; the last sample recorded 961.75 MiB.
-macOS used at most two Cargo jobs, with one for focused checks and the fresh
-example. Docker used one CPU, one build job and a 2 GiB container limit.
-Periodic CPU peaked at 100.58% and memory at 1.207 GiB; an additional compilation
-sample observed 1.302 GiB. Networking was disabled and sampled container network
-traffic was zero. Host disk samples ranged from zero to 174.30 MB/s; free disk
-stayed above 187.44 GiB. Host process, disk and network observations include
+Ninety-eight periodic resource samples observed normal memory pressure on an
+8 GiB host and steady 961.75 MiB swap use. macOS used at most two Cargo jobs and
+one for the fresh example. Docker used one CPU, one build job and a 2 GiB memory
+and memory-plus-swap limit. Eighteen container samples observed CPU up to 99.51%
+and memory up to 1.219 GiB. Networking was disabled and sampled container network
+traffic was zero. Host disk samples ranged from zero to 178.45 MB/s; free disk
+stayed above 188.23 GiB. Host process, disk and network observations include
 unrelated applications. No container OOM kill occurred. These observations do
 not qualify engine admission, usable-heap limits or whole-process/RSS bounds.
 
 The Linux image remains `pipesql-verification-rust:1.98.1-time`, digest
 `sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
-Fresh declared-table and geometric-mean examples run sequentially on both
-platforms after both complete gates. Creation/reopen produces the two literal
-region rows; the new query returns one nullable DOUBLE and completes with
-`status=queried`. Both runs observe 10.000000000000002, bits `4024000000000001`.
-Owned gate outputs, source exports, logs, monitor, databases, isolated build
-outputs and the verification container are removed. Pre-existing target
-artifacts, the image and installed toolchains remain. Windows, broader
-durability, physical-memory and sanitizer qualification remain unfinished.
+Fresh LEFT JOIN examples run sequentially on macOS and Linux after both complete
+gates. Each creates and reopens its database and returns exactly the documented
+three rows: unmatched total 90/count 2, north total 30/count 2 and south total
+30/count 1. Both processes exit successfully. Owned gate outputs, source exports,
+logs, monitor, databases, isolated build outputs and the verification container
+are removed. Pre-existing target artifacts, the image and installed toolchains
+remain. Windows, broader durability, physical-memory and sanitizer qualification
+remain unfinished.
+
+### Transient preparation and release ownership
+
+`d84c30b` repairs uncharged pathnames exposed by observing the maintained wide
+nullable STRING LEFT JOIN during preparation. Before the repair, the short and
+384-byte paths exceeded the contemporaneous charge by 242 and 810 requested
+bytes, respectively; usable deficits were 272 and 896 bytes on macOS. Catalog
+scratch owned its complete buffer while reads also held a units directory path
+and an object path. Preparation now admits those two existing 4,096-byte bounds
+before catalog I/O and releases them before binding. Retained plan charges,
+allocator allowances, catalog allocation census and persistent formats are unchanged.
+The [preparation contract](../docs/resources.md#query-preparation) owns the peak
+and destruction flow.
+
+The independent scope fixture includes both path bounds in the public preparation
+peak, tests its exact limit and one byte below, and checks refusal with zero or
+8,191 bytes available for the path owner. A focused run passes all 48 binder
+tests; its other library tests are intentionally filtered. The first full macOS
+gate on `d84c30b` stopped after one Rust failure: the open/resolve fixture assumed
+that its exact opening budget also admitted preparation. `a72e3c6` preserves that
+opening minimum, requires preparation refusal there, then reopens with both
+paths admitted and requires the original unknown-table error. Its focused test
+passes. The failed gate is not passing evidence for its unrun later stages;
+both complete gates above use the corrected frozen tree.
+
+The existing scoped caller now records preparation and release separately.
+After checking every field of all eleven literal joined pairs, it drops the
+finished result and prepared plan. Two fresh repetitions abandon an unfinished
+result immediately after execute and after a Progress step with live scratch
+extents. Each restores the original heap, descriptors and reservations; result
+drop alone must release temporary storage and leave only the prepared charge.
+The final step has already freed a finished result's heap, so its drop observes
+zero allocation/free events and independently checks the remaining charge release.
+
+The following are minimum requested/usable headrooms in bytes for the exercised
+histories. Preparation counts include temporary catalog and binding owners;
+prepared release frees the plan and null-extension vector.
+
+| Phase | Allocation/free events | macOS headroom | GNU/Linux headroom |
+| --- | --- | --- | --- |
+| Preparation, short path | 10 / 8 | 7,950 / 7,920 | 8,016 / 7,992 |
+| Preparation, 384-byte path | 10 / 8 | 7,382 / 7,296 | 7,382 / 7,368 |
+| Prepared release, either path | 0 / 2 | 8,336 / 7,056 | 8,336 / 8,336 |
+| Immediate result abandonment, either path | 0 / 344 | 2,896 / 960 | 2,896 / 1,896 |
+| Scratch-owning result abandonment, either path | 0 / 344 | 2,896 / 960 | 2,896 / 1,896 |
+
+Both platforms retain the prior execute/step event counts and headrooms in the
+[earlier observation](#transient-ownership-in-wide-left-join). Calibration still
+detects the hidden uncharged allocation and the free-only live owner. The
+false-attribution and disabled-calibration controls remain required. A new
+negative control disables preparation observation and must fail phase coverage;
+the supervisor also rejects missing lifecycle completion output even when the
+ordinary join and calibration markers are present. These are single-threaded
+aggregate observations of the exercised Rust allocation events, not individual
+pointer attribution, arbitrary allocator histories, foreign allocation coverage,
+concurrent schedules or whole-process/RSS qualification.
 
 ### Exponential transforms and geometric means
 

@@ -7,7 +7,7 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `22a62bf` pass on matching frozen macOS and GNU
+The complete 24-stage gates for `a72e3c6` pass on matching frozen macOS and GNU
 arm64 Linux inputs: 632 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
@@ -25,54 +25,25 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Active: transient preparation and release ownership
+## Completed: transient preparation and release ownership
 
-Observe the retained wide nullable STRING LEFT JOIN during preparation, normal
-release and abandonment of an unfinished result, including live temporary
-storage. Start with a 30-minute trace of data and reservation destruction order.
-Use the existing scoped allocator observer in the maintained public caller;
-preserve complete-row, independent checkpoint, calibration and attribution
-oracles. Require phase coverage on both pathname lengths and a negative control
-that rejects a missing lifecycle observation. Repair a concrete deficit at its
-owner if one appears, without padding admission allowances.
-
-The initial trace exposed uncharged catalog-read pathnames during preparation:
-two paths overlap the fully allocated scratch buffer. Reserve their existing
-4,096-byte bounds before I/O and release them before binding. Extend the exact
-preparation peak and refusal checks independently; retain the new lifecycle
-observer as the physical counterexample regression.
-The full Rust suite also exposed an opening-budget fixture that expected binding
-to fit the smaller open/resolve minimum. Preserve that independent minimum and
-check preparation refusal there, then require the original unknown-table error
-after reopening with both read paths admitted.
-
-Complete focused checks, matching frozen sequential macOS/GNU arm64 Linux gates,
-discovery and evidence reconciliation, then fresh relevant examples sequentially.
-Document the ownership flow and precise limits, remove owned outputs, review
-the final diff and commit locally. Earlier boundaries remain closed; arbitrary
-allocators, concurrent histories, whole-process/RSS, Windows and broader
-durability/sanitizer qualification remain unfinished. Publication is prohibited.
-
-## Completed: exponential transforms and geometric means
-
-`22a62bf` adds one-argument EXP through the existing bounded expression owners.
-The [exponential record](evidence.md#exponential-transforms-and-geometric-means)
-retains pinned semantics, independent numerical and complete-row answers,
-exceptional values, demand/error spans, resource/failure checks and the learning
-path. No allocation owner, persistent format or admission allowance changed.
+`d84c30b` admits the two previously uncharged catalog-read paths during query
+preparation. `a72e3c6` preserves the independent opening minimum while checking
+the larger preparation peak. The [lifecycle record](evidence.md#transient-preparation-and-release-ownership)
+retains the counterexample, failed-gate repair, phase observations and limits.
 
 Both complete 24-stage macOS/GNU/Linux gates pass on matching frozen inputs,
 with 632 ordinary Rust tests per platform. Discovery, ordered allocation
-schedules and semantic records are reconciled. Fresh declared-table and
-geometric-mean examples pass sequentially on both platforms after both gates.
-Owned outputs are removed while pre-existing artifacts and toolchains remain.
+schedules, semantic records and lifecycle controls are reconciled. Fresh LEFT
+JOIN examples pass sequentially on both platforms after both gates. Owned
+outputs are removed while pre-existing artifacts and toolchains remain.
 
-The [transient join observation](evidence.md#transient-ownership-in-wide-left-join)
-and prior language work remain closed. Approximate finite transcendental results,
-arbitrary allocator histories, concurrent allocation observation, whole-process/RSS,
-Windows and broader durability retain their documented limits. Publication
-restrictions are unchanged. Reassess README's decision order before activating
-the next bounded milestone.
+The prior [execute/step observation](evidence.md#transient-ownership-in-wide-left-join)
+and [language work](evidence.md#exponential-transforms-and-geometric-means) remain
+closed. Arbitrary allocators, concurrent histories, whole-process/RSS, Windows
+and broader durability retain their documented limits. Publication restrictions
+are unchanged. Reassess README's decision order before activating the next
+bounded milestone.
 
 ## Next engineering priorities
 
