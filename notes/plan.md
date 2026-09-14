@@ -35,6 +35,25 @@ execution-allocation histories, arbitrary allocator/concurrency behavior,
 whole-process/RSS, Windows and broader durability/sanitizer qualification remain
 unfinished.
 
+## Active milestone: failed wide-join construction
+
+Qualify every allocation prefix during construction of the existing 64-column
+nullable STRING LEFT JOIN result, before its first public step. First trace the
+physical plan, runtime admissions and native cursor owners within 30 minutes.
+Use the existing scoped allocator observer and short/long pathname cells to
+require typed refusal, nonnegative requested/usable headroom and exact release
+while each error remains live. Keep the prepared query fixed and retain the
+independent 11-pair healthy result and all existing negative controls.
+
+Repair a demonstrated ownership defect at its owner; do not add admission padding
+or an instrumentation framework. Complete focused checks, sequential full macOS
+and GNU arm64 Linux gates on matching frozen inputs, independent discovery and
+record reconciliation, and sequential fresh LEFT JOIN examples. Record resource
+observations separately from engine/RSS qualification, update relevant contracts
+and learning paths, review and commit locally, and remove owned outputs. Broader
+execution allocation histories and platform qualifications remain unfinished.
+Publication restrictions below apply throughout.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
