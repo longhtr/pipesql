@@ -5,6 +5,48 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Snapshot pins and retained outcomes
+
+`45d1158` extends [snapshots.rs](../examples/snapshots.rs) and its
+[transaction reading path](../docs/transactions.md#follow-snapshot-pins-and-retained-outcomes).
+The example keeps both successful `Commit` values, explicitly aborts a separate
+empty append and checks all three outcomes after later publication, reclamation,
+old-plan release and close/reopen. Existing literal row checks remain. Expected
+successful generations are 2 and 3; declaration publishes generation 1 and the
+aborted issuance adds no data generation. Copied receipts do not pin reader data.
+
+Sequential fresh macOS and GNU arm64 Linux runs exit zero and produce exactly
+the eight documented lines, with identical stdout SHA-256
+`1243874d94f0316562ef170e9898a00f8d7452fdd5a9de6620015c46b7715df3`.
+Both warnings-denied example Clippy checks pass. Maintenance passes 99 tooling
+tests, 44 independent codec fixtures and 760 local links; formatting and diff
+checks pass. All 687 non-Markdown manifest inputs other than `snapshots.rs`
+remain byte-identical to `a6a1652`. The allocation-preflight engine baseline
+therefore remains applicable without repeating its gates.
+
+The frozen 716-input manifest and Linux source export agree, with SHA-256
+`d96c21ce4c4c01e769be0e9398fab503055bf2bc4d4bcc85d0e4146caca81c9f`.
+Only the two notes files change afterward; the other 714 inputs retain fingerprint
+`589047390b693d19615ea97c56fb1c4d864f9fa59a208ddf7a7e0e6fc85bec4b`.
+The example source SHA-256 is
+`fc77fe031728a8a1a70f7169f8f3b821cf2d606f1b79e3c539f27ee13b0713e1`.
+Example executable hashes are macOS
+`e8644a5cf227c8ed183ce8ce02da43146a8347760786667c39c57c3cd0e90182`
+and Linux `cb73e806f6eb3fb25d5f152ff3244b2eeac35ea0e828d7e81e05db11f2b9d8a4`.
+
+Both builds use Rust 1.98.1 and one Cargo job. Linux uses the preserved image,
+uid/gid 1000, one CPU, 2 GiB memory without extra swap, disabled networking and
+native database storage. Two sparse host observations show normal memory pressure,
+swap 1,462.50–1,478.50 MiB, over 187 GiB free disk and sampled I/O 4.52–16.69 MB/s.
+The container observation shows 100.20% reported CPU, 810.9 MiB memory and zero
+network traffic; inspection confirms no OOM kill. These are observations, not
+peaks or resource qualification. Final documentation verification passes 763 local
+links. Owned examples, targets, exports, logs, manifests
+and container are removed; existing target, toolchains and image are preserved.
+The example establishes healthy sequential behavior, not new crash, concurrent
+scheduling or power-loss evidence. Broader qualifications remain open. Nothing
+is pushed or published.
+
 ## Allocation-capacity preflight
 
 `51bd731` makes `resources::allocate` reject requested elements above their

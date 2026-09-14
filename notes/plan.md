@@ -73,21 +73,12 @@ including producer boundaries, borrowed batches, completion and terminal failure
 Fresh macOS/GNU arm64 Linux runs agree on total 38 and a demanded addition
 overflow with its exact source span. Engine inputs remain unchanged.
 
-## Active milestone: snapshot pins and retained outcomes
-
-Extend the existing snapshot example to retain its two append receipts and
-explicitly abort a separately issued empty append. Verify both durable outcomes
-and the aborted gap after a later commit, reclamation, old-plan release and
-reopen, preserving every literal row check. Explain the separate reasons for
-retaining reader data and transaction history through the actual publication,
-resolution and reclamation owners.
-
-Use sequential fresh macOS/GNU arm64 Linux example runs, exact row/outcome
-checks, appropriate formatting/lint and maintenance/link verification. Compare
-unchanged production inputs before reusing the engine baseline. This is a
-healthy lifecycle example, not new ambiguity, power-loss or concurrency
-qualification. Finish documentation, local commits, evidence and owned cleanup
-without a new API, engine framework or allowance.
+The [snapshot and outcome walkthrough](evidence.md#snapshot-pins-and-retained-outcomes)
+is complete in `45d1158`. The existing example now checks old/new rows, two
+successful receipts and a separately aborted attempt across later publication,
+reclamation and reopen. Its reading path distinguishes data pins from retained
+success history. Fresh macOS/GNU arm64 Linux runs agree; engine inputs remain
+unchanged.
 
 ## Next engineering priorities
 
