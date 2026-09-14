@@ -7,21 +7,21 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
-Both complete 24-stage gates verify the 711 frozen inputs retained in `0f4c3b3`
+Both complete 24-stage gates verify the 711 frozen inputs retained in `1145480`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
 and documentation. Linux uses uid/gid 1000, glibc 2.36 and native overlay storage
 with an exact Git source export. Input manifests match before/after and across
-gates: `2d0d4073a501e604a43000c79cf4ddd9dc8dc31470f221ab2b46c1fff14db33e`.
+gates: `5823e51d74cde2db2860bfb348e399de114c2c0f6e53f003064cf4e7c585b0d6`.
 Finalization changes only the two notes files. The other 709 inputs retain
-fingerprint `d1670e54d70d0f11a88757d0fdef3ebd27d94e9a466f2fbf683384111494e81b`;
-all manifested inputs are tracked. Final local-link verification passes 676 links.
+fingerprint `ea6729048045c04c1599697eb3b231ca06d4b9c5abfe37557f040a96d96a9b02`;
+all manifested inputs are tracked. Final local-link verification passes 680 links.
 
 Each platform executes 634 ordinary Rust tests, including all 141 public catalog
 tests, plus the separate lease subprocess. Discovery independently lists those
 634 tests across thirteen targets per platform. No ordinary test is ignored or
 filtered; the selected lease child reports six filtered siblings. Maintenance
-passes 97 tooling tests, 44 independent codec fixtures and 675 local links.
+passes 98 tooling tests, 44 independent codec fixtures and 678 local links.
 Independent aggregate semantics pass 24 cases and composition passes 311
 scenarios. Their complete records agree across platforms after excluding ambient
 database paths and composition stdout digests. Those digests are not portable
@@ -39,33 +39,82 @@ CLI limits, genesis, lease contention and independent column order pass. Linux
 retains two Darwin ACL repair-rename exclusions, one at each pathname length.
 
 Both receipts have zero finalization errors. The full gates run sequentially;
-stage times total 1,670.593 seconds on macOS and 433.538 seconds on Linux. Receipt
+stage times total 1,662.721 seconds on macOS and 434.184 seconds on Linux. Receipt
 SHA-256 values are respectively
-`9b467829d617dea90525fe75b9991181dc8927946a630bfcddafc4e843d4eebd` and
-`d01dcc2714c0d7d88c212047f98613e234693713ced885924965098b6f6a76a1`.
+`cb358829c5a8c98e075c333a67d9a9b21c12e04827b3d86edfc9bf94b4bc0ae5` and
+`8ef1a7fd0aa855d4f64920bf0c1a45964305801b1ac09e4d8e527a9f1aa98253`.
 These runs are verification observations, not performance benchmarks.
 
-Ninety-four periodic resource samples observed normal memory pressure on an
-8 GiB host. Swap use ranged from 897.69 to 913.69 MiB, ending at 897.69. macOS
+Ninety-seven periodic resource samples observed normal memory pressure on an
+8 GiB host. Swap use ranged from 865.69 to 881.69 MiB, ending at 865.69. macOS
 used at most two Cargo jobs and one for fresh examples. Docker used one CPU,
-one build job and a 2 GiB memory and memory-plus-swap limit. Nineteen container
-samples observed CPU up to 99.87% and memory up to 1.213 GiB. Networking was disabled
+one build job and a 2 GiB memory and memory-plus-swap limit. Seventeen container
+samples observed CPU up to 99.27% and memory up to 1.200 GiB. Networking was disabled
 and sampled container network traffic was zero. Host disk samples ranged from
-zero to 183.62 MB/s; free disk stayed above 187.82 GiB. Host process, disk and
+zero to 183.32 MB/s; free disk stayed above 188.24 GiB. Host process, disk and
 network observations include unrelated applications. Monitoring commands reported
 no failures or timeouts, and no container OOM kill occurred. These observations
 do not qualify engine admission, usable-heap limits or whole-process/RSS bounds.
 
 The Linux image remains `pipesql-verification-rust:1.98.1-time`, digest
 `sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`.
-Fresh declared-table and decibel-scale examples run sequentially on macOS and
-Linux after both complete gates. Each creates and reopens its database; both
-then return the documented three power-ratio rows with successful exit and
-`status=queried`. The base-ten record below retains the observed values and limits.
+Fresh LEFT JOIN examples run sequentially on macOS and Linux after both complete
+gates. Each creates and reopens its database, then returns all three documented
+groups with a successful close and exit. The execution-failure record below
+retains the observed values and limits.
 Owned gate outputs, source exports, logs, monitor, databases, isolated build
 outputs and the verification container are removed. Pre-existing target artifacts,
 the image and installed toolchains remain. Windows, broader durability,
 physical-memory and sanitizer qualification remain unfinished.
+
+### Demanded execution failure ownership
+
+`1145480` observes late arithmetic failure through the maintained public wide
+nullable STRING LEFT JOIN caller. The owner trace found no accounting or release
+defect: replacing the running result drops runtime buffers and temporary owners
+before their charges; clearing its physical plan then leaves only the result's
+handle reservation. The [runtime contract](../docs/resources.md#runtime-and-result-admission)
+owns that flow. Production behavior and admission allowances are unchanged.
+
+Three histories demand `LOG10(ABS(r.id-3))` directly, as a SAFE_DIVIDE argument,
+and as a COALESCE fallback after NULLIF returns NULL. Replacing one STRING payload
+keeps 64 output fields. Caller SQL is freed before execution; the inline error
+retains operation `base-ten logarithm` and its exact UTF-8 byte span through
+repeated failure, extraction and prepared-query release.
+
+At both pathname lengths on both platforms, every history fails on public step
+586 after observing 11,604,603 temporary bytes. Each failing call has zero
+allocations and 334 observed frees. Its minimum requested headroom is 16,936
+bytes; usable headroom is 14,136 bytes on macOS and 15,944 on GNU/Linux. Heap and
+descriptors already equal the post-preparation baseline when the call returns,
+temporary charges are zero, and the result retains exactly its handle-size
+charge. These are measurements of the exercised histories, not fixed platform
+constants or universal allocator bounds.
+
+Repeated failed steps and error extraction have no heap events. Repetition
+retains the same owned error and charges; extraction releases the handle charge.
+Prepared-query release observes three frees, with minimum requested/usable
+headroom of 12,432/11,048 bytes on macOS and 12,432/12,432 on GNU/Linux. Heap,
+descriptors and reservations then match the original resident baseline while the
+error remains live, after fixed-buffer formatting and after error release.
+
+The scoped observer remains unchanged and is fresh for each public step. A new
+negative control observes construction but omits step observation; missing
+failure frees reject it. Fourteen focused campaign-oracle tests include missing,
+duplicate, reordered and invalid histories, absent external work, missing frees,
+negative headroom and step bounds. The complete focused ownership selection
+passes at both pathname lengths before the full gates. Existing allocation/free
+calibration, preparation failure prefixes, lifecycle and attribution controls,
+independent nonheap equations and all eleven literal healthy pairs across 64
+columns remain checked.
+
+Fresh [LEFT JOIN examples](../examples/left_join.rs) on both platforms return
+`unmatched total=90 rows=2`, `north total=30 rows=2` and `south total=30 rows=1`
+in that order. These successful complete results accompany the failure evidence;
+partial output would not establish success. Owned outputs are removed. Exhaustive
+execution-allocation refusals, arbitrary allocators and concurrent histories,
+whole-process/RSS, Windows and broader durability/sanitizer qualification remain
+outside this completed boundary.
 
 ### Base-ten logarithms
 

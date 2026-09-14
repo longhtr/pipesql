@@ -7,7 +7,7 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The complete 24-stage gates for `0f4c3b3` pass on matching frozen macOS and GNU
+The complete 24-stage gates for `1145480` pass on matching frozen macOS and GNU
 arm64 Linux inputs: 634 ordinary Rust tests per platform, 24 independent aggregate
 semantic cases and 311 composition cases, plus the applicable allocation
 and native campaigns. The
@@ -25,43 +25,15 @@ boundary or new workload changes their disposition. The
 [testing/tooling review](evidence.md#testing-and-tooling-cleanup) retains its
 coverage inventory and consequential deletion rationale.
 
-## Active: demanded execution failure ownership
-
-Observe transient ownership when a numeric expression fails during execution of
-the retained wide nullable STRING LEFT JOIN. Limit the initial trace of failure
-transitions, runtime/batch/plan drop order and owned error lifetimes to 30 minutes.
-The cheapest useful falsifier is a late LOG10 domain error after observable
-external work, measured through the existing public scoped allocator observer.
-Reassess if the workload cannot reach that boundary within maintained caller limits.
-
-Keep caller storage fixed during observed calls. Require prior allocation events,
-observed physical frees in the failing call, nonnegative requested/usable headroom,
-and exact heap, descriptor and reservation restoration with the owned error live
-and after release. Retain exact UTF-8 source spans and repeated failure behavior.
-Add an omitted-observation negative control and preserve the complete independent
-eleven-pair/64-column healthy oracle, calibration, nonheap equations and all existing
-admission, cancellation, replay, publication, recovery and cleanup checks. Repair
-only concrete owner defects; add no admission padding or engine instrumentation.
-
-The owner trace and focused public allocation selection pass. Each of the three
-error histories follows external work, frees 334 allocations in the failing step
-and restores the prepared heap/descriptor baseline before returning the error.
-The result retains only its inline handle charge. The omitted-step observation
-control fails for missing failure frees; all retained ownership controls pass.
-No engine accounting or release-order defect was exposed. Fourteen campaign-oracle
-tests pass, including missing, duplicate, reordered and invalid failure records.
-
-The failure flow and limits are documented. Matching frozen sequential
-macOS/GNU arm64 Linux gates, discovery/evidence reconciliation and sequential fresh
-examples remain. Review the final diff, remove owned outputs and make coherent
-local commits. Keep historical evidence below 641,696 bytes and preserve
-publication restrictions.
-
-The [base-ten milestone](evidence.md#base-ten-logarithms), normal lifecycle and
-preparation-failure checks remain closed beyond this demanded execution-failure
-boundary. This work does not establish exhaustive execution-allocation histories,
-arbitrary allocator/concurrency behavior, whole-process/RSS, Windows or broader
-durability/sanitizer qualification.
+The [demanded execution-failure boundary](evidence.md#demanded-execution-failure-ownership)
+is complete. The wide nullable STRING LEFT JOIN now checks late arithmetic
+failures, repeated terminal errors and complete release with the owned error live.
+Both full gates, independent discovery and record reconciliation, and sequential
+fresh LEFT JOIN examples pass. No engine accounting or release-order defect was
+exposed. The base-ten, normal lifecycle and preparation-failure milestones remain
+closed. Exhaustive execution-allocation histories, arbitrary allocator/concurrency
+behavior, whole-process/RSS, Windows and broader durability/sanitizer qualification
+remain unfinished.
 
 ## Next engineering priorities
 
