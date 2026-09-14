@@ -5,6 +5,71 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Composed report across appends
+
+`890b5c9` adds the [sixteen-event report lesson](../docs/event-report.md) and
+[public example](../examples/event_report.rs). The bounded caller input writer
+is separate from literal expected groups, DATE offsets and DOUBLE bit patterns.
+Two event appends produce seven old groups and thirteen new groups; duplicate
+key-2 dimensions account for ten and twenty joined rows. Missing dimensions,
+empty STRING labels, nullable dates and all-NULL totals remain distinct.
+A query prepared before the second append retains the complete old answer.
+A fresh query and a query prepared after close/reopen produce the complete new
+answer. The separate numeric projection checks identities, original DATEs,
+nullable measurements and doubled bits, including negative zero.
+
+Two example tests use the existing public test-directory cleanup owner. One runs
+the complete workflow; the other changes expected total 30 to 31, requires
+`unexpected report group 3`, checks partial-result release and reruns the retained
+plan successfully. Both success and rejection reconcile memory/temp reservations.
+Preparation releases its temporary SQL source before execution. No engine,
+allocation allowance, persistent format, validator or general framework changed.
+
+Sequential optimized macOS and GNU arm64 Linux checks independently discovered
+and passed all 173 catalog tests and both example tests per platform, with zero
+failures, ignored or filtered tests. Formatting, example Clippy with warnings
+denied, four example builds and documentation checks passed. Fresh report,
+calendar-year, snapshot and left-join examples ran sequentially on macOS then
+Linux after verification; all exited successfully with empty stderr and identical
+stdout across platforms. The report's 17-line output ends in `status=finished`.
+This is a public integration/example checkpoint; the retained core and complete
+native/persistence gate claims remain attached to their earlier revisions.
+
+The frozen 741-input manifest SHA-256 was
+`15357a9189009c5cb2399c64c1ee35d1af96059945ef4cc4c655f22212d31da1`.
+Only the two notes files changed afterward; the other 739 inputs retain
+fingerprint `c75bda36554eb6ae56a96d9a4aae40debe00860ddbe65a3531e9f219e483ef0c`.
+The scoped command receipts cover format, Clippy, separate build/discovery/run
+steps, fresh examples and documentation:
+
+| Artifact | macOS SHA-256 | GNU arm64 Linux SHA-256 |
+| --- | --- | --- |
+| Command receipt | `c1db1e42d44f90a80edb4a31f4ffca70a87936483b301bbdab3f4b9052f51539` | `55dc6e7030768ebc4be21e1768da3dcf3f70dcd34cfc964cc1cf9f574b084297` |
+| Optimized report binary | `e6ff7fa5c439e1e8f7ad31f8413460fa637e508ffd54b6ce403b1eeae0b9dbf3` | `d1cfa06f0337e94051da2208e2cad59ffd8352bc3329ed02461adf2e4ceccd06` |
+
+The common report stdout digest is
+`afd1069f6f149c9b389afd53b1d891b7f5258a3589f7f61f69a2ca7a74e60657`.
+The scoped sequences took 112.65 seconds on macOS and 52.57 seconds on Linux,
+excluding preliminary implementation checks and the final fresh-example reruns.
+An initial missing borrow in the example test failed compilation and was repaired;
+a lifetime-notation warning was also corrected before these frozen checks.
+No engine defect was exposed. Final documentation verification passed 909 local
+links. Owned source exports, build targets, logs, manifests, tutorial databases,
+monitoring outputs and the verification container were removed; no owned process
+remained. The original workspace target and preserved image were unchanged.
+
+The host monitor sampled CPU, RSS, memory/swap, disk capacity/I/O and network.
+Observed swap stayed at 1,844.62 MiB; minimum available space exceeded 186 GiB.
+Observed compiler/owned-process CPU reached 95.1%, RSS 456,480 KiB, and host disk
+throughput 127.49 MB/s. The final memory-pressure level was normal. Host `en0`
+counters include unrelated traffic. Sampled container memory reached 426.7 MiB;
+container network counters remained zero and no OOM kill occurred. These are
+sampled observations, not peak bounds or engine admission qualification.
+Linux used the preserved Rust image, uid/gid 1000, one CPU/job, 2 GiB without
+extra swap, networking disabled and native container database storage. The
+[broader limitations](plan.md#qualifications-that-remain-outside-this-internal-claim)
+remain open.
+
 ## Calendar-year projections
 
 `a2fed93` adds bounded EXTRACT(YEAR FROM date) projections. The
