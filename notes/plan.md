@@ -37,6 +37,14 @@ error live and after release, and preserve complete healthy rows, independent
 equations, calibration and phase-coverage controls. Repair a concrete deficit
 at its owner without padding allowances or adding an instrumentation framework.
 
+The focused caller observes ten successful preparation allocations, rejects
+prefixes 0–9 and accepts control 10 at both pathname lengths. Every refused
+prefix releases its observed owners before returning, with heap and reservation
+checks performed while refusal remains armed. The late arithmetic error releases
+all ten allocations and preserves its span after caller text is freed. No new
+engine accounting defect was exposed; the change adds failure qualification,
+independent trace controls and ownership explanation.
+
 Complete focused checks and matching frozen sequential macOS/GNU arm64 Linux
 gates, reconcile discovery and semantic/allocation evidence, then run fresh
 examples sequentially. Document the failure ownership flow and limits, remove

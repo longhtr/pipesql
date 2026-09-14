@@ -1131,6 +1131,7 @@ pub(super) enum WideJoinControl {
     WrongAttribution,
     DisabledObserver,
     MissingPreparation,
+    MissingFailedPreparation,
 }
 
 pub(super) fn wide_left_join_shape(
@@ -1243,6 +1244,13 @@ pub(super) fn wide_left_join_shape(
     let before = Live::now();
     let memory = db.reserved_memory_bytes();
     const SOURCE: &str = "FROM left_rows AS l |> LEFT JOIN right_rows AS r ON l.key=r.key";
+    check_failed_join_preparation(
+        &db,
+        SOURCE,
+        before,
+        memory,
+        matches!(control, WideJoinControl::MissingFailedPreparation),
+    );
     let preparation =
         super::transient_ownership::Observer::new(&db, memory, before.requested, before.usable);
     let query = if matches!(control, WideJoinControl::MissingPreparation) {
@@ -1437,6 +1445,139 @@ pub(super) fn wide_left_join_shape(
     );
     println!("wide left join passed: 64 columns, 11 pairs; rows, ownership and release");
     Ok(())
+}
+
+// The allocation harness stays armed only for preparation. Caller inspection,
+// descriptor counting and reporting must not consume the engine's fault prefix.
+fn check_failed_join_preparation(
+    db: &Database,
+    source: &str,
+    before: Live,
+    memory: u64,
+    missing_observation: bool,
+) {
+    use super::{CALLS, REFUSED, workload};
+    const ALLOCATION_LIMIT: usize = 32;
+    let observer =
+        super::transient_ownership::Observer::new(db, memory, before.requested, before.usable);
+    let baseline = workload::arm(None, ALLOCATION_LIMIT);
+    let prepared = observer.during(|| db.prepare(source));
+    workload::suspend_faults();
+    let census = CALLS.load(Ordering::Relaxed);
+    assert!(census > 1 && census <= ALLOCATION_LIMIT);
+    assert_eq!(REFUSED.load(Ordering::Relaxed), 0);
+    let query = prepared.expect("healthy join preparation census");
+    assert_eq!(query.result_column_count(), 64);
+    drop(query);
+    workload::finish("join preparation census", baseline);
+    assert_eq!(Live::now(), before);
+    assert_eq!(db.reserved_memory_bytes(), memory);
+    check_join_phase("preparation census", observer.samples(), true);
+    for prefix in 0..=census {
+        let observer =
+            super::transient_ownership::Observer::new(db, memory, before.requested, before.usable);
+        let baseline = workload::arm(Some(prefix), ALLOCATION_LIMIT);
+        let prepared = if missing_observation && prefix == 1 {
+            db.prepare(source)
+        } else {
+            observer.during(|| db.prepare(source))
+        };
+        if prepared.is_err() {
+            // Reconcile engine owners while allocation refusal is still armed.
+            // Descriptor enumeration below allocates caller scratch, so it runs
+            // only after suspending faults, without another engine operation.
+            assert_eq!(LIVE_REQUESTED.load(Ordering::Relaxed), before.requested);
+            assert_eq!(LIVE_USABLE.load(Ordering::Relaxed), before.usable);
+            assert_eq!(db.reserved_memory_bytes(), memory);
+            assert_eq!(db.reserved_temp_bytes(), 0);
+        }
+        workload::suspend_faults();
+        let calls = CALLS.load(Ordering::Relaxed);
+        let refusals = REFUSED.load(Ordering::Relaxed);
+        if prefix < census {
+            let error = match prepared {
+                Err(error) => error,
+                Ok(_) => panic!("join preparation accepted a refused allocation"),
+            };
+            assert!(
+                matches!(&error, Error::Resource { .. })
+                    || matches!(&error, Error::Io { source, .. }
+                        if source.kind() == std::io::ErrorKind::OutOfMemory),
+                "join preparation allocation outcome: {error}"
+            );
+            assert!(calls > prefix && refusals > 0);
+            // The error stays live through complete resource reconciliation.
+            assert_eq!(Live::now(), before);
+            assert_eq!(db.reserved_memory_bytes(), memory);
+            assert_eq!(db.reserved_temp_bytes(), 0);
+            workload::finish("join preparation refusal", baseline);
+            drop(error);
+        } else {
+            assert_eq!(calls, census);
+            assert_eq!(refusals, 0);
+            let query = prepared.expect("full-prefix join preparation control");
+            assert_eq!(query.result_column_count(), 64);
+            drop(query);
+            workload::finish("join preparation control", baseline);
+        }
+        assert_eq!(Live::now(), before);
+        assert_eq!(db.reserved_memory_bytes(), memory);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        let samples = observer.samples();
+        // Prefix zero intentionally has no successful allocation/free events.
+        // Every other refused prefix must observe each allocated owner released.
+        assert!(
+            samples.allocations == prefix && (prefix == census || samples.frees == prefix),
+            "missing failed preparation events: prefix={prefix}: {samples:?}"
+        );
+        assert!(
+            samples.requested_headroom >= 0 && samples.usable_headroom >= 0,
+            "failed join preparation ownership: prefix={prefix}: {samples:?}"
+        );
+        if prefix == 0 {
+            println!("join preparation prefix=0 calls={calls} refusals={refusals} samples=none");
+        } else {
+            println!(
+                "join preparation prefix={prefix} calls={calls} refusals={refusals} samples={samples:?}"
+            );
+        }
+    }
+    // A constant predicate fails after the join's descriptors and plan exist.
+    // Allocate caller text before observation and keep it fixed while armed.
+    let late_source = format!("{source} |> WHERE l.id > EXP(1000)");
+    let start = late_source.find("EXP(1000)").unwrap();
+    let late_before = Live::now();
+    let observer = super::transient_ownership::Observer::new(
+        db,
+        memory,
+        late_before.requested,
+        late_before.usable,
+    );
+    let error = match observer.during(|| db.prepare(&late_source)) {
+        Err(error) => error,
+        Ok(_) => panic!("late join preparation must fail"),
+    };
+    assert_eq!(Live::now(), late_before);
+    assert_eq!(db.reserved_memory_bytes(), memory);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    drop(late_source);
+    assert_eq!(Live::now(), before);
+    let Error::ArithmeticOverflow { operation, span } = &error else {
+        panic!("late join preparation outcome: {error}");
+    };
+    assert_eq!(*operation, "exponentiation");
+    assert_eq!((span.start(), span.end()), (start, start + 9));
+    assert!(workload::format_error(Some(&error)));
+    drop(error);
+    assert_eq!(Live::now(), before);
+    assert_eq!(db.reserved_memory_bytes(), memory);
+    assert_eq!(db.reserved_temp_bytes(), 0);
+    let samples = observer.samples();
+    assert_eq!(samples.allocations, samples.frees);
+    check_join_phase("late preparation error", samples, true);
+    println!(
+        "wide left join preparation failures passed: prefixes=0..={census}; live errors, owned span and release"
+    );
 }
 
 // Phase counts reject an accidentally unarmed scope independently of headroom.

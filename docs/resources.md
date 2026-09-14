@@ -126,6 +126,9 @@ scope vectors before binding, including a 4,096-byte allowance per allocation.
 Their capacities follow the shared source, projection and aggregate pools;
 pending inputs do not allocate a maximum-width scope for every nesting level.
 Scope storage drops before preparation returns.
+On binding failure, the partial plan and descriptors drop before the shared
+reservation declared earlier in `bind_plan`; saved scopes retain their own
+vector charge. Returned source spans own byte offsets and retain no query text.
 `PreparedQuery::memory_requirement_bytes()` bounds retained ownership, not the
 complete preparation peak. The derived-query admission fixture independently
 checks both the public peak and isolated scope allocation at their exact limits

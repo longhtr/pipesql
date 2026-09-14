@@ -645,6 +645,8 @@ fn bind_plan<'db>(
     )?;
 
     let budget = BindingBudget::calculate(parsed)?;
+    // Early errors drop the later partial plan and descriptor locals before
+    // this shared charge. SavedScopes separately keeps its vectors charged.
     let reservation = database.reserve_memory(budget.bytes, "prepared operator chain")?;
     let scopes = if parsed.source_count > 1 {
         Some(SavedScopes::new(

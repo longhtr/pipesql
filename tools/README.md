@@ -239,6 +239,21 @@ These checks cover the exercised single-threaded Rust allocation events, excludi
 foreign allocations, allocator metadata/retained pages, other process mappings
 and RSS.
 
+Before that complete join, `check_failed_join_preparation` reuses the same
+allocator harness to census preparation alone and sweep every refused prefix,
+including zero and a healthy full-prefix control. A 32-allocation caller work
+ceiling bounds the sweep; it is not an engine admission allowance. Heap and
+reservation counters must return to baseline while refusal remains armed. Faults
+and their census are then suspended for caller descriptor enumeration and
+reporting, without another engine operation. Each returned
+error stays live while heap, descriptors and reservations are checked, followed
+by error release. A late constant EXP error checks partial-plan cleanup and its
+owned span after the caller's query text is freed. Prefix zero reports no sample;
+other failed calls must observe all successful allocations and their frees.
+`wide-left-join-failure-negative` suppresses one failed-call observation and must
+fail event coverage. The supervisor independently rejects incomplete, duplicated
+or reordered prefix traces and requires the final healthy control.
+
 The same selection runs the nullable self-join, aggregation, and ordering workload
 at 2.2 MB and 12 MB. `joined_shapes` in
 [`composed-ownership.rs`](fixtures/composed-ownership.rs) checks all 4,096 descending

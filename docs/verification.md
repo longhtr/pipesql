@@ -470,6 +470,20 @@ must reject missing lifecycle completion output. Retain the existing
 false-attribution control and independent nonheap equations. This extends observation to the exercised
 intra-call allocation events, not arbitrary histories, threads or process/RSS.
 
+For failed preparation of the same join, measure a healthy allocation census,
+refuse every prefix from zero through the full-prefix control, and require the
+complete ordered trace at both pathname lengths. Every refused prefix must
+return a typed allocation failure and release each observed successful
+allocation. Prefix zero has no successful events and gives no headroom sample.
+Check heap and reservation release before suspending allocation refusal; only
+caller descriptor enumeration and reporting may need faults suspended.
+Reconcile heap, descriptors and reservations while the error remains live and
+after dropping it. Also demand a constant arithmetic error after partial binding,
+then free the caller's source and check the retained operation and exact span.
+The complete healthy join must still return all literal rows after these
+failures. Disabling one failed-call observation must fail coverage; missing,
+duplicated, reordered or incorrectly refused trace records must be rejected.
+
 Recovery allocation checks cover short/384-byte paths, empty/data missing-peer
 repair, corrupt roots, and Darwin repair-rename permission failure. The
 supervisor must remove its owned ACL after child failure or timeout. Check exact
