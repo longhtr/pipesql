@@ -7,14 +7,15 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The [STRING byte-length projections](evidence.md#string-byte-length-projections)
-in `ffa73b3` pass matching macOS/GNU arm64 Linux core gates: 648 ordinary Rust
-tests per platform, public ownership and healthy allocation controls, 24 semantic
-cases, 314 composition records and fresh examples. BYTE_LENGTH is a bounded
-STRING-to-INT64 projection; its learning path traces typed identity, borrowed
-source text, numeric results and the distinct scalar/source demand boundaries.
-No format, allocation owner or admission allowance changes. The previous full
-native/persistence checkpoint retains its own source identity and limitations.
+The [STRING character-length projections](evidence.md#string-character-length-projections)
+are complete in `de6d92b`. CHAR_LENGTH shares one typed STRING-length computation
+and pure byte/scalar measurement with BYTE_LENGTH. Matching macOS/GNU arm64 Linux
+core gates pass 652 ordinary Rust tests, complete public ownership and healthy
+allocation controls, 24 semantic cases, 317 composition records and fresh paired
+examples. No allocation owner, allowance or persistent format changes. Independent
+Unicode expectations and the learning path distinguish scalars from grapheme
+clusters and literal folding from borrowed column evaluation.
+
 
 The [allocation-capacity preflight](evidence.md#allocation-capacity-preflight)
 in `51bd731`, with campaign integration in `7078729`, passes matching macOS
@@ -108,25 +109,6 @@ owned-error transfer and prepared release. Both pathname lengths and platforms
 pass the complete ownership selection and sixteen negative controls. Production
 inputs remain unchanged; broader allocator/RSS qualifications remain open.
 
-## Active milestone: STRING character-length projections
-
-Add bounded CHAR_LENGTH beside BYTE_LENGTH through one typed STRING-length
-computation with an explicit unit. Reuse the existing projection identities,
-validators, demand, batch/row evaluation and resource owners. Literal inputs fold;
-column inputs borrow checked text. Count Unicode scalar values and teach their
-difference from encoded bytes and displayed grapheme clusters. Keep the existing
-bounded projection profile; do not add aliases, nested STRING calls or a generic
-expression framework.
-
-Verify independent Unicode/NULL/boundary oracles, rejection spans, both validators,
-composed and forced-replay paths, source demand and corruption, cancellation,
-admission and allocation ownership. Complete appropriate matching macOS/GNU arm64
-Linux checks and fresh examples sequentially. Preserve byte-length semantics,
-resource allowances, formats, open qualifications and publication restrictions.
-Finish implementation, learning paths, compact evidence, local commits and owned
-cleanup. The expanded corruption fixture initially exceeded eight snapshot pins;
-run each measurement unit with its own seven-pin fixture. Preserve the limit and
-use focused checks before the enclosing gates.
 
 ## Next engineering priorities
 

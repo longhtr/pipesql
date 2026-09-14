@@ -5,6 +5,100 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## STRING character-length projections
+
+`de6d92b` adds bounded CHAR_LENGTH through `Computation::StringLength` and the
+pure [measurement unit](../src/string_length.rs). BYTE_LENGTH and CHAR_LENGTH
+share typed input identity, literal folding, independent validators and borrowed
+runtime text. CHAR_LENGTH counts Unicode scalar values, including combining
+marks, joiners and NUL. Both return INT64, propagate NULL and accept a visible
+STRING column or bounded literal as a complete SELECT, EXTEND or SET expression.
+The [language contract](../docs/language.md#current-public-query-manifest) retains
+upstream primary references and unsupported forms. No allocation owner,
+admission allowance, persistent format or generic expression framework changes.
+
+The [paired example](../examples/character_length.sql) and
+[reading path](../docs/query-examples.md#compare-bytes-and-unicode-scalars) contrast
+bytes, scalars and displayed characters. The
+[execution trace](../docs/execution.md#string-length-evaluation) follows one typed
+input through the binder, measurement and numeric output. Literal expectations
+remain independent of the production counting function.
+
+Focused checks pass ten catalog tests, both independent validator mutations,
+exact/short admission, source corruption/demand and forced grouped replay. The
+expanded corruption fixture first retained twelve prepared queries and correctly
+hit the eight-pin limit. It now runs each unit with its own seven-pin fixture;
+the admission rule is unchanged. Four new catalog tests cover ASCII, composed
+and decomposed Unicode, supplementary characters, a two-scalar flag, a joined
+emoji, NUL, empty/maximal/NULL values, literal ownership, scope, composition and
+reopen. Existing rejected-form and cancellation controls now exercise both units.
+
+Matching frozen macOS and GNU arm64 Linux verification passes sequentially:
+
+- All fourteen core stages, including warnings-denied release Clippy, rustdoc
+  and doc tests. Independent discovery finds 652 ordinary Rust tests per platform
+  across fifteen targets: seven nonempty suites and eight zero-test Rust examples.
+  macOS counts are 440 library, 15 CLI, 153 catalog, 10 execution, 7 lifecycle,
+  6 load and 21 filesystem tests. Linux has 442 library and 19 filesystem tests;
+  other counts agree. No ordinary tests are ignored or filtered. The separate
+  lease subprocess passes one test with its six intentional filtered siblings.
+- 100 tooling tests and 44 independent codec fixtures per platform.
+- Complete public ownership selection at both pathname lengths: fifteen analytic
+  cases, six wide-set shapes, all construction prefixes 0–352 and healthy control
+  353, retained reader/append/partial-result controls and sixteen negative controls.
+  New character-length cases each return 512 complete nullable rows. Before/after
+  analytic spooling require 8,121/7,712 steps and peak temporary charges
+  38,088/101,496 bytes. Minimum usable headroom is 7,648 bytes on macOS and 8,880
+  on Linux in both new cases at both pathname lengths; all owners release.
+- Twenty-nine healthy allocation-control cells per platform, including catalog
+  census 1,056 at both pathname lengths. Linux retains two Darwin ACL exclusions
+  and its expanded-path controls. This selection does not claim a full catalog
+  allocation-prefix sweep.
+- 24 independent aggregate-semantic cases and 317 composition records. Records
+  agree after removing only semantic stdout database paths and composition
+  `sha256` fields. The added composition cases cover ASCII input, a Unicode
+  literal followed by arithmetic, and an empty aggregate.
+- Sequential fresh declared-table setup and BYTE_LENGTH, CHAR_LENGTH and query-flow
+  examples on macOS then Linux. Setup returns the documented north/south totals.
+  BYTE_LENGTH returns nullable INT64 values `5, 5, 12`; CHAR_LENGTH returns eight
+  required INT64 values `2, 1, 3, 2, 4, 1, 11, 3`; query-flow returns nullable INT64
+  38. Schemas, complete rows, successful terminal status, exit and empty stderr
+  agree with literal expectations.
+
+Core gates take 482.559 seconds on macOS and 172.200 seconds on Linux. The frozen
+725-input manifest is `1f3cebb625bf9c9e0f8af7764bd833ec5bcdcc71f96847d8905ae6ac51a24e63`.
+Only the two notes files change after verification; the other 723 inputs retain
+fingerprint `ca79035fa4dc23982858fa0134f311f713fe851dc45990e57ee10cd5d134e5b6`.
+Retained artifact identities are:
+
+| Artifact SHA-256 | macOS | GNU arm64 Linux |
+| --- | --- | --- |
+| Core receipt | `4dc242cd7d0564d3cdd6d6d80febef3345f615b1ee74004454f6bb5ac68bc545` | `c1ae1fec1127c9e146cba9307002243c867503d4c0b5576d187211c25fa60f0c` |
+| Stock CLI | `08bf5010106141bf61a0214512d738ee8cc1b1d2e09f602f2c52fbdc52ac1dcc` | `95b40b163f98ce1002a935ad98ccf08854a3d8943c218ec6457852e33274f313` |
+| Ownership caller | `b9eda4b3c4a4f3001a68571cd78ca287a1f8d9e81ae948209eeb9f676936dccb` | `332069db90732dd6ae2a7814e12f55eb29a0ee0efae9e768a52a56673693ca4d` |
+| Ownership log | `b560e0f2dd7592e874106f2578c44128ca04f6ea48cc360fd905823581ba2345` | `a017c08865e19e49cad93d72418d5c94b29ffa437ccccd02636409d504e29fd2` |
+
+Monitoring records 111 host samples and 34 Docker samples. Host pressure spot
+checks are normal/warning; swap spans 1,403.69–1,840.81 MiB, free disk stays above
+186.61 GiB and sampled disk I/O spans 0–456.31 MB/s. The observed host compiler
+peaks at 100.1% CPU and 777,424 KiB RSS. Docker peaks at 100.67% CPU and 1.294 GiB,
+with zero network traffic and no OOM event. Host en0 deltas are 470,805,091 inbound
+and 23,953,817 outbound bytes, including unrelated activity. Verification uses one
+Cargo job and sequential platforms; Linux runs as uid/gid 1000 with one CPU,
+2 GiB without extra swap, disabled networking and native database storage.
+These observations do not establish engine admission or whole-process/RSS bounds.
+
+The earlier full native/persistence checkpoint remains attached to `1e5cfdc`;
+these scoped checks do not replace its separate source identity or claim a new
+24-stage gate. Arbitrary allocator histories, the retained combined macOS
+usable-heap counterexample, broader durability/concurrency/sanitizer coverage,
+host-shared database identity and Windows qualification remain open.
+
+Owned logs, manifests, export, targets, tutorial databases, monitoring outputs
+and the verification container were removed. Final documentation verification
+passes 816 local links. No owned verification process remains; the original
+workspace target and preserved image are unchanged.
+
 ## Partial-result allocation ownership
 
 `b9b3fcc` adds [result-ownership.rs](../tools/fixtures/result-ownership.rs) under
