@@ -110,23 +110,12 @@ pass the complete ownership selection and sixteen negative controls. Production
 inputs remain unchanged; broader allocator/RSS qualifications remain open.
 
 
-## Active milestone: stored text measurement costs
-
-Add one runnable comparison of BYTE_LENGTH and CHAR_LENGTH over identical stored
-nullable UTF-8 input. The fixture repeats eight explicit text classes across
-4,096 rows: ASCII, accented, CJK, combining, supplementary, NUL, empty and NULL.
-Use literal expected counts and totals, complete checked executions, alternating
-sample order, shared prepared-plan baselines and observed release. Trace stored
-text validation, borrowed measurement and aggregation so the example distinguishes
-local operation cost from complete-query cost.
-
-Keep production code and the existing projection-cost example unchanged. Do not
-introduce a benchmark framework or optimize from an assumed result. Reassess
-optional investigation after 30 minutes; complete all obligations for retained
-work. Verify warnings-denied build/Clippy, a wrong-result negative control,
-unchanged production inputs and sequential fresh macOS/GNU arm64 Linux runs on
-matching inputs. Finish the learning path, compact evidence, resource observation,
-owned cleanup and local commits; preserve qualifications and publication limits.
+The [stored text measurement workload](evidence.md#stored-text-measurement-costs)
+is complete in `529306d`. The example checks byte/scalar totals and full result
+release across 1,020 executions per platform. Both variants observe the same
+logical memory and no temporary use; the measurements retain their sample spread
+and do not justify an engine optimization. Fresh macOS/GNU arm64 Linux runs and
+wrong-total controls pass. All pre-existing non-Markdown inputs remain unchanged.
 
 ## Next engineering priorities
 

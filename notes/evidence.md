@@ -5,6 +5,93 @@ and implementation contracts live in [docs](../docs/README.md); current work
 lives in [the plan](plan.md). Maintained fixtures and callers provide replay inputs.
 No build, test, or investigation below requires a retired project checkout.
 
+## Stored text measurement costs
+
+`529306d` adds [text_cost.rs](../examples/text_cost.rs) and its
+[learning path](../docs/getting-started.md#compare-stored-text-measurements).
+The fixture repeats eight explicit nullable text classes across 4,096 rows.
+Each eight-row cycle contains six 128-byte values, empty STRING and NULL. Literal
+oracles require 3,584 present values, 393,216 text bytes and 246,784 Unicode
+scalars. The two queries project BYTE_LENGTH or CHAR_LENGTH before COUNT(*),
+COUNT(length) and SUM(length) aggregation. The [execution explanation](../docs/execution.md#stored-text-measurement-costs)
+traces the shared payload/checksum/UTF-8 checks, checked borrowed `str`, length
+measurement and global aggregation. A local constant-time byte measurement does
+not make the complete stored-text query constant-time in input size.
+
+Both prepared queries remain live on a common baseline. Each variant runs ten
+warmups and ten samples of fifty complete executions, with sample order
+alternating. All 1,020 executions per platform verify schema, literal row counts
+and total, Finished and release. Timing includes result construction, source
+reads, computation, aggregation, result checks and destruction; setup/open,
+preparation, printing and the final reservation check are separate. No cache
+eviction is attempted. Both variants observe 610,696 additional logical bytes
+and zero temporary reservations on both platforms. These are sampled logical
+charges, not allocator extents, RSS or I/O measurements.
+
+Warnings-denied example Clippy and release builds pass on macOS and GNU arm64
+Linux. Fresh wrong-total callers change only byte total 393,216 to 393,215;
+both reject the first result with exit 1, empty stdout and the intended literal
+oracle error. Fresh healthy runs then complete sequentially on macOS and Linux.
+The maintained local checks pass 100 tooling tests and 44 independent codec
+fixtures. All 696 pre-existing non-Markdown inputs are unchanged from `83fcd3a`;
+production code, ordinary Rust tests and the earlier projection-cost example are
+unchanged. The engine gates are not rerun for this example-only workload.
+
+Per-execution sample means in milliseconds are:
+
+| Sample | macOS bytes | macOS scalars | Linux bytes | Linux scalars |
+| --- | --- | --- | --- | --- |
+| 1 | 1.288 | 1.032 | 0.832 | 0.861 |
+| 2 | 1.047 | 1.005 | 0.829 | 0.861 |
+| 3 | 1.130 | 1.248 | 0.831 | 0.879 |
+| 4 | 0.974 | 1.014 | 0.832 | 0.880 |
+| 5 | 0.968 | 0.993 | 0.833 | 0.871 |
+| 6 | 1.233 | 1.075 | 0.842 | 0.862 |
+| 7 | 1.385 | 1.012 | 0.848 | 0.888 |
+| 8 | 0.967 | 0.995 | 0.833 | 0.863 |
+| 9 | 0.982 | 0.999 | 0.852 | 0.893 |
+| 10 | 0.996 | 1.066 | 0.828 | 0.885 |
+
+macOS byte/scalar medians are 1.0215/1.013 ms, with scalar counting slower in six
+pairs. Linux medians are 0.8325/0.875 ms, with scalar counting slower in all ten
+pairs. macOS ranges overlap and pair ordering changes; Linux has a consistent
+ordering in this run. These complete-query observations neither isolate kernel
+cost nor establish a general performance or platform ranking. They justify no
+engine optimization. The reading path retains the distinction between obtaining
+valid text and measuring it without adding benchmark machinery to production.
+
+The frozen 726-input manifest is
+`9e941f6dc595d5e387da2c1777fd06efbc1e38df0105ff8cada3be650301cd02`.
+After verification, the tutorial clarifies that each combining sequence repeats
+the pair (`e`, U+0301); its commands and expected values do not change. Alongside
+the two notes files, this is the only later input change. The other 723 inputs
+retain fingerprint `ae6709c2684804c7faf4c89d81381404968f756a3bf98d5e28a8a63d68ee1c1a`.
+All 697 non-Markdown inputs, including the new example, retain fingerprint
+`b63fc7bfd8c592cf08d1e38e1ccfb9de9eb7c7ce6f0b69e4424b2dabc24d02c8`.
+The example source SHA-256 is
+`5b28e40c19b6566f7d39bb4a400221b9707867c5db89dfc8ee46325c200c6aaf`.
+
+| Artifact SHA-256 | macOS | GNU arm64 Linux |
+| --- | --- | --- |
+| Example executable | `3537fd2be4de9f662c60543054e7255053ef3cfe91338493a499ca40c201db68` | `1343a0b2fb44dcacbd84a3fcf756b0b162b287e32f8fc7ea16302ff2fd6f3eb1` |
+| Healthy stdout | `765943c6ef87d4345017548706f2af3143209bfddc0df13334ed312f233dc3dd` | `18eeb4cfabff42a60259cfe4dff3334fc80fc5966277b23be939f8ea75db88da` |
+
+Monitoring records 26 host and nine Docker samples. Host pressure is
+normal/warning, swap spans 1,762.38–1,778.38 MiB, free disk stays above 186.92 GiB
+and sampled I/O spans 0–28.24 MB/s. Docker peaks at 103.04% CPU and 666.4 MiB,
+with zero network traffic and no OOM event. Host en0 deltas are 157,187,048 inbound
+and 5,995,311 outbound bytes, including unrelated activity. Heavy work and fresh
+examples run sequentially with one Cargo job. Linux uses uid/gid 1000, one CPU,
+2 GiB without extra swap, no network and native database storage. Sampling can
+miss short peaks; these observations do not qualify engine admission or RSS.
+Broader allocator histories, durability, concurrency, sanitizer and Windows
+qualifications remain open.
+
+Owned builds, callers, databases, export, manifests, logs, monitoring outputs and
+the verification container were removed. The original workspace target and
+preserved image are unchanged; no owned verification process remains. Final
+documentation verification passes 826 local links.
+
 ## STRING character-length projections
 
 `de6d92b` adds bounded CHAR_LENGTH through `Computation::StringLength` and the
