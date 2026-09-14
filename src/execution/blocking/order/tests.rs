@@ -76,7 +76,13 @@ fn order<'a, 'db>(result: &'a mut QueryResult<'db, '_>) -> &'a mut Order<'db> {
     runtime.first_order_mut()
 }
 
-fn check_physical_account(order: &Order<'_>) {
+fn check_physical_account(result: &mut QueryResult<'_, '_>) {
+    let State::Running(runtime) = &result.state else {
+        panic!("live order");
+    };
+    let inline = runtime.controller_inline_bytes(&result.plan);
+    assert_eq!(inline, size_of::<Order<'_>>() as u64);
+    let order = order(result);
     fn bytes<T>(v: &Vec<T>) -> usize {
         v.capacity() * size_of::<T>()
     }
@@ -99,7 +105,11 @@ fn check_physical_account(order: &Order<'_>) {
     } else {
         0
     };
-    assert_eq!(physical as u64 + creation, order.memory_bytes());
+    assert_eq!(
+        physical as u64 + creation,
+        order.memory_bytes() + inline,
+        "inline owner and actual allocation capacities are charged once"
+    );
 }
 
 fn phase_index(phase: Phase) -> usize {
@@ -178,7 +188,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
                 let mut observed = vec![];
                 let mut done = false;
                 for _ in 0..STEPS {
-                    check_physical_account(order(&mut result));
+                    check_physical_account(&mut result);
                     assert_eq!(
                         db.reserved_memory_bytes(),
                         baseline + pressure.bytes() + result.accounted_memory_bytes()

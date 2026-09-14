@@ -558,6 +558,14 @@ storage. When no input values are demanded, the [counter](../src/execution/count
 retains only the row count and emits that many rows without scratch storage.
 Both preserve cardinality instead of reducing the relation to one row.
 
+The retained-row consumer separates the controller's inline storage from its
+sort buffers. Follow `Order::with_layout` to see both admitted before execution:
+the runtime retains the inline charge until it frees the controller vector,
+while the sorter releases each buffer's charge after freeing that buffer. This
+also protects cleanup when source opening fails. The
+[resource contract](resources.md#runtime-and-result-admission) explains the shared
+ownership rule for ordering, joins and sorted set operations.
+
 ## Finish and clean up
 
 If the program reports an error, do not treat any printed rows as a complete

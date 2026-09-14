@@ -44,6 +44,7 @@ impl<'db> SortedSet<'db> {
         database: &'db Database,
         bound: &SetPlan,
         inputs: [&Pipeline<'_>; 2],
+        runtime: &mut Reservation<'db>,
     ) -> Result<Vec<Self>, Error> {
         let width = bound.width();
         if bound.kind() == SetKind::UnionAll || width == 0 || width > MAX_COLUMNS {
@@ -95,6 +96,15 @@ impl<'db> SortedSet<'db> {
             replayed: false,
             reservation,
         });
+        // The runtime retains inline charges until this vector is physically freed.
+        let sorted_set = &mut owner[0];
+        sorted_set.reservation.transfer_to(
+            runtime,
+            (size_of::<Self>() - 2 * size_of::<SortedInput<'_>>()) as u64,
+        )?;
+        for side in &mut sorted_set.sides {
+            side.transfer_inline_to(runtime)?;
+        }
         Ok(owner)
     }
 

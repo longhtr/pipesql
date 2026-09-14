@@ -46,6 +46,7 @@ impl<'db> Order<'db> {
     pub(in crate::execution) fn distinct(
         database: &'db Database,
         inputs: impl Iterator<Item = SemanticColumn> + Clone,
+        runtime: &mut Reservation<'db>,
     ) -> Result<Vec<Self>, Error> {
         let count = inputs.clone().count();
         if count == 0 || count > MAX_ROW_VALUES {
@@ -56,7 +57,7 @@ impl<'db> Order<'db> {
             direction: Direction::Ascending,
             nulls: NullPlacement::First,
         });
-        let mut owner = Self::new(database, inputs, &keys[..count])?;
+        let mut owner = Self::new(database, inputs, &keys[..count], runtime)?;
         owner[0].mode = Mode::Distinct;
         Ok(owner)
     }
@@ -65,20 +66,26 @@ impl<'db> Order<'db> {
         database: &'db Database,
         inputs: impl Iterator<Item = SemanticColumn>,
         keys: &[planning::OrderColumn],
+        runtime: &mut Reservation<'db>,
     ) -> Result<Vec<Self>, Error> {
-        Self::with_layout(database, RowLayout::for_order(inputs, keys)?)
+        Self::with_layout(database, RowLayout::for_order(inputs, keys)?, runtime)
     }
 
     pub(in crate::execution) fn window_count(
         database: &'db Database,
         inputs: impl Iterator<Item = SemanticColumn>,
+        runtime: &mut Reservation<'db>,
     ) -> Result<Vec<Self>, Error> {
-        let mut owner = Self::with_layout(database, RowLayout::for_partition(inputs)?)?;
+        let mut owner = Self::with_layout(database, RowLayout::for_partition(inputs)?, runtime)?;
         owner[0].mode = Mode::WindowCount;
         Ok(owner)
     }
 
-    fn with_layout(database: &'db Database, layout: RowLayout) -> Result<Vec<Self>, Error> {
+    fn with_layout(
+        database: &'db Database,
+        layout: RowLayout,
+        runtime: &mut Reservation<'db>,
+    ) -> Result<Vec<Self>, Error> {
         let reservation = database.reserve_memory(
             (size_of::<Self>() - size_of::<SortedInput<'_>>()) as u64,
             "order controller",
@@ -97,6 +104,13 @@ impl<'db> Order<'db> {
             mode: Mode::Order,
             reservation,
         });
+        // The runtime retains inline charges until this vector is physically freed.
+        let order = &mut owner[0];
+        order.reservation.transfer_to(
+            runtime,
+            (size_of::<Self>() - size_of::<SortedInput<'_>>()) as u64,
+        )?;
+        order.input.transfer_inline_to(runtime)?;
         Ok(owner)
     }
 

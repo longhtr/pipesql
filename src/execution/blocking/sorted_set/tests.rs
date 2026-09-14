@@ -55,7 +55,13 @@ fn phase_index(phase: Phase) -> usize {
 }
 
 // Sum actual capacities rather than repeating constructor admission formulas.
-fn check_physical_account(sorted_set: &SortedSet<'_>) {
+fn check_physical_account(result: &mut QueryResult<'_, '_>) {
+    let State::Running(runtime) = &result.state else {
+        panic!("live sorted set");
+    };
+    let inline = runtime.controller_inline_bytes(&result.plan);
+    assert_eq!(inline, size_of::<SortedSet<'_>>() as u64);
+    let sorted_set = sorted_set(result);
     fn bytes<T>(v: &Vec<T>) -> usize {
         v.capacity() * size_of::<T>()
     }
@@ -78,13 +84,17 @@ fn check_physical_account(sorted_set: &SortedSet<'_>) {
             creation += crate::scratch::Creation::memory_requirement_bytes();
         }
     }
-    assert_eq!(physical as u64 + creation, sorted_set.memory_bytes());
+    assert_eq!(
+        physical as u64 + creation,
+        sorted_set.memory_bytes() + inline,
+        "inline owner and actual allocation capacities are charged once"
+    );
 }
 
 fn collect(result: &mut QueryResult<'_, '_>, effects: &mut Effects) -> Vec<(i64, i64)> {
     let mut rows = Vec::new();
     for _ in 0..STEPS {
-        check_physical_account(sorted_set(result));
+        check_physical_account(result);
         match result.step_with_effects(effects) {
             QueryStep::Progress => (),
             QueryStep::Rows(batch) => {

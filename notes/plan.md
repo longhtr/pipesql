@@ -62,9 +62,11 @@ Extend the independent physical-capacity regressions to check the transferred
 controller sizes and retain exact-minimum admission, refusal before I/O, replay,
 cancellation and terminal cleanup. Exercise affected public construction/release
 histories on macOS and GNU/Linux, with negative controls and complete results.
-Run focused checks first and the required regression verification against frozen
-inputs; report its actual scope without promoting an earlier full gate to changed
-inputs. Explain the ownership path beside its implementation, commit coherent
+The 27 focused blocking tests pass, and the updated physical-size oracles reject
+the prior implementation in four checks. Complete the 14-stage core gate, public
+ownership selection, aggregate semantics/composition and fresh examples on both
+platforms against frozen inputs. Report that scope without promoting an earlier
+full gate to changed inputs. Explain the ownership path beside its implementation, commit coherent
 changes locally and remove owned outputs. Keep the separate native usable-heap
 counterexample unresolved unless new evidence explains and repairs it.
 

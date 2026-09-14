@@ -63,6 +63,7 @@ impl<'db> Owner<'db> {
         query: &PreparedQuery<'_>,
         input: &Pipeline<'_>,
         output: OwnedBatch<'db>,
+        reservation: &mut Reservation<'db>,
     ) -> Result<Self, Error> {
         if input.column_count == 0 {
             Ok(Self::Count {
@@ -70,8 +71,11 @@ impl<'db> Owner<'db> {
                 output,
             })
         } else {
-            let order =
-                blocking::order::Order::window_count(database, input.output_columns(&query.plan))?;
+            let order = blocking::order::Order::window_count(
+                database,
+                input.output_columns(&query.plan),
+                reservation,
+            )?;
             Ok(Self::Order { order, output })
         }
     }
@@ -155,8 +159,9 @@ pub(super) struct Runtime<'db> {
     parents: [Option<u8>; MAX_PIPELINES],
     active: usize,
     phase: Phase,
-    // Node and aggregate vectors, and transferred join-controller inline storage,
-    // drop before their shared reservation.
+    // Node and aggregate vectors, and transferred blocking-controller inline
+    // storage, drop before their shared reservation. A controller's field drops
+    // cannot release the charge for the vector that still contains those fields.
     reservation: Reservation<'db>,
 }
 
@@ -264,6 +269,7 @@ impl<'db> Runtime<'db> {
                     query,
                     &plan.pipelines()[input.index()],
                     producer_output(database, query, pipeline)?,
+                    &mut self.reservation,
                 )?,
                 Producer::Scan(0) | Producer::Aggregate { aggregate: 0, .. } => Owner::Vacant,
                 Producer::Aggregate { .. } => {
@@ -375,14 +381,22 @@ impl<'db> Runtime<'db> {
                             database,
                             plan.pipelines()[input.index()].output_columns(&query.plan),
                             plan.order_columns(start, len),
+                            &mut self.reservation,
                         )?;
                         Owner::Order { order, output }
                     } else if let Producer::WindowCount { input } = pipeline.producer {
-                        Owner::analytic(database, query, &plan.pipelines()[input.index()], output)?
+                        Owner::analytic(
+                            database,
+                            query,
+                            &plan.pipelines()[input.index()],
+                            output,
+                            &mut self.reservation,
+                        )?
                     } else if let Producer::Distinct { input, .. } = pipeline.producer {
                         let order = blocking::order::Order::distinct(
                             database,
                             plan.pipelines()[input.index()].output_columns(&query.plan),
+                            &mut self.reservation,
                         )?;
                         Owner::Order { order, output }
                     } else if let Producer::SetOperation {
@@ -406,7 +420,10 @@ impl<'db> Runtime<'db> {
                             | frontend::SetKind::ExceptAll
                             | frontend::SetKind::IntersectAll => Owner::SortedSet {
                                 sorted_set: blocking::sorted_set::SortedSet::new(
-                                    database, bound, inputs,
+                                    database,
+                                    bound,
+                                    inputs,
+                                    &mut self.reservation,
                                 )?,
                                 output,
                             },

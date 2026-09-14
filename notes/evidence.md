@@ -7,6 +7,9 @@ No build, test, or investigation below requires a retired project checkout.
 
 ## Full verification checkpoint
 
+This complete checkpoint predates the blocking-controller extension below;
+changed source requires its own verification record.
+
 Both complete 24-stage gates verify the 712 frozen inputs retained in `1e5cfdc`
 on macOS arm64 Darwin 25.6.0 and GNU arm64 Linux 7.0.12-linuxkit. Both use Rust
 1.98.1, release artifacts, locked offline builds and warnings-denied compilation
@@ -76,6 +79,32 @@ monitor, databases, isolated build outputs and the verification container are
 removed. Pre-existing target artifacts, the image and installed toolchains remain.
 Windows, broader durability, physical-memory and sanitizer qualification remain
 unfinished.
+
+### Blocking controller lifetimes
+
+Order and sorted-set controllers had the same inline-charge lifetime mismatch
+as joins: their reservations belonged to fields inside the allocation they
+charged. The runtime now retains those existing charges after construction and
+until physical controller release. Order's shared constructor covers ORDER BY,
+DISTINCT, UNION DISTINCT and retained-row partition count in both declared and
+legacy admission paths. No allowance, payload allocation, persistent format or
+operator algorithm changes.
+
+The existing physical-capacity regressions independently require a 3,000-byte
+order transfer or a 6,096-byte sorted-set transfer on the tested 64-bit target,
+alongside actual buffer capacities at every retained transition. A control built
+from `59cd4d9` with only the two updated test files rejects the old implementation:
+one order check and three sorted-set checks fail with zero transferred bytes;
+the other 23 blocking tests pass. With the repair, all 27 blocking tests pass
+sequentially. These focused runs intentionally filter the other 411 library tests.
+The control is reconstructable from that retained production revision and the
+test changes; no source archive is required.
+
+Platform verification is pending. Its scope is the core gate, public ownership,
+aggregate semantics/composition and fresh examples. Native effect wrappers and
+persistent publication are unchanged; their earlier full-gate evidence remains
+attached to its exact inputs, not promoted to this changed tree. The separate
+combined-history usable-heap counterexample remains unresolved.
 
 ### Failed wide-join construction
 

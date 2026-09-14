@@ -94,8 +94,10 @@ impl<'db> SortedInput<'db> {
         })
     }
 
-    // A heap-allocated controller's inline fields remain live after its fields
-    // have dropped. Their charge must follow the enclosing allocation instead.
+    // Join, Order and SortedSet live in one-element vectors for fallible heap
+    // construction. Vec drops their fields before freeing their inline storage.
+    // Move only that inline charge to the runtime, which outlives the vector;
+    // separately allocated payloads retain their charges here until freed.
     fn transfer_inline_to(&mut self, destination: &mut Reservation<'db>) -> Result<(), Error> {
         self.reservation.transfer_to(
             destination,

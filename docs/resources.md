@@ -259,12 +259,14 @@ The [interface contract](interfaces.md) owns error and source-span lifetimes.
 
 Execution construction can fail before returning a result. The prepared query
 remains independent while the physical plan, partially admitted sources and
-controllers unwind. A join's controller vector contains its sorter metadata.
+controllers unwind. Join, order and sorted-set controller vectors contain their
+sorter metadata. Order also implements DISTINCT and retained-row partition count.
 Dropping those fields does not yet free the vector, so their inline charges
 transfer to the [runtime reservation](../src/execution/runtime.rs) before source
 opening. That reservation drops after the node and controller allocations.
-[Join construction](../src/execution/blocking/join.rs) transfers existing charges;
-it does not increase admission or change payload capacity. Run-buffer release
+[Controller construction](../src/execution/blocking.rs) transfers existing charges;
+it does not increase admission or change payload capacity. Nested owners retain
+the charges for their separately allocated payloads. Run-buffer release
 subtracts only physically freed payloads, whether inline state remains charged
 locally or has transferred to the runtime.
 
