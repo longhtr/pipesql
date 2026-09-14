@@ -143,6 +143,23 @@ starts the same report with room for one hash group. It requires disk fallback,
 observed replay of the retained join, complete literal rows and final release.
 This distinguishes the mechanism from the public caller's observation of spill.
 
+## Follow a failed allocation
+
+The [allocation campaign](../tools/README.md) runs this report through the stock
+library with an external allocator observer. It checks the instant after each
+allocation and before each free, as well as complete release. It also refuses
+successively later constructor allocations while retaining the returned error.
+
+Follow `General::assemble` in [grouping.rs](../src/execution/aggregation/grouping.rs).
+The `Minimum` value owns fallback buffers and their reservation while optional
+hash-group construction can still fail. Keeping that value intact matters:
+unpacking its fields early would make reverse local drop order release the
+reservation before the buffers on an error return. Once fallible construction
+has finished, moving the fields into the completed controller preserves ownership.
+The report's constructor-refusal sweep checks this boundary. The
+[resource contract](resources.md) owns admission rules; the observer does not
+establish an RSS bound or explain every native allocator reuse history.
+
 ## Challenge the answer and clean up
 
 Run the example's public-API checks:

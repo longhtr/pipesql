@@ -99,6 +99,44 @@ class GroupExpectations(unittest.TestCase):
 
 
 class AllocationInterpretation(unittest.TestCase):
+    def test_event_report_requires_every_prefix_and_terminal_event(self):
+        def sample(allocations, frees):
+            return (f"Samples {{ allocations: {allocations}, frees: {frees}, "
+                    "requested_headroom: 16, usable_headroom: 16 }")
+
+        lines = ["transient ownership calibration passed: hidden allocation detected; entry/exit agree"]
+        for phase in ["preparation", "construction"]:
+            for prefix in range(3):
+                calls, refusals = (prefix + 1, 1) if prefix < 2 else (2, 0)
+                lines.append(f"event report {phase} prefix={prefix} calls={calls} refusals={refusals} samples={sample(prefix, prefix)}")
+            lines.append(f"event report {phase} passed: prefixes=0..=2; live errors and release")
+        for history in range(3):
+            for phase, allocations, frees in [
+                ("prepare", 2, 1), ("partial drop", 3, 3), ("cancelled", 2, 2),
+                ("execute/finish/drop", 3, 3), ("prepared drop", 0, 1),
+            ]:
+                lines.append(f"event report {phase}: {sample(allocations, frees)}")
+            lines.append(f"event report history={history} rows=13 release=complete")
+        lines.append("event report histories passed: 3 complete runs")
+        valid = "\n".join(lines) + "\n"
+        check = ALLOCATION["complete_event_report"]
+        self.assertTrue(check(valid))
+        for invalid in [
+            "event report histories passed: 3 complete runs\n",
+            valid.replace("prefix=1", "prefix=0"),
+            valid.replace("refusals=1", "refusals=0"),
+            valid.replace("allocations: 3, frees: 3", "allocations: 3, frees: 1"),
+            valid.replace("requested_headroom: 16", "requested_headroom: -1"),
+            valid.replace("usable_headroom: 16", "usable_headroom: -1"),
+            valid.replace("rows=13", "rows=12"),
+            valid.replace("history=2", "history=1"),
+            valid.replace("event report cancelled:", "unobserved cancelled:"),
+            valid.replace(lines[0], ""),
+            valid + lines[-1] + "\n",
+        ]:
+            with self.subTest(output=invalid):
+                self.assertFalse(check(invalid))
+
     def test_preparation_refusal_trace_requires_each_prefix_and_healthy_control(self):
         census = "join preparation census allocations=3\n"
         rows = [f"join preparation prefix={prefix} calls={min(prefix + 1, 3)} "
@@ -235,6 +273,9 @@ class AllocationInterpretation(unittest.TestCase):
             self.assertEqual("incomplete joined allocation ownership checks" in failures, missing)
             self.assertIn((("joined-shapes", "joined-shapes"), {}), run.call_args_list)
             self.assertIn((("partial-result-shapes", "partial-results-path384", 384), {}), run.call_args_list)
+            self.assertIn((("event-report-history", "event-report-path384", 384), {}), run.call_args_list)
+            self.assertEqual(sum(message.startswith("incomplete event report allocation histories:")
+                                 for message in failures), 2)
             self.assertEqual(sum(message.startswith("incomplete partial result ownership checks:")
                                  for message in failures), 2)
             self.assertIn((("analytic-shapes", "analytic-path384", 384), {}), run.call_args_list)

@@ -451,23 +451,14 @@ impl<'db> General<'db> {
         ordered: bool,
         hash: Option<(usize, usize)>,
     ) -> Result<Self, Error> {
-        let Minimum {
-            arguments,
-            sort,
-            record,
-            files,
-            keys,
-            output,
-            reservation,
-        } = minimum;
         let (hash_groups, hash_bytes) = match hash {
             Some(limits) => limits,
-            None => MemoryGroups::capacities(database, &aggregate, &keys)?,
+            None => MemoryGroups::capacities(database, &aggregate, &minimum.keys)?,
         };
         // Every fallback allocation above survives optional admission failure.
         let mut memory = Vec::new();
         if hash_groups != 0 {
-            match MemoryGroups::new(database, &aggregate, &keys, hash_groups, hash_bytes) {
+            match MemoryGroups::new(database, &aggregate, &minimum.keys, hash_groups, hash_bytes) {
                 Ok(groups) => {
                     memory = allocate(1, 1, "hash group owner", groups.memory_bytes())?;
                     memory.push(groups);
@@ -481,6 +472,18 @@ impl<'db> General<'db> {
         } else {
             Phase::Read
         };
+        // Keep the fallback buffers with their reservation until every fallible
+        // optional allocation has finished. Destructuring earlier would make
+        // local reverse drop order release the charge before those buffers.
+        let Minimum {
+            arguments,
+            sort,
+            record,
+            files,
+            keys,
+            output,
+            reservation,
+        } = minimum;
         Ok(Self {
             memory,
             aggregate,

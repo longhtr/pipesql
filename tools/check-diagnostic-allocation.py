@@ -300,8 +300,65 @@ def complete_partial_results(output):
     )
 
 
+def complete_event_report(output):
+    sample = (r"Samples \{ allocations: (\d+), frees: (\d+), "
+              r"requested_headroom: (-?\d+), usable_headroom: (-?\d+) \}")
+    censuses = {}
+    for phase, maximum in [("preparation", 32), ("construction", 512)]:
+        finished = re.findall(
+            rf"^event report {phase} passed: prefixes=0\.\.=(\d+); live errors and release$",
+            output, re.MULTILINE,
+        )
+        records = re.findall(
+            rf"^event report {phase} prefix=(\d+) calls=(\d+) refusals=(\d+) samples=" + sample + "$",
+            output, re.MULTILINE,
+        )
+        if len(finished) != 1 or not 1 <= int(finished[0]) <= maximum:
+            return False
+        census = censuses[phase] = int(finished[0])
+        if len(records) != census + 1:
+            return False
+        for expected_prefix, record in enumerate(records):
+            prefix, calls, refusals, allocations, frees, requested, usable = map(int, record)
+            if (prefix != expected_prefix or allocations != prefix or frees != prefix
+                    or requested < 0 or usable < 0):
+                return False
+            if prefix < census:
+                if calls <= prefix or refusals == 0:
+                    return False
+            elif calls != census or refusals != 0:
+                return False
+    phases = re.findall(
+        r"^event report (prepare|partial drop|cancelled|execute/finish/drop|prepared drop): " + sample + "$",
+        output, re.MULTILINE,
+    )
+    names = ["prepare", "partial drop", "cancelled", "execute/finish/drop", "prepared drop"]
+    if [record[0] for record in phases] != names * 3:
+        return False
+    for history in range(3):
+        entries = [tuple(map(int, record[1:])) for record in phases[5 * history:5 * history + 5]]
+        if any(requested < 0 or usable < 0 for _, _, requested, usable in entries):
+            return False
+        if (entries[0][0] != censuses["preparation"] or entries[4][0] != 0
+                or entries[4][1] == 0 or entries[0][1] + entries[4][1] != entries[0][0]):
+            return False
+        if any(allocations < censuses["construction"] or frees != allocations
+               for allocations, frees, _, _ in entries[1:4]):
+            return False
+    return (
+        re.findall(r"^event report history=(\d+) rows=(\d+) release=complete$", output, re.MULTILINE)
+        == [("0", "13"), ("1", "13"), ("2", "13")]
+        and output.count("event report histories passed: 3 complete runs") == 1
+        and "transient ownership calibration passed: hidden allocation detected; entry/exit agree" in output
+    )
+
+
 def check_ownership(work, run, failures):
     for label, length in [("short", None), ("path384", 384)]:
+        report = run("event-report-history", f"event-report-{label}", length)
+        print(report.stdout + report.stderr, end="", flush=True)
+        if not complete_event_report(report.stdout):
+            failures.append(f"incomplete event report allocation histories: {label}")
         partial = run("partial-result-shapes", f"partial-results-{label}", length)
         print(partial.stdout + partial.stderr, end="", flush=True)
         if not complete_partial_results(partial.stdout):
@@ -413,6 +470,10 @@ def check_ownership(work, run, failures):
                 f"ownership-{label}: missing composed ownership completion"
             )
     for mode, expected in [
+        ("event-report-attribution-negative", "event report requested ownership: prepare"),
+        ("event-report-preparation-negative", "missing report preparation allocation events"),
+        ("event-report-construction-negative", "missing report construction allocation events"),
+        ("event-report-terminal-negative", "missing report terminal allocation events"),
         ("partial-result-prefix-negative", "partial result prefix oracle"),
         ("partial-result-terminal-negative", "missing partial result terminal events"),
         ("analytic-attribution-negative", "execution ownership attribution: analytic-admitted"),

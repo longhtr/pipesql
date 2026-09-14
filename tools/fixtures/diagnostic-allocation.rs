@@ -278,6 +278,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         return run(&root, control);
     }
+    if mode
+        .to_str()
+        .is_some_and(|mode| mode.starts_with("event-report-"))
+    {
+        use ownership::EventReportControl;
+        let control = match mode.to_str().expect("ASCII report mode") {
+            "event-report-history" => EventReportControl::Healthy,
+            "event-report-attribution-negative" => EventReportControl::WrongAttribution,
+            "event-report-preparation-negative" => EventReportControl::MissingPreparation,
+            "event-report-construction-negative" => EventReportControl::MissingConstruction,
+            "event-report-terminal-negative" => EventReportControl::MissingTerminal,
+            _ => panic!("unknown event report control"),
+        };
+        return ownership::event_report_history(&root, control);
+    }
     if mode == "analytic-shapes" || mode == "analytic-attribution-negative" {
         return ownership::analytic_shapes(&root, mode == "analytic-attribution-negative");
     }

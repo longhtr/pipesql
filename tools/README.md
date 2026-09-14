@@ -232,6 +232,25 @@ phase events, nonnegative requested/usable headroom and final release.
 fail at their intended oracle. These checks extend observed histories without
 claiming arbitrary allocator behavior or whole-process bounds.
 
+The ownership selection runs `event-report-history` from the same caller at
+both pathname lengths. Its sixteen typed events and literal thirteen-group answer
+match the [report lesson](../docs/event-report.md). Three complete executions are
+interleaved with partial-result drop and spill cancellation. Between the first
+and second histories, preparation and constructor sweeps deny every allocation
+prefix, including zero and a healthy full-prefix control. Errors remain live
+while counters, reservations, descriptors and formatting are checked.
+The existing observer measures successful allocations and owners immediately
+before free, so balanced endpoint counters cannot hide early reservation release.
+`complete_event_report` requires the complete prefix sequences, exact row counts,
+phase order, nonnegative requested/usable headroom and balanced execution events.
+
+Four controls must fail: `event-report-attribution-negative` counts an extra
+resident owner; `event-report-preparation-negative` and
+`event-report-construction-negative` omit observation for prefix one;
+`event-report-terminal-negative` omits the cancelled terminal step. Retain these
+controls alongside the existing combined-history native-reuse diagnostic. Passing
+this report's bounded histories does not qualify arbitrary allocator reuse.
+
 The ownership selection also runs `wide_set_shapes` in
 [`composed-ownership.rs`](fixtures/composed-ownership.rs) at short and 384-byte
 paths. A two-column left source repeats one nullable STRING across 61 positions;
