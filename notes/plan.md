@@ -55,6 +55,23 @@ complete. Optional queries have their own setup, cleanup and maintained guide;
 the first declared-table flow now finishes before those choices. Executable inputs
 remain unchanged, and fresh setup, representative queries and cleanup pass.
 
+## Active milestone: explain native allocation reuse
+
+Reduce the retained macOS usable-heap counterexample before changing admission.
+The measuring allocator forwards System layouts unchanged and adds no allocation
+header. Compare a fresh 3,817,440-byte request with reuse after a larger allocation
+whose observed usable extent is 3,899,392 bytes. Use an independent native control
+to separate allocator behavior from the caller's accounting. Limit the first
+investigation to 30 minutes and prefer a small reproducible diagnostic over an
+allocation-tracing framework.
+
+Retain an explanatory diagnostic or negative control, and repair a demonstrated
+engine or observer defect if found. Preserve the strict combined-history replay
+and distinguish causal evidence from allocator-specific observations. Run focused
+stock macOS and GNU/Linux checks plus verification required by the retained change,
+document the result, commit locally and remove owned outputs. Do not pad admission
+or claim a universal usable-heap/RSS bound.
+
 ## Next engineering priorities
 
 Choose the next bounded milestone by README's decision order. Resolve a concrete
