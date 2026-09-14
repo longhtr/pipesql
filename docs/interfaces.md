@@ -38,6 +38,22 @@ text from result storage and exposes `as_str()`. The value's borrow prevents
 another mutable query step while text remains live. `StringValue` and
 `DateValue` have private validated representations.
 
+`PreparedQuery::logical_plan()` returns a borrowed `LogicalPlan` implementing
+`Display`. Formatting traverses validated semantic metadata and writes directly
+to the caller's sink. It performs no engine allocation, I/O or locking and retains
+no extra snapshot pin; the view cannot outlive its prepared query. The sink owns
+any allocation and side effects and can return `fmt::Error` after a partial
+report. No formatting callback runs under an engine lock.
+
+The report distinguishes relation labels, query-local column identities and
+zero-based output positions. It includes source occurrences, operator inputs,
+visible columns and postfix numeric programs. It omits original SQL and names
+that the plan does not retain. Logical nodes and postfix programs do not specify
+physical scheduling, demanded evaluation order or costs. Diagnostic text and
+labels have no stable serialization promise. Try the
+[logical-plan example](frontend.md#inspect-the-prepared-plan) before following
+the [physical execution trace](execution.md#trace-a-query-through-execution).
+
 ### Stepping a query
 
 `Database::execute(&self, &PreparedQuery, &CancellationToken)` returns

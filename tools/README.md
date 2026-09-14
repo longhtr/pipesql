@@ -221,6 +221,9 @@ individual steps, repeated terminal state, owned-error transfer and prepared
 release. Terminal steps must free real allocations; repeated terminal steps and
 consuming the remaining result handle must allocate and free none. Owned errors
 retain their category and literal span after the prepared plan drops.
+Before execution, successful and failed logical-plan formatting into fixed caller
+storage must each produce zero allocation and free events. The same observer's
+nonzero preparation events serve as its positive control.
 `complete_partial_results` requires all three distinct records, their row counts,
 phase events, nonnegative requested/usable headroom and final release.
 `partial-result-prefix-negative` changes the expected prefix count;

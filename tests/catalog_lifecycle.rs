@@ -44,6 +44,9 @@ mod joins;
 #[path = "catalog_lifecycle/limit.rs"]
 mod limit;
 
+#[path = "catalog_lifecycle/logical_plan.rs"]
+mod logical_plan;
+
 #[path = "catalog_lifecycle/membership.rs"]
 mod membership;
 

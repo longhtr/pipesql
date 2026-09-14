@@ -89,6 +89,30 @@ fn check(db: &Database, case: Case, control: Control) -> Result<(), Error> {
     let prepared_samples = preparation.samples();
     check_headroom(prepared_samples, &mut minimum);
     assert!(prepared_samples.allocations > 0 && prepared_samples.frees > 0);
+
+    // The borrowed logical report writes directly into caller-owned storage.
+    // Observe both a complete report and an immediate sink failure. Preparation
+    // above supplies a positive control for the same allocation-event observer.
+    for length in [0, 1_024] {
+        use std::fmt::Write;
+        let mut text = crate::FixedText {
+            bytes: [0; 1_024],
+            length,
+        };
+        let formatting = Observer::new(db, resident, before.requested, before.usable);
+        let result = formatting.during(|| write!(text, "{}", query.logical_plan()));
+        assert_eq!(result.is_ok(), length == 0);
+        assert_eq!(
+            (formatting.samples().allocations, formatting.samples().frees),
+            (0, 0),
+            "logical plan formatting allocated or released heap storage"
+        );
+        assert_eq!(
+            db.reserved_memory_bytes(),
+            resident + query.accounted_memory_bytes()
+        );
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
     let prepared_live = Live::now();
     let cancel = CancellationToken::new();
     let construction = Observer::new(db, resident, before.requested, before.usable);

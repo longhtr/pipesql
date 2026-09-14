@@ -55,7 +55,7 @@ pub use database::Database;
 pub use error::{Error, SourceSpan};
 pub use error_cause::{CauseKind, ErrorCause};
 pub use execution::{QueryResult, QueryStep, ResultBatch};
-pub use frontend::{DataType, PreparedQuery, ResultColumn};
+pub use frontend::{DataType, LogicalPlan, PreparedQuery, ResultColumn};
 pub use native_unit::InputValues as ColumnValues;
 pub use storage_format::{DatabaseId, TransactionId};
 pub use transaction::{Append, Commit, CommitResolution};

@@ -94,6 +94,71 @@ mutable name tables. Validation checks scope transitions separately from visible
 row shape, so a dropped original can remain qualified without reviving a value
 removed by SELECT, AGGREGATE, or a replacement range alias.
 
+## Inspect the prepared plan
+
+Run [logical_plan.rs](../examples/logical_plan.rs) to print the actual semantic
+plan for [query-flow.sql](../examples/query-flow.sql), then execute it. From the
+repository root, build the two examples and create a fresh sample database:
+
+```sh
+cargo build --release --offline --locked --example declared --example logical_plan
+plan_example_dir=$(mktemp -d)
+target/release/examples/declared "$plan_example_dir/database"
+target/release/examples/logical_plan "$plan_example_dir/database"
+```
+
+The second program prints:
+
+```text
+logical plan
+r0 = source occurrence=0 columns=[c1, c2]
+r1 = select input=r0 columns=[c2]
+r2 = select input=r1 columns=[c3]
+r3 = aggregate input=r2 ordered=false groups=[] values=[sum([c3])] columns=[c4]
+c3 = numeric [c2, 1, add] input=r1 type=INT64 nullable
+result = r3
+output[0] = c4 name=Some("total") type=INT64 nullable
+total=38
+status=finished
+```
+
+`r0` is the initial source relation. Later relation labels name semantic nodes
+and refer to their inputs. The first SELECT retains `c2`, the amount identity,
+despite naming it `subtotal`. The next SELECT exposes the new computed identity
+`c3`. Its postfix program places `c2` and `1` before `add`. The aggregate produces
+`c4`, which occupies output position zero and is named `total`.
+
+Relation labels and column identities belong to this plan. They are distinct
+from storage ordinals and final output positions; a projection can expose one
+identity at several positions. A source occurrence is an independent input even
+when it names the same table as another occurrence. Join and set-operation lines
+show both relation inputs. Original source names and intermediate aliases are not
+retained in the finished plan. A source alias therefore need not create a node;
+the report describes the bound representation rather than reconstructing SQL.
+
+Open [explain.rs](../src/frontend/explain.rs) alongside the output.
+`LogicalPlan` borrows `Plan`; its formatter walks the bounded node and computation
+tables and uses `RelationColumns` to identify each visible row. That lookup follows
+earlier relation links without recursive traversal. Formatting writes directly
+to the caller's sink, acquires no engine lock and adds no snapshot or allocation
+owner. The [interface contract](interfaces.md#prepared-queries-and-values)
+describes sink failure and lifetime rules.
+
+The report describes logical structure, not physical producers or evaluation
+order. Postfix programs retain conditional operators: COALESCE can skip its
+fallback even though the report lists it. Lowered filter lines include branch
+offsets and negation; they do not promise that every predicate is evaluated.
+Continue with [planning](planning.md) and [execution](execution.md) for demand,
+fusion and runtime ownership. Report text is an unstable diagnostic, not a
+serialization format or cost estimate.
+
+Require exit status zero and `status=finished`; printing a plan does not establish
+query completion. After both programs exit, remove the sample database:
+
+```sh
+rm -r -- "$plan_example_dir"
+```
+
 ## Bounds
 
 The shared token and stage budgets constrain the whole query. Individual limits

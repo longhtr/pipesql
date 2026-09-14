@@ -1,6 +1,7 @@
 //! Semantic identities, immutable plans, and prepared-query ownership.
 mod binding;
 mod distinct;
+mod explain;
 mod join;
 mod lexer;
 mod parser;
@@ -17,6 +18,7 @@ use crate::string_length::Unit as StringLengthUnit;
 use crate::{Database, DatabaseId, Error, SourceSpan};
 pub(crate) use binding::{prepare, prepare_catalog};
 use distinct::DistinctPlan;
+pub use explain::LogicalPlan;
 pub(crate) use join::NullExtension;
 use lexer::reserved_identifier;
 pub(crate) use set_operation::{SetKind, SetPlan};
@@ -1030,6 +1032,17 @@ pub struct PreparedQuery<'database> {
 }
 
 impl PreparedQuery<'_> {
+    /// Borrow a diagnostic view of the validated logical plan.
+    ///
+    /// Creating and formatting the view performs no engine allocation, I/O or
+    /// locking and acquires no additional snapshot pin. Formatting writes to the
+    /// caller's sink, which may allocate or fail. The view cannot outlive this
+    /// prepared query. Its text describes semantic relationships, not physical
+    /// scheduling, costs or a stable serialization format.
+    pub fn logical_plan(&self) -> LogicalPlan<'_> {
+        LogicalPlan::new(&self.plan)
+    }
+
     /// Number of columns in the query's output schema, including repeated outputs.
     pub fn result_column_count(&self) -> usize {
         usize::from(self.plan.output_count)
