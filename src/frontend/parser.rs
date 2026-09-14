@@ -653,6 +653,56 @@ impl Parser<'_> {
         Ok(expression)
     }
 
+    // Look ahead without consuming tokens. A recognized name followed by '('
+    // selects its call boundary; ordinary names retain the column parser's errors.
+    fn pending_numeric_call(&self) -> Option<PendingOp> {
+        if !matches!(self.peek(), Kind::Identifier | Kind::Reserved)
+            || !self
+                .tokens
+                .values
+                .get(self.position + 1)
+                .is_some_and(|token| token.kind == Kind::LeftParen)
+        {
+            return None;
+        }
+        let call = if self.is_word("CAST") {
+            PendingOp::Cast
+        } else if self.is_word("COALESCE") {
+            PendingOp::FirstArgument(BinaryCall::Coalesce)
+        } else if self.is_word("NULLIF") {
+            PendingOp::FirstArgument(BinaryCall::NullIf)
+        } else if self.is_word("ABS") {
+            PendingOp::Abs
+        } else if self.is_word("SIGN") {
+            PendingOp::Sign
+        } else if self.is_word("FLOOR") {
+            PendingOp::Floor
+        } else if self.is_word("CEIL") || self.is_word("CEILING") {
+            PendingOp::Ceil
+        } else if self.is_word("EXP") {
+            PendingOp::Exp
+        } else if self.is_word("LOG10") {
+            PendingOp::Log10
+        } else if self.is_word("LN") {
+            PendingOp::Ln
+        } else if self.is_word("SQRT") {
+            PendingOp::Sqrt
+        } else if self.is_word("ROUND") {
+            PendingOp::Round
+        } else if self.is_word("POW") || self.is_word("POWER") {
+            PendingOp::FirstArgument(BinaryCall::Power)
+        } else if self.is_word("DIV") {
+            PendingOp::FirstArgument(BinaryCall::IntegerDivide)
+        } else if self.is_word("MOD") {
+            PendingOp::FirstArgument(BinaryCall::Mod)
+        } else if self.is_word("SAFE_DIVIDE") {
+            PendingOp::FirstArgument(BinaryCall::SafeDivide)
+        } else {
+            return None;
+        };
+        Some(call)
+    }
+
     fn numeric_expression(&mut self) -> Result<ParsedExpression, Error> {
         let mut expression = ParsedExpression::EMPTY;
         let mut pending = [PendingOp::Paren; MAX_OPS];
@@ -668,81 +718,25 @@ impl Parser<'_> {
         loop {
             let kind = self.peek();
             if operand {
+                if let Some(call) = self.pending_numeric_call() {
+                    if depth == MAX_OPS {
+                        return Err(Error::Parse {
+                            message: "scalar stack limit exceeded",
+                            span: at,
+                        });
+                    }
+                    self.take(kind)?;
+                    self.take(Kind::LeftParen)?;
+                    pending[depth] = call;
+                    depth += 1;
+                    parentheses += 1;
+                    continue;
+                }
                 match kind {
                     Kind::Number => {
                         let span = self.take(kind)?;
                         expression.push(ParsedOp::Number(span), span)?;
                         operand = false;
-                    }
-                    Kind::Identifier | Kind::Reserved
-                        if (self.is_word("CAST")
-                            || self.is_word("COALESCE")
-                            || self.is_word("NULLIF")
-                            || self.is_word("SAFE_DIVIDE")
-                            || self.is_word("POW")
-                            || self.is_word("POWER")
-                            || self.is_word("ABS")
-                            || self.is_word("SIGN")
-                            || self.is_word("FLOOR")
-                            || self.is_word("CEIL")
-                            || self.is_word("CEILING")
-                            || self.is_word("ROUND")
-                            || self.is_word("SQRT")
-                            || self.is_word("LOG10")
-                            || self.is_word("LN")
-                            || self.is_word("EXP")
-                            || self.is_word("MOD")
-                            || self.is_word("DIV"))
-                            && self
-                                .tokens
-                                .values
-                                .get(self.position + 1)
-                                .is_some_and(|token| token.kind == Kind::LeftParen) =>
-                    {
-                        if depth == MAX_OPS {
-                            return Err(Error::Parse {
-                                message: "scalar stack limit exceeded",
-                                span: at,
-                            });
-                        }
-                        let call = if self.is_word("CAST") {
-                            PendingOp::Cast
-                        } else if self.is_word("COALESCE") {
-                            PendingOp::FirstArgument(BinaryCall::Coalesce)
-                        } else if self.is_word("NULLIF") {
-                            PendingOp::FirstArgument(BinaryCall::NullIf)
-                        } else if self.is_word("ABS") {
-                            PendingOp::Abs
-                        } else if self.is_word("SIGN") {
-                            PendingOp::Sign
-                        } else if self.is_word("FLOOR") {
-                            PendingOp::Floor
-                        } else if self.is_word("CEIL") || self.is_word("CEILING") {
-                            PendingOp::Ceil
-                        } else if self.is_word("EXP") {
-                            PendingOp::Exp
-                        } else if self.is_word("LOG10") {
-                            PendingOp::Log10
-                        } else if self.is_word("LN") {
-                            PendingOp::Ln
-                        } else if self.is_word("SQRT") {
-                            PendingOp::Sqrt
-                        } else if self.is_word("ROUND") {
-                            PendingOp::Round
-                        } else if self.is_word("POW") || self.is_word("POWER") {
-                            PendingOp::FirstArgument(BinaryCall::Power)
-                        } else if self.is_word("DIV") {
-                            PendingOp::FirstArgument(BinaryCall::IntegerDivide)
-                        } else if self.is_word("MOD") {
-                            PendingOp::FirstArgument(BinaryCall::Mod)
-                        } else {
-                            PendingOp::FirstArgument(BinaryCall::SafeDivide)
-                        };
-                        self.take(kind)?;
-                        self.take(Kind::LeftParen)?;
-                        pending[depth] = call;
-                        depth += 1;
-                        parentheses += 1;
                     }
                     Kind::Identifier | Kind::Aggregate => {
                         let span = self.column()?;
@@ -1469,6 +1463,73 @@ pub(super) fn parse_query(source: &str) -> Result<Parsed, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numeric_calls_preserve_nested_postfix_order_and_aliases() {
+        for source in [
+            "CAST(COALESCE(ABS(a), MOD(b, 2)) AS DOUBLE) + POWER(CEILING(c), DIV(d, 2))",
+            "cAsT(coalesce(abs(a), mod(b, 2)) AS float64) + pOw(cEiL(c), div(d, 2))",
+        ] {
+            let sql = format!("FROM facts |> SELECT {source} AS value");
+            let parsed = parse_query(&sql).unwrap();
+            let expression = parsed.expression(parsed.projections[0].expression).unwrap();
+            assert_eq!(text(&sql, expression.span), source);
+            let [
+                ParsedOp::Column(a),
+                ParsedOp::Abs,
+                ParsedOp::Column(b),
+                ParsedOp::Number(first_two),
+                ParsedOp::Mod,
+                ParsedOp::Coalesce,
+                ParsedOp::ToDouble,
+                ParsedOp::Column(c),
+                ParsedOp::Ceil,
+                ParsedOp::Column(d),
+                ParsedOp::Number(second_two),
+                ParsedOp::IntegerDivide,
+                ParsedOp::Power,
+                ParsedOp::Add,
+            ] = &expression.ops[..usize::from(expression.len)]
+            else {
+                panic!("call boundaries must retain each operand's postfix subtree");
+            };
+            assert_eq!(
+                [a, b, first_two, c, d, second_two].map(|span| text(&sql, *span)),
+                ["a", "b", "2", "c", "d", "2"]
+            );
+        }
+    }
+
+    #[test]
+    fn numeric_call_lookahead_preserves_column_names_and_unknown_call_spans() {
+        let sql = "FROM facts |> SELECT abs, sqRt, safe_divide, ceiling, power, casting";
+        let parsed = parse_query(sql).unwrap();
+        for (index, name) in ["abs", "sqRt", "safe_divide", "ceiling", "power", "casting"]
+            .into_iter()
+            .enumerate()
+        {
+            let expression = parsed
+                .expression(parsed.projections[index].expression)
+                .unwrap();
+            let [ParsedOp::Column(column)] = &expression.ops[..usize::from(expression.len)] else {
+                panic!("a bare function spelling remains a column name");
+            };
+            assert_eq!(text(sql, *column), name);
+        }
+        for name in ["SQRTISH", "SAFE_CAST", "unknown"] {
+            let sql = format!("FROM facts |> SELECT {name}(a)");
+            let Err(Error::Parse { message, span }) = parse_query(&sql) else {
+                panic!("unknown numeric call must reject");
+            };
+            assert_eq!(message, "unexpected trailing syntax");
+            assert_eq!((span.start(), span.end()), (sql.len(), sql.len()));
+        }
+        let sql = "FROM facts |> SELECT CAST";
+        let Err(Error::Parse { span, .. }) = parse_query(sql) else {
+            panic!("reserved CAST is not a column name");
+        };
+        assert_eq!(text(sql, span), "CAST");
+    }
 
     #[test]
     fn coalesce_preserves_nested_argument_order_and_expression_span() {

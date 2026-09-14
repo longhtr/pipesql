@@ -155,6 +155,24 @@ names remain ambiguity candidates; unnamed outputs remain typed and ordered.
 Hidden range members remain semantic columns only while reachable. Every output,
 range, expression, and origin reference is checked against its owning query state.
 
+Numeric call recognition is a read-only parser decision.
+`Parser::pending_numeric_call` checks the current token, the following left
+parenthesis and the supported spelling, then returns an existing pending frame.
+It consumes no token and owns no mutable parser state. Ordinary bare function
+spellings remain column candidates; reserved CAST and unknown calls retain their
+existing error paths. The numeric parser owns stack admission and token consumption.
+Unary and binary frames delimit their operands until the call closes. A CAST
+frame first requires AS and a supported target. Closing the frame emits the
+corresponding postfix instruction. Recognition therefore has
+one spelling-to-frame mapping, while binding and validation still own meaning.
+
+For `CAST(COALESCE(ABS(a), MOD(b, 2)) AS DOUBLE)`, the postfix program is
+`a ABS b 2 MOD COALESCE ToDouble`. Each operand precedes its operator, and the
+fallback remains one contiguous subtree for runtime demand. The parser preserves
+that order without evaluating values. Try the [conversion exercise](query-examples.md#choose-where-integer-arithmetic-becomes-approximate)
+and follow the [scalar execution path](execution.md#scalar-expression-evaluation)
+to see how those instructions acquire types and execute.
+
 Bound expressions retain canonical values and resolved operation identities.
 The current numeric programs use checked INT64 constants, finite literal DOUBLE
 bits and closed arithmetic operations. DATE constants retain validated epoch-day
