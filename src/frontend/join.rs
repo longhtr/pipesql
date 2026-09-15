@@ -1,8 +1,15 @@
-//! Fresh nullable identities for the right side of a LEFT JOIN.
+//! Describe the values that may become NULL on the right side of a LEFT JOIN.
 //!
-//! Input facts stay unchanged: sorting and evaluating the right producer precede
-//! null extension. Include qualified values hidden by column transforms as well
-//! as the visible row, so neither naming path can bypass the join boundary.
+//! An unmatched left row produces NULL for each right-hand output, even when the
+//! stored right column is nonnullable. `NullExtension` maps those inputs to fresh
+//! nullable identities without changing the facts used to evaluate the right
+//! producer before joining. The mapping includes hidden qualified values as well
+//! as visible outputs, so a qualified reference cannot bypass this boundary.
+//!
+//! Binding builds the mapping; validation checks it against the complete right
+//! relation. The execution join uses it when emitting matches or missing rows.
+//! Matching keys, sorting and duplicate replay belong to that execution owner.
+
 use super::{
     ColumnFacts, ColumnId, ColumnSet, Error, MAX_COLUMNS, MAX_QUERY_COLUMNS, MAX_ROW_VALUES,
     Output, Plan, RelationId, SemanticColumn, SourceColumn,
@@ -134,8 +141,8 @@ mod tests {
 
     #[test]
     fn nullable_join_identities_preserve_inputs_and_reject_corrupt_mappings() {
-        let path =
-            std::env::temp_dir().join(format!("pipesql-null-extension-{}", std::process::id()));
+        let directory = crate::test_support::Directory::new();
+        let path = directory.0.join("database");
         let db =
             crate::Database::create_empty(&path, crate::Config::new(4_000_000, 2_000_000).unwrap())
                 .unwrap();
@@ -205,6 +212,5 @@ mod tests {
             assert_eq!(db.reserved_memory_bytes(), baseline);
         }
         db.close().unwrap();
-        std::fs::remove_dir_all(path).unwrap();
     }
 }

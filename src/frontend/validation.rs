@@ -628,3 +628,6 @@ fn validate_range_scope(plan: &Plan, index: usize, node: &Node) -> Result<(), Er
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

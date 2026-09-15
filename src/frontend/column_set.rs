@@ -1,4 +1,11 @@
-//! Bounded sets of semantic identities shared by scope and demand analysis.
+//! Represent a set of query column identities without allocating.
+//!
+//! Identity `c65` occupies bit 1 of word 1. Union combines required columns;
+//! intersection keeps only shared columns. Scope validation and execution demand
+//! use the same representation, while each caller owns the meaning of its set.
+//! Zero is reserved, and inserting an identity beyond the query bound is a
+//! programmer error. Iteration yields identities in increasing numeric order.
+
 use super::{ColumnId, MAX_QUERY_COLUMNS};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

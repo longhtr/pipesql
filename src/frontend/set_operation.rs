@@ -1,5 +1,16 @@
-//! Positional set inputs. Fresh output identities belong to positions, even
-//! when several positions reference one physical input value.
+//! Pair columns by position across UNION, EXCEPT and INTERSECT inputs.
+//!
+//! `SetPlan` stores each side's typed column facts and gives every output position
+//! a fresh identity. Names do not match the inputs. Two repeated left columns can
+//! pair with different right columns, so output identity belongs to the position
+//! rather than either input value. Binding rejects unequal widths or types.
+//!
+//! Output nullability follows which input can contribute a row: UNION admits
+//! either side, EXCEPT keeps left rows, and INTERSECT requires both sides to allow
+//! NULL. Validation checks these mappings against the original relations.
+//! Execution owns row comparison and multiplicity; UNION DISTINCT composes a
+//! UNION ALL descriptor with the separate DISTINCT descriptor.
+
 use super::{
     ColumnFacts, ColumnId, Error, MAX_COLUMNS, MAX_QUERY_COLUMNS, Output, Plan, RelationColumns,
     SemanticColumn, SourceColumn, SourceSpan, bind_error,
@@ -184,7 +195,8 @@ mod tests {
 
     #[test]
     fn set_binding_preserves_positions_and_rejects_corrupt_mappings() {
-        let path = std::env::temp_dir().join(format!("pipesql-set-binding-{}", std::process::id()));
+        let directory = crate::test_support::Directory::new();
+        let path = directory.0.join("database");
         let db =
             crate::Database::create_empty(&path, crate::Config::new(4_000_000, 2_000_000).unwrap())
                 .unwrap();
@@ -316,6 +328,5 @@ mod tests {
         }
         assert_eq!(db.reserved_memory_bytes(), baseline);
         db.close().unwrap();
-        std::fs::remove_dir_all(path).unwrap();
     }
 }

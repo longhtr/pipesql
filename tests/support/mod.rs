@@ -1,4 +1,9 @@
-//! Public test directory ownership. SQL, schemas, and expectations stay in each suite.
+//! Own a disposable test directory from creation through successful or failed setup.
+//!
+//! Process identity and an atomic sequence distinguish live fixtures. Creation
+//! refuses an existing name; drop removes only this owned directory. Cleanup
+//! errors fail a healthy test but do not mask a panic already in progress.
+//! SQL, schemas, expected answers and database-handle lifetimes stay in each suite.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -16,7 +21,7 @@ impl Directory {
     }
 }
 
-mod cleanup;
+pub(crate) mod cleanup;
 
 impl Drop for Directory {
     fn drop(&mut self) {

@@ -23,10 +23,10 @@ The DISTINCT descriptor maps old identities to fresh ones and validates its own
 representation. Scope membership changes belong to the binder. Read-only column
 facts are shared semantic data; mutable scope tables do not escape binding.
 
-Binding and malformed-plan regressions live in
-[`binding/tests.rs`](../src/frontend/binding/tests.rs). Tests may construct invalid
-private state to challenge validation; production consumers receive validated
-immutable plans.
+Binding regressions live in [`binding/tests.rs`](../src/frontend/binding/tests.rs).
+[Validator regressions](../src/frontend/validation/tests.rs) mutate real prepared
+plans to challenge graph and descriptor checks. Production consumers receive
+validated immutable plans.
 
 ## Trace a query through preparation
 

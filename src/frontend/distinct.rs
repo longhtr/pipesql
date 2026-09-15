@@ -1,4 +1,15 @@
-//! Fresh identities and complete-row grouping, independent of aggregate limits.
+//! Describe the column mapping across complete-row DISTINCT.
+//!
+//! DISTINCT groups by every visible value. Repeated projections of one identity
+//! need only one comparison key: `SELECT a, a AS copy |> DISTINCT` keeps two
+//! output positions, both referring to the same fresh identity. `inputs` stores
+//! unique input facts; `outputs` maps visible positions back to that short list.
+//!
+//! Binding assigns the new identities. Validation reconstructs the mapping from
+//! the input relation and rejects inconsistent identities, facts or unused slots.
+//! Physical duplicate removal belongs to execution's sorted-set operator; this
+//! descriptor owns no rows, sorting buffers or aggregate state.
+
 use super::{
     ColumnFacts, ColumnId, Error, MAX_COLUMNS, MAX_QUERY_COLUMNS, Output, Plan, RelationColumns,
     SemanticColumn, SourceColumn,
@@ -136,8 +147,8 @@ mod tests {
 
     #[test]
     fn distinct_identity_order_and_descriptor_mutations() {
-        let path =
-            std::env::temp_dir().join(format!("pipesql-distinct-binding-{}", std::process::id()));
+        let directory = crate::test_support::Directory::new();
+        let path = directory.0.join("database");
         let db = Database::create_empty(&path, crate::Config::new(4_000_000, 2_000_000).unwrap())
             .unwrap();
         let cancel = crate::CancellationToken::new();
@@ -206,6 +217,5 @@ mod tests {
             PreparedQuery::memory_requirement_bytes()
         );
         db.close().unwrap();
-        std::fs::remove_dir_all(path).unwrap();
     }
 }

@@ -1,9 +1,21 @@
-use super::*;
+//! Reject malformed semantic plans even when parsing and binding succeeded.
+//!
+//! These cases mutate one field at a time in real prepared plans: projection
+//! ranges, relation shape, aggregate definitions and predicate facts. Literal
+//! mutations challenge the validator without borrowing its construction rules.
+//! Successful originals establish the control; invalid variants must refuse.
+//! Directory guards clean up if either preparation or an assertion fails.
+//!
+//! Run with the `frontend::validation::tests` library test filter. These checks
+//! establish internal plan rejection; they do not execute the query or replace
+//! public SQL result oracles.
+
+use super::super::*;
 
 #[test]
 fn projection_ranges_are_complete_disjoint_and_bounded() {
-    let path =
-        std::env::temp_dir().join(format!("pipesql-projection-ranges-{}", std::process::id()));
+    let directory = crate::test_support::Directory::new();
+    let path = directory.0.join("database");
     let database =
         Database::create_empty(&path, crate::Config::new(4_000_000, 1_000_000).unwrap()).unwrap();
     let names: Vec<_> = (0..10).map(|i| format!("c{i}")).collect();
@@ -51,12 +63,12 @@ fn projection_ranges_are_complete_disjoint_and_bounded() {
         );
     }
     database.close().unwrap();
-    std::fs::remove_dir_all(path).unwrap();
 }
 
 #[test]
 fn semantic_plan_mutations_refuse() {
-    let path = std::env::temp_dir().join(format!("pipesql-stream-bind-{}", std::process::id()));
+    let directory = crate::test_support::Directory::new();
+    let path = directory.0.join("database");
     let database =
         Database::create(&path, crate::Config::new(2_000_000, 1_000_000).unwrap()).unwrap();
     for mutation in 0..9 {
@@ -224,5 +236,4 @@ fn semantic_plan_mutations_refuse() {
         database.path_memory_bytes()
     );
     database.close().unwrap();
-    std::fs::remove_dir_all(path).unwrap();
 }

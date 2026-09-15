@@ -19,6 +19,7 @@ functional expectations but protect different premises. Keep both; the
 stack measurements and limits.
 
 [Directory ownership](support/mod.rs) and [cleanup](support/cleanup.rs) are shared.
+Library tests can use the same owner through `crate::test_support`.
 Cleanup reports failures after successful tests and preserves the original panic
 during unwinding. Process tests require the child to reach its selected control
 point; successful exit alone is insufficient.
@@ -65,6 +66,7 @@ They can inspect private phases and inject effects that public tests cannot.
 | [Reclamation tests](../src/catalog_snapshot/reclaim/tests.rs) | Scratch construction, protected graph traversal and cleanup/interruption schedules. |
 | [Legacy scratch tests](../src/scratch/tests.rs) | Namespace debt, writer inspection and process cuts at scratch effects. |
 | [Physical planning](../src/execution/planning/tests.rs) | Independent rejection of malformed producer references and demand mappings. |
+| [Semantic validation](../src/frontend/validation/tests.rs), [binding](../src/frontend/binding/tests.rs) | Malformed plan rejection, name/identity rules, prepared admission and release. |
 | [Declared scan](../src/execution/scan/declared.rs), [legacy scan](../src/execution/scan/legacy/tests.rs) | Actual payload ownership, admission before I/O, read faults and cancellation. |
 | [Aggregation](../src/execution/aggregation/tests.rs) | Numerical vectors, argument capture, hash grouping and disk reduction. |
 | [Grouping tests](../src/execution/aggregation/grouping/tests.rs) | Admission, replay, output and failure phases, sharing fixture mechanics. |

@@ -1634,6 +1634,3 @@ fn bind_error(message: &'static str, span: SourceSpan) -> Error {
 fn text(source: &str, span: SourceSpan) -> &str {
     &source[span.start()..span.end()]
 }
-
-#[cfg(test)]
-mod streaming_tests;

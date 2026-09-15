@@ -17,35 +17,17 @@ use super::super::parser::{
 };
 use super::super::*;
 use super::*;
-use std::fs;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static NEXT_TEMP: AtomicU64 = AtomicU64::new(1);
+use crate::test_support::Directory;
 const Q6: &str = include_str!("../../../tests/fixtures/q6.pipe.sql");
 const Q1: &str = include_str!("../../../tests/fixtures/upstream/q1-upstream.pipe.sql");
 
-struct Temp(PathBuf);
-
-impl Temp {
-    fn database(&self) -> PathBuf {
-        self.0.join("database")
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        crate::test_cleanup::directory(&self.0);
-    }
-}
-
-fn database(limit: u64) -> (Temp, Database) {
-    let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
-    let temp =
-        Temp(std::env::temp_dir().join(format!("pipesql-frontend-{}-{id}", std::process::id())));
-    fs::create_dir(&temp.0).unwrap();
-    let database =
-        Database::create(&temp.database(), crate::Config::new(limit, 1).unwrap()).unwrap();
+fn database(limit: u64) -> (Directory, Database) {
+    let temp = Directory::new();
+    let database = Database::create(
+        &temp.0.join("database"),
+        crate::Config::new(limit, 1).unwrap(),
+    )
+    .unwrap();
     (temp, database)
 }
 
@@ -161,12 +143,9 @@ fn legacy_set_operations_refuse_before_execution_with_their_operator_span() {
 }
 
 fn check_scope_preparation(sql: &str) {
-    let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
-    let temp =
-        Temp(std::env::temp_dir().join(format!("pipesql-scope-{}-{id}", std::process::id())));
-    fs::create_dir(&temp.0).unwrap();
+    let temp = Directory::new();
     let db = Database::create_empty(
-        &temp.database(),
+        &temp.0.join("database"),
         crate::Config::new(4_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
@@ -696,14 +675,9 @@ fn legacy_joins_refuse_during_preparation_and_release_ownership() {
 
 #[test]
 fn ordering_facts_preserve_hidden_identity_and_reject_invalid_item_slices() {
-    let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
-    let temp = Temp(std::env::temp_dir().join(format!(
-        "pipesql-frontend-order-{}-{id}",
-        std::process::id()
-    )));
-    fs::create_dir(&temp.0).unwrap();
+    let temp = Directory::new();
     let database = Database::create_empty(
-        &temp.database(),
+        &temp.0.join("database"),
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
@@ -797,14 +771,9 @@ fn ordering_facts_preserve_hidden_identity_and_reject_invalid_item_slices() {
 
 #[test]
 fn join_binding_preserves_occurrences_ranges_and_both_input_edges() {
-    let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
-    let temp = Temp(std::env::temp_dir().join(format!(
-        "pipesql-frontend-joins-{}-{id}",
-        std::process::id()
-    )));
-    fs::create_dir(&temp.0).unwrap();
+    let temp = Directory::new();
     let database = Database::create_empty(
-        &temp.database(),
+        &temp.0.join("database"),
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
@@ -1359,8 +1328,11 @@ fn exact_prepared_admission_and_concurrent_owners() {
     let required = db.prepare(Q6).unwrap().accounted_memory_bytes();
     db.close().unwrap();
     let total = resident + required;
-    let refused =
-        Database::open(&temp.database(), crate::Config::new(total - 1, 1).unwrap()).unwrap();
+    let refused = Database::open(
+        &temp.0.join("database"),
+        crate::Config::new(total - 1, 1).unwrap(),
+    )
+    .unwrap();
     assert_eq!(refused.reserved_memory_bytes(), resident);
     assert!(
         matches!(refused.prepare(Q6), Err(Error::Resource { required: value, limit, .. }) if value==total && limit==total-1)
@@ -1373,7 +1345,7 @@ fn exact_prepared_admission_and_concurrent_owners() {
         (required * QUERIES as u64 - 1, QUERIES - 1),
     ] {
         let db = Database::open(
-            &temp.database(),
+            &temp.0.join("database"),
             crate::Config::new(resident + limit, 1).unwrap(),
         )
         .unwrap();
@@ -1539,8 +1511,11 @@ fn check_prepared_admission(sql: &str) {
     db.close().unwrap();
     for available in [required - 1, required] {
         let limit = resident + available;
-        let db =
-            Database::open(&directory.database(), crate::Config::new(limit, 1).unwrap()).unwrap();
+        let db = Database::open(
+            &directory.0.join("database"),
+            crate::Config::new(limit, 1).unwrap(),
+        )
+        .unwrap();
         match db.prepare(sql) {
             Ok(query) => {
                 assert_eq!(available, required);
