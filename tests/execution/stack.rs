@@ -1,3 +1,11 @@
+//! Run loaded queries on ordinary and explicitly bounded native stacks.
+//!
+//! Both workers execute the same scenarios, so a stack failure cannot be hidden
+//! by a different query path. The bounded worker checks its actual native stack
+//! extent before opening and querying. Literal values cover deep limits, mixed
+//! expressions and full-width text output; every cursor must finish and release.
+//! Run in the release profile, whose stack usage this test qualifies.
+
 use super::{Q1, Q6, ROW, TempDir, config};
 use pipesql::{CancellationToken, Database, QueryStep, Value};
 use std::{fs, path::Path};

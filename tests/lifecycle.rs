@@ -1,3 +1,11 @@
+//! Check database-handle authority, admission and public command outcomes.
+//!
+//! A separate process holds the lease while canonical and aliased opens are
+//! refused; normal release and forced teardown must both permit a later open.
+//! Other cases check pathname admission before creation, prepared-plan release,
+//! CLI status and cleanup failures. The gate runs the lease scenario separately
+//! to preserve its child-process discovery and completion checks.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -25,26 +33,9 @@ fn wait_for(path: &Path) {
     panic!("timed out waiting for child marker");
 }
 
-// The lease child starts no subprocesses. Reap it before its database directory
-// is removed, including when a parent assertion fails before sending release.
-struct LeaseChild(std::process::Child);
-
-impl Drop for LeaseChild {
-    fn drop(&mut self) {
-        let cleanup = (|| -> std::io::Result<()> {
-            if self.0.try_wait()?.is_none() {
-                self.0.kill()?;
-                self.0.wait()?;
-            }
-            Ok(())
-        })();
-        if let Err(error) = cleanup
-            && !std::thread::panicking()
-        {
-            panic!("reap lease child: {error}");
-        }
-    }
-}
+#[path = "support/child.rs"]
+mod child;
+use child::ChildProcess;
 
 #[test]
 fn separate_process_excludes_canonical_and_alias_opens() {
@@ -71,7 +62,7 @@ fn separate_process_excludes_canonical_and_alias_opens() {
     for release_normally in [true, false] {
         let ready = temp.0.join(format!("ready-{release_normally}"));
         let release = temp.0.join(format!("release-{release_normally}"));
-        let mut child = LeaseChild(
+        let mut child = ChildProcess(
             Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",

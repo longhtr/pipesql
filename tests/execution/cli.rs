@@ -1,3 +1,10 @@
+//! Check query-file execution and failure propagation through the stock CLI.
+//!
+//! A literal loaded row anchors typed Q6 output and selected Q1 fields. Close an
+//! output sink before spawning to make write failure deterministic. Oversized,
+//! invalid UTF-8 and symlink query files must also exit unsuccessfully; none of
+//! these checks relies on a private engine test hook.
+
 use super::{Q1, Q6, ROW, TempDir};
 use std::{
     fs,

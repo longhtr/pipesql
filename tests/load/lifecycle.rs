@@ -1,3 +1,10 @@
+//! Check that a successful load receipt survives close and reopen.
+//!
+//! Reconstruct the printed token bytes and resolve the same durable commit;
+//! foreign and not-yet-issued tokens must be absent. A separate shape check
+//! shows that decoding a nonzero token does not establish its issuance.
+//! Load reservations must return to the resident baseline before close.
+
 use super::{ROW, TempDir, config};
 use pipesql::{CancellationToken, CommitResolution, Database, Error, TransactionId};
 use std::fs;

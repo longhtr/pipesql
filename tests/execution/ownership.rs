@@ -1,3 +1,10 @@
+//! Check borrowed query results, terminal completion and owned diagnostics.
+//!
+//! Load one literal legacy row, reopen it and compare public Q6/Q1 values while
+//! releasing the result and prepared plan separately. Arithmetic failures must
+//! retain their operation and byte range after both SQL source and query are
+//! dropped, and leave no query memory or temporary reservation behind.
+
 use super::{Q1, Q6, ROW, TempDir, config};
 use pipesql::{CancellationToken, Database, QueryStep, Value};
 use std::fs;

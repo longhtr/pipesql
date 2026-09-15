@@ -1,3 +1,11 @@
+//! Check query composition at the legacy storage boundaries.
+//!
+//! Generate all printable key pairs from the input contract, independently of
+//! the engine's dense key index. Literal counts and values then challenge batch
+//! crossings, empty aggregates, reordered columns, text constants and nullable
+//! arithmetic. Window cases distinguish a count-only scan from payload spooling
+//! and verify its temporary reservation is released.
+
 use super::{Q1, ROW, TempDir, config};
 use pipesql::{CancellationToken, Database, QueryStep, Value};
 use std::{fs, io::Write};

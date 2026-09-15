@@ -1,3 +1,11 @@
+//! Check stock load receipts and resolution of independent persisted history.
+//!
+//! The production load path prints a token that must resolve after process exit.
+//! A separately encoded fixture distinguishes an aborted attempt from a durable
+//! one; removing a root forces repairing open before resolution. Unknown tokens,
+//! a held lease, corrupt roots and malformed token text must fail without
+//! printing a successful resolution.
+
 use super::{ROW, TempDir, config};
 use pipesql::Database;
 use std::{fs, path::PathBuf, process::Command};

@@ -1,4 +1,12 @@
-use super::{ROW, TempDir, config};
+//! Exercise public load and query construction inside observed stack limits.
+//!
+//! Fresh inputs contain zero, one or 65,537 rows, crossing both DOUBLE and DATE
+//! block boundaries. Open and prepared plans live outside the measured workers;
+//! load or execution runs inside them. Ordinary and bounded workers share cases.
+//! The parent enforces a deadline and completion marker, propagates child failure
+//! and reaps the child before removing inputs. Use the release test profile.
+
+use super::{ROW, TempDir, child::ChildProcess, config};
 use pipesql::{CancellationToken, Config, Database};
 use std::{fs, path::PathBuf, process::Command};
 
@@ -88,27 +96,29 @@ fn check_load_and_queries(small_stack: bool) {
         } else {
             "stack::public_load_and_queries_preserve_boundaries_and_release_owners"
         };
-        let mut child = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", selected, "--nocapture"])
-            .env(CHILD, "1")
-            .env("PIPESQL_STACK_DATABASE", &path)
-            .env("PIPESQL_STACK_INPUT", &input)
-            .stdout(std::process::Stdio::null())
-            .stderr(fs::File::create(&diagnostics).unwrap())
-            .spawn()
-            .unwrap();
+        let mut child = ChildProcess(
+            Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", selected, "--nocapture"])
+                .env(CHILD, "1")
+                .env("PIPESQL_STACK_DATABASE", &path)
+                .env("PIPESQL_STACK_INPUT", &input)
+                .stdout(std::process::Stdio::null())
+                .stderr(fs::File::create(&diagnostics).unwrap())
+                .spawn()
+                .unwrap(),
+        );
         let mut status = None;
         for _ in 0..1_000 {
-            status = child.try_wait().unwrap();
+            status = child.0.try_wait().unwrap();
             if status.is_some() {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         if status.is_none() {
-            child.kill().unwrap();
+            child.0.kill().unwrap();
         }
-        let reaped = child.wait().unwrap();
+        let reaped = child.0.wait().unwrap();
         assert!(fs::metadata(&diagnostics).unwrap().len() <= 4_096);
         let diagnostics = fs::read_to_string(diagnostics).unwrap();
         assert!(

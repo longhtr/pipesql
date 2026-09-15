@@ -1,3 +1,11 @@
+//! Exercise queries over the legacy lineitem format through public interfaces.
+//!
+//! The child modules separate typed results and ownership, input/key coverage,
+//! stock CLI behavior and observed stack limits. Literal rows and retained SQL
+//! provide their premises; general declared-table behavior lives in
+//! `catalog_lifecycle`. Run this suite with `cargo test --release --test execution`
+//! because its stack checks depend on optimized code.
+
 #![cfg(any(target_os = "macos", target_os = "linux"))]
 
 use pipesql::Config;

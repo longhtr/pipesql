@@ -1,7 +1,16 @@
+//! Check legacy load publication, token resolution and caller stack boundaries.
+//!
+//! `lifecycle` checks the public Rust API; `cli` also resolves independently
+//! encoded persisted history. `stack` crosses empty, single-row and block-boundary
+//! inputs in supervised child processes. Run with `cargo test --release --test load`
+//! to use the optimized code required by its observed stack checks.
+
 #![cfg(any(target_os = "macos", target_os = "linux"))]
 
 use pipesql::Config;
 
+#[path = "support/child.rs"]
+mod child;
 mod support;
 use support::Directory as TempDir;
 
