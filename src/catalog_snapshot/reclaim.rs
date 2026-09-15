@@ -1,6 +1,16 @@
-//! Serialized catalog reclamation. A validated inventory protects current and
-//! pinned graphs before any unlink. Scratch is disposable; deletion becomes
-//! durable only after the units directory barrier.
+//! Remove obsolete catalog objects while preserving current and pinned snapshots.
+//!
+//! Immutable files can outlive the generation that created them: a prepared query
+//! may still read an older catalog, and a receipt lookup may still use its history.
+//! Hold maintenance authority to exclude publication and other reclamation, then
+//! capture those protected views. `Reachable` walks their references in explicit
+//! phases; `inventory` proves which directory names are outside every protected
+//! graph before this module can unlink any object.
+//!
+//! Attempting an unlink makes the units directory dirty. Synchronize it even if
+//! later cancellation or removal fails; a failed barrier makes the handle require
+//! reopen. Disposable inventory scratch is dropped before that barrier. Success
+//! reports durably removed names; an error may still leave partial safe cleanup.
 use super::{Active, Maintenance, SLOTS};
 use crate::catalog::{self, ObjectId};
 use crate::effects::{DirectoryKind, Effect, Effects};

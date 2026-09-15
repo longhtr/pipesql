@@ -1,7 +1,17 @@
-//! Disposable external inventory. The maintenance controller supplies exclusive,
-//! empty, unlinked scratch files after synchronizing their name removal.
-//! A complete merge validates every protected name's presence before any garbage
-//! name is exposed. This module neither deletes objects nor publishes roots.
+//! Find unreferenced object names with a bounded external set comparison.
+//!
+//! Encode directory names and protected graph references as fixed records, sort
+//! bounded chunks, then merge runs through two disposable scratch files. An object
+//! can have many references but only one directory name. Combining membership
+//! flags distinguishes protected objects from names that reclamation may remove.
+//! External runs keep memory fixed when the namespace exceeds one in-memory chunk.
+//!
+//! Validate the entire merged inventory before returning a removable name: a
+//! missing protected object must reject the run, even if earlier names look like
+//! garbage. Retained page checksums detect changes during the later output pass.
+//! Construction, merge and output failures leave the inventory unusable.
+//! The caller owns maintenance authority and supplies admitted unlinked scratch;
+//! this module writes scratch, but never deletes database objects or publishes roots.
 use super::{Maintenance, Reachable};
 use crate::catalog::{self, ObjectId};
 use crate::catalog_snapshot::SLOTS;

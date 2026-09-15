@@ -1,4 +1,10 @@
-//! External inventory membership, resource bounds, corruption, and effect cuts.
+//! Check the external inventory against literal object sets and BTreeSet membership.
+//!
+//! Real catalog histories test current/pinned protection. Directly supplied records
+//! cross chunk and merge-pass boundaries without constructing a huge database.
+//! Duplicate names, missing references, damaged runs and changed output pages must
+//! prevent valid completion. Effect cuts and exact limits check scratch release;
+//! alias, linked-file and nonempty-file controls challenge scratch admission.
 use super::super::tests::{Directory, append, database, id};
 use super::{
     CHUNK_RECORDS, FAN_IN, Inventory, MAX_PAGES, MAX_RECORDS, MAX_RUNS, PAGE_BYTES, RECORD_BYTES,
@@ -14,7 +20,10 @@ use std::os::unix::fs::FileExt;
 
 fn scratch(directory: &Directory) -> [File; 2] {
     std::array::from_fn(|slot| {
-        let path = directory.0.join(format!("inventory-scratch-{slot}"));
+        let path = directory
+            .0
+            .join("database")
+            .join(format!("inventory-scratch-{slot}"));
         let file = File::options()
             .read(true)
             .write(true)
@@ -44,7 +53,7 @@ fn garbage(
 
 fn roomy_database(directory: &Directory) -> Database {
     Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(2_000_000, 100_000_000).unwrap(),
     )
     .unwrap()
@@ -107,6 +116,7 @@ fn missing_protected_leaf_refuses_the_complete_inventory() {
     append(&db, 1);
     let path = directory
         .0
+        .join("database")
         .join(UNITS_NAME)
         .join(std::str::from_utf8(&id(2, 1).name()).unwrap());
     std::fs::remove_file(&path).unwrap();
@@ -403,7 +413,7 @@ fn scratch_admission_rejects_aliasing_linked_and_nonempty_files() {
         Inventory::new(&writer, files, &mut Effects::default()),
         Err(Error::Corrupt("scratch must be empty and unlinked"))
     ));
-    let path = directory.0.join("linked-scratch");
+    let path = directory.0.join("database").join("linked-scratch");
     let linked = File::options()
         .read(true)
         .write(true)

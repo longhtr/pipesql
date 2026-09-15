@@ -1,3 +1,12 @@
+//! Check reclamation's deletion barriers against live reads and committed receipts.
+//!
+//! Capture a healthy effect trace, fail each cleanup position and require old
+//! queries and reopened history to retain their literal answers. Cancellation
+//! after unlink still needs directory synchronization; a failed barrier requires
+//! reopen. Real thread handoffs exercise reader/writer exclusion. Child-process
+//! cuts must exit at the selected effect before the parent tests recovery; these
+//! process exits do not simulate loss of the storage device's volatile state.
+
 use super::{Directory, append, database, query_values, result_values};
 use crate::effects::{DirectoryKind, Effect, Effects, Faults};
 use crate::{CancellationToken, CommitResolution, Database, Error};
@@ -71,7 +80,7 @@ fn every_cleanup_effect_failure_preserves_live_reads_and_heals_on_reopen() {
         drop(old);
         db.close().unwrap();
         let reopened = Database::open(
-            &directory.0,
+            &directory.0.join("database"),
             crate::Config::new(2_000_000, 2_000_000).unwrap(),
         )
         .unwrap();
@@ -125,7 +134,7 @@ fn cancellation_after_unlink_syncs_cleanup_and_allows_another_writer() {
     drop(old);
     db.close().unwrap();
     let reopened = Database::open(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(2_000_000, 2_000_000).unwrap(),
     )
     .unwrap();
@@ -177,7 +186,7 @@ fn failed_unlink_followed_by_failed_sync_requires_reopen() {
         }
         db.close().unwrap();
         let reopened = Database::open(
-            &directory.0,
+            &directory.0.join("database"),
             crate::Config::new(2_000_000, 2_000_000).unwrap(),
         )
         .unwrap();
@@ -252,14 +261,14 @@ fn process_death_during_scratch_creation_or_unlink_heals_on_reopen() {
                 .unwrap(),
             )
             .arg("--test-threads=1")
-            .env(DIRECTORY, &directory.0)
+            .env(DIRECTORY, &directory.0.join("database"))
             .env(STAGE, stage)
             .stdout(std::process::Stdio::null())
             .status()
             .unwrap();
         assert_eq!(status.code(), Some(73));
         let reopened = Database::open(
-            &directory.0,
+            &directory.0.join("database"),
             crate::Config::new(2_000_000, 2_000_000).unwrap(),
         )
         .unwrap();

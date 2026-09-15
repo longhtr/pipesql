@@ -1,3 +1,11 @@
+//! Check which object identities current, query-pinned and receipt-pinned views protect.
+//!
+//! Compare the real Reachable cursor with literal object sets from small histories.
+//! Releasing a pin after capture must not shrink an in-progress protected view.
+//! Refusal, cancellation and metadata faults must leave names untouched and release
+//! owners; changing a later index page must fail instead of accepting a partial walk.
+//! This suite enumerates protection. The cleanup suite checks actual unlink effects.
+
 use super::super::{Phase, Reachable};
 use super::{Directory, append, database, id};
 use crate::catalog::ObjectId;
@@ -39,7 +47,7 @@ fn descriptors() -> usize {
 fn empty_database_finishes_without_io() {
     let directory = Directory::new();
     let db = Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(2_000_000, 2_000_000).unwrap(),
     )
     .unwrap();

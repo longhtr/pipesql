@@ -1,3 +1,11 @@
+//! Check disposable scratch ownership through growth, bootstrap failure and recovery.
+//!
+//! Exercise the production Scratch owner alongside appends and pinned readers.
+//! Literal byte charges and observed effect cuts distinguish unlinked live files
+//! from retained namespace debt. A second bootstrap is excluded while one creates
+//! names; ordinary readers/writers remain usable. Corrupt, aliased or unknown
+//! debris must be refused without allowing cleanup to bypass graph validation.
+
 use super::{Directory, append, database, id, query_values};
 use crate::effects::{DirectoryKind, Effect, Effects, Faults};
 use crate::namespace::UNITS_NAME;
@@ -101,8 +109,11 @@ fn scratch_bootstrap_coexists_with_public_writer_and_pinned_reader() {
 fn scratch_extent_admission_and_failed_writes_keep_exact_shared_charge() {
     use crate::scratch::Scratch;
     let directory = Directory::new();
-    let db =
-        Database::create_empty(&directory.0, crate::Config::new(2_000_000, 7).unwrap()).unwrap();
+    let db = Database::create_empty(
+        &directory.0.join("database"),
+        crate::Config::new(2_000_000, 7).unwrap(),
+    )
+    .unwrap();
     let cancel = CancellationToken::new();
     let baseline = db.reserved_memory_bytes();
     let mut first = Scratch::new(&db, &cancel, &mut Effects::default()).unwrap();
@@ -219,7 +230,7 @@ fn scratch_constructor_failure_preserves_debt_until_exclusive_reopen() {
         );
         db.close().unwrap();
         let reopened = Database::open(
-            &directory.0,
+            &directory.0.join("database"),
             crate::Config::new(2_000_000, 2_000_000).unwrap(),
         )
         .unwrap();
@@ -384,7 +395,7 @@ fn scratch_path_admission_precedes_io_and_unwind_retains_debt() {
     ));
     db.close().unwrap();
     let reopened = Database::open(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(2_000_000, 2_000_000).unwrap(),
     )
     .unwrap();
@@ -405,7 +416,10 @@ fn scratch_recovery_rejects_unknown_nonempty_and_aliased_names() {
         let db = database(&directory);
         append(&db, 1);
         db.close().unwrap();
-        let private = directory.0.join(crate::namespace::PRIVATE_NAME);
+        let private = directory
+            .0
+            .join("database")
+            .join(crate::namespace::PRIVATE_NAME);
         let name = if invalid == "unknown-name" {
             "unknown"
         } else {
@@ -430,7 +444,7 @@ fn scratch_recovery_rejects_unknown_nonempty_and_aliased_names() {
         }
         assert!(
             Database::open(
-                &directory.0,
+                &directory.0.join("database"),
                 crate::Config::new(2_000_000, 2_000_000).unwrap()
             )
             .is_err(),
@@ -448,11 +462,13 @@ fn scratch_debris_does_not_authorize_cleanup_of_a_corrupt_graph() {
     db.close().unwrap();
     let pending = directory
         .0
+        .join("database")
         .join(crate::namespace::PRIVATE_NAME)
         .join(crate::namespace::SCRATCH_NAMES[0]);
     std::fs::write(&pending, []).unwrap();
     let unit = directory
         .0
+        .join("database")
         .join(UNITS_NAME)
         .join(std::str::from_utf8(&id(2, 1).name()).unwrap());
     let original = std::fs::read(&unit).unwrap();
@@ -461,7 +477,7 @@ fn scratch_debris_does_not_authorize_cleanup_of_a_corrupt_graph() {
     std::fs::write(&unit, corrupt).unwrap();
     assert!(
         Database::open(
-            &directory.0,
+            &directory.0.join("database"),
             crate::Config::new(2_000_000, 2_000_000).unwrap()
         )
         .is_err()
@@ -469,7 +485,7 @@ fn scratch_debris_does_not_authorize_cleanup_of_a_corrupt_graph() {
     assert!(pending.exists());
     std::fs::write(&unit, original).unwrap();
     let reopened = Database::open(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(2_000_000, 2_000_000).unwrap(),
     )
     .unwrap();

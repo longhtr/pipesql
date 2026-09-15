@@ -1,34 +1,19 @@
-//! Protected graph traversal, cleanup barriers, and failure/reopen behavior.
+//! Shared one-column catalog setup for reclamation's distinct evidence paths.
+//!
+//! Child suites check protected-reference traversal, scratch ownership and actual
+//! cleanup/reopen. This owner creates and appends the small facts table, then
+//! collects complete query results; expected rows, object sets and effect cuts
+//! remain in each case. The shared Directory guard owns their disposable parent.
 use crate::catalog::ObjectId;
+pub(super) use crate::test_support::Directory;
 use crate::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Commit,
     DataType, Database,
 };
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-pub(super) struct Directory(pub(super) PathBuf);
-
-impl Directory {
-    pub(super) fn new() -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        Self(std::env::temp_dir().join(format!(
-            "pipesql-reachable-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        )))
-    }
-}
-
-impl Drop for Directory {
-    fn drop(&mut self) {
-        crate::test_cleanup::directory(&self.0);
-    }
-}
 
 pub(super) fn database(directory: &Directory) -> Database {
     let db = Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(2_000_000, 2_000_000).unwrap(),
     )
     .unwrap();
