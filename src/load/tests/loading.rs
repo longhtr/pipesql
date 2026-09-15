@@ -2,7 +2,7 @@ use crate::effects::{DirectoryKind, Effect, Effects, Faults, LoadEffect};
 use crate::load::LOAD_MEMORY_BYTES;
 use crate::load::staging::COLUMNS;
 use crate::load::tests::{TempDir, config, independent_namespace_matches, row};
-use crate::namespace::validate_namespace;
+use crate::namespace::recover_namespace;
 use crate::namespace::{PRIVATE_NAME, ROOT_A_NAME, ROOT_B_NAME, UNIT_NAME, UNITS_NAME, WAL_NAME};
 use crate::storage_format::{self};
 use crate::{CancellationToken, CommitResolution, Database, Error};
@@ -77,7 +77,7 @@ fn interrupted_load_admission_recovery_requires_reopen() {
         })),
         ..Faults::default()
     });
-    validate_namespace(
+    recover_namespace(
         &path,
         database.lease(),
         Some(database.database_identity()),

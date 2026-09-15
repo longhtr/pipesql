@@ -115,11 +115,11 @@ Their distinct discriminators are documented in [Storage](storage.md); none is a
 stable compatibility promise.
 
 To trace reopen, start at `Database::open_with_effects` in `database.rs`: admit
-the path, acquire the lease, validate and recover the namespace, then recover
+the path, acquire the lease, call `recover_namespace`, then recover
 catalog construction before allocating the live registry. In `namespace.rs`,
 `check_namespace` first calls `read_namespace_authority`, then
 `validate_namespace_contents`. Only successful validation can reach
-`recover_namespace`, which repairs roots before removing admitted debris and
+`repair_namespace`, which repairs roots before removing admitted debris and
 reconciling the fence. Read-only inspection instead calls
 `require_settled_namespace`; it cannot enter the mutation phase.
 

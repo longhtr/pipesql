@@ -1,4 +1,21 @@
-//! Reserve append owners and bounds, retain the selected table, then issue once.
+//! Admit an append's retained inputs and limits before issuing its transaction.
+//!
+//! `Writer::begin_append_named` selects a table from the current catalog, retains
+//! its schema and reads its existing unit references. It allocates enough reference
+//! slots for all admitted batches and reserves construction bytes for their units,
+//! the replacement metadata and publication. It also checks the directory's object
+//! capacity before `Writer::issue` makes the attempt durable.
+//!
+//! `AdmittedAppend` owns these buffers and charges during fallible setup. Only a
+//! complete admission transfers them together with the writer into `Append`.
+//! If setup fails, its buffers drop before the writer is aborted or classified
+//! as needing recovery. Keeping this intermediate owner prevents a failed
+//! constructor from releasing an account while its allocation is still live.
+//!
+//! Admission does not preallocate every future encoding buffer or guarantee that
+//! later writes succeed. The parent append module owns batch validation, workspace
+//! growth, file construction and the terminal commit/abort decision.
+
 use super::{ALLOCATION_ROUNDING_BYTES, Append, AppendLimits};
 use crate::catalog;
 use crate::catalog_schema::{self, TableId};

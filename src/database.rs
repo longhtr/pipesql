@@ -1,14 +1,35 @@
-//! Database lifetime: path and lease admission, initialization, reopen, and close.
+//! Create or open a database, then own its path, lock and resource accounts.
 //!
-//! Creation retains its lease until all initialization or failed cleanup finishes.
-//! The handle owns resident charges; query and writer borrows keep it alive.
+//! A `Database` is the lifetime boundary for queries and writers: their handles
+//! borrow it, so its files and accounts stay available until they finish. Its
+//! lease is a lock on the database's `LOCK` file. Another database handle cannot
+//! acquire that lock while this one holds it; readers within this handle instead
+//! share immutable snapshots through the catalog registry.
+//!
+//! `create_initial_with_effects` creates a new directory and calls `finish_create`
+//! to write the initial files. Creation reads those files back and requires the
+//! exact empty state it intended to write. It cannot use recovery to turn a
+//! damaged initialization into apparent success. File and directory synchronization
+//! must finish before the handle is returned.
+//!
+//! `open_with_effects` takes the lease, asks `namespace` to validate and recover
+//! persisted state, then removes unfinished catalog construction and allocates
+//! the live registry. No usable handle escapes a failed recovery. A lock is not
+//! enough to authorize pathname changes: validation also checks that the current
+//! `LOCK` name still identifies the held file.
+//!
+//! Failed creation keeps an acquired lease through cleanup. If cleanup also
+//! fails, the returned error preserves both failures. Successful construction
+//! transfers resident charges into `Database`; its `Drop` releases those charges
+//! after their allocations. Closing releases the lease but does not repair an
+//! uncertain transaction; reopening is the recovery entry point.
 
 use crate::effects::{DirectoryKind, Effect, Effects, MetadataKind};
 use crate::error::{io_error, map_not_found};
 use crate::namespace::{
     CONTROL_NAME, LOCK_NAME, PRIVATE_NAME, PRIVATE_RECOVERY_NAMES, ROOT_A_NAME, ROOT_B_NAME,
-    UNIT_NAME, UNITS_NAME, WAL_NAME, create_synced_file, sync_directory,
-    validate_created_namespace, validate_lock_entry, validate_namespace,
+    UNIT_NAME, UNITS_NAME, WAL_NAME, create_synced_file, recover_namespace, sync_directory,
+    validate_created_namespace, validate_lock_entry,
 };
 use crate::path::{
     MAX_PATH_BYTES, joined_path, native_path_work_limit, try_join_path, validate_requested_path,
@@ -387,7 +408,7 @@ impl Database {
             .map_err(|source| io_error("open database lock", source))?;
         let lease =
             DatabaseLease::acquire(lock, Some(expected_lock), Effect::InspectOpenLock, effects)?;
-        let namespace = validate_namespace(&root, &lease, None, &memory, effects)?;
+        let namespace = recover_namespace(&root, &lease, None, &memory, effects)?;
         let catalog_registry = if matches!(namespace.state, storage_format::RootState::Catalog(_)) {
             catalog_snapshot::recover_construction(
                 &root,

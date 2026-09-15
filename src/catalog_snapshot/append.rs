@@ -1,4 +1,26 @@
-//! Typed batch admission, private unit construction, and one catalog publication.
+//! Append borrowed typed batches by building new files and publishing one catalog.
+//!
+//! An append retains the selected table's schema and old unit references. Each
+//! successful `write_batch` creates a new immutable unit, leaving old files
+//! unchanged. Input columns borrow the caller's buffers only during the write;
+//! retained `UnitRef` values describe files rather than copying their rows.
+//!
+//! `admission` selects the table and reserves reference capacity and construction
+//! space before issuing the transaction. Encoding workspace grows when a batch
+//! needs it, releasing the previous buffer first. Each write checks batch and byte
+//! limits before creating its file. A failed write makes the append abort-only;
+//! it cannot later commit an earlier successful prefix by accident.
+//!
+//! `build_commit` writes a table index containing old and new units, a replacement
+//! catalog and extended success history. After synchronizing those dependencies,
+//! `commit` releases construction buffers and passes the graph to
+//! `Writer::commit_prepared` for independent validation and publication.
+//!
+//! Before that handoff, failure or explicit abort removes the exact private files
+//! this append created. Cleanup failure preserves both the original error and
+//! the recovery obligation. After handoff, publication owns the outcome because
+//! those files may already belong to the committed snapshot.
+
 use super::Writer;
 use super::construction::{cleanup, create_object, object, sync_object};
 use crate::catalog::{self, TableEntry};

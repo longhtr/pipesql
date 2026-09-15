@@ -1,4 +1,16 @@
-//! Fresh genesis validation has no recovery authority or repair writes.
+//! Require creation to verify exactly the empty database it meant to write.
+//!
+//! Both legacy and catalog creation run through production initialization.
+//! Cases corrupt newly written bytes, add pending names, change issuance or
+//! replace the leased directory. Before/after byte snapshots and effect traces
+//! check that validation performs no recovery writes and cleanup retains its
+//! lease without deleting a replacement database.
+//!
+//! The issued-state control is valid for reopen but invalid for fresh creation;
+//! accepting it here would hide a broken initializer. Fixtures come from the
+//! parent `database::tests` module, and each case owns its mutation and expected
+//! outcome. These checks do not substitute for independent format fixtures.
+
 use super::*;
 use std::cell::RefCell;
 use std::collections::BTreeMap;

@@ -1,5 +1,27 @@
-//! Catalog views, reader pins, and serialized writer ownership.
-//! Root replacement belongs to publication. No registry guard crosses file work.
+//! Keep old catalog readers valid while one writer publishes a new generation.
+//!
+//! A snapshot is an immutable view of the catalog and the files it references.
+//! `Registry` keeps a bounded set of snapshot records for one database handle.
+//! `Snapshot` pins one slot: the writer cannot reuse that slot, and reclamation
+//! must preserve its reachable data until the snapshot is dropped. Receipt lookup
+//! uses a separate `ResolutionView` pin while reading successful-attempt history.
+//!
+//! Start at `Database::catalog_snapshot` for readers or `catalog_writer` for a
+//! writer. The registry mutex protects slot selection and the active owner; it
+//! is released before file work. A writer reserves an unpinned slot, durably
+//! issues its transaction, then lets `declare` or `append` build private files.
+//! `Writer::commit_prepared` validates that graph and invokes `publication` before
+//! making its slot current. Existing readers keep their earlier slot.
+//!
+//! Writer and maintenance admission are mutually exclusive. Busy admission
+//! returns contention, and exhausted pins or slots return a resource error.
+//! An unfinished writer or maintenance owner makes the registry unavailable on
+//! drop; releasing a Rust value cannot establish that filesystem cleanup finished.
+//! Exclusive reopen must settle that state before the database can be used again.
+//!
+//! This module owns live visibility and operation admission. Child modules own
+//! file construction and reclamation; the shared publisher owns root replacement.
+
 use crate::catalog;
 use crate::effects::Effects;
 use crate::error::io_error;

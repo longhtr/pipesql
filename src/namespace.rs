@@ -1,7 +1,30 @@
-//! Validation and exclusive recovery of the persistent database namespace.
+//! Decide which persisted snapshot can be opened and what recovery may change.
 //!
-//! Read-only inspection validates the selected graph. Repair additionally requires
-//! the held database lease and validates its identity before any mutation.
+//! The namespace is the database's named files and directories. `CONTROL`
+//! identifies the database and format. `ROOT.A` and `ROOT.B` are two copies of the
+//! snapshot record; `WAL` holds the publication fence, a record used to distinguish
+//! an allowed interrupted replacement from conflicting roots. The byte formats
+//! and snapshot-selection rules live in `storage_format`.
+//!
+//! Follow `check_namespace`: read and select root/fence authority, validate the
+//! selected data graph, then either require a settled namespace or recover it.
+//! A selected graph that fails validation is an error, not a reason to try an
+//! older graph. Validation finishes before recovery performs any mutation.
+//!
+//! `recover_namespace` requires the held database lease and checks its file
+//! identity. It may repair roots, remove admitted debris and reconcile the fence.
+//! Read-only inspection returns a recovery-required error when those repairs are
+//! needed. Live query inspection additionally allows another reader's temporary
+//! scratch construction; it gains no repair permission.
+//!
+//! Fresh creation uses `validate_created_namespace` instead. It must observe the
+//! exact intended initial snapshot with no pending repair. The common validation
+//! code does not grant creation permission to repair what it just wrote.
+//!
+//! `repair_namespace` makes root repair durable before deleting debris. A failed
+//! repair or synchronization leaves recovery required. Catalog object cleanup
+//! follows separately in `catalog_snapshot::construction` after exclusive reopen
+//! has established which catalog is committed.
 
 use crate::database::DatabaseLease;
 use crate::effects::{DirectoryKind, Effect, Effects, MetadataKind};
@@ -133,7 +156,7 @@ enum NamespaceAccess {
 }
 
 // Only exclusive lifecycle/writer entry points may repair persistent state.
-pub(crate) fn validate_namespace(
+pub(crate) fn recover_namespace(
     root: &Path,
     lease: &DatabaseLease,
     expected_database: Option<DatabaseId>,
@@ -373,7 +396,7 @@ fn check_namespace(
     if !matches!(access, NamespaceAccess::Exclusive { .. }) {
         require_settled_namespace(&authority, &contents)?;
     } else {
-        recover_namespace(root, &authority, &contents, effects).map_err(|source| {
+        repair_namespace(root, &authority, &contents, effects).map_err(|source| {
             Error::RecoveryRequired {
                 generation: contents.generation,
                 source: ErrorCause::from_error(source),
@@ -659,7 +682,7 @@ fn require_settled_namespace(
 // Called only after all read-only admission succeeds. Root durability precedes
 // removal of construction debris; fence repair and directory barriers follow.
 // Every failure here becomes recovery debt in check_namespace.
-fn recover_namespace(
+fn repair_namespace(
     root: &Path,
     authority: &NamespaceAuthority,
     contents: &ValidatedContents,

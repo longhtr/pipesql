@@ -1,4 +1,22 @@
-//! Table declaration admission and construction of its immutable catalog graph.
+//! Declare an empty table by publishing its schema in a new immutable catalog.
+//!
+//! `Writer::declare_table` validates column declarations and assigns persistent
+//! column identities. The table identity comes from the next transaction attempt,
+//! so aborted attempts cannot cause an identity to be reused. `create_table`
+//! checks the table name, existing catalog and capacity before issuing that attempt.
+//!
+//! Construction writes three private objects: the new schema, a catalog that
+//! includes the table, and success history extended with this transaction. Other
+//! tables retain their existing references. All files and their directory entries
+//! are synchronized before `Writer::commit_prepared` validates and publishes the
+//! new graph. No row unit is needed for an empty table.
+//!
+//! Validation or resource refusal before issuance releases writer admission.
+//! A construction failure removes and synchronizes only the objects created here;
+//! failed cleanup retains both errors. After the publication handoff, this builder
+//! cannot delete the objects because they may already be committed. Shared file
+//! creation and rollback mechanics live in `construction`.
+
 use super::construction::{cleanup, create_object, object, sync_object};
 use super::{Writer, generation};
 use crate::catalog::{self, ObjectRef, TableEntry};

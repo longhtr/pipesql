@@ -1,5 +1,23 @@
-//! Private catalog objects shared by declaration, append, and exclusive recovery.
-//! Builders own only their exclusively created prefix until publication starts.
+//! Create catalog files privately and remove construction that never committed.
+//!
+//! Declaration and append build immutable objects before a root can reference
+//! them. An object name combines its transaction attempt with a consecutive
+//! ordinal. `create_object` creates the next name exclusively and advances the
+//! caller's `created` count immediately, so a later write failure still leaves
+//! an exact list of names that caller owns.
+//!
+//! Before entering publication, `cleanup` removes only that created prefix and
+//! synchronizes the containing directory. It ignores query cancellation because
+//! abandoning cleanup would leave durable work for reopen. Once publication may
+//! have happened, the builder cannot assume its files are disposable.
+//!
+//! `recover_construction` runs only during exclusive reopen, after graph
+//! validation and root repair. It finds objects newer than the selected committed
+//! attempt, bounded by the issued attempt, then collects their names before any
+//! deletion. This two-pass inventory avoids mutating a live directory cursor and
+//! reserves its complete ID buffer before unlinking. It synchronizes even an
+//! empty deletion set because an earlier failed barrier may still need repair.
+
 use crate::catalog::{self, ObjectId};
 use crate::effects::{DirectoryKind, Effect, Effects};
 use crate::error::io_error;

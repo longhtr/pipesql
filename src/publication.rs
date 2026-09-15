@@ -1,9 +1,25 @@
-//! The root/fence publisher shared by legacy loads and catalog transactions.
+//! Install a new snapshot record without confusing failed and uncertain commits.
 //!
-//! Validate one legal old/new snapshot transition, persist its fence, then replace
-//! both root replicas in order. The first replacement separates cancellable work
-//! from a possibly published outcome. Callers still own issuance, rollback,
-//! registry visibility, and transaction resolution.
+//! A writer first builds and synchronizes its immutable data files. Publishing
+//! makes a snapshot that references those files authoritative. This module owns
+//! that last step for both legacy loads and catalog transactions; it does not
+//! construct table data or decide when readers switch to the new generation.
+//!
+//! `publish_snapshot` validates the old/new transition, writes and verifies the
+//! fence in `WAL`, then prepares, replaces and synchronizes each root copy in
+//! order. The fence is a complete snapshot record used by recovery to interpret
+//! roots that disagree after an interrupted replacement. Root selection and byte
+//! encoding belong to `storage_format`; repair belongs to `namespace`.
+//!
+//! Entering the first root replacement is the point after which an error cannot
+//! prove the old snapshot stayed authoritative. For example, replacement may
+//! succeed before its directory synchronization fails. `FailureStage::Uncertain`
+//! preserves that possibility even when the immediate error was injected. After
+//! this point the publisher stops checking cancellation and attempts to finish.
+//!
+//! Earlier failures are `BeforePublication`, but callers must still clean up
+//! their private files before reporting a definite abort. Callers also own
+//! transaction issuance, in-memory visibility and later outcome resolution.
 
 use crate::effects::{
     DirectoryKind, Effect, Effects, LoadEffect, MetadataKind, read_exact_at, write_all_at,

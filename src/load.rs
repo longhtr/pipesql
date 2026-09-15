@@ -3,7 +3,7 @@
 
 use crate::effects::Effects;
 use crate::load_input::MAX_CHUNK_BYTES;
-use crate::namespace::validate_namespace;
+use crate::namespace::recover_namespace;
 use crate::publication::{FailureStage, publish_snapshot};
 use crate::storage_format::{self, RootState, WalRecord};
 use crate::{CancellationToken, Commit, Database, Error, TransactionId};
@@ -68,7 +68,7 @@ impl Database {
         // Keep the handle unavailable on any error or unwind from that phase;
         // visible repaired names alone cannot establish their failed durability.
         self.state = crate::database::DatabaseState::ReopenRequired;
-        let namespace = validate_namespace(
+        let namespace = recover_namespace(
             self.path(),
             self.lease(),
             Some(self.database_identity()),
@@ -164,7 +164,7 @@ impl Database {
                 })
             }
             Err(failure) => {
-                match validate_namespace(
+                match recover_namespace(
                     root,
                     self.lease(),
                     Some(self.database_identity()),

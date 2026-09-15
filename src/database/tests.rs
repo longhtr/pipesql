@@ -1,3 +1,17 @@
+//! Exercise database lifetime and namespace recovery through the real file path.
+//!
+//! Healthy cases create, close and reopen disposable databases. Failure cases
+//! alter persisted names/bytes or fail a recorded filesystem effect, then check
+//! returned errors, lock release, retained files and a later retry. Replacement
+//! namespace cases ensure an old open descriptor cannot authorize deleting or
+//! repairing files owned by a different database.
+//!
+//! These are production-path invariant tests, not an independent format decoder
+//! or power-loss simulation. Expected errors and literal counts stay in each
+//! case; `TempDir` owns the disposable parent. The `creation` child separately
+//! challenges exact initial-state validation. Run under the `database::tests`
+//! library test filter.
+
 use super::*;
 use crate::effects::Faults;
 use std::ffi::OsStr;
@@ -740,8 +754,8 @@ fn every_create_effect_refuses_without_silent_debt() {
         .expect("baseline")
         .close()
         .unwrap();
-    // Fresh creation omits recovery's 15 effects: directory rechecks/barriers
-    // and the matching fence's open, inspection, rewrite, readback and sync.
+    // The census includes initialization readback and durability barriers,
+    // but no root repair or fence rewrite through recovery.
     assert_eq!(baseline.count(), 63);
 
     for index in 0..baseline.count() {

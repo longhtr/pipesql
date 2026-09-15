@@ -253,11 +253,12 @@ an earlier synchronization may have failed despite apparently settled bytes.
 
 ## Recovery
 
-The namespace validator, [`check_namespace`](../src/namespace.rs), coordinates
+`recover_namespace` requires the database lease; inspection entry points cannot
+repair files. Their shared coordinator, [`check_namespace`](../src/namespace.rs), runs
 three phases: `read_namespace_authority` verifies the held lease, CONTROL,
 roots, and fence; `validate_namespace_contents` checks the selected graph and
 admissible construction names; then read-only callers require a settled
-namespace while exclusive callers enter `recover_namespace`. The cleanup enum
+namespace while exclusive callers enter `repair_namespace`. The cleanup enum
 distinguishes legacy loading debris from disposable scratch. Empty legacy
 namespaces admit both name sets, with the scratch files separately required to
 be empty and single-link. Published legacy and catalog namespaces admit only the

@@ -1,4 +1,16 @@
-//! Bootstrap, authoritative graph admission, and corruption before repair.
+//! Validate a catalog's complete file graph before admitting a handle or repair.
+//!
+//! The independent binary fixtures establish an accepted catalog, its tables
+//! and its success history. Other cases construct production snapshots, alter
+//! references or bytes, and require rejection even when checksums agree. A newer
+//! selected graph with damaged children must fail before repairing an older root.
+//!
+//! Bootstrap and resource/effect refusal cases also check lease ownership,
+//! unchanged files on failed admission and successful cleanup before retry.
+//! Shared `Fixture` construction comes from the parent catalog test module;
+//! mutations and expected outcomes belong here. Run as the library's
+//! `catalog_snapshot::tests::namespace` suite.
+
 use super::{
     Fixture, append_columns, database, declarations, first_commit, genesis, graph, object, publish,
     second_admission, snapshot_cells, token,

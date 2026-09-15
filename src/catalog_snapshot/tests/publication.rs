@@ -1,4 +1,17 @@
-//! Publication transitions, honest receipts, and per-effect interruption.
+//! Preserve commit history and classify failure at the first root replacement.
+//!
+//! The healthy sequence commits twice with an aborted attempt between them;
+//! both successful receipts and the old immutable data must remain readable.
+//! The fault sequence records a real publication's effects, then fails each
+//! position on a fresh fixture. It checks the before/after uncertainty boundary
+//! and recovers either the old or new allowed snapshot with matching rows and
+//! receipts. Invalid transitions must refuse before any filesystem effect.
+//!
+//! The parent module owns fixture construction. Expected history gaps and row
+//! counts are fixed here; snapshot selection uses production recovery. Native
+//! process interruption is separate evidence under tools. These cases run in
+//! the library's `catalog_snapshot::tests::publication` suite.
+
 use super::{Fixture, first_commit, genesis, graph, publish, second_admission, token};
 use crate::CancellationToken;
 use crate::effects::{Effect, Effects, Faults, LoadEffect};
