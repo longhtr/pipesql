@@ -1,5 +1,12 @@
-//! Fold globally sorted arguments into one reusable aggregate cell.
-//! The sorter retains its buffers; a completed group keeps its key until consumed.
+//! Fold sorted argument records into one reusable aggregate group.
+//!
+//! Equal keys arrive in source-ordinal order, preserving the input's arithmetic
+//! order. The next key marks a group boundary: expose the completed group while
+//! retaining its key, then clear its cells only after the caller advances again.
+//! A full argument buffer is folded without ending the group. Empty input emits
+//! no group. Reversed keys, repeated ordinals, bad reads or cancellation fail the
+//! reducer; the sorter and caller retain ownership of buffers, files and output.
+
 use crate::execution::aggregation::accumulator::AggregateState;
 use crate::execution::aggregation::arguments::ArgumentBatch;
 use crate::execution::blocking::{Io, RowLayout, RowSort, append_bytes};

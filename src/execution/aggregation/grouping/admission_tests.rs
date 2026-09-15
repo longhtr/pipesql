@@ -1,3 +1,10 @@
+//! Check the concrete allocations behind grouping's advertised memory minimum.
+//!
+//! Vary types, widths, demand and expression lanes; construct real owners at the
+//! stated budget and refuse one byte less. Compare retained capacities and charges,
+//! including text extrema and optional hash cells. Public preparation and combined
+//! operator admission are exercised separately in `tests::admission`.
+
 use super::*;
 use crate::execution::blocking::test_support::{Directory, schema};
 use crate::execution::*;

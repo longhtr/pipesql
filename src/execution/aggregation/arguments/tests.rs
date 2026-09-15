@@ -1,3 +1,10 @@
+//! Check argument capture, sharing and replay before values reach group cells.
+//!
+//! Small typed batches and literal results expose NULL presence, demanded errors,
+//! text capacity and value preservation. Mutated masks and cell mappings challenge
+//! validation directly. Exact-budget controls check refusal and restored charges;
+//! failed capture must publish zero rows even after evaluating earlier arguments.
+
 use super::*;
 use crate::execution::aggregation::*;
 use crate::execution::blocking::test_support::Directory;

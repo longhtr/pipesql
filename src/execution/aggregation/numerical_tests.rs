@@ -1,3 +1,11 @@
+//! Check production SUM/AVG arithmetic against retained independent numeric vectors.
+//!
+//! The rational-vector generator owns expected bits and rounding intervals.
+//! These tests exercise scale/mean transitions and the maximum legacy row count;
+//! the shared-state case also checks that AVG survives a demanded SUM overflow.
+//! Run in release mode for the full row-count loop. The separate stock-CLI
+//! semantic campaign checks these contracts through public query execution.
+
 use super::accumulator::{average_add, sum_add};
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -10,7 +18,8 @@ use crate::storage_format;
 #[test]
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn shared_scaled_average_matches_independent_intervals() {
-    let path = std::env::temp_dir().join(format!("pipesql-shared-mean-{}", std::process::id()));
+    let directory = crate::test_support::Directory::new();
+    let path = directory.0.join("database");
     let database = Database::create(&path, crate::Config::new(2_000_000, 1).unwrap()).unwrap();
     let query = database
         .prepare("FROM lineitem |> AGGREGATE SUM(l_quantity) AS s, AVG(l_quantity) AS a")
@@ -69,7 +78,6 @@ fn shared_scaled_average_matches_independent_intervals() {
         database.path_memory_bytes()
     );
     database.close().unwrap();
-    std::fs::remove_dir_all(path).unwrap();
 }
 
 #[test]

@@ -1,32 +1,16 @@
-//! Shared sorter fixtures; platform-specific tests own their own target guards.
+//! Build small physical row layouts and input tables for blocking-operator tests.
+//!
+//! `schema` bypasses relational planning so codec tests can challenge exact layouts.
+//! The two-column fixture forces multiple runs with reversed input and duplicate
+//! keys across run boundaries. Expected answers stay in each suite. Disposable
+//! directories use the common test owner; platform guards belong to the callers.
+
 use super::{KeyColumn, RowLayout};
 use crate::frontend::{DataType, Direction, MAX_ROW_VALUES, NullPlacement};
+pub(in crate::execution) use crate::test_support::Directory;
 use crate::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config, Database,
 };
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
-pub(in crate::execution) struct Directory(pub(in crate::execution) PathBuf);
-
-impl Directory {
-    pub(in crate::execution) fn new() -> Self {
-        let path = std::env::temp_dir().join(format!(
-            "pipesql-group-runs-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, AtomicOrdering::Relaxed)
-        ));
-        std::fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Directory {
-    fn drop(&mut self) {
-        crate::test_cleanup::directory(&self.0);
-    }
-}
 
 pub(in crate::execution) fn schema(specs: &[(DataType, bool)]) -> RowLayout {
     let mut columns = [KeyColumn {

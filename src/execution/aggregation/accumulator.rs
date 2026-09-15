@@ -1,9 +1,20 @@
-//! Admitted aggregate state shared by dense and general grouping.
+//! Own aggregate arithmetic and the memory needed to evaluate its arguments.
 //!
-//! Expression sharing, typed cells, NULL counts, and overflow flags have one
-//! owner. Construction borrows only the memory authority; evaluation has no
-//! database, filesystem, or scheduler access. Independent validation checks the
-//! admitted representation against the semantic plan before consumption.
+//! `AggregateLayout` maps demanded expressions to typed cells before allocation.
+//! For example, SUM(x) and AVG(x) share evaluation and a sum; COUNT(x) can share
+//! the non-NULL count. COUNT(*) needs only the group's row count. Validation
+//! independently checks these mappings against the semantic plan before use.
+//!
+//! `AggregateState` retains the plan, expression scratch, cells and reservation.
+//! Controllers supply group positions and input rows; this module cannot read
+//! files, replay input or publish results. A smaller budget reduces the number
+//! of expression lanes processed together, without dropping demanded work.
+//!
+//! Integer sums accumulate in i128 and narrow only when a SUM result is demanded.
+//! Floating sums can temporarily scale down to survive intermediate overflow;
+//! AVG can remain finite even when SUM cannot. The algorithms and range proofs
+//! are beside `sum_add` and `average_add`. Argument failures retain a demanded
+//! source occurrence, while final overflow belongs to the requested aggregate.
 
 use crate::Error;
 use crate::batch::Batch;

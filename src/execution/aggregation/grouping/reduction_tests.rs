@@ -1,3 +1,12 @@
+//! Check that disk sorting and reduction preserve direct accumulation results.
+//!
+//! Use one literal mixed-value batch, tiny runs and several argument/lane widths.
+//! The direct path shares the production arithmetic kernel, so its comparison is
+//! evidence about ordering and transport; independent arithmetic vectors live in
+//! `numerical_tests`. Literal NULL, sum and overflow checks anchor the fixture.
+//! Cancellation, short reads and I/O failures must stop reduction without progress
+//! or retained charges; empty input must not invent a group.
+
 use super::*;
 use crate::effects::Faults;
 use crate::execution::blocking::Io;

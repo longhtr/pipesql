@@ -1,4 +1,15 @@
-//! Optional hash grouping. Its allocations never own the disk fallback's charge.
+//! Try bounded in-memory grouping without taking ownership of the disk fallback.
+//!
+//! Encoded keys live in an arena; hash buckets locate group IDs and typed cells
+//! hold each group's aggregates. A batch first resolves positions, then folds its
+//! captured arguments. Limits on groups, key bytes, collision work and text growth
+//! return `Fallback`, which asks the controller to discard this state and replay.
+//!
+//! Text growth charges both old and replacement buffers until copying finishes.
+//! Cancellation or an error leaves the operation failed. Once input ends, ordered
+//! output reuses the hash buckets as merge-sort index arrays; keys and aggregate
+//! cells remain in place. Final values are read through the shared accumulator.
+
 use crate::batch::Batch;
 use crate::execution::aggregation::accumulator::{AggregateCells, AggregateState, TextSpan};
 use crate::execution::aggregation::arguments::ArgumentBatch;

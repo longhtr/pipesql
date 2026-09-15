@@ -1,4 +1,20 @@
-//! One private controller from source batches through validated grouped results.
+//! Group arbitrary typed keys, using memory when it fits and sorting when it does not.
+//!
+//! Construction first reserves a complete disk path: captured arguments, bounded
+//! sort buffers, scratch ownership and one reusable accumulator. Optional hash
+//! storage is admitted afterward, so losing that optimization cannot consume the
+//! resources required to finish. Input is requested through the runtime scheduler.
+//!
+//! If a hash limit is reached, the controller discards its partial hash state and
+//! requests one input replay. It sorts captured rows by key and source ordinal,
+//! then reduces equal keys in their original order. This avoids changing floating
+//! arithmetic by combining partial sums. The child producer owns how to replay.
+//!
+//! Results stay private until all demanded groups have been checked: in memory,
+//! or in a checked scratch spool after reduction. Emission can be replayed once;
+//! disk replay rereads and validates the retained bytes. A failed step leaves the
+//! controller terminal, and dropping its owners releases buffers and scratch.
+
 mod hash;
 mod reduction;
 use crate::batch::Batch;

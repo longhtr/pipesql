@@ -1,8 +1,14 @@
-//! Aggregate controller selection and bounded dense-key grouping.
+//! Choose aggregate storage and drive aggregation over the legacy fixed-key domain.
 //!
-//! Accumulator state owns evaluation and accumulation. Controllers own input,
-//! replay, final validation, and result emission; general grouping also owns
-//! hash storage and external-sort fallback.
+//! An aggregate folds many input rows into one result per group. Legacy keys have
+//! a small known domain, so `Groups` maps each key combination directly to an
+//! array slot. A global aggregate uses one slot, including when its input is empty.
+//! Declared grouped queries use `grouping::General` for arbitrary typed keys.
+//!
+//! The accumulator owns arithmetic and its charged buffers. Controllers request
+//! input, finish accumulation, check demanded results, then emit them. Checking
+//! before emission prevents a later group's overflow from exposing earlier rows.
+//! Replay emits retained results once without accumulating the input again.
 
 mod accumulator;
 mod arguments;

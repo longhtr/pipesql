@@ -1,4 +1,16 @@
-//! Charged argument capture and replay through the shared checked row codec.
+//! Capture evaluated aggregate arguments for hash folding or disk sorting.
+//!
+//! `ArgumentBatch` owns typed value bits, NULL masks and bounded text arenas.
+//! It evaluates each shared argument once for a source range; a COUNT-only
+//! argument retains presence instead of its value. Group keys stay in the source
+//! batch and are encoded separately. No captured word holds a source pointer.
+//!
+//! Successful evaluation publishes the captured row count only after every
+//! demanded argument succeeds. A failure therefore cannot fold a partial batch.
+//! Disk replay fills the same buffers from checked records and preserves their
+//! order; it does not evaluate expressions again. Row and text capacity can each
+//! stop a replay batch, whose rows then fold through the common accumulator.
+
 use super::accumulator::{AggregateCells, AggregateState};
 use crate::batch::Batch;
 use crate::execution::blocking::{
