@@ -1,4 +1,16 @@
-//! Compare the event report with an independent row model under a query budget.
+//! Run the event report under a chosen memory budget and compare an independent model.
+//!
+//! Small, even, skewed and empty profiles share input construction. Expected groups
+//! come from a nested-loop left join and literal day-to-year mapping, without the
+//! engine's parser, grouping or calendar code. Large profiles must spill, cancel
+//! after spill, release their owners and then succeed on a fresh execution.
+//!
+//! Pass a new absolute database path, memory bytes and profile; optional --measure
+//! reports phase times and sampled reservation counters. These are not RSS or
+//! complete peak measurements. The database remains for inspection. Tests also
+//! challenge resource refusal and an altered model answer. See docs/event-report.md
+//! for commands and the smaller literal-answer lesson.
+
 #[path = "support/event_data.rs"]
 mod event_data;
 

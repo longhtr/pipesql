@@ -1,4 +1,14 @@
-//! Compare a joined yearly report across two append generations and reopen.
+//! Build a yearly report, append more events and compare old, new and reopened views.
+//!
+//! Start at `run`: declare tables, append half the events, prepare a pinned report,
+//! append the rest, then execute both plans. Literal OLD/NEW groups are independent
+//! of input construction. Separate literal date/DOUBLE bits check stored values.
+//! Every reader must reach Finished and release its reservations before success.
+//!
+//! Run with one new absolute database path; the example leaves it for inspection.
+//! `docs/event-report.md` explains the rows and follows the implementation. The two
+//! tests run the whole flow and deliberately alter an answer to check rejection.
+
 #[path = "support/event_data.rs"]
 mod event_data;
 #[cfg(test)]

@@ -1,4 +1,11 @@
-//! Caller-owned inputs for the event report. Expected answers belong to the caller.
+//! Supply typed input columns for the event-report examples and allocation caller.
+//!
+//! `declare` creates events/dimensions and publishes the four dimension rows.
+//! `write_events` transposes event records into reusable 256-row typed arrays and
+//! validity masks, borrowing them only for each Append::write. The caller owns
+//! commit/abort and supplies the transaction's byte/batch limits. Literal input
+//! rows live here; expected report groups and independent models stay with callers.
+
 use pipesql::{
     Append, AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues,
     DataType, Database, DateValue, Error,
