@@ -21,8 +21,9 @@ stack measurements and limits.
 [Directory ownership](support/mod.rs) and [cleanup](support/cleanup.rs) are shared.
 Library tests can use the same owner through `crate::test_support`.
 Cleanup reports failures after successful tests and preserves the original panic
-during unwinding. Process tests require the child to reach its selected control
-point; successful exit alone is insufficient.
+during unwinding. The [child guard](support/child.rs) kills and reaps an unfinished
+direct child before directory cleanup. Process tests still own their control-point
+checks; successful exit alone is insufficient.
 
 ## Legacy public contracts
 

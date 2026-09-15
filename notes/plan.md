@@ -61,41 +61,18 @@ closed.
 
 ## Active repository consolidation
 
-Source freezing, compatible stock builds, shared catalog fixtures and the
-verification ladder are implemented. The temporary inventory remains outside the
-repository. Consolidation is not complete: module introductions often name
-responsibilities without explaining the operation or the concepts a reader needs.
-The documentation review now covers all project-owned production, test, tool and
-example modules before new features.
+The implementation and module review are integrated. Finish the checkpoint before
+new features:
 
-Complete the work in these increments:
-
-1. Trace creation/recovery, append/publication and query preparation/execution.
-   Repair the introductions at their entry points, then follow each dependency.
-   Explain inputs, representation, ownership, the main transition and a
-   consequential failure where each first matters. Use concrete values to explain
-   unfamiliar concepts. Repair unclear interfaces rather than documenting around
-   them. Small self-explanatory modules need only a short introduction.
-2. Review every remaining production module, including native code. Keep algorithm
-   explanations beside their implementation and exact public contracts beside
-   their interfaces. Remove repeated commentary and statements the code already
-   makes obvious. Verify every explanation against a successful and failing path.
-3. Review test suites, fixtures, models, campaigns and wrappers. Their introductions
-   must identify the protected contract, how it is challenged, where expected
-   answers come from and the owning entry point. Explain intentional independent
-   evidence; remove repeated setup or checks that protect the same premise.
-4. Reconcile the guides with those module owners. Keep one runnable event-report
-   path through the system. Define necessary terms before using them, link exact
-   contracts and remove duplicated explanations. Avoid uniform comment templates,
-   documentation quotas or a permanent inventory framework.
-5. Verify each increment at its changed boundary and commit it locally. Retain the
-   frozen Mac campaign evidence while the module review continues. Integrate the
-   documentation and any resulting interface repairs before the final platform
-   checkpoint. Reuse earlier evidence only after inspecting exact input differences
-   and affected contracts.
-6. Finish qualified platform checks and fresh examples, compare coverage and
-   measured costs, review the final diff and remove owned temporary material.
-   Commit and synchronize the verified checkpoint by fast-forward. Preserve the
+1. Run the final macOS and qualified GNU arm64 Linux gates sequentially on matching
+   frozen inputs, followed by fresh examples. Keep source and build ownership
+   separate so later development cannot change what a running campaign tests.
+2. Reconcile the temporary inventory with the final diff and results. Record
+   removed duplication, retained independent evidence, contract coverage and
+   measured build/gate costs in the evidence notes. Distinguish measurements from
+   controlled performance comparisons.
+3. Remove owned temporary material, review and commit the completed checkpoint,
+   then synchronize by fast-forward. Preserve the
    [qualification limits](#qualifications-that-remain-outside-this-internal-claim).
 
 The [verification ladder](../docs/testing.md#focused-verification) governs each
@@ -133,8 +110,8 @@ not tasks to activate together. Scope each goal from the actual preceding result
 | 7 | Exercise the complete import/report/export workflow above memory limits with concurrent snapshot ownership. | 1 | Fresh small literal and scaled model results agree; append/reopen/reclaim and interrupted import remain coherent. Measure end-to-end work and repair only demonstrated bottlenecks or contract violations. |
 | 8 | Consolidate the integrated capability and its learning path. | 1 | Both full platform gates and fresh workflows pass on identified inputs; interfaces, failure explanations and source maps match the implementation. Remove dead paths and duplicate prose found along those flows. Record remaining limits and stop this queue. |
 
-This is **10 planned goals after the current goal**, with a working estimate of
-**10–14** if the importer or window exposes prerequisite repairs. This is not a
+This is **9 planned goals after consolidation**, with a working estimate of
+**9–13** if the importer or window exposes prerequisite repairs. This is not a
 calendar estimate. The range is uncertainty, not permission to invent extra
 milestones. Reassess after import integration and after the first window prototype;
 split a goal when ownership or failure boundaries warrant it. Remove a proposed
