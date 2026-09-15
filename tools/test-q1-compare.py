@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Negative controls for the independent Q1 evidence reader (stdlib only)."""
+"""Challenge the Q1 comparator with small literal CSV and typed-output records.
+
+Mutations expose missing rows, bad types, duplicate groups, contradictory
+DOUBLE displays and incomplete query completion. An instrumented byte stream
+requires bounded reads before allocation. These tests execute the comparator,
+not PipeSQL; run directly or through check-maintenance.py.
+"""
 
 import csv
 import io
@@ -35,11 +41,12 @@ def production(keys=("R", "F")):
     values = ["string:" + key.encode().hex() for key in keys]
     values += ["double:1:" + ONE] * 7 + ["int64:1"]
     return [
-        "status=queried",
+        "status=querying",
         "column_count=10",
         "columns=" + schema,
         "row=" + "|".join(values),
         "row_count=1",
+        "status=queried",
     ]
 
 
@@ -50,6 +57,21 @@ class ComparisonTests(unittest.TestCase):
                 CHECK["parse_oracle"](oracle(keys)),
                 CHECK["parse_production"](production(keys)),
             )
+
+    def test_incomplete_or_reordered_query_output_is_rejected(self):
+        good = production()
+        for label, lines in [
+            ("no start", good[1:]),
+            ("no finish", good[:-1]),
+            ("no count", good[:-2] + good[-1:]),
+            ("duplicate start", good[:1] + good),
+            ("duplicate finish", good + good[-1:]),
+            ("early finish", [good[-1]] + good[:-1]),
+            ("late row", good[:3] + good[4:] + [good[3]]),
+            ("early schema", [good[1], good[0]] + good[2:]),
+        ]:
+            with self.subTest(label=label), self.assertRaises(AssertionError):
+                CHECK["parse_production"](lines)
 
     def test_missing_and_malformed_oracle_rows_are_not_skipped(self):
         for value in [

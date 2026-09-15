@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Strict comparison of independent Q1 CSV and stock PipeSQL typed CLI rows."""
+"""Compare independent Q1 CSV answers with complete stock CLI query output.
+
+Bounded readers validate schema, ordered unique groups, counts and raw DOUBLE
+bits; each decimal display must describe those same bits. Expected answers come
+from the supplied CSV or the literal all-key-pairs case, never the engine.
+The caller must check the producing process exited successfully before saving
+its output. Run directly as documented in oracles/README.md; test-q1-compare.py
+challenges malformed answers and incomplete completion records.
+"""
 
 from __future__ import annotations
 
@@ -99,7 +107,16 @@ def parse_oracle(lines: list[str]) -> list[tuple[bytes, bytes, tuple[int, ...], 
 def parse_production(
     lines: list[str],
 ) -> list[tuple[bytes, bytes, tuple[int, ...], int]]:
-    assert single_value(lines, "status=") == "queried"
+    completion = [line for line in lines if line.startswith(("status=", "row_count="))]
+    count = single_value(lines, "row_count=")
+    assert completion == ["status=querying", f"row_count={count}", "status=queried"]
+    first = lines.index("status=querying")
+    last = lines.index(f"row_count={count}")
+    assert all(
+        first < index < last
+        for index, line in enumerate(lines)
+        if line.startswith(("column_count=", "columns=", "row="))
+    )
     assert single_value(lines, "column_count=") == "10"
     columns = single_value(lines, "columns=").split("|")
     expected = ["string:required"] * 2 + ["double:nullable"] * 7 + ["int64:required"]

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Independent format-1 golden encoder/checker; never imported by PipeSQL."""
+"""Encode and validate the retained, rejected format-1 single-table fixture.
+
+Explicit offsets, literal rows and a local CRC32C implementation construct the
+bytes independently of production codecs. check-fixtures.py compares those
+bytes with the retained files. Running this module directly also challenges
+every byte and truncated prefix, plus structural damage with repaired checksums.
+It prints hashes and layout results without writing files or running PipeSQL."""
 
 import hashlib
 import struct

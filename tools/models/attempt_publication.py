@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Bounded root/fence representation challenge, NOT a filesystem simulator.
+"""Challenge root selection, publication and repair under explicit persistence premises.
 
-Roots abstract already validated, self-contained snapshots. None means a missing
-or checksum-invalid current-format record, not a recognizable foreign/future
-record (which must fail admission). Named replacements are atomic; root contents
-and dependencies are durable before replacement. Successful directory barriers
-persist replacements. A completed publication persists both roots before exposing
-issuance/acknowledging data. These are premises, not results of this model.
-"""
+A root describes a snapshot; a fence records the proposed root before either
+replica is replaced. Enumerate interrupted publication, damaged replicas and
+interrupted repair, then check that admitted histories retain known outcomes.
+Negative controls omit barriers, expose tokens early or discard pinned objects
+and must produce counterexamples. Run directly or through the full gate.
+
+Roots abstract validated snapshots. None means missing or checksum-invalid,
+not a recognizable foreign format. Replacement is atomic; root bytes and their
+dependencies are durable beforehand. Directory barriers persist replacements;
+completed publication persists both replicas before exposing a token or
+acknowledging data. These are premises. No engine code or filesystem is exercised."""
 
 from dataclasses import dataclass, replace
 from itertools import combinations, product

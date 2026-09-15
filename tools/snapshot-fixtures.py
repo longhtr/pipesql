@@ -1,8 +1,14 @@
-"""Independent format-4 vectors; no production imports or filesystem mutation.
+"""Build independent format-4 vectors and semantic-campaign input databases.
 
-Native geometry is unchanged from the retained format-2 encoder. Regenerate its
-version-dependent checksums, then build snapshot authority independently. The
-loaded vector commits attempt 2, preserving attempt 1 as a settled abort gap.
+`vectors` returns bytes without writing; check-fixtures.py compares them with
+retained fixtures. `write_snapshot` creates a fresh directory and writes rows
+supplied as DOUBLE bits, key bytes and DATE offsets. Campaigns own that directory
+and their expected answers. No production encoder or decoder is imported.
+
+Unit geometry comes from the retained format-2 oracle with version-dependent
+checksums rebuilt. Snapshot authority is encoded here: attempt 2 committed,
+while attempt 1 remains a settled abort gap. This lets resolution tests challenge
+history without asking the production writer to construct its own oracle.
 """
 
 import runpy

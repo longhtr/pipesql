@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Independent format-2 golden encoder/checker; never imported by PipeSQL."""
+"""Encode and validate retained format-2 bytes independently of the engine.
+
+check-fixtures.py uses the empty and one-row vectors to verify rejected-format
+fixtures. snapshot-fixtures.py reuses unit geometry and checksum primitives for
+format 4, whose transaction authority it builds separately. The direct command
+checks literal row layouts, sampled byte damage, every truncated prefix and
+structural corruption with repaired checksums. It prints results without writing."""
 
 import hashlib
 import struct

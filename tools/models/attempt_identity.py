@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Bounded representation experiment, NOT a simulator of production persistence.
+"""Test a bounded representation of transaction identity and settled outcomes.
 
-Assumes a validated, durably published root. Models facts that this root must
-preserve, not how writes, root replicas, recovery, or checksums establish them.
-The sequence/capacity are deliberately tiny to enumerate histories exhaustively.
-No byte format or production retention capacity is selected here.
-"""
+The candidate stores the highest issued attempt and every successful attempt
+in generation order. After recovery settles live work, an omitted issued
+attempt means aborted. An independent per-attempt receipt table checks every
+five-event history at capacity three. Counterexamples expose identity reuse,
+lost older successes and a split read of outcome and active-writer state.
+
+The model assumes an already validated, durably published root. It executes no
+engine code and models neither bytes nor filesystem effects. Run directly or
+through the full gate; publication premises are challenged separately in
+attempt_publication.py."""
 
 from dataclasses import dataclass
 from itertools import combinations, product

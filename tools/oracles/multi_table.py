@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Independent format-3 golden/layout checker;never imported by PipeSQL."""
+"""Encode the retained two-table format independently of production codecs.
+
+Explicit layouts distinguish lineitem and sorted-unique part units. Block
+checksums bind payload to database, table, column and row position; local
+decoders check those fields and root/WAL references. candidate-fixtures.py
+uses these primitives for retained vectors, compared by check-fixtures.py.
+The direct command challenges damaged bytes and checksum-consistent structure,
+then reports layout and temporary-space equations. These are model results,
+not measurements of the current engine or filesystem."""
 
 import hashlib
 import struct
