@@ -17,6 +17,7 @@ pub(super) enum Operation {
     Create,
     CreateDeclared,
     Open,
+    Declare(PathBuf),
     Load(PathBuf),
     Query(PathBuf),
     Explain(PathBuf),
@@ -30,7 +31,7 @@ pub(super) struct Command {
 }
 
 fn usage() -> &'static str {
-    "usage: pipesql create|create-declared|open|load|query|explain|resolve --database ABSOLUTE_PATH [--input ABSOLUTE_TBL] [--query-file ABSOLUTE_PATH] [--transaction HEX_TOKEN] --memory-limit-bytes N --temp-limit-bytes N"
+    "usage: pipesql create|create-declared|declare|open|load|query|explain|resolve --database ABSOLUTE_PATH [--input ABSOLUTE_TBL] [--query-file ABSOLUTE_PATH] [--schema-file ABSOLUTE_PATH] [--transaction HEX_TOKEN] --memory-limit-bytes N --temp-limit-bytes N"
 }
 
 #[derive(Debug)]
@@ -72,7 +73,14 @@ pub(super) fn parse(arguments: impl Iterator<Item = OsString>) -> Result<Command
         Ok(value)
             if matches!(
                 value.as_str(),
-                "create" | "create-declared" | "open" | "load" | "query" | "explain" | "resolve"
+                "create"
+                    | "create-declared"
+                    | "declare"
+                    | "open"
+                    | "load"
+                    | "query"
+                    | "explain"
+                    | "resolve"
             ) =>
         {
             value
@@ -82,11 +90,12 @@ pub(super) fn parse(arguments: impl Iterator<Item = OsString>) -> Result<Command
     let mut database = None;
     let mut input = None;
     let mut query_file = None;
+    let mut schema_file = None;
     let mut transaction = None;
     let mut memory_limit = None;
     let mut temp_limit = None;
-    // A successful iteration consumes one of six previously unseen options.
-    // Thus at most six iterations advance; the next pair must terminate in an
+    // A successful iteration consumes one of seven previously unseen options.
+    // Thus at most seven iterations advance; the next pair must terminate in an
     // error. Argument capture separately bounds the entire native input.
     while let Some(option) = arguments.next() {
         check_argument(&option)?;
@@ -112,6 +121,11 @@ pub(super) fn parse(arguments: impl Iterator<Item = OsString>) -> Result<Command
             "--query-file" => {
                 if query_file.replace(PathBuf::from(value)).is_some() {
                     return Err("--query-file may appear only once".into());
+                }
+            }
+            "--schema-file" => {
+                if schema_file.replace(PathBuf::from(value)).is_some() {
+                    return Err("--schema-file may appear only once".into());
                 }
             }
             "--transaction" => {
@@ -145,10 +159,16 @@ pub(super) fn parse(arguments: impl Iterator<Item = OsString>) -> Result<Command
     if operation != "resolve" && transaction.is_some() {
         return Err("--transaction is accepted only for resolve".into());
     }
+    if operation != "declare" && schema_file.is_some() {
+        return Err("--schema-file is accepted only for declare".into());
+    }
     let operation = match operation.as_str() {
         "create" => Operation::Create,
         "create-declared" => Operation::CreateDeclared,
         "open" => Operation::Open,
+        "declare" => {
+            Operation::Declare(schema_file.ok_or("--schema-file is required for declare")?)
+        }
         "load" => Operation::Load(input.ok_or("--input is required for load")?),
         "query" => Operation::Query(query_file.ok_or("--query-file is required for query")?),
         "explain" => Operation::Explain(query_file.ok_or("--query-file is required for explain")?),

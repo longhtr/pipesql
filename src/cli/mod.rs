@@ -17,9 +17,11 @@ use std::process::ExitCode;
 #[allow(unsafe_code)]
 mod arguments;
 mod command;
+mod declaration;
 mod diagnostic;
 mod output;
 mod query;
+mod source;
 
 #[allow(unsafe_code)]
 mod sink;
@@ -72,6 +74,7 @@ fn run(command: Command, output: &mut impl Write) -> Result<(), Error> {
         Operation::Create | Operation::CreateDeclared => {
             write_database_status(output, "created", &database)
         }
+        Operation::Declare(schema) => declaration::declare_file(&database, &schema, output),
         Operation::Open => write_database_status(output, "opened", &database),
         Operation::Load(input) => {
             let commit = database.load_lineitem(&input, &CancellationToken::new())?;

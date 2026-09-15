@@ -224,6 +224,81 @@ fn stock_cli_creates_and_reopens_database() {
     }
 }
 
+#[test]
+fn stock_cli_declares_whole_schemas_before_publication() {
+    let temp = TempDir::new();
+    let path = temp.0.join("database");
+    let schema = temp.0.join("events.schema");
+    let run = |operation: &str, schema: Option<&Path>| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_pipesql"));
+        command.arg(operation).arg("--database").arg(&path).args([
+            "--memory-limit-bytes",
+            "1048576",
+            "--temp-limit-bytes",
+            "1048576",
+        ]);
+        if let Some(schema) = schema {
+            command.arg("--schema-file").arg(schema);
+        }
+        command.output().unwrap()
+    };
+    assert!(run("create-declared", None).status.success());
+    for text in [
+        "table events\nid int64 required\nvalue invalid nullable\n",
+        "table events\nid int64 required\nid double nullable\n",
+    ] {
+        fs::write(&schema, text).unwrap();
+        let failure = run("declare", Some(&schema));
+        assert_eq!(failure.status.code(), Some(1));
+        assert!(failure.stdout.is_empty());
+        let db = Database::open(&path, config()).unwrap();
+        assert_eq!(db.generation(), 0);
+        db.close().unwrap();
+    }
+    fs::write(&schema, "table events\nid int64 required\nvalue double nullable\nlabel string nullable\nday date required\n").unwrap();
+    let success = run("declare", Some(&schema));
+    assert!(
+        success.status.success(),
+        "{}",
+        String::from_utf8_lossy(&success.stderr)
+    );
+    let output = String::from_utf8(success.stdout).unwrap();
+    assert!(output.starts_with("status=declared\n"));
+    assert!(output.lines().any(|line| line == "generation=1"));
+    let token = output
+        .lines()
+        .find_map(|line| line.strip_prefix("transaction="))
+        .unwrap();
+    assert_eq!(token.len(), 48);
+    let db = Database::open(&path, config()).unwrap();
+    assert_eq!(db.generation(), 1);
+    let query = db.prepare("FROM events").unwrap();
+    assert_eq!(query.result_column_count(), 4);
+    for (index, (name, data_type, nullable)) in [
+        ("id", pipesql::DataType::Int64, false),
+        ("value", pipesql::DataType::Double, true),
+        ("label", pipesql::DataType::String, true),
+        ("day", pipesql::DataType::Date, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let column = query.result_column(index).unwrap();
+        assert_eq!(
+            (column.name, column.data_type, column.nullable),
+            (Some(name), data_type, nullable)
+        );
+    }
+    drop(query);
+    db.close().unwrap();
+    let duplicate = run("declare", Some(&schema));
+    assert_eq!(duplicate.status.code(), Some(1));
+    assert!(duplicate.stdout.is_empty());
+    let db = Database::open(&path, config()).unwrap();
+    assert_eq!(db.generation(), 1);
+    db.close().unwrap();
+}
+
 // Measure the ordinary library handle, independently of test-only instrumentation.
 #[test]
 fn stock_database_handle_retains_its_fixed_bound() {

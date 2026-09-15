@@ -86,6 +86,41 @@ fn parser_accepts_query_only_with_query_file() {
 }
 
 #[test]
+fn declaration_requires_its_own_source_option() {
+    let common = [
+        "--database",
+        "/tmp/example",
+        "--memory-limit-bytes",
+        "2000000",
+        "--temp-limit-bytes",
+        "1000000",
+    ];
+    for (operation, options, accepted) in [
+        ("declare", vec!["--schema-file", "/tmp/events.schema"], true),
+        ("declare", vec![], false),
+        ("declare", vec!["--query-file", "/tmp/events.schema"], false),
+        (
+            "declare",
+            vec!["--schema-file", "/tmp/a", "--schema-file", "/tmp/b"],
+            false,
+        ),
+        ("query", vec!["--schema-file", "/tmp/events.schema"], false),
+    ] {
+        let parsed = parse(
+            args(&["pipesql", operation])
+                .chain(args(&common))
+                .chain(args(&options)),
+        );
+        assert_eq!(parsed.is_ok(), accepted, "{operation} {options:?}");
+        if let Ok(command) = parsed {
+            assert!(
+                matches!(command.operation, Operation::Declare(path) if path == Path::new("/tmp/events.schema"))
+            );
+        }
+    }
+}
+
+#[test]
 fn transaction_arguments_preserve_bytes_and_reject_invalid_tokens() {
     use std::os::unix::ffi::OsStringExt;
     let text = "000102030405060708090a0b0c0d0e0f0100000000000000";

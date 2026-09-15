@@ -245,13 +245,13 @@ below run from the repository root and address it as `target/release/pipesql`.
 Use `create-declared` to create an empty database for declared tables. It accepts
 `--database`, `--memory-limit-bytes` and `--temp-limit-bytes`, like `create`, and
 reports `status=created` only after library creation succeeds. An existing path
-is refused. The CLI can query declared tables, but declaration and typed append
-currently require the library. `create` and `load` retain the legacy `lineitem`
+is refused. The CLI can query declared tables, but typed append
+currently requires the library. `create` and `load` retain the legacy `lineitem`
 schema.
 
 ### CLI source and path admission
 
-The CLI exposes `create`, `create-declared`, `open`, `load`, `query`, `explain`, and `resolve`. A query source
+The CLI exposes `create`, `create-declared`, `declare`, `open`, `load`, `query`, `explain`, and `resolve`. A query or schema source
 must be a regular, non-symlink UTF-8 file of at most 4,096 bytes and remain
 unchanged while read. The CLI compares the opened descriptor with the initial
 pathname's type, identity, extent, and modification/change times. After reading,
@@ -272,6 +272,34 @@ CLI capture and parsing transfer bounded path owners without allocating error
 strings. Owned sinks avoid lazy standard-I/O buffers. [CLI resource
 ownership](resources.md#cli-startup-owners) covers startup limits, sink
 lifetime, and what remains outside those bounds.
+
+### Declare a table
+
+Run `declare` with `--schema-file ABSOLUTE_PATH` and the usual database and budget
+options. The checked UTF-8 file is at most 4096 bytes. Its first line is `table`
+followed by the table name. Each remaining line has a column name, a type and
+`required` or `nullable`, separated by ASCII whitespace:
+
+```text
+table events
+id int64 required
+value double nullable
+label string nullable
+day date required
+```
+
+Keywords and types are lowercase. Types are `int64`, `double`, `string`, and
+`date`. LF and CRLF line endings are accepted; the final newline is optional.
+There must be 1–64 columns. Blank lines, extra fields, quoting and comments are
+not supported. Table and column names follow the library's declaration rules.
+A syntax error reports the byte offset of its line; name and duplicate errors
+retain the library error. Parsing completes before declaration can publish.
+
+Success reports `status=declared`, the committed generation and transaction token.
+Retain that token for `resolve` if needed. An existing table is rejected. A failed
+output write can follow a committed declaration, so output failure does not mean
+the table was rolled back. Ambiguous publication retains the library's outcome
+and token in its diagnostic. This command does not insert rows.
 
 ### Explain a query
 

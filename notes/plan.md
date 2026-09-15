@@ -33,7 +33,10 @@ and inspection interface against the event-report tables. `create-declared` now 
 stock-process checks cover both forms, existing-path refusal and declaration
 compatibility. `explain` shares checked query-file preparation and formats the
 logical plan without execution; a runtime-failing query and broken sinks exercise
-that distinction. Declaration input and schema inspection remain unfinished.
+that distinction. `declare --schema-file` parses a complete bounded file before
+calling the library: `table NAME`, then `NAME TYPE required|nullable` per column.
+Shared source checks and literal schema/error tests pass; malformed and duplicate
+columns leave generation zero unchanged. Schema inspection remains unfinished.
 Select focused grammar/output checks during implementation, then the existing
 CLI allocation and publication campaigns plus the integrated checkpoint. Require
 both platforms' affected evidence before synchronizing this capability.

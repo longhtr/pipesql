@@ -82,7 +82,9 @@ producers merely to reduce duplicated-looking checks.
 | Owner | Responsibility |
 | --- | --- |
 | [cli/mod.rs](../src/cli/mod.rs), [command.rs](../src/cli/command.rs) | Process entry, database lifetime, and command grammar with owned arguments. |
-| [query.rs](../src/cli/query.rs), [output.rs](../src/cli/output.rs) | Query-file admission, streaming execution, and result encoding. |
+| [source.rs](../src/cli/source.rs) | Bounded UTF-8 query/schema input, file identity checks and complete reads. |
+| [declaration.rs](../src/cli/declaration.rs) | Schema-file conversion and the public table-declaration call. |
+| [query.rs](../src/cli/query.rs), [output.rs](../src/cli/output.rs) | Query preparation, logical-plan output, streaming execution, and result encoding. |
 | [arguments.rs](../src/cli/arguments.rs), [sink.rs](../src/cli/sink.rs), [diagnostic.rs](../src/cli/diagnostic.rs) | Bounded native argument capture, owned output descriptors, and allocation-free diagnostics. |
 
 
