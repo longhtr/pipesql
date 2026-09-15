@@ -1,11 +1,15 @@
-//! Evaluate one typed predicate and size optional per-row branch state.
+//! Decide whether one value satisfies a filter's requested truth condition.
 //!
-//! `PhysicalFilter` pairs a bound comparison with its input slot and forward
-//! Boolean decision. Ordinary comparisons with NULL satisfy neither requested
-//! truth value; null-safe comparisons and IS NULL produce a definite Boolean.
-//! Scan and computed-row consumers use this same leaf rule, then follow the
-//! decision offsets to preserve short-circuiting. `BranchScratch` reserves row
-//! cursors and selection storage only when the scan needs branching.
+//! SQL comparisons can be true, false, or unknown. Comparing NULL with an ordinary
+//! value is unknown, so neither `x = 1` nor `NOT (x = 1)` retains a NULL row.
+//! `IS NULL` and null-safe comparisons instead give a definite Boolean answer.
+//! `PhysicalFilter::matches` implements these rules for one typed comparison.
+//!
+//! The filter also stores where execution continues after a match or nonmatch.
+//! Scan and computed-row consumers follow these forward offsets to skip Boolean
+//! branches whose answer is already known. `BranchScratch` stores each scan row's
+//! next decision and the selected rows; scans without branching need no such
+//! allocation. The caller owns the scratch reservation and batch lifetime.
 
 use crate::execution::planning::Pipeline;
 use crate::execution::{BATCH_ROWS, COMPUTE_ROWS};

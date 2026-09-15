@@ -1,10 +1,14 @@
-//! Represent a set of query column identities without allocating.
+//! Track which query columns are present or needed using one bit per identity.
 //!
-//! Identity `c65` occupies bit 1 of word 1. Union combines required columns;
-//! intersection keeps only shared columns. Scope validation and execution demand
-//! use the same representation, while each caller owns the meaning of its set.
-//! Zero is reserved, and inserting an identity beyond the query bound is a
-//! programmer error. Iteration yields identities in increasing numeric order.
+//! Query column identities have a fixed upper bound, so a fixed array of 64-bit
+//! words can represent any set without allocating. For example, identity `c65`
+//! occupies bit 1 of word 1, counting both from zero. Bitwise OR combines sets;
+//! bitwise AND keeps their common members.
+//!
+//! Scope validation uses sets of available columns; execution planning uses sets
+//! of required columns. Each caller owns that meaning. Zero is reserved, and
+//! inserting an identity beyond the query bound is a programmer error. Iteration
+//! yields identities in increasing numeric order.
 
 use super::{ColumnId, MAX_QUERY_COLUMNS};
 

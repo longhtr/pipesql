@@ -1,11 +1,14 @@
-//! Evaluate COUNT(*) OVER () when no input values must survive the counting pass.
+//! Count all input rows, then emit that count once for each input row.
 //!
-//! This window expression preserves rows: three input rows produce three copies
-//! of the count 3. When demand needs no input fields, a counter can reconstruct
-//! those rows without a spool. Consume all input before emitting; then evaluate
-//! one candidate per step so a later LIMIT can stop ordinary computations.
-//! Replay reuses the completed count once, without rereading input. Demanding a
-//! raw field here is a plan defect; exceeding the row limit is resource refusal.
+//! Unlike a grouped aggregate, `COUNT(*) OVER ()` preserves the number of rows:
+//! three input rows produce three copies of the count 3. If later stages need
+//! only the count, storing the original rows would be unnecessary. This controller
+//! retains their number and reconstructs the output after all input has arrived.
+//!
+//! It evaluates one output candidate per step, so a later LIMIT can stop further
+//! computations even though counting has consumed all input. Replay emits the
+//! completed count once more without rereading input. Demanding an original
+//! field here is a plan defect; exceeding the row limit is resource refusal.
 
 use crate::batch::Batch;
 use crate::execution::computed::RowValues;

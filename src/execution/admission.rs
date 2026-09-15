@@ -1,15 +1,18 @@
-//! Construct an executable result without exposing a partially admitted runtime.
+//! Reserve the resources a prepared query needs before it starts reading rows.
 //!
-//! `Database::execute` checks cancellation, semantic validity and snapshot
-//! ownership, then lowers and independently validates physical positions. Runtime
-//! construction reserves mandatory controllers, batches and scratch before source
-//! reads; optional aggregate growth cannot consume a later controller's minimum.
+//! Admission means checking that the query can obtain its minimum working space.
+//! Otherwise an early operator could consume the budget while a later operator
+//! still lacks enough memory to run. Runtime construction reserves mandatory
+//! controllers, batches, and scratch before allowing optional aggregate growth.
 //! A construction failure drops the owners already acquired and returns an error.
 //!
-//! Declared queries use their pinned catalog generation, including while an append
-//! constructs newer data. Legacy queries inspect the single published namespace
-//! after memory admission and refuse retained publication debt. A successful
-//! return establishes a runnable result, not successful query completion.
+//! `Database::execute` first checks cancellation, the semantic plan, and snapshot
+//! ownership. It converts logical column identities to physical batch positions
+//! and independently validates that mapping before constructing the runtime.
+//! Declared queries retain their selected catalog snapshot while an append builds
+//! newer data. Legacy queries inspect their single published namespace and refuse
+//! a handle with unresolved publication or cleanup. A returned `QueryResult` can
+//! start running; only its later terminal outcome establishes query completion.
 
 use super::{QueryResult, RESULT_BYTES, State, computed};
 use crate::effects::Effects;

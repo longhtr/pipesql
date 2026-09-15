@@ -1,11 +1,15 @@
-//! Select a bounded input prefix for LIMIT/OFFSET, then apply downstream row work.
+//! Skip OFFSET rows and take at most LIMIT rows before downstream filtering.
 //!
-//! Keep separate skip and take counters: adding them could overflow, and offset
-//! must still be consumed when count is zero. Count candidate rows before filters
-//! in this pipeline, so a rejected row cannot extend the LIMIT quota. Each step
-//! requests input or consumes one bounded batch; the scheduler owns the child
-//! cursor and output storage. Replay resets these counters and requires the
-//! scheduler to rewind the child too. Cancellation or failure forbids replay.
+//! Pipe order matters: `LIMIT 2 |> WHERE x > 0` examines the first two rows even
+//! if neither passes the filter. Taking more rows to replace rejected ones would
+//! change the query. Separate skip and take counters preserve that boundary
+//! without adding the bounds, which could overflow. OFFSET is consumed even when
+//! LIMIT is zero.
+//!
+//! Each step requests input or processes one bounded batch. The runtime owns the
+//! child cursor and output storage; this controller owns the counters and phase.
+//! Replay selects the same prefix again, so it resets both counters and requires
+//! the runtime to rewind the child. Cancellation or failure forbids replay.
 
 use crate::batch::Batch;
 use crate::execution::computed::RowValues;
