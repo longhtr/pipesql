@@ -1,4 +1,11 @@
-//! Append ownership and committed-attempt receipts.
+//! Expose append ownership and distinguish issued attempts from durable commits.
+//!
+//! `Append` owns one in-progress write and delegates construction to the catalog
+//! implementation. `Commit` records completed publication. A transaction token
+//! identifies an attempt, including one that aborted; its sequence is therefore
+//! different from a generation, which advances only on a successful publication.
+//! `resolve_commit` inspects retained history without repair. Unknown identities,
+//! an active writer and required recovery stay distinct from a settled abort.
 
 use crate::effects::Effects;
 use crate::namespace::inspect_namespace;

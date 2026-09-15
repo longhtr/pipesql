@@ -1,3 +1,10 @@
+//! Check CLI grammar using literal argument lists and expected command fields.
+//!
+//! Complete operations establish required options; malformed lists challenge
+//! duplicate, missing, incompatible and oversized inputs. Token bytes are literal
+//! expectations, not produced by the parser under test. These tests do not open
+//! databases; process and allocation behavior belong to the CLI campaigns.
+
 use super::{MAX_ARGUMENT_BYTES, Operation, check_argument, parse, parse_transaction};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};

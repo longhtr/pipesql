@@ -5,5 +5,5 @@ fn main() -> std::process::ExitCode {
 }
 
 #[cfg(test)]
-#[path = "../tests/support/cleanup.rs"]
-mod test_cleanup;
+#[path = "../tests/support/mod.rs"]
+mod test_support;

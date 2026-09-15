@@ -1,5 +1,9 @@
-//! Canonical one-byte key domain shared by ingestion, decoding and grouping.
-//! The lineitem field delimiter is not a value; space is a value.
+//! Represent the legacy lineitem keys as one validated printable ASCII byte.
+//!
+//! The delimiter `|` is excluded; space is a value. A dense index maps the 94
+//! accepted bytes into grouping slots without allocating strings. Constructors
+//! validate either representation; the private byte keeps conversion safe.
+//! General UTF-8 table strings use the separate representation in `value`.
 pub(crate) const KEY_DOMAIN: usize = 94;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

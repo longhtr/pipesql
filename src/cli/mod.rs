@@ -1,5 +1,10 @@
-// Process entry and command lifetime. Parsing, native capture, and output have
-// separate owners; every opened database is closed after its operation returns.
+// Run one CLI command through the public library and own its process resources.
+// Capture stderr, arguments and stdout before opening a database: an inherited
+// descriptor closed at startup must never become an accidental database sink.
+// `command` parses owned arguments; `run` opens, dispatches and always closes the
+// database. A command failure takes precedence over a later close failure.
+// Successful commands must also flush output. Usage failures exit 2; database
+// and output failures exit 1, even when the diagnostic itself cannot be written.
 use command::{Command, Operation};
 use diagnostic::print_error;
 use output::{output_error, write_database_status};

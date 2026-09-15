@@ -1,4 +1,9 @@
-//! CLI status, schema, and value encoding. Write failure terminates the command.
+//! Encode database status, query schema and typed values into CLI records.
+//!
+//! DOUBLE output includes raw bits so signed zero and NaN payloads survive display;
+//! STRING bytes use hex so delimiters and newlines cannot split a value. Encoding
+//! writes directly to the caller's sink and returns the first write failure.
+//! `query` owns row framing and emits completion only after the result finishes.
 use pipesql::{DataType, Database, Error, PreparedQuery, Value};
 use std::io::{self, Write};
 

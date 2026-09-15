@@ -1,4 +1,11 @@
-//! CLI grammar and ownership transfer from captured arguments to one command.
+//! Turn captured arguments into one operation, owned paths and validated limits.
+//!
+//! Parsing consumes option/value pairs, rejects duplicates and checks which
+//! options belong to the selected operation. Path bytes move into `PathBuf`s;
+//! the library owns filesystem/path admission. Errors retain static requirements
+//! or an existing option string, so reporting bad input needs no new allocation.
+//! A well-shaped transaction token is only an identity; `resolve_commit` must
+//! still establish whether the database issued and committed it.
 use pipesql::{Config, Error, TransactionId};
 use std::ffi::OsString;
 use std::path::PathBuf;

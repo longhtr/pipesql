@@ -1,4 +1,11 @@
-//! Admit one stable bounded source, then stream its query through the public API.
+//! Read one SQL file, prepare it and stream the public query result to CLI output.
+//!
+//! Admission requires a bounded regular file. Compare named and opened metadata
+//! before and after the fixed-buffer read; observed replacement or mutation fails
+//! before preparation. The caller must still keep the source unchanged while read.
+//! Consume borrowed batches immediately and distinguish Progress, Rows, Finished
+//! and Failed. Only Finished permits the final row count and success marker;
+//! execution or sink failure can leave a visible prefix, never a complete result.
 use super::output::{output_error, write_query_header, write_value};
 use pipesql::{CancellationToken, Database, Error, QueryStep};
 use pipesql_filesystem as filesystem;
@@ -143,29 +150,14 @@ pub(super) fn execute_query_file(
 #[cfg(test)]
 mod tests {
     use super::{MAX_QUERY_BYTES, validate_query_source};
+    use crate::test_support::Directory;
     use pipesql::Error;
     use pipesql_filesystem as filesystem;
-    use std::path::PathBuf;
 
     #[test]
     fn query_source_requires_matching_regular_bounded_unchanged_metadata() {
         use std::fs;
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-
-        struct Temp(PathBuf);
-
-        impl Drop for Temp {
-            fn drop(&mut self) {
-                crate::test_cleanup::directory(&self.0);
-            }
-        }
-        let root = Temp(std::env::temp_dir().join(format!(
-            "pipesql-cli-source-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        )));
-        fs::create_dir(&root.0).unwrap();
+        let root = Directory::new();
         let first = root.0.join("source");
         let second = root.0.join("different-source");
         fs::write(&first, b"FROM lineitem").unwrap();

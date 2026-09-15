@@ -1,4 +1,9 @@
-//! Allocation-free, UTF-8-safe diagnostics with a fixed byte bound.
+//! Render command errors when allocating or writing may already have failed.
+//!
+//! `Diagnostic` formats into a fixed byte array, reserves a final newline and
+//! truncates only between UTF-8 characters. `print_error` uses the previously
+//! captured stderr owner. Missing or broken stderr leaves the command's exit
+//! status intact; reporting an error must not allocate a fallback or reopen fd 2.
 use std::io::{self, Write};
 
 const MAX_DIAGNOSTIC_BYTES: usize = 4_096;

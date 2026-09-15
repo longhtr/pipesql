@@ -1,4 +1,11 @@
-//! CLI-only startup capture. No raw argument pointer or borrow escapes this module.
+//! Copy bounded native process arguments into fallibly allocated Rust owners.
+//!
+//! macOS supplies argc/argv at startup; Linux supplies NUL-separated bytes through
+//! `/proc/self/cmdline`. Both paths ignore the program name and preserve raw bytes
+//! for `command` to interpret. Fixed buffers bound count and scanning before copy;
+//! oversized, unterminated or unreadable input returns an error without fallback.
+//! No native pointer or borrowed argument escapes. This executable-only boundary
+//! runs before engine entry and assumes no concurrent foreign mutation of argv.
 use super::command::{ArgumentError, MAX_ARGUMENT_BYTES};
 use pipesql::Error;
 use std::ffi::{OsStr, OsString};

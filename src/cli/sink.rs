@@ -1,5 +1,11 @@
-//! Owned CLI sinks. Duplicate before engine entry so a closed inherited sink
-//! cannot later alias a database descriptor. No lazy stdio heap allocation.
+//! Own stdout and stderr independently of their inherited descriptor numbers.
+//!
+//! Duplicate each live sink before engine entry. If fd 2 was closed, opening a
+//! database could reuse that number; a later diagnostic must never write there.
+//! `Output` adds a fixed line buffer, flushed on newline, capacity or explicit
+//! completion. Short writes advance the remaining slice; interruption, zero
+//! progress and other errors terminate writing. Drop closes without retrying or
+//! flushing, so the caller must observe an explicit flush before reporting success.
 use std::fs::File;
 use std::io::{self, Write};
 use std::os::fd::FromRawFd;
