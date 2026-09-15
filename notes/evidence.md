@@ -6200,3 +6200,70 @@ an engine memory bound. Heavy platform runs and fresh examples were sequential.
 Owned builds, source exports, VM artifacts, databases, logs and the temporary
 inventory were removed after retaining these results. Toolchains, the verification
 image and the preexisting development target were preserved.
+
+## Declared-schema CLI checkpoint
+
+The CLI now creates empty declared databases, declares tables from bounded schema
+files, inspects stored column metadata and explains prepared queries. Schema
+inspection borrows validated bytes under a snapshot pin; callback errors and
+unwinding release its buffers and reservations. Declaration parses the complete
+input before publishing. Failed receipt output does not imply an aborted commit.
+
+Both full gates passed all 24 stages on the frozen `f452564` inputs:
+760 files, manifest SHA-256
+`e7a8f999d26ab4606648fedbe0071b841d941fd0e3dba125728595440695af18`.
+Both final manifests were unchanged. Each platform ran 697 ordinary Rust tests and a separate
+lease subprocess; the latter intentionally filters seven sibling tests. Ordinary
+tests had no ignored or filtered cases. Tooling ran 120 tests and 44 independent
+codec fixtures. CLI checks covered 135 parser control/deny pairs and 811
+allocation prefixes, including aborted and durable declaration resolution.
+Native initialization covered 30 macOS and 80 Linux cells. Synchronization and
+I/O covered 217 and 1,378 cells per platform. The two Darwin ACL exclusions remain.
+
+Append/recovery interruption retained 76/46 cuts and 249 independent graph checks;
+the event-report variant retained 88/46 cuts and 273 checks. Graph validation
+covered 48 cases, two oracle controls, a report control and the CLI-limit,
+genesis, lease and independent-column-order checks. Summed stage time was
+1,693.146 seconds on macOS and 2,966.078 seconds on Linux. Monitoring gaps prevent using elapsed wall time as a reliable
+platform comparison for this run.
+
+Fresh macOS declared-table, event-report and both scaled-report examples passed.
+A separate fresh CLI walkthrough created both report tables, inspected generation
+2, explained the report and completed its empty result. The gate receipt SHA-256
+is `b9b2e7120348490d16b98f576045e98292458a738a3bc93b05e6be0cc25368c5`;
+the fresh-example receipt is
+`6a540ab4667590644ad7611d3bcd7ecbff188e512ce31784359174ceff2da46b`.
+
+Linux used the full-synchronization VM with private ext4 storage, one CPU,
+2 GiB, uid/gid 1000 and no network device. Bootstrap success/failure controls,
+all four fresh examples and VM cleanup passed. Its gate receipt SHA-256 is
+`3d8efd5b9324b22a374a9133b25c3bf3f7f7e3922ae7cd8f0b69ef56e67b1245`;
+the environment/cleanup receipt is
+`418d5f457238d3e42433fd2087acf275d8246b70d2d2003fba5756cf16bd0eba`.
+The preserved image and kernel match the repository-consolidation checkpoint.
+All 350 composition records, including 247 result hashes, agree unchanged.
+Each platform passed the 24 independent aggregate-semantic cases.
+
+After freezing the full gates, the CLI checker gained an explicit successful
+reopen before accepting an absent table. Both platforms passed its 135 parser
+pairs and 811 allocation prefixes on the final 761-input export, SHA-256
+`2da97301581b42ce42da1a38b80b0148ac7c9800cd7554783b9ed77578cf80c5`.
+A fresh Linux CLI schema/explain/query walkthrough also passed. These additional
+Linux checks used a network-disabled container with native database storage,
+one CPU, 2 GiB and uid/gid 1000; they establish functional evidence, while the
+full-synchronization VM above supplies the persistence qualification.
+The final CLI receipt SHA-256 is
+`624818dc918c2c8cbf8e8b59b903bbe2fe56603b83eddd275a243166dfd4e1b7`.
+The macOS campaign took 48.832 seconds including its build; Linux reused one
+21.884-second stock build for its 8.996-second campaign and fresh walkthrough.
+
+Later edits only changed documentation and documentation discovery, apart from
+that verified checker assertion. The source README now traces real operations;
+final documentation checks passed 1,014 local links. Monitoring observed normal
+or warning memory pressure and swap from 1,756.56 to 6,056.38 MiB. These host
+observations do not qualify engine admission, allocator history or process RSS.
+Heavy campaigns were sequential. Owned source exports, targets, databases,
+VM artifacts, containers, logs and monitors were removed; the installed toolchains,
+verification image and preexisting development target were preserved.
+The existing broader durability, Windows, memory and concurrency qualifications
+remain unresolved.

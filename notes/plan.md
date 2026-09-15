@@ -24,34 +24,12 @@ Linux storage path. Use the [full-synchronization workflow](../docs/testing.md#l
 for persistence checkpoints. Preserve the
 [remaining qualifications](#qualifications-that-remain-outside-this-internal-claim).
 
-## Active declared-schema CLI
+## Declared-schema CLI checkpoint
 
-Expose creation, declaration, schema inspection and logical-plan output through
-one CLI path over the existing library. First settle the bounded schema input
-and inspection interface against the event-report tables. `create-declared` now uses
-`Database::create_empty`; `create` retains legacy behavior. Focused parser and
-stock-process checks cover both forms, existing-path refusal and declaration
-compatibility. `explain` shares checked query-file preparation and formats the
-logical plan without execution; a runtime-failing query and broken sinks exercise
-that distinction. `declare --schema-file` parses a complete bounded file before
-calling the library: `table NAME`, then `NAME TYPE required|nullable` per column.
-Shared source checks and literal schema/error tests pass; malformed and duplicate
-columns leave generation zero unchanged. `schema --table` now uses a borrowed
-`TableSchema` view over validated catalog bytes. Focused checks cover literal
-metadata, publication inside the callback, failure/unwind release, read faults,
-cancellation and admission before I/O. Stock CLI inspection and declaration-token
-resolution pass. The fresh event-report CLI walkthrough passes on macOS using
-the report example's 16 MB/8 MB budgets; 2 MB correctly refuses grouping admission.
-The CLI campaign passes 135 allocation-free parser control/deny pairs and 811
-allocation-prefix cases. Load and declaration rename cuts resolve both aborted
-and durable outcomes; declaration failures reopen to a whole schema or absence.
-
-Finish with sequential full macOS and qualified GNU arm64 Linux gates on matching
-frozen inputs, followed by fresh examples. These gates include the integrated
-checkpoint. This boundary covers the new public inspection buffer/snapshot
-lifetime and CLI publication paths; do not repeat them for editorial changes.
-The CLI walkthrough must also run freshly on Linux. Review and synchronize only
-after both platforms' required evidence, documentation and cleanup are complete.
+Creation, declaration, schema inspection and logical-plan output are complete.
+The [checkpoint evidence](evidence.md#declared-schema-cli-checkpoint) records both
+full platform gates, fresh workflows and the final CLI refusal/recovery checks.
+Further work and planning are paused pending review.
 
 ## Path to the internal 0.1.0 checkpoint
 
@@ -82,8 +60,8 @@ not tasks to activate together. Scope each goal from the actual preceding result
 | 7 | Consolidate the integrated capability and its learning path. | 1 | Both full platform gates and fresh workflows pass on identified inputs; interfaces, failure explanations and source maps match the implementation. Remove dead paths and duplicate prose found along those flows. Record remaining limits and stop this queue. |
 
 This is **9 planned goals after consolidation**, with a working estimate of
-**9–13** if the importer or window exposes prerequisite repairs. The current CLI
-goal is implemented but still awaiting complete verification;
+**9–13** if the importer or window exposes prerequisite repairs. The CLI
+goal is complete;
 **8 planned goals remain after it**, or **8–12** with prerequisite repairs.
 Allow roughly **45–80 further working hours**, including focused verification,
 documentation, cleanup and several expensive platform checkpoints. CSV import

@@ -485,6 +485,8 @@ def check_operations(work, run, fixtures, heal_load, heal_declaration):
                 heal_load(database, result)
             if operation == "declare":
                 heal_declaration(database, result)
+                reopened = run(["open", *options(database)])
+                assert reopened.returncode == 0, reopened
                 settled = run(["schema", *options(database), "--table", "events"])
                 if settled.returncode == 0:
                     assert settled.stdout.endswith(expected_schema), settled
