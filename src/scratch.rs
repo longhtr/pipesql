@@ -1,5 +1,24 @@
-//! Disposable two-file scratch. The bootstrap capability owns names only until
-//! their removal is durable; each returned owner then accounts unlinked extents.
+//! Own two disposable files for algorithms that need temporary disk storage.
+//!
+//! Callers can alternate input and output files across sorting or inventory
+//! passes without overwriting data they still need to read. Scratch bytes are
+//! never part of a committed table graph and need no data-durability promise.
+//!
+//! Construction creates each file under a known name, keeps it open and removes
+//! the name. An open Unix file remains usable after unlinking and is
+//! released when its last descriptor closes. Synchronizing the directory makes
+//! the removal durable before this module returns the descriptors to a caller.
+//!
+//! `Admission` serializes only this construction phase. After the names are gone,
+//! independent scratch owners can coexist. If their durable removal is uncertain,
+//! the bootstrap owner requires exclusive reopen instead of letting another query
+//! reuse those names. Its `Drop` records that obligation without doing file I/O.
+//!
+//! `Scratch::write` charges an extended byte range before writing; a failed or
+//! partial write keeps that charge. Reads cannot exceed the admitted range.
+//! Successful reset truncates one file and releases its extent; dropping scratch
+//! closes both unlinked files before releasing their remaining temporary charges.
+
 use crate::effects::{DirectoryKind, Effect, Effects, LoadEffect, QueryEffect};
 use crate::error::{io_error, recovery_needed};
 use crate::namespace::{

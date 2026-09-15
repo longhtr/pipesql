@@ -1,8 +1,25 @@
-//! Database-wide resource admission and release.
+//! Share the database's memory and temporary-space budgets across live operations.
 //!
-//! Memory reservations release their charge on drop, after their physical owner
-//! has been destroyed. Temporary charges survive failed cleanup and ambiguous
-//! publication; only the owner that settles those files may release them.
+//! Reserving bytes grants space in an account; it does not allocate a buffer.
+//! `MemoryAuthority::reserve` adds a charge only if the combined total fits the
+//! limit and returns a `Reservation` that owns its eventual release. Concurrent
+//! updates have a finite retry bound and may return contention even below the limit.
+//!
+//! Owners can split or transfer a reservation without changing the total charge.
+//! This prevents another operation from taking the budget while a buffer moves
+//! between owners. The physical allocation must be dropped before its reservation;
+//! otherwise the account could admit new memory while the old bytes remain live.
+//!
+//! `TemporaryAuthority` requires explicit release after files are removed or
+//! durably published. A failed operation may leave file cleanup outstanding, so
+//! dropping its Rust handle is insufficient to settle that charge. Closing the
+//! database ends the in-memory account; persisted state still owns recovery debt.
+//!
+//! `allocate` performs fallible vector allocation inside a caller's admitted
+//! ceiling and checks the actual capacity returned. It can fail after reservation.
+//! Operators determine their required bytes and retain the matching charge; these
+//! counters are not measurements of process memory or arbitrary allocator overhead.
+
 use crate::Error;
 use std::mem::size_of;
 use std::sync::atomic::{AtomicU64, Ordering};

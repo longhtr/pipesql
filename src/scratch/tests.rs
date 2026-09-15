@@ -1,3 +1,15 @@
+//! Keep legacy table data safe across scratch construction failure and interruption.
+//!
+//! Cases run the production constructor on empty and populated databases, fail
+//! each recorded effect, then check resource release, strict writer admission
+//! and reopen. Unknown or wrongly owned debris must be rejected before cleanup.
+//! A query may still read its data while another reader owns the scratch names.
+//!
+//! Process-cut cases start this test executable as a child and require its exact
+//! interruption exit code before checking recovery and literal row counts. They
+//! exercise process death at selected effects, not power loss. `Directory` owns
+//! fixtures locally; run with the library's `scratch::tests` filter.
+
 use super::*;
 use crate::effects::Faults;
 use crate::{Config, QueryStep, Value};

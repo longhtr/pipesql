@@ -1,5 +1,19 @@
-//! Bounded pathname construction and lexical admission.
-//! Native canonicalization follows admission; it does not replace these checks.
+//! Validate requested database paths and build bounded, fallibly allocated names.
+//!
+//! Admission checks the supplied spelling before the OS resolves it. The path
+//! must be absolute, within the byte bound and free of dot components and NULs.
+//! A path such as `/data/../db` therefore cannot become accepted merely because
+//! normalization would erase the `..`. These checks do not establish file identity.
+//!
+//! `try_join_path` computes and reserves the full output size before appending
+//! either component. It follows Unix join semantics, including an absolute child
+//! replacing the parent. `joined_path` exposes the same operation as a DBMS error.
+//!
+//! Native canonicalization resolves symlinks through the filesystem crate.
+//! `CanonicalizeScratch` supplies overflow traversal storage charged to the
+//! database. Growth reserves both the old and new buffers while copying; refusal
+//! leaves the old bytes intact. Native work-limit exhaustion becomes a resource
+//! error rather than an unbounded traversal or retry.
 
 use crate::Error;
 use crate::error::io_error;

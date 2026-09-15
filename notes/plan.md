@@ -88,12 +88,11 @@ Complete the work in these increments:
    path through the system. Define necessary terms before using them, link exact
    contracts and remove duplicated explanations. Avoid uniform comment templates,
    documentation quotas or a permanent inventory framework.
-5. Verify each increment at its changed boundary and commit it locally. The Mac
-   gate's unchanged Rust tests passed; its corrected composition campaign passed
-   after repairing the checker's missing opening status. Let the running remaining
-   campaigns finish. Start the final Linux checkpoint after the documentation and
-   any resulting interface repairs are integrated. Reuse earlier evidence only
-   after inspecting exact input differences and affected contracts.
+5. Verify each increment at its changed boundary and commit it locally. Retain the
+   frozen Mac campaign evidence while the module review continues. Integrate the
+   documentation and any resulting interface repairs before the final platform
+   checkpoint. Reuse earlier evidence only after inspecting exact input differences
+   and affected contracts.
 6. Finish qualified platform checks and fresh examples, compare coverage and
    measured costs, review the final diff and remove owned temporary material.
    Commit and synchronize the verified checkpoint by fast-forward. Preserve the
