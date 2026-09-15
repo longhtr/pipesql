@@ -1,4 +1,15 @@
-//! Bounded owned text constants. Query source is never retained by execution.
+//! Decode one quoted SQL token into a small owned UTF-8 constant.
+//!
+//! `parse` returns both decoded text and the token's source length: an escape
+//! such as `\n` occupies two source bytes but produces one character. Both byte
+//! counts are bounded, so escapes cannot hide extra input work or storage.
+//! Invalid escapes, newlines and unterminated quotes return a parsing reason;
+//! the caller supplies its location in the query.
+//!
+//! The lexer uses this reader to recognize tokens, and binding stores the decoded
+//! value. Execution can then borrow the constant without retaining query text.
+//! `valid` checks UTF-8, length and zeroed unused bytes in internal plans.
+
 use std::str;
 
 pub(crate) const MAX_LITERAL_BYTES: usize = 32;

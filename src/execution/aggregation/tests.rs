@@ -1,3 +1,15 @@
+//! Check aggregate state, typed arguments and ownership through real execution.
+//!
+//! Cases compare fixed numeric/key vectors and complete query results, including
+//! repeated aggregation and widths that cross batch boundaries. They inspect
+//! private accumulator state to reject malformed plans, overflow and invalid
+//! source layouts, then verify reservation release after completion or refusal.
+//! Failure schedules use the engine's named effects; expected answers stay here.
+//!
+//! Run with the `execution::aggregation::tests` library test filter. The grouping
+//! children separately cover hash/spill phases; independent semantic campaigns
+//! compare stock query results without inspecting these internal accumulators.
+
 use super::*;
 use crate::Config;
 use crate::effects::Faults;
@@ -10,7 +22,6 @@ use crate::frontend::{FilterLiteral, Predicate};
 use crate::namespace::inspect_namespace;
 use crate::scalar::{Expression, Op};
 use crate::storage_format::RootState;
-use std::sync::atomic::Ordering;
 
 #[test]
 fn legacy_extrema_use_fixed_text_admission_and_preserve_typed_results() {
@@ -400,13 +411,7 @@ fn integer_aggregate_range_covers_the_last_admitted_row_and_refuses_the_next() {
 
 #[test]
 fn aggregate_positions_preserve_group_isolation_across_batch_and_lane_widths() {
-    let path = std::env::temp_dir().join(format!(
-        "pipesql-aggregate-positions-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir(&path).unwrap();
-    let fixture = Fixture(path);
+    let fixture = Directory::new();
     let database = Database::create_empty(
         &fixture.0.join("db"),
         Config::new(2_000_000, 1_000_000).unwrap(),

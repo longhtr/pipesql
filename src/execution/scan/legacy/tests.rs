@@ -1,3 +1,16 @@
+//! Exercise the fixed-schema scan's buffers, demand and failure boundaries.
+//!
+//! Loaded fixtures use real files and the public loader. Cases inspect internal
+//! buffer ownership, validate altered physical plans and cut read/cancellation
+//! effects while checking literal values, counts and released reservations.
+//! Projection-mask cases challenge every subset of the seven stored columns;
+//! result-lifetime cases keep emitted storage alive after its producer drops.
+//!
+//! The shared helper only constructs inputs and drains cursors. These cases own
+//! their expected results and failure schedules. Run with the
+//! `execution::scan::legacy::tests` library test filter; native syscall failures
+//! and independent format decoding remain separate campaigns.
+
 use super::{
     ARENA_BYTES, BLOCK_ROWS, DESCRIPTOR_CEILING, Layout, MAX_WORKSPACE_BYTES, SELECTION_CEILING,
     buffer_range, read_date, read_f64,
@@ -16,9 +29,8 @@ use crate::namespace::inspect_namespace;
 use crate::storage_format::{BlockDescriptor, RootState};
 use crate::{CancellationToken, Database, DateValue, Error, Value};
 use std::mem::size_of;
-use std::sync::atomic::Ordering;
 
-use crate::execution::test_support::{Fixture, NEXT, SQL, drain, finish_query, loaded};
+use crate::execution::test_support::{Directory, SQL, drain, finish_query, loaded};
 
 #[test]
 fn emitted_batch_outlives_source_and_keeps_its_charge() {
@@ -743,13 +755,7 @@ fn admission_before_io_and_physical_validation() {
 
 #[test]
 fn empty_computed_result_releases_unused_scratch_before_return() {
-    let directory = std::env::temp_dir().join(format!(
-        "pipesql-empty-computed-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir(&directory).unwrap();
-    let fixture = Fixture(directory);
+    let fixture = Directory::new();
     let database = Database::create(
         &fixture.0.join("database"),
         Config::new(2_000_000, 1_000_000).unwrap(),

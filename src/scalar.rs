@@ -1,4 +1,21 @@
-//! Bounded numeric programs shared by binding and execution.
+//! Type-check and evaluate bounded INT64/DOUBLE expression programs.
+//!
+//! An `Expression` holds postfix operations and a result type. In `qty 1 Add`,
+//! operands precede the operation that consumes them. Inference checks stack
+//! shape, visible column facts and legal argument types before evaluation.
+//! Constants and runtime columns therefore use the same arithmetic rules.
+//!
+//! Batch evaluation borrows typed input arrays and caller-owned scratch. Each
+//! stack position holds one vector of raw numeric bits plus separate validity.
+//! Validity is checked before interpreting a lane's payload. Integer overflow,
+//! division and function domains are checked before returning a result. Callers attach
+//! the owning expression's source span to an `ArithmeticFailure`.
+//!
+//! The `evaluation` child drives COALESCE and NULLIF one row at a time to preserve
+//! operand order and conditional demand. It requests only selected inputs.
+//! Neither evaluator allocates or owns database storage; execution admits and
+//! retains their scratch buffers.
+
 #[cfg(test)]
 use crate::frontend::SourceColumn;
 use crate::frontend::{DataType, MAX_ROW_VALUES, SemanticColumn};

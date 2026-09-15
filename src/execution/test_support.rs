@@ -13,30 +13,13 @@
 
 use super::*;
 use crate::Config;
+pub(super) use crate::test_support::Directory;
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-pub(super) static NEXT: AtomicU64 = AtomicU64::new(1);
 pub(super) const SQL: &str =
     "FROM lineitem |> SELECT l_quantity AS q, l_extendedprice AS p |> WHERE q < 25.0 |> SELECT p";
-pub(super) struct Fixture(pub(super) PathBuf);
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        crate::test_cleanup::directory(&self.0);
-    }
-}
-
-pub(super) fn loaded(rows: usize) -> (Fixture, Database) {
-    let path = std::env::temp_dir().join(format!(
-        "pipesql-stream-test-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir(&path).unwrap();
-    let fixture = Fixture(path);
+pub(super) fn loaded(rows: usize) -> (Directory, Database) {
+    let fixture = Directory::new();
     let input = fixture.0.join("lineitem.tbl");
     let mut file = std::io::BufWriter::new(File::create(&input).unwrap());
     for row in 0..rows {
@@ -48,6 +31,7 @@ pub(super) fn loaded(rows: usize) -> (Fixture, Database) {
         )
         .unwrap();
     }
+    file.flush().expect("flush execution test input");
     drop(file);
     let mut database = Database::create(
         &fixture.0.join("database"),

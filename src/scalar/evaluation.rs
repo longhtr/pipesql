@@ -1,10 +1,17 @@
-//! Row evaluation that requests only the columns on the selected expression path.
+//! Evaluate one numeric row while letting the caller supply demanded columns.
 //!
-//! Postfix subtrees remain contiguous. At the start of a COALESCE fallback, the
-//! left result is on top of the value stack. A non-NULL result skips directly
-//! past that call, after coercion to the call's statically determined type.
-//! NULLIF uses the same cursor to evaluate both operands in order, retaining
-//! the first value for the unequal/UNKNOWN result without evaluating it again.
+//! `next_column` advances a validated program until it needs an input or finishes.
+//! The caller evaluates that column and passes its value to `supply`. This pause
+//! matters when an input is itself computed: eager input collection could raise
+//! an error in a branch that SQL does not demand.
+//!
+//! `COALESCE(7, 1 / 0)` returns 7 without evaluating the fallback. Because postfix
+//! subtrees are contiguous, `new` can derive where to jump when the left result
+//! is non-NULL. The selected value is coerced to the validated call type.
+//! NULLIF evaluates both operands in order and retains the first for an unequal
+//! or UNKNOWN comparison. An argument failure stops either call immediately.
+//! Fixed stacks and forward cursor movement bound the work and scratch lifetime.
+
 use super::*;
 
 pub(crate) struct Evaluation<'a> {
