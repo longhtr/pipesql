@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Real CLI source under allocator refusal; stock CLI descriptor/byte checks."""
+"""Check CLI refusal, publication outcomes and output failures in real processes.
+
+Build the stock CLI and a separate probe that includes its source with an armed
+allocator. Case-local expectations cover argument capture, allocation prefixes,
+transaction tokens, reopen/retry outcomes and closed or broken output sinks.
+Native publication injection remains a separate observer; successful stock runs
+check descriptors and bytes without that instrumentation.
+
+Run directly on macOS or Linux. The supervisor bounds each child, preserves its
+exit status and owns temporary databases and builds. This is CLI boundary evidence;
+the library allocation campaign checks the public API's ownership contracts.
+"""
 from functools import partial
 from typing import NamedTuple
 from pathlib import Path

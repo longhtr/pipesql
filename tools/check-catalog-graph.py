@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Stock graphs and deliberately malformed references for the independent checker."""
+"""Challenge persisted catalog inspection with stock graphs and corrupt copies.
+
+A caller linked to the stock library creates a history with committed and aborted
+attempts. The independent catalog_graph decoder must recover its literal schema,
+typed rows and success history. Mutations repair enclosing checksums so a checksum
+error cannot hide the reference or ownership defect each case intends to expose.
+Selected copies also go through public open/query rejection. Wrong-answer controls
+challenge the inspector and the report expectations themselves.
+
+Run directly for the full campaign; --seed-only omits corruption cases. --output
+retains artifacts in a new directory, otherwise temporary ownership removes them.
+Neither mode simulates power loss; interruption has its own campaign.
+"""
 import argparse
 from dataclasses import replace
 import hashlib

@@ -1,7 +1,10 @@
-"""Independent retained candidate vectors (rejected format 3 and replacement 5).
+"""Supply bytes for retained format-3 and format-5 compatibility fixtures.
 
-No production imports or filesystem writes. Native geometry and checksum domain
-are unchanged; version-dependent unit checksums are regenerated independently.
+vectors(version) assembles control records, roots, a WAL and two typed units.
+The independent multi_table oracle supplies format-3 layouts; format 5 changes
+version fields and recomputes their checksums while retaining native geometry.
+Neither path imports production codecs or writes files. check-fixtures.py owns
+comparison with retained bytes; this module has no command-line entry point.
 """
 
 import runpy

@@ -1,4 +1,15 @@
-"""Independent public checks for aggregate and projection composition."""
+"""Compare composed stock SQL queries with case-local independent expectations.
+
+Independent encoders create input databases; Python models and literal rows
+specify grouping, arithmetic, dates, joins and demanded failures. QueryChecks owns
+subprocess execution, complete result records and observation hashes, while each
+check_* family owns its expected answer. Portable hashes omit database placement
+only: typed rows, schema and completion remain part of the evidence.
+
+Run directly to build a temporary stock CLI, or supply an identified CLI and a new
+work directory. The campaign emits JSON observations and raises on disagreement;
+test-campaign-oracles.py challenges its result interpretation without the engine.
+"""
 
 import argparse
 import hashlib

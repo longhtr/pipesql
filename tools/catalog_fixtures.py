@@ -1,8 +1,13 @@
-"""Independent catalog/schema/unit/root fixture encoders.
+"""Encode small catalog fixtures with literal layouts and independent checksums.
 
-Keep literal layouts and checksum calculations separate from production codecs
-and the persisted-graph inspector. tools/check-fixtures.py compares these bytes
-with retained fixtures; importing this module does no file I/O.
+Schema order deliberately differs from physical column order; payloads include
+NULLs, signed zero, exceptional DOUBLE bits and multibyte text. Keeping these
+encoders separate from production codecs and the graph inspector lets readers
+catch a writer that produces internally consistent but incorrect bytes.
+
+vectors() returns bytes without writing; write_database() creates a new namespace
+for public query campaigns. Run this file with a new output directory to generate
+vectors there. check-fixtures.py compares retained bytes without replacing them.
 """
 
 import argparse

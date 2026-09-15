@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Independent rational rounding oracle; no imports from the Rust implementation."""
+"""Reproduce retained SUM/AVG vectors without using the engine's arithmetic code.
+
+SUM rounds exact rational additions to binary64 with ties to even. AVG compares
+ordinary finite sums directly; when that sum overflows, it bounds the exact mean
+by a forward-error allowance and the input range. Those cases specify an interval,
+not one implementation's answer. Special values and fixed-seed bit patterns
+exercise cancellation, signed zero, subnormals, infinities and NaNs.
+
+Run with --check to compare the retained rounding.txt byte for byte. Running
+without arguments replaces that fixture; neither mode executes production code.
+"""
 from fractions import Fraction
 import math
 from pathlib import Path

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Challenge campaign interpretation without building or invoking the engine."""
+"""Challenge campaign checkers with false evidence, without running the engine.
+
+Feed literal rows, status records and allocation traces to the actual checkers,
+then remove or alter consequential fields. Mocked process failures must escape
+before a passing observation is recorded. These controls test interpretation;
+the owning campaigns still establish behavior against stock engine artifacts.
+Run this file directly or through check-maintenance.py.
+"""
 
 from contextlib import redirect_stdout
 import copy
@@ -15,9 +22,64 @@ from unittest.mock import Mock, patch
 
 TOOLS = Path(__file__).resolve().parent
 COMPOSITION = runpy.run_path(str(TOOLS / "check-composable-aggregates.py"))
+SEMANTICS = runpy.run_path(str(TOOLS / "check-aggregate-semantics.py"))
 ALLOCATION = runpy.run_path(str(TOOLS / "check-diagnostic-allocation.py"))
 GRAPH = runpy.run_path(str(TOOLS / "check-catalog-graph.py"))
 INTERRUPTION = runpy.run_path(str(TOOLS / "check-catalog-interruption.py"))
+
+
+class AggregateExpectations(unittest.TestCase):
+    def test_exceptional_values_keep_distinct_expectations(self):
+        matches = SEMANTICS["matches_case"]
+        for expected, bits, accepted in [
+            ("nan", "7ff0000000000001", True),
+            ("nan", "fff8000000001234", True),
+            ("nan", "7ff0000000000000", False),
+            ("infinity", "7ff0000000000000", True),
+            ("infinity", "fff0000000000000", False),
+            ("8000000000000000", "0000000000000000", False),
+        ]:
+            output = f"status=querying\nrow=double:value:{bits}\nrow_count=1\nstatus=queried\n"
+            with self.subTest(expected=expected, bits=bits):
+                self.assertEqual(matches(
+                    {"column": 0, "expected": expected},
+                    subprocess.CompletedProcess([], 0, output, ""),
+                ), accepted)
+
+    def test_overflow_requires_failed_process_without_published_results(self):
+        case = {"expected": "overflow"}
+        matches = SEMANTICS["matches_case"]
+        for code, output, error, accepted in [
+            (1, "status=querying\n", "arithmetic overflow", True),
+            (0, "status=querying\n", "arithmetic overflow", False),
+            (1, "status=querying\n", "I/O failure", False),
+            (1, "row=double:1:3ff0000000000000\n", "arithmetic overflow", False),
+            (1, "status=queried\n", "arithmetic overflow", False),
+        ]:
+            with self.subTest(code=code, output=output, error=error):
+                self.assertEqual(matches(
+                    case, subprocess.CompletedProcess([], code, output, error)
+                ), accepted)
+
+    def test_correct_value_requires_complete_successful_query(self):
+        case = {"column": 0, "expected": "3ff0000000000000"}
+        output = "status=querying\nrow=double:1:3ff0000000000000\nrow_count=1\nstatus=queried\n"
+        matches = SEMANTICS["matches_case"]
+        self.assertTrue(matches(case, subprocess.CompletedProcess([], 0, output, "")))
+        for code, altered in [
+            (1, output),
+            (0, output.replace("status=querying\n", "")),
+            (0, output.replace("status=queried\n", "")),
+            (0, output.replace("row_count=1", "row_count=0")),
+            (0, output.replace("row_count=1", "row_count=1\nrow_count=1")),
+            (0, output.replace("status=querying", "status=querying\nstatus=querying")),
+            (0, output + "status=queried\n"),
+            (0, output.replace("row=double:1:3ff0000000000000\n", "")
+             + "row=double:1:3ff0000000000000\n"),
+            (0, output.replace("3ff0000000000000", "4000000000000000")),
+        ]:
+            with self.subTest(code=code, output=altered):
+                self.assertFalse(matches(case, subprocess.CompletedProcess([], code, altered, "")))
 
 
 class ReportHistory(unittest.TestCase):

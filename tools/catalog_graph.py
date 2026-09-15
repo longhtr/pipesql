@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
-"""Read-only independent namespace-7 graph inspection of an offline database.
+"""Inspect an offline catalog database without the engine's decoder or repair code.
 
-Uses no engine decoder or fixture encoder. Resource refusal is distinct from
-corruption. Output preserves DOUBLE bits and represents aborted history as gaps
-in the issued prefix, never by expanding a potentially u64-sized range.
+Starting from namespace-7 roots and their fence, select an authoritative snapshot
+and follow its history, catalog, schemas and data references. Check identities,
+extents, checksums and typed payloads before reporting rows and unreachable files.
+The decoder and checksum recurrence are independent of fixture encoders too.
+
+inspect() holds the cooperative writer lease, but callers must supply a quiescent
+copy; this is neither recovery nor protection against external mutation. Object,
+read-byte and decoded-value budgets bound traversal. History gaps represent
+aborted attempts without expanding a potentially u64-sized issuance range.
+
+Run with a database path and optional limits to emit JSON preserving DOUBLE bits.
+Exit 3 means a diagnostic limit; exit 2 means invalid or unavailable input. The
+check-catalog-graph.py campaign challenges this inspector with corrupt copies.
 """
 import argparse
 from dataclasses import dataclass

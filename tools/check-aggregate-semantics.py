@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""Public query regressions for aggregate overflow and exceptional values.
+"""Run stock queries against literal aggregate overflow and DOUBLE expectations.
 
-An optional CLI path uses an already identified stock artifact. Without it,
-build a fresh stock CLI from this tree. A mismatch always fails the gate.
+An independent snapshot encoder supplies the input bits; cases.json supplies the
+expected bits, NaN classification or overflow. Successful cases require one row
+and complete CLI status records. Overflow requires the failing process status,
+its diagnostic and no published row or success marker.
+
+Run directly, optionally supplying an identified stock CLI path; otherwise build
+one in owned temporary storage. Print each observation as JSON and fail on any
+mismatch. The composition campaign covers combinations beyond these boundaries.
 """
 import argparse
 import hashlib
@@ -15,6 +21,52 @@ from check_process import run as run_process
 from check_support import build_cli, require_executable
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def matches_case(case, result):
+    """Compare one literal arithmetic expectation with its CLI observation."""
+    expected = case["expected"]
+    matched = False
+    if expected == "overflow":
+        matched = (
+            result.returncode == 1
+            and not any(
+                line.startswith("row=") or line == "status=queried"
+                for line in result.stdout.splitlines()
+            )
+            and "arithmetic overflow" in result.stderr
+        )
+    elif result.returncode == 0:
+        lines = result.stdout.splitlines()
+        completion = [
+            line for line in lines if line.startswith(("row_count=", "status="))
+        ]
+        expected_completion = ["status=querying", "row_count=1", "status=queried"]
+        if (
+            completion != expected_completion
+            or lines[:1] != expected_completion[:1]
+            or lines[-2:] != expected_completion[1:]
+        ):
+            return False
+        rows = [
+            line[4:].split("|")
+            for line in result.stdout.splitlines()
+            if line.startswith("row=")
+        ]
+        if len(rows) == 1:
+            value = rows[0][case["column"]].split(":")
+            if len(value) == 3 and value[0] == "double":
+                bits = int(value[2], 16)
+                if expected == "nan":
+                    matched = (
+                        bits & 0x7FF0000000000000 == 0x7FF0000000000000
+                        and bits & 0x000FFFFFFFFFFFFF != 0
+                    )
+                elif expected == "infinity":
+                    matched = bits == 0x7FF0000000000000
+                else:
+                    matched = bits == int(expected, 16)
+    return matched
 
 
 def main(argv=None):
@@ -86,35 +138,7 @@ def main(argv=None):
                 cwd=ROOT,
             )
             expected = case["expected"]
-            matched = False
-            if expected == "overflow":
-                matched = (
-                    result.returncode == 1
-                    and not any(
-                        line.startswith("row=") or line == "status=queried"
-                        for line in result.stdout.splitlines()
-                    )
-                    and "arithmetic overflow" in result.stderr
-                )
-            elif result.returncode == 0:
-                rows = [
-                    line[4:].split("|")
-                    for line in result.stdout.splitlines()
-                    if line.startswith("row=")
-                ]
-                if len(rows) == 1:
-                    value = rows[0][case["column"]].split(":")
-                    if len(value) == 3 and value[0] == "double":
-                        bits = int(value[2], 16)
-                        if expected == "nan":
-                            matched = (
-                                bits & 0x7FF0000000000000 == 0x7FF0000000000000
-                                and bits & 0x000FFFFFFFFFFFFF != 0
-                            )
-                        elif expected == "infinity":
-                            matched = bits == 0x7FF0000000000000
-                        else:
-                            matched = bits == int(expected, 16)
+            matched = matches_case(case, result)
             print(
                 json.dumps(
                     {

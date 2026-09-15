@@ -78,8 +78,8 @@ whether a database result is correct.
 The graph caller separates fixture creation, receipt checks, and typed-row checks.
 Keep its expected values independent of fixture construction. Native observers
 must retain allocation, fault-arm, syscall, and cleanup order when edited.
-`test-campaign-oracles.py` challenges extracted interpretation with wrong rows,
-incomplete output, failed processes, and missing allocation coverage. Run it
+`test-campaign-oracles.py` challenges interpretation with wrong rows, incomplete
+aggregate/composition output, failed processes, and missing allocation coverage. Run it
 through the maintenance check, then run the affected stock campaigns.
 
 ## Measure synchronization in a verification caller
