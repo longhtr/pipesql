@@ -13,7 +13,7 @@ outcomes are verified; no checkpoint goal remains. The final tested source is
 covers matching 24-stage macOS/GNU arm64 Linux gates, 687 ordinary Rust tests per
 platform, 103 tooling tests, 44 codec fixtures, 24 semantic cases, 350 composition
 records and 18 fresh scenarios per platform. Subsequent work adds timing diagnostics and full-synchronization Linux
-verification. The strict-creation change below is undergoing platform verification.
+verification. Strict creation validation is now verified as described below.
 
 The [event-report lesson](../docs/event-report.md) is the entry point: build typed
 events and dimensions, append, reopen, report, retain an older snapshot, compare
@@ -59,36 +59,18 @@ and qualification contract now make that distinction explicit. That investigatio
 changed no engine or gate behavior; the completed analytical checkpoint stays
 closed.
 
-## Active strict creation validation
+## Verified strict creation validation
 
-Separate validation of a fresh namespace from recovery of an existing database.
-Creation already writes and synchronizes its initial files and child directories,
-and now validates the exact initial state, database identity and held lease
-without entering recovery or making its four additional synchronization calls.
-The implementation is committed as `0f1e47b`. Keep the final database/parent barriers
-and every repairing-reopen rule until independent evidence justifies otherwise.
+The creation-path change is committed as `0f1e47b`. Fresh namespaces now undergo
+exact read-only validation instead of recovery, retaining nine creation barriers
+and removing four redundant recovery synchronizations. Cleanup checks the held
+lease identity before deleting files. Reopen still owns repair.
 
-Trace the creation and namespace owners, then challenge initial roots, fence,
-control, directory contents and lease identity. Preserve independent decoders,
-refusal order, cleanup under the lease and observable failures. Measure stock
-creation before and after; reassess the design after 45 minutes of implementation
-and focused verification. A local timing improvement cannot justify weaker
-validation or durability.
-
-A focused replacement-directory test exposed and now guards a cleanup defect.
-Cleanup rechecks the held lease identity before deleting files. An identity
-mismatch or inspection failure returns cleanup debt and preserves the files.
-macOS verification covers all 24 stages across the initial run and a corrected
-native-I/O continuation. Linux verification is running; fresh examples remain pending.
-
-Use focused regressions and reusable build outputs during implementation. Keep
-measurements small and tied to the proposed benefit. Run the required sequential
-macOS and full-synchronization GNU arm64 Linux gates and affected fresh examples
-once the persistence change is ready; repeat only for changed inputs or a
-concrete unresolved failure. Record exact inputs and remaining platform
-limits, remove owned artifacts, review and commit the verified change, and
-synchronize by fast-forward. This is a creation-path improvement, not a new
-explanation of the earlier platform timing discrepancy.
+The [verification record](evidence.md#strict-creation-validation) covers the
+required macOS stages, a complete full-synchronization GNU arm64 Linux gate and
+four fresh workflows per platform. Paired stock creation medians fell from
+28.236 to 24.674 ms on macOS and from 70.212 to 59.562 ms on Linux. These are
+scoped creation observations, not general OS or whole-gate performance claims.
 
 ## Next: repository consolidation
 

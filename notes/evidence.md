@@ -5873,3 +5873,192 @@ modification time 1789272882.6037393. The provisioned image, installed toolchain
 and unrelated containers were preserved. Final documentation verification passed
 962 local links. The commands and source reproduce the checks; removed outputs
 are not required inputs and no historical archive was retained.
+
+## Strict creation validation
+
+The change separates genesis validation from recovery in `src/namespace.rs`.
+Creation retains nine initial/final synchronization calls; its former recovery
+path added four calls. The successful legacy effect census falls from 78 to 63,
+and short-transfer failure positions from 11 to 9. Existing reopen recovery is
+unchanged. Independent readers must agree on the exact zero-issued initial state,
+database identity and held lease. No recovery write can repair initial bytes.
+
+Focused development checks passed five creation regressions, the surrounding
+database suite and the catalog bootstrap effect sweep. The replacement-directory
+control first failed because cleanup deleted the replacement. Cleanup now checks
+the held LOCK identity before deletion. Both injected failures of that inspection
+return explicit cleanup debt and preserve all files; normal failure cleanup still
+excludes a competing opener until it finishes. These focused runs are filtered
+debug evidence, not a full platform gate.
+
+The design review retained the change: it reuses the existing read phases and
+settled-state predicate, adds no new resource owner and preserves the
+creation barriers that make synchronized children reachable. The measured stock
+creation benefit supports proceeding to persistence qualification.
+
+### Stock creation observations
+
+Baseline engine source is `de7ff39`; the candidate is the strict-creation change.
+Both use release/offline/locked builds and one Cargo job. Each timed invocation
+is the stock `create` command with memory/temp limits of 2,000,000 bytes. Two paired
+warmups precede nine measured pairs. Order alternates before/after each pair.
+Every create must print `status=created`; a stock open must print `status=opened`.
+Reopen and owned directory deletion are outside the timer. The earlier unpaired
+macOS warmup overlapped a Linux build and is excluded. No general workload or
+whole-gate speed claim follows from these short samples.
+
+mac:
+
+- before: median 28.236167 ms; samples [33.134625, 28.236167, 27.351208, 26.387208, 30.471875, 27.307875, 26.569375, 35.257959, 29.304375].
+  Binary SHA-256 `3ca182d2d51b7d1c91d0ade8873e4507488a09e4569fdf42ead09c7424afee80`.
+- after: median 24.673542 ms; samples [28.964667, 24.257334, 25.571167, 23.196958, 24.697125, 24.673542, 24.575833, 25.608833, 23.612458].
+  Binary SHA-256 `25136bde2f9de8d2a80d63f05527629bd0d33421cad5f63aedfdece59a4f20a5`.
+
+linux:
+
+- before: median 70.211833 ms; samples [70.211833, 64.830083, 61.607667, 70.794125, 77.765125, 71.7255, 68.638583, 69.671959, 77.533125].
+  Binary SHA-256 `e82a214c69bf3bc369eff5574ff5540392e4f628a1d131d101dd14a9df9f63c9`.
+- after: median 59.561916 ms; samples [58.011, 57.89675, 53.691958, 60.744375, 70.732625, 58.790167, 67.924, 62.617209, 59.561916].
+  Binary SHA-256 `e527938732cba6780220961f8b566273a5f1b4ca216be6ee02a24b53d87b0622`.
+
+macOS uses the native APFS path. GNU arm64 runs on ext4 in the existing
+Apple VM controller with `full` synchronization, uid/gid 1000, one CPU, 2 GiB
+and no network device. Docker only prepares the boot image. The timing command
+replaces the exported guest shell; this is a timing experiment, not a gate.
+The guest returned exit 0 and reported completed cleanup. The original image,
+kernel and storage premises match the preceding full-storage checkpoint.
+
+### Reproduce the paired timing
+
+Build the two identified revisions separately, then run this driver with the
+before binary, after binary and an unused absolute data directory. For Linux,
+place both binaries and this driver in the source export prepared by
+`tools/check-linux-vm.py::prepare_guest`; the guest shell invokes it on `/tmp`,
+and the existing controller runs that image with `full verify`. Require the
+controller configuration and guest completion checks used by the VM runner.
+
+```python
+import hashlib, json, shutil, statistics, subprocess, sys, time
+from pathlib import Path
+before, after, directory = map(Path, sys.argv[1:])
+directory.mkdir()
+records = []
+for pair in range(11):
+    for name, binary in ([('before', before), ('after', after)] if pair % 2 == 0 else [('after', after), ('before', before)]):
+        root = directory / f'{pair}-{name}'
+        common = ['--database', str(root), '--memory-limit-bytes', '2000000', '--temp-limit-bytes', '2000000']
+        start = time.perf_counter_ns()
+        result = subprocess.run([str(binary), 'create', *common], capture_output=True, check=True)
+        elapsed = time.perf_counter_ns() - start
+        assert b'status=created' in result.stdout, result
+        reopened = subprocess.run([str(binary), 'open', *common], capture_output=True, check=True)
+        assert b'status=opened' in reopened.stdout, reopened
+        if pair >= 2:
+            records.append({'pair': pair, 'binary': name, 'elapsed_ns': elapsed})
+        shutil.rmtree(root)
+directory.rmdir()
+print(json.dumps({'binaries': {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in [('before', before), ('after', after)]}, 'records': records, 'median_ns': {name: statistics.median(r['elapsed_ns'] for r in records if r['binary'] == name) for name in ['before', 'after']}}, sort_keys=True), flush=True)
+```
+
+Initial macOS manifest: 752 files, SHA-256
+`41162e7389df85c3f5aef2da543e69bf354ccacfde5ee0eec415837d5a416663`.
+
+### macOS verification continuation
+
+The initial full run passed stages 1–21, then failed the native I/O census: fresh
+creation no longer calls positioned fence readback (`pread`, kind 2). The literal
+creation mask changes from 7 to 3; load/recovery masks and all fault/partial-I/O
+loops remain intact. The 217-cell native synchronization campaign already passed.
+
+Only `tools/check-native-io.py` differs between the original and corrected
+752-input manifests. Engine, filesystem, tests and all earlier campaign drivers
+are identical. The corrected manifest SHA-256 is
+`08319e1961ebeb5f79e8711e0356a75bbb819d462eb5bdf071d5816b4e4aafd5`.
+The continuation passed maintenance (13.759 s), native I/O (278.022 s), catalog
+interruption (78.499 s) and catalog graph (27.438 s). Across both receipts,
+all 24 required stages have passing evidence. The first receipt remains failed;
+this is not a single all-green full run. Including the failed census and repeated
+maintenance, total stage time was 1,949.046 s. This excludes diagnosis between runs.
+
+Receipt SHA-256 values:
+
+- Initial full run: `80ad6acce84d6e3f16d5b2a2716b0dc04698889c398cf2f5e8f1521741bfee2b`.
+- Corrected continuation: `bb673d68342947edb8a13549eda5d2d58a28b5ea7821525a47be4ca52e97a2ad`.
+
+Both report unchanged inputs and no finalization errors. The corrected source is
+retained as `0f1e47b`. The earlier source differs only in the native I/O checker,
+whose original version is available at `489287f`.
+
+macOS passed 692 ordinary Rust tests, with no ignored or filtered ordinary tests.
+The separate lease subprocess passed one test with six intentional filtered
+siblings. Native initialization covered 30 cells; synchronization covered 217;
+I/O covered 1,378. Catalog allocation covered refusal prefixes 0–1051 and
+healthy control 1052 at both pathname lengths, down from 1056 observed allocations.
+CLI allocation covered 545 prefixes, down from 552; its creation census is 32. The smaller
+creation counts follow removed operations, not skipped failures on retained
+operations. The catalog graph campaign passed 48 cases, two graph oracle controls,
+one report oracle control and its CLI, genesis, lease and column-order checks.
+Facts append/recovery reached 76/46 cuts and 249 independent graph checks;
+report append/recovery reached 88/46 cuts and 273 graph checks.
+
+### Full-synchronization Linux and final workflows
+
+GNU arm64 Linux passed all 24 stages on the corrected 752-input export. The
+receipt reports unchanged inputs, zero failed stages and no finalization errors.
+The host wrapper also reports successful cleanup. Its profile retains one CPU,
+2 GiB, uid/gid 1000, native ext4 storage, full host synchronization and no network
+device. The image and kernel match the preceding full-storage checkpoint.
+
+Total Linux stage time was 3,116.736 s. The largest stages were Rust tests
+(792.217 s), public allocation (1,451.657 s) and native I/O (503.710 s).
+This is stage time, excluding host preparation and fresh examples; it is not a
+causal whole-gate performance comparison.
+
+Linux also passed 692 ordinary Rust tests and the separate lease subprocess.
+Native initialization covered 80 cells; the allocation prefixes, synchronization,
+I/O, interruption and graph counts above agree with macOS. Both platforms passed
+107 tooling tests, 44 independent codec fixtures, 24 aggregate-semantic cases and
+350 composition records. The semantic records agree after database-path
+normalization; composition records agree after excluding path-dependent stdout
+digests. The two Darwin ACL recovery exclusions remain explicit on Linux.
+
+Four fresh workflows followed each platform gate: `declared`, `event_report`,
+and `scaled_report` with the `even` profile at 32,000,000 and 8,000,000 bytes.
+The declared result matched the two documented literal rows. The report checked
+its literal rows, stored bits and retained snapshot; both scaled runs checked
+131,072 events and 20 groups against their independent model. Each scaled run
+observed 13,893,440 temporary bytes and exercised spill cancellation and replay.
+All workflows completed and their owned databases were removed.
+
+The first one-off macOS example wrapper misclassified `events` with an `even`
+prefix check. The declared example's passing result was retained; the event
+report was confirmed again with the corrected check before the two scaled runs.
+No engine or gate rerun was required for that wrapper error.
+
+Receipt SHA-256 values:
+
+| Record | SHA-256 |
+| --- | --- |
+| Linux full gate | `6d5238a826d6b6603e590318f83d7aa0668b7ebb7787de54cca10734d596c21c` |
+| Linux environment and cleanup | `ad29a8827a976336923ebfb30c1035c61f7e64f7d63dc011b8ee51db0e8ff8ae` |
+| Linux console, including fresh workflows | `5cb4851aa9012cbf85133d2c4a102c876d56431b6490c4047697f6d87be00bba` |
+| macOS completed fresh-workflow record | `5fa712103f19e3542592fb5f76ec63927c1ce9a95423a04e7c09834bf6c08059` |
+
+The 8-GiB host was monitored during builds, timings and verification. Observed
+memory pressure was normal or warning; swap reached 6,044 MiB. Heavy work used
+one Cargo job and ran sequentially. The verification VM had no network device;
+its preparation containers used disabled networking. These observations do not
+qualify engine admission, usable-heap ownership or whole-process/RSS bounds.
+Broader power-loss/device, hostile external mutation, sanitizer/concurrency and
+Windows qualifications remain unchanged.
+
+Only `docs/engineering.md`, `docs/verification.md`, `notes/evidence.md`,
+`notes/plan.md` and `tests/README.md` changed after the corrected frozen export.
+The other 747 inputs retain manifest fingerprint
+`be51b7033f3c752344a97b45ed2b70cd1579cdadc8e4417f8b9ab1482f72aa13`.
+Final documentation verification passed 970 local links across 29 documents.
+Owned creation logs, exports, targets, timing databases and monitoring outputs
+were removed after receipt review. No creation verification process or container
+remained. The verification image, installed toolchains, existing checkout target
+and unrelated container were retained. Temporary consolidation preparation is
+separate unfinished work; it is not a retained creation archive.
