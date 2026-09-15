@@ -1,3 +1,11 @@
+//! Check that bounded error conversion preserves facts and diagnostic access.
+//!
+//! Each leaf is converted from production `Error` to `ErrorCause`, then compared
+//! for its fields, display and standard error-source chain. Compound cleanup must
+//! retain both causes and one recovery generation. A separate case drops the
+//! query text before inspecting its arithmetic source span. These are conversion
+//! invariants; they do not establish SQL semantics or native allocation bounds.
+
 use crate::{CauseKind, Error, ErrorCause, SourceSpan};
 use std::{error::Error as StdError, io};
 

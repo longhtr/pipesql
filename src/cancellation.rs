@@ -1,4 +1,9 @@
-//! Cooperative cancellation shared by callers and bounded database operations.
+//! Record a stop request that an operation observes at its own safe boundaries.
+//!
+//! The token does not interrupt a running thread or system call, or undo publication.
+//! It only stores the request; each operation decides when returning Cancelled
+//! is legal and how to release its work.
+
 use crate::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 

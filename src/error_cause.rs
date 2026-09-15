@@ -1,3 +1,16 @@
+//! Retain a failure's diagnostic facts without building a recursive error tree.
+//!
+//! Cleanup can fail while handling another error. `Error` keeps that compound
+//! outcome, with an `ErrorCause` for each failure. A cause contains one leaf kind
+//! and at most one recovery generation. This fixed shape lets conversion move
+//! existing facts, including an I/O error or source span, without allocating or
+//! turning them into text during a resource failure.
+//!
+//! `from_error` accepts ordinary failures and one recovery context. It rejects
+//! commit ambiguity and compound cleanup outcomes as programmer errors: flattening
+//! those into a leaf would lose information needed to decide whether a write can
+//! be retried. Formatting happens separately through the caller's formatter.
+
 use crate::{Error, SourceSpan};
 use std::{error::Error as StdError, fmt, io};
 

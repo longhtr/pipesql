@@ -1,4 +1,13 @@
-//! Validated Gregorian dates shared by import, binding and result exchange.
+//! Store calendar dates as signed day offsets, with no time-of-day or timezone.
+//!
+//! Day zero is 1970-01-01; earlier dates have negative offsets. Constructors check
+//! the supported calendar range, so later comparison can use the stored integer.
+//! Parsing and display convert between that representation and Gregorian fields.
+//!
+//! Day shifts add offsets. Month and year shifts preserve the day where possible
+//! and otherwise use the target month's last day, as when shifting January 31
+//! into February. Out-of-range dates or arithmetic overflow return `None`.
+
 /// A Gregorian date in years 0001 through 9999, measured from 1970-01-01.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct DateValue {

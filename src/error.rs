@@ -1,4 +1,14 @@
-//! Public operation outcomes and owned source locations.
+//! Report what failed while preserving what the caller may conclude about it.
+//!
+//! The immediate cause and the operation's outcome are different facts. A failed
+//! root synchronization may follow a visible commit, so publication reports
+//! `CommitAmbiguous` with its transaction token rather than an ordinary I/O error.
+//! Failed cleanup similarly retains both failures instead of hiding the first.
+//!
+//! `Error` carries those decisions from the operation that knows its state.
+//! `SourceSpan` keeps query byte offsets without borrowing the submitted text;
+//! `ErrorCause` retains diagnostic facts inside compound outcomes.
+
 use crate::{ErrorCause, TransactionId, error_cause, storage_format};
 use std::{error::Error as StdError, fmt, io};
 

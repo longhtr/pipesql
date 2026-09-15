@@ -1,4 +1,25 @@
-//! Owned typed columns for bounded execution and borrowed result exchange.
+//! Store a reusable group of rows as typed columns for execution and results.
+//!
+//! A batch holds a bounded number of rows, with one payload array per column.
+//! Each column also has a validity bitmap: a clear bit means SQL NULL, regardless
+//! of the payload stored at that position. Operators can therefore process typed
+//! arrays without allocating a separate object for every cell.
+//!
+//! General STRING columns keep UTF-8 bytes together and store each row's start
+//! and end offsets. Legacy one-byte keys use a smaller fixed representation;
+//! both become `Value::String` when read. Text capacity is admitted up front, and
+//! a write that exceeds it fails before changing that cell's bytes or span.
+//!
+//! Producers fill columns before calling `publish_rows`, which makes the complete
+//! row prefix visible. `clear` resets that prefix, validity and used text bytes
+//! while keeping allocations for reuse. Filling a batch never grows or compacts
+//! its text allocation. The public result borrows these buffers until its next mutable step.
+//!
+//! `OwnedBatch` keeps the payload and its memory reservation together. Creation
+//! transfers the charge before allocating; drop releases payloads before returning
+//! their charge. The inline tests check that transfer, typed access, NULLs and
+//! refusal/reuse at the text-capacity boundary.
+
 use crate::Error;
 use crate::fixed_text::StringValue as FixedKey;
 use crate::frontend::{DataType, MAX_ROW_VALUES};

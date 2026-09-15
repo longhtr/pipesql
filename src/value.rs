@@ -1,4 +1,8 @@
-//! Borrowed scalar values shared by batches, kernels, and public results.
+//! Represent one result cell without taking ownership of its source batch.
+//!
+//! Numeric and DATE payloads copy by value. STRING keeps a borrowed UTF-8 slice,
+//! so retaining text beyond the batch requires the caller to copy it. SQL NULL
+//! has its own variant; it is distinct from zero or an empty string.
 
 /// Validated UTF-8 borrowed from a result batch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
