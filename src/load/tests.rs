@@ -1,3 +1,16 @@
+//! Fixtures and independent namespace checks for the legacy lineitem loader.
+//!
+//! Child suites drive production loading, publication and injected failures.
+//! They share disposable directories and input-row construction here, while each
+//! case owns its expected outcome and fault schedule. Run under the `load::tests`
+//! library test filter.
+//!
+//! The root/fence checks below read fixed byte offsets and calculate CRC32C
+//! directly, without calling production decoders. They recognize only the empty
+//! and single-load generations used by these scenarios. Keeping that small
+//! independent interpretation catches agreement between a faulty writer and
+//! reader; expanding it to arbitrary histories belongs in a separate oracle.
+
 use crate::Config;
 use crate::namespace::{PRIVATE_NAME, ROOT_A_NAME, ROOT_B_NAME, UNITS_NAME, WAL_NAME};
 use std::fs;

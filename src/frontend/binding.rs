@@ -1,4 +1,24 @@
-//! Name, type, identity, and catalog binding; owns transient scope and prepared-plan admission.
+//! Resolve parsed names and types into a private plan, then validate it for use.
+//!
+//! `prepare_catalog` pins a snapshot and reads its table schemas. Each occurrence
+//! of a table gets separate query column identities: the two sides of a self-join
+//! must remain distinguishable even though they read the same stored columns.
+//! The legacy `prepare` entry supplies the fixed lineitem schema instead. Both
+//! enter `bind_plan` with source facts rather than table rows.
+//!
+//! `Binder` borrows one destination plan and the source facts. It owns the current
+//! name scope, suspended parent scopes and new expression/operator descriptors.
+//! Each stage resolves all its inputs before exposing its outputs to the next
+//! stage. A projection alias keeps the referenced value's identity; a computed
+//! value receives a new identity. Qualified table ranges have separate visibility
+//! rules from the ordinary output row.
+//!
+//! Plan and scope storage are reserved before allocation. Unknown names, type
+//! errors, failed constant evaluation and resource refusal discard the candidate.
+//! Temporary scopes drop before independent validation. A successful
+//! `PreparedQuery` retains the plan's reservation and, for catalog queries, the
+//! snapshot pin; execution never needs to resolve these names again.
+
 use super::lexer::ZERO_SPAN;
 use super::parser::{
     Parsed, ParsedAggregateEntry, ParsedAggregateRange, ParsedDateShift, ParsedExpression,

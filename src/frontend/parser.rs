@@ -1,4 +1,20 @@
-//! Bounded syntax and source spans. Parsing does not resolve names or read a database.
+//! Turn tokens into pipe stages and expression programs, retaining source spans.
+//!
+//! Parsed names still refer to query text. The binder later decides which table
+//! or column they name. Arithmetic uses postfix order: `qty + 1` becomes `qty`,
+//! `1`, `Add`. A stage stores a range into the shared operation array, so each
+//! expression does not require another full array in the parsed query.
+//!
+//! `parse_query` lexes the source, then `Parser::query` fills bounded pools for
+//! sources, stages and their arguments. Parenthesized inputs use explicit frames
+//! that record what to do when the child ends. Scalar operators use an explicit
+//! precedence stack; neither path grows the call stack with user nesting.
+//! The `boolean` child lowers WHERE decisions into forward branches.
+//!
+//! Unsupported syntax, missing operands and exhausted bounds return errors with
+//! source locations. Only a fully consumed query returns `Parsed`; parsing has
+//! no database access and cannot publish a partially executable plan.
+
 use crate::scalar::MAX_OPS;
 use crate::string_length::Unit as StringLengthUnit;
 

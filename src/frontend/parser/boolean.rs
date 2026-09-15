@@ -1,4 +1,16 @@
-//! Bounded WHERE syntax and forward decisions. Names and types stay in binding.
+//! Turn a WHERE Boolean expression into finite, short-circuiting decisions.
+//!
+//! Leaves are ordinary parsed comparisons or NULL tests. Operator and value
+//! stacks build their AND/OR/NOT structure with SQL precedence. A reverse walk
+//! then assigns each leaf its next destination: another leaf, the following pipe
+//! stage, or rejection of the row. For `a > 0 OR b > 0`, a true first comparison
+//! skips the second one. NOT changes the requested truth at the leaves.
+//!
+//! Branches move forward through bounded stage slots, so execution needs neither
+//! a recursive Boolean tree nor a loop back to an earlier predicate. This module
+//! records syntax and control flow; binding checks names, types and constants.
+//! Missing operands or unmatched grouping fail before controls leave the parser.
+
 use super::{
     Comparison, Error, FilterControl, Kind, MAX_TOKENS, Parsed, ParsedLiteral, ParsedStage, Parser,
     SourceSpan,

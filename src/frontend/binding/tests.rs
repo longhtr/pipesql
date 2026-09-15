@@ -1,3 +1,16 @@
+//! Challenge preparation's scope, identity, admission and validation boundaries.
+//!
+//! Public preparation calls exercise real declared and legacy schemas. Cases
+//! inspect plan facts, retain competing reservations and refuse the last required
+//! byte, then check that failure releases every prepared owner. Malformed-plan
+//! cases alter a successfully bound plan and require the independent validator
+//! to reject inconsistent references, types or descriptor ranges.
+//!
+//! Expected identities, source spans and errors are stated in each case. These
+//! checks protect plan construction, not the result of executing SQL; public
+//! catalog suites and semantic campaigns cover that separate contract. Run with
+//! the `frontend::binding::tests` library test filter.
+
 use super::super::lexer::{RESERVED_IDENTIFIERS, ZERO_SPAN, lex};
 use super::super::parser::{
     ParsedAggregateEntry, ParsedExpression, ParsedLiteral, ParsedOp, ParsedStage,

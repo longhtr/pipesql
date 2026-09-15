@@ -1,4 +1,16 @@
-//! Shared execution-test input construction and bounded result draining.
+//! Build legacy scan inputs and drive the real query cursor to completion.
+//!
+//! `loaded` writes a repeating quantity/price pattern, then imports it through
+//! `Database::load_lineitem`. The directory guard precedes fallible setup so a
+//! panic removes partial input and database files. Callers keep that guard alive
+//! until their database and query owners have dropped.
+//!
+//! `drain` checks batch size and the scan's one-read-per-step contract while
+//! collecting a numeric sum. `finish_query` counts rows for other scenarios.
+//! Both require a terminal outcome within a finite step bound; a partial prefix
+//! cannot pass as a completed result. Expected answers and fault schedules belong
+//! to the consuming scan and aggregation tests under the `execution::` filter.
+
 use super::*;
 use crate::Config;
 use std::fs::File;
@@ -24,7 +36,8 @@ pub(super) fn loaded(rows: usize) -> (Fixture, Database) {
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir(&path).unwrap();
-    let input = path.join("lineitem.tbl");
+    let fixture = Fixture(path);
+    let input = fixture.0.join("lineitem.tbl");
     let mut file = std::io::BufWriter::new(File::create(&input).unwrap());
     for row in 0..rows {
         writeln!(
@@ -37,14 +50,14 @@ pub(super) fn loaded(rows: usize) -> (Fixture, Database) {
     }
     drop(file);
     let mut database = Database::create(
-        &path.join("database"),
+        &fixture.0.join("database"),
         Config::new(2_000_000, 20_000_000).unwrap(),
     )
     .unwrap();
     database
         .load_lineitem(&input, &CancellationToken::new())
         .unwrap();
-    (Fixture(path), database)
+    (fixture, database)
 }
 
 pub(super) fn drain(

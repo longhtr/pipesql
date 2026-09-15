@@ -1,4 +1,16 @@
-//! Prepared-plan capacity calculation and fallible descriptor allocation.
+//! Size the retained plan storage before binding allocates its descriptors.
+//!
+//! `BindingBudget::calculate` counts the parsed operations that need owned
+//! storage. Direct column projections reuse identities; computed expressions,
+//! aggregates and set operations need additional descriptors. The budget includes
+//! the plan itself and the allocation allowances required by those owners.
+//!
+//! The binder reserves `bytes` from the database before calling `allocate`.
+//! Allocation can still fail after admission; partially constructed vectors drop
+//! before the caller releases its reservation. `Descriptors` transfers completed
+//! vectors into the plan. Temporary suspended name scopes have their own charged
+//! owner in the parent module because they end before the prepared plan's lifetime.
+
 use super::{
     AggregateEntry, AggregatePlan, Computed, DistinctPlan, Error, JoinKind, NullExtension,
     PREPARED_ALLOCATION_ALLOWANCE, Parsed, ParsedOp, ParsedStage, Plan, PreparedQuery, SetPlan,

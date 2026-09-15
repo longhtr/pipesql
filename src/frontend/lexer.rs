@@ -1,4 +1,15 @@
-//! Bounded lexical analysis and the pinned identifier policy. No catalog or allocation authority.
+//! Split query text into tokens while retaining their original byte locations.
+//!
+//! For example, `qty + 1` becomes an identifier, a plus sign and a number. Tokens
+//! store kinds and source spans, not copied text or interpreted values. The
+//! parser uses those spans to read names and literals and to locate errors.
+//!
+//! `lex` scans once into a fixed token array, skipping whitespace and comments.
+//! Source, token and identifier limits fail before the next item is stored.
+//! Quoted text is checked by the shared literal reader; names use the ASCII
+//! identifier policy and reserved-word list below. Resolving a name or choosing
+//! a number's database type belongs to binding.
+
 use super::{
     Comparison, Error, MAX_NAME_BYTES, MAX_SOURCE_BYTES, MAX_TOKENS, SourceSpan, parse, span,
 };

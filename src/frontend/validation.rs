@@ -1,4 +1,18 @@
-//! Independent semantic-plan validation. Does not call the parser or binder.
+//! Check that a completed semantic plan is internally consistent before execution.
+//!
+//! A plan contains indexed arrays and references to earlier relations. `validate`
+//! first checks their bounds and source identities, then walks stages in order.
+//! It verifies each operator's input shape, definitions, scope and output facts,
+//! including fresh identities and complete ownership of descriptor ranges.
+//! A forward reference or an expression that names an unavailable column therefore
+//! fails here even if the binder accidentally constructed it.
+//!
+//! This walk does not call the parser or binder. It shares semantic types and
+//! read-only plan accessors, so independence concerns the construction algorithm,
+//! not a separate representation of every fact. Malformed plans return `Corrupt`;
+//! user syntax and name errors should already have failed in earlier phases.
+//! No candidate reaches `PreparedQuery` until this check succeeds.
+
 use super::{
     AggregateArgument, AggregateKind, ColumnId, ColumnSet, Computation, DataType, Error, Group,
     MAX_AGGREGATE_COLUMNS, MAX_COLUMNS, MAX_COMPUTED, MAX_ORDER_ITEMS, MAX_PROJECTIONS,
