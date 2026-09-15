@@ -1,6 +1,11 @@
-//! Compare grouping under different memory budgets using independently known rows.
-//! Arguments: new absolute database path, memory bytes, optional groups (32 or
-//! 4096), and optional distribution (even or skewed). Defaults retain 4096/even.
+//! Measure grouped counts, sums and extrema under a chosen query memory budget.
+//!
+//! Two passes contribute amounts 1 and 3, evenly or with the second pass concentrated
+//! in one group. Simple counts from that construction determine every expected row.
+//! Setup and preparation are outside the execution/validation timer; result release
+//! is inside it. Reservation samples describe engine accounting, not process memory.
+//! Supply a new absolute path, memory bytes, optional groups (32 or 4096), and
+//! optional distribution (even or skewed). See docs/getting-started.md for comparisons.
 
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,

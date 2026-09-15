@@ -1,5 +1,11 @@
-//! Compare six computed projections with one expression over the same input.
-//! Supply a fresh absolute database path. Timings include checked completion.
+//! Compare six computed projection stages with one expression over identical rows.
+//!
+//! Keep both prepared plans live, warm each, and alternate execution order between
+//! samples. Every run must return the literal count and total, finish and release;
+//! setup and preparation are timed separately. Sampled additional reservations
+//! exclude the two retained plans and do not measure process memory. Supply a fresh
+//! absolute database path; docs/execution.md explains projection execution.
+
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
     DataType, Database, PreparedQuery, QueryStep, Value,

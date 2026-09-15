@@ -1,5 +1,11 @@
-//! Snapshot pins retain reader data; transaction history retains settled outcomes.
-//! Supply a new absolute database path; the example leaves that database there.
+//! Separate reader snapshots from retained transaction outcomes.
+//!
+//! Prepare a query over amounts 10 and 20, abort an empty append, then commit 30.
+//! Reclamation must preserve the old plan's rows until that plan drops; durable
+//! and aborted tokens must still resolve afterward and after reopen. A copied
+//! commit receipt retains metadata, whereas a prepared query pins readable data.
+//! Supply a new absolute database path; docs/getting-started.md follows this flow.
+
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Commit,
     CommitResolution, Config, DataType, Database, QueryResult, QueryStep, TransactionId, Value,

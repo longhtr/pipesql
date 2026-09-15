@@ -1,5 +1,11 @@
-//! Keep facts whose dimension key is missing, then group their amounts.
-//! Supply a new absolute database path. The database remains available afterward.
+//! Keep sales facts whose region has no matching dimension row.
+//!
+//! Declare and append facts and regions, reopen, then run left-join.sql. Both a
+//! missing key and a NULL key produce a NULL region name, displayed as unmatched.
+//! The query groups their amounts together. Rows are printed as they arrive, so
+//! successful process completion is required before treating them as a full result.
+//! Supply a new absolute database path; docs/getting-started.md follows the query.
+
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
     DataType, Database, QueryStep, Value,

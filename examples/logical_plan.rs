@@ -1,4 +1,11 @@
-//! Explain and execute query-flow.sql on the sales database made by declared.rs.
+//! Print and execute query-flow.sql against the sales database from declared.rs.
+//!
+//! The logical-plan view borrows prepared metadata and describes operations without
+//! executing them. Formatting must leave reservations unchanged. Execution separately
+//! checks the literal total 38, Finished and release of result and plan owners.
+//! Supply the existing absolute sales database path; docs/frontend.md follows
+//! these operations into the implementation.
+
 use pipesql::{CancellationToken, Config, DataType, Database, QueryStep, Value};
 use std::io::Write;
 use std::path::Path;

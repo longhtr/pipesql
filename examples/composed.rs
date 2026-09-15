@@ -1,5 +1,11 @@
-//! Follow a self-join, nullable aggregation, and final ordering under memory pressure.
-//! Supply a new absolute database path and a query memory limit in bytes.
+//! Observe a self-join, nullable aggregation and final ordering under a query budget.
+//!
+//! Two rows per key join to four pairs. Their known NULL patterns determine the
+//! counts and sums independently of execution. Check every descending group, then
+//! cancel a second execution after temporary storage appears and require release.
+//! Setup uses its own budget. Timings include execution, validation and result
+//! destruction; sampled reservations are not process memory measurements.
+//! Supply a new absolute database path and query memory bytes; see docs/getting-started.md.
 
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,

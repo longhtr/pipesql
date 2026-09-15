@@ -1,5 +1,11 @@
-//! Compare byte and Unicode-scalar projections over identical stored text.
-//! Supply a fresh absolute database path. Timings include checked completion.
+//! Compare byte counting with Unicode scalar counting over the same stored text.
+//!
+//! An eight-row pattern includes ASCII, multibyte text, combining marks, empty text
+//! and NULL. Literal totals check both queries on every timed execution. Keep both
+//! plans live, warm each and alternate order; require Finished and owner release.
+//! Setup and preparation are timed separately. Reservation samples are not process
+//! memory measurements. Supply a fresh absolute path; see docs/getting-started.md.
+
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
     DataType, Database, PreparedQuery, QueryStep, Value,

@@ -1,6 +1,10 @@
-//! Measure STRING extrema after constructing independently known input.
-//! Arguments: a new absolute database path, group count, text bytes, memory bytes,
-//! and optional batch rows (default 1).
+//! Measure STRING extrema while varying width, group count and input batching.
+//!
+//! Each key receives one all-a and one all-z value, which independently determine
+//! MIN, MAX and COUNT. Setup uses a separate budget. Execution timing includes
+//! validation and result destruction; sampled reservations exclude caller-owned
+//! strings and do not measure process memory. Supply a new absolute path, groups,
+//! text bytes, memory bytes and optional batch rows. docs/getting-started.md gives profiles.
 
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,

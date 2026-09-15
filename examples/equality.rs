@@ -1,5 +1,11 @@
-//! Observe SQL equality classes while preserving original DOUBLE representations.
-//! Supply a fresh absolute database path. Every printed result is checked first.
+//! Compare SQL equality classes while preserving the input's DOUBLE bits.
+//!
+//! Eight literal rows include both zero signs, two NaN payloads, NULLs and duplicate
+//! ones. Grouping and DISTINCT form classes; ordinary filters and equality joins
+//! have different NULL/NaN rules. Local expected IDs, pairs and bits check those
+//! differences after reopen. Report only after all queries finish and release.
+//! Supply a fresh absolute database path; docs/equality.md explains the lesson.
+
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
     DataType, Database, QueryStep, Value,

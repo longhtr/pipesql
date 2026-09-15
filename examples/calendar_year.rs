@@ -1,5 +1,10 @@
-//! Group stored Gregorian dates by year, retaining a separate NULL group.
-//! Run with a new absolute database path; remove that database after the lesson.
+//! Group persisted Gregorian dates by year, keeping a separate NULL group.
+//!
+//! A tiny input crosses a year boundary and includes leap day. After reopen,
+//! calendar_year.sql must produce the literal year totals declared below, finish
+//! and release its query owners. Supply a new absolute database path; the example
+//! leaves it for inspection. docs/calendar-year.md explains DATE and this query.
+
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
     DataType, Database, DateValue, QueryStep, Value,

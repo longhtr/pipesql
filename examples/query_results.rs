@@ -1,5 +1,11 @@
-//! Rows are a prefix until Finished; terminal errors can outlive their query.
-//! Supply a fresh absolute database path. The example leaves it there for inspection.
+//! Show why returned rows are a prefix until the cursor reaches Finished.
+//!
+//! Adding one succeeds for 256 rows, then overflows. Move the terminal error out of
+//! the result and drop the plan; its operation and byte span must remain available.
+//! Next cancel after a row prefix, then reuse the immutable plan with a fresh token
+//! to finish all 257 rows. Each outcome checks owner release. Supply a new absolute
+//! database path; docs/query-results.md explains the result lifetime.
+
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
     DataType, Database, Error, PreparedQuery, QueryStep, Value,

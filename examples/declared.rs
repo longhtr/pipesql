@@ -1,5 +1,10 @@
-//! Create a declared table, append typed rows, reopen, and query it.
-//! Run with a new absolute database path; the database remains available afterward.
+//! Create a sales table, append a typed batch, reopen and print regional totals.
+//!
+//! The amount bitmap makes the final north row NULL: COUNT(*) includes it while
+//! COUNT(amount) and SUM(amount) do not. Each write remains private until commit.
+//! The query lends batches until Finished; an error or failed output write exits
+//! unsuccessfully. Supply a new absolute database path, which remains available
+//! for later examples. Follow the program in docs/getting-started.md.
 
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
