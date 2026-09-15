@@ -1760,43 +1760,51 @@ mod tests {
     }
 
     #[test]
-    fn except_distinct_preserves_left_association_and_nested_set_modes() {
-        let sql = "FROM a |> EXCEPT DISTINCT (FROM b), (FROM c |> UNION DISTINCT (FROM d)), |> AS remaining";
-        let parsed = parse_query(sql).unwrap();
-        assert_eq!(parsed.source_count, 4);
-        let stages = &parsed.stages[..usize::from(parsed.len)];
-        assert!(matches!(
-            stages,
-            [
+    fn sorted_set_distinct_preserves_left_association_and_nested_modes() {
+        for operator in ["EXCEPT", "INTERSECT"] {
+            let operation_span = |stage| match (operator, stage) {
+                ("EXCEPT", ParsedStage::ExceptDistinct(span))
+                | ("INTERSECT", ParsedStage::IntersectDistinct(span)) => span,
+                _ => panic!("wrong {operator} continuation"),
+            };
+            let sql = format!(
+                "FROM a |> {operator} DISTINCT (FROM b), (FROM c |> UNION DISTINCT (FROM d)), |> AS remaining"
+            );
+            let parsed = parse_query(&sql).unwrap();
+            assert_eq!(parsed.source_count, 4, "{operator}");
+            let stages = &parsed.stages[..usize::from(parsed.len)];
+            let [
                 ParsedStage::Source(1),
-                ParsedStage::ExceptDistinct(_),
+                first,
                 ParsedStage::Source(2),
                 ParsedStage::Source(3),
                 ParsedStage::UnionAll(_),
                 ParsedStage::Distinct(_),
-                ParsedStage::ExceptDistinct(_),
+                last,
                 ParsedStage::Alias(_),
-            ]
-        ));
-        for index in [1, 6] {
-            let ParsedStage::ExceptDistinct(span) = stages[index] else {
-                unreachable!();
+            ] = stages
+            else {
+                panic!("wrong {operator} stage sequence");
             };
-            assert_eq!(usize::from(span.start), sql.find("|>").unwrap());
-            assert_eq!(text(sql, span), "|>");
-        }
-        let parsed =
-            parse_query("FROM a |> UNION DISTINCT (FROM b |> EXCEPT DISTINCT (FROM c))").unwrap();
-        assert!(matches!(
-            &parsed.stages[..usize::from(parsed.len)],
-            [
+            for stage in [*first, *last] {
+                let span = operation_span(stage);
+                assert_eq!(usize::from(span.start), sql.find("|>").unwrap());
+                assert_eq!(text(&sql, span), "|>");
+            }
+            let sql = format!("FROM a |> UNION DISTINCT (FROM b |> {operator} DISTINCT (FROM c))");
+            let parsed = parse_query(&sql).unwrap();
+            let [
                 ParsedStage::Source(1),
                 ParsedStage::Source(2),
-                ParsedStage::ExceptDistinct(_),
+                inner,
                 ParsedStage::UnionAll(_),
                 ParsedStage::Distinct(_),
-            ]
-        ));
+            ] = &parsed.stages[..usize::from(parsed.len)]
+            else {
+                panic!("wrong nested {operator} stage sequence");
+            };
+            operation_span(*inner);
+        }
     }
 
     #[test]
@@ -1854,47 +1862,6 @@ mod tests {
                 ));
             }
         }
-    }
-
-    #[test]
-    fn intersect_distinct_preserves_left_association_and_nested_set_modes() {
-        let sql = "FROM a |> INTERSECT DISTINCT (FROM b), (FROM c |> UNION DISTINCT (FROM d)), |> AS remaining";
-        let parsed = parse_query(sql).unwrap();
-        assert_eq!(parsed.source_count, 4);
-        let stages = &parsed.stages[..usize::from(parsed.len)];
-        assert!(matches!(
-            stages,
-            [
-                ParsedStage::Source(1),
-                ParsedStage::IntersectDistinct(_),
-                ParsedStage::Source(2),
-                ParsedStage::Source(3),
-                ParsedStage::UnionAll(_),
-                ParsedStage::Distinct(_),
-                ParsedStage::IntersectDistinct(_),
-                ParsedStage::Alias(_),
-            ]
-        ));
-        for index in [1, 6] {
-            let ParsedStage::IntersectDistinct(span) = stages[index] else {
-                unreachable!();
-            };
-            assert_eq!(usize::from(span.start), sql.find("|>").unwrap());
-            assert_eq!(text(sql, span), "|>");
-        }
-        let parsed =
-            parse_query("FROM a |> UNION DISTINCT (FROM b |> INTERSECT DISTINCT (FROM c))")
-                .unwrap();
-        assert!(matches!(
-            &parsed.stages[..usize::from(parsed.len)],
-            [
-                ParsedStage::Source(1),
-                ParsedStage::Source(2),
-                ParsedStage::IntersectDistinct(_),
-                ParsedStage::UnionAll(_),
-                ParsedStage::Distinct(_),
-            ]
-        ));
     }
 
     #[test]
