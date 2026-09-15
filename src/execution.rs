@@ -1,4 +1,23 @@
-//! Public result lifetime and the shared producer/consumer step protocol.
+//! Run a prepared query in steps and lend complete batches to its caller.
+//!
+//! Start at `Database::execute` in `admission.rs`. It validates the plan and
+//! reserves execution storage before reading table values. The resulting
+//! `QueryResult` owns a physical plan and a `runtime::Runtime`, which schedules
+//! scans and operators such as grouping and sorting.
+//!
+//! `QueryResult::step` returns rows, progress without rows, successful completion,
+//! or failure. Rows borrow a reusable batch: the caller must finish reading it
+//! before requesting the next step. Earlier batches are only a result prefix;
+//! an overflow or I/O error can still prevent the query from finishing.
+//!
+//! Completion and failure replace the running state, dropping its buffers and
+//! scratch before shrinking their charges. Failure retains the error for the
+//! caller; neither terminal state resumes execution. The prepared query has its
+//! own lifetime and continues to hold its snapshot after execution ends.
+//!
+//! The private step types below also describe operator handoffs. A consumer asks
+//! the runtime for input or replay instead of recursively stepping another
+//! operator. The public caller sees rows only from the final producer.
 
 mod admission;
 mod aggregation;

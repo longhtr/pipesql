@@ -61,28 +61,49 @@ closed.
 
 ## Active repository consolidation
 
-The source, test and tooling inventory is complete outside the repository.
-Implemented changes consolidate source freezing, compatible stock builds and
-catalog fixtures; tighten completion/artifact checks; and remove repeated parser
-setup and documentation. Independent expected results remain with their owners.
+Source freezing, compatible stock builds, shared catalog fixtures and the
+verification ladder are implemented. The temporary inventory remains outside the
+repository. Consolidation is not complete: module introductions often name
+responsibilities without explaining the operation or the concepts a reader needs.
+The documentation review now covers all project-owned production, test, tool and
+example modules before new features.
 
-Remaining work:
+Complete the work in these increments:
 
-1. Run the final macOS and qualified GNU arm64 Linux full gates sequentially on
-   matching frozen inputs, then affected fresh examples. These include the
-   integrated workspace, formatting and warnings-denied checks; do not duplicate
-   that checkpoint separately.
-2. Compare complete coverage and normalized semantic results. Record measured
-   build/gate costs against the prior checkpoint, retained independent evidence,
-   removed/merged checks and the concrete reading path.
-3. Review the final changes, remove the temporary inventory and owned outputs,
-   commit the verified result and synchronize by fast-forward. Preserve the
+1. Trace creation/recovery, append/publication and query preparation/execution.
+   Repair the introductions at their entry points, then follow each dependency.
+   Explain inputs, representation, ownership, the main transition and a
+   consequential failure where each first matters. Use concrete values to explain
+   unfamiliar concepts. Repair unclear interfaces rather than documenting around
+   them. Small self-explanatory modules need only a short introduction.
+2. Review every remaining production module, including native code. Keep algorithm
+   explanations beside their implementation and exact public contracts beside
+   their interfaces. Remove repeated commentary and statements the code already
+   makes obvious. Verify every explanation against a successful and failing path.
+3. Review test suites, fixtures, models, campaigns and wrappers. Their introductions
+   must identify the protected contract, how it is challenged, where expected
+   answers come from and the owning entry point. Explain intentional independent
+   evidence; remove repeated setup or checks that protect the same premise.
+4. Reconcile the guides with those module owners. Keep one runnable event-report
+   path through the system. Define necessary terms before using them, link exact
+   contracts and remove duplicated explanations. Avoid uniform comment templates,
+   documentation quotas or a permanent inventory framework.
+5. Verify each increment at its changed boundary and commit it locally. The Mac
+   gate's unchanged Rust tests passed; its corrected composition campaign passed
+   after repairing the checker's missing opening status. Let the running remaining
+   campaigns finish. Start the final Linux checkpoint after the documentation and
+   any resulting interface repairs are integrated. Reuse earlier evidence only
+   after inspecting exact input differences and affected contracts.
+6. Finish qualified platform checks and fresh examples, compare coverage and
+   measured costs, review the final diff and remove owned temporary material.
+   Commit and synchronize the verified checkpoint by fast-forward. Preserve the
    [qualification limits](#qualifications-that-remain-outside-this-internal-claim).
 
-The [verification ladder](../docs/testing.md#focused-verification) governs
-increments. Production ownership remains unchanged where inspection found no
-unclear boundary; file count is not a target. The final report must explain any
-remaining complexity that earns its cost.
+The [verification ladder](../docs/testing.md#focused-verification) governs each
+increment. A documentation-only repair does not require another persistence
+campaign. Code changes require the checks for the actual contract changed.
+Completion requires understandable code and accurate explanations as well as
+passing checks; no new feature begins while this review remains unfinished.
 
 ## Path to the internal 0.1.0 checkpoint
 

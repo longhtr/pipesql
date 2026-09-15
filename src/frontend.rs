@@ -1,4 +1,25 @@
-//! Semantic identities, immutable plans, and prepared-query ownership.
+//! Turn query text into a checked description of the values a query produces.
+//!
+//! A query first names columns, but later stages must track values through renames
+//! and rearrangements. `ColumnId` gives each value a query-local identity:
+//! `amount AS subtotal` keeps the identity of `amount`, while `amount + 1` gets a
+//! new identity. Neither identity is a column's position in a stored or output row.
+//!
+//! `Plan` records the transformation graph and its column facts. Each `Node`
+//! describes a stage and its inputs; a `RelationId` names a source or stage
+//! output. These are logical relationships, before execution chooses buffers or
+//! decides which stages can share a scan.
+//!
+//! Start at `binding::prepare_catalog` for declared tables, or `binding::prepare`
+//! for legacy lineitem. The parser recognizes syntax, the binder resolves names
+//! and types, and `validation::validate` checks the resulting plan independently.
+//! A failure returns no prepared query. Successful catalog preparation retains
+//! the selected snapshot, so later appends cannot change that query's input.
+//!
+//! This module owns the plan representation and `PreparedQuery` lifetime. Its
+//! children construct and inspect that representation; `execution::planning`
+//! turns it into an execution plan without resolving names again.
+
 mod binding;
 mod distinct;
 mod explain;

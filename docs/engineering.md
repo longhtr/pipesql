@@ -113,9 +113,18 @@ than reject expected external failures. Keep them side-effect-free, near the
 transition and active where release safety requires them. Contain unexpected
 internal failure according to every mutable owner that may have been touched.
 
-Comments explain invariants, units, ownership and non-obvious reasons. Avoid
-narrating syntax or retaining a development diary in code. Public documentation
-explains behavior, limits and failure outcomes.
+Module introductions explain the operation before its implementation details:
+what enters, what the module owns, how the main path works and what can fail.
+Introduce unfamiliar concepts with a concrete example when names alone do not
+explain them. A small module may need only a sentence; a controller may need its
+states and handoffs explained. Test and tool introductions identify their
+protected contract, method, expected-result source and entry point.
+
+Comments beside the code explain invariants, units and non-obvious reasons.
+Public documentation specifies behavior, limits and failure outcomes. Keep each
+explanation with its owner and link readers there. Remove syntax narration,
+repeated assurances and development diaries. If an explanation needs to account
+for unrelated responsibilities, reconsider the code boundary first.
 
 Separate type definitions and implementation blocks with a blank line. Keep
 attributes and documentation attached to the declaration they describe.

@@ -1,7 +1,22 @@
-//! Physical producer pipelines over immutable bound relations.
+//! Map a query's logical values to the producers and batch slots that carry them.
 //!
-//! Lowering assigns producer positions; validation independently maps positions
-//! back to semantic identities. Both consume the shared demand analysis.
+//! A logical column identity survives renaming and projection, but an executing
+//! operator needs a concrete position in an input batch. `Pipeline` records that
+//! mapping together with one producer and the filters and computations that can
+//! run with it. A scan followed by projection can share a pipeline; aggregation
+//! creates another producer because it consumes input rows before emitting totals.
+//!
+//! `lower::lower` builds the pipelines from a validated prepared query. Backward
+//! demand analysis starts at the requested output and finds required input values,
+//! including values needed only by filters. This lets scans omit unneeded payload
+//! buffers. The analysis preserves dependencies; it does not decide whether a
+//! conditional expression must evaluate an individual row.
+//!
+//! `validate::validate_physical` checks edges and decodes batch positions back to
+//! logical identities independently of lowering. Both phases share demand
+//! analysis, so their agreement is not independent evidence for that analysis.
+//! Execution admission checks this plan before reading table values.
+//! `PhysicalPlan` owns the memory charge for its descriptors until cleared.
 
 mod demand;
 mod lower;
