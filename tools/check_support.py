@@ -222,10 +222,16 @@ def build_profile():
         "profile": "release; default features; library and CLI",
         "environment": {
             name: value for name, value in sorted(os.environ.items())
-            if (name.startswith("CARGO_") or name in (
+            if name in (
                 "RUSTFLAGS", "RUSTUP_TOOLCHAIN", "RUSTC", "RUSTC_WRAPPER",
-                "RUSTC_WORKSPACE_WRAPPER",
-            )) and name not in ("CARGO_TARGET_DIR", "CARGO_BUILD_JOBS")
+                "RUSTC_WORKSPACE_WRAPPER", "RUSTC_BOOTSTRAP", "RUST_TARGET_PATH",
+                "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS", "CARGO_BUILD_TARGET",
+                "CARGO_BUILD_RUSTC", "CARGO_BUILD_RUSTC_WRAPPER",
+                "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER", "CARGO_INCREMENTAL",
+                "CARGO_BUILD_INCREMENTAL",
+            ) or name.startswith("CARGO_PROFILE_RELEASE_") or (
+                name.startswith("CARGO_TARGET_") and name.endswith(("_RUSTFLAGS", "_LINKER"))
+            )
         },
     }
 

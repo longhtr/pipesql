@@ -119,6 +119,24 @@ class BuildCommands(unittest.TestCase):
             support.build_library(self.work)
         run.assert_not_called()
 
+    def test_profile_records_codegen_settings_without_registry_credentials(self):
+        environment = {
+            "CARGO_REGISTRIES_EXAMPLE_TOKEN": "private credential",
+            "CARGO_TARGET_DIR": "unrelated target",
+            "CARGO_BUILD_JOBS": "1",
+            "CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS": "-D warnings",
+            "CARGO_PROFILE_RELEASE_LTO": "true",
+        }
+        with patch.dict(os.environ, environment, clear=True), patch.object(
+            support.runpy, "run_path", return_value={"source_manifest": lambda root: "source"}
+        ), patch.object(support, "run_process", return_value=subprocess.CompletedProcess(
+            [], 0, "compiler", ""
+        )):
+            self.assertEqual(support.build_profile()["environment"], {
+                "CARGO_PROFILE_RELEASE_LTO": "true",
+                "CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS": "-D warnings",
+            })
+
     def test_shared_artifacts_skip_build_and_reject_changed_inputs(self):
         self.library_fixture()
         cli = self.release / "pipesql"
