@@ -37,8 +37,8 @@ point; successful exit alone is insufficient.
 
 [fixtures.rs](catalog_lifecycle/fixtures.rs) owns shared input tables and typed
 result collection. `query` checks ordered rows and release; `collect_unordered`
-compares multisets under a smaller progress bound. Expected answers and failure
-interpretation stay in each test.
+returns sorted rows for multiset comparison under a smaller progress bound.
+Expected answers and failure interpretation stay in each test.
 
 | Modules under `catalog_lifecycle/` | Responsibility |
 | --- | --- |

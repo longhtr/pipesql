@@ -131,13 +131,16 @@ class GroupExpectations(unittest.TestCase):
     def test_query_checker_rejects_wrong_rows_and_incomplete_output(self):
         checker = COMPOSITION["QueryChecks"](Path("unused"), Path("unused"))
         for output in (
-            "row=int64:2\nrow_count=1\nstatus=queried\n",
-            "row=int64:1\nrow_count=1\n",
-            "row=int64:1\nrow_count=0\nstatus=queried\n",
-            "row=int64:1\nrow_count=10\nstatus=queried\n",
-            "row=int64:1\nrow_count=1\nstatus=queried-extra\n",
-            "row=int64:1\nrow_count=1\nrow_count=1\nstatus=queried\n",
-            "row=int64:1\nrow_count=1\nstatus=queried\nstatus=queried\n",
+            "row=int64:1\nrow_count=1\nstatus=queried\n",
+            "status=querying\nstatus=querying\nrow=int64:1\nrow_count=1\nstatus=queried\n",
+            "status=querying\nrow_count=1\nstatus=queried\nrow=int64:1\n",
+            "status=querying\nrow=int64:2\nrow_count=1\nstatus=queried\n",
+            "status=querying\nrow=int64:1\nrow_count=1\n",
+            "status=querying\nrow=int64:1\nrow_count=0\nstatus=queried\n",
+            "status=querying\nrow=int64:1\nrow_count=10\nstatus=queried\n",
+            "status=querying\nrow=int64:1\nrow_count=1\nstatus=queried-extra\n",
+            "status=querying\nrow=int64:1\nrow_count=1\nrow_count=1\nstatus=queried\n",
+            "status=querying\nrow=int64:1\nrow_count=1\nstatus=queried\nstatus=queried\n",
         ):
             with self.subTest(output=output), patch.object(
                 checker, "run", return_value=subprocess.CompletedProcess([], 0, output, "")
@@ -147,7 +150,7 @@ class GroupExpectations(unittest.TestCase):
 
     def test_query_checker_records_exact_completion(self):
         checker = COMPOSITION["QueryChecks"](Path("unused"), Path("unused"))
-        output = "row=int64:1\nrow_count=1\nstatus=queried\n"
+        output = "status=querying\nrow=int64:1\nrow_count=1\nstatus=queried\n"
         with patch.object(
             checker, "run", return_value=subprocess.CompletedProcess([], 0, output, "")
         ):
@@ -159,10 +162,12 @@ class GroupExpectations(unittest.TestCase):
 
     def test_result_digest_ignores_only_database_placement(self):
         checker = COMPOSITION["QueryChecks"](Path("unused"), Path("unused"))
-        body = "columns=v:int64:required\nrow=int64:1\nrow_count=1\nstatus=queried\n"
-        checker.record("first", "database=/first/path\n" + body, 1)
-        checker.record("second", "database=/second/path\n" + body, 1)
-        checker.record("changed", "database=/first/path\n" + body.replace("int64:1", "int64:2"), 1)
+        body = "status=querying\ncolumns=v:int64:required\nrow=int64:1\nrow_count=1\nstatus=queried\n"
+        first = body.replace("status=querying\n", "status=querying\ndatabase=/first/path\n")
+        second = first.replace("/first/path", "/second/path")
+        checker.record("first", first, 1)
+        checker.record("second", second, 1)
+        checker.record("changed", first.replace("int64:1", "int64:2"), 1)
         self.assertEqual(checker.observations[0]["sha256"], hashlib.sha256(body.encode()).hexdigest())
         self.assertEqual(checker.observations[0]["sha256"], checker.observations[1]["sha256"])
         self.assertNotEqual(checker.observations[0]["sha256"], checker.observations[2]["sha256"])
@@ -170,7 +175,7 @@ class GroupExpectations(unittest.TestCase):
     def test_query_checker_requires_exact_schema(self):
         checker = COMPOSITION["QueryChecks"](Path("unused"), Path("unused"))
         for columns in ("other:int64:required", "v:double:required", "v:int64:nullable", ""):
-            output = f"columns={columns}\nrow=int64:1\nrow_count=1\nstatus=queried\n"
+            output = f"status=querying\ncolumns={columns}\nrow=int64:1\nrow_count=1\nstatus=queried\n"
             with self.subTest(columns=columns), patch.object(
                 checker, "run", return_value=subprocess.CompletedProcess([], 0, output, "")
             ), self.assertRaises(AssertionError):
@@ -180,7 +185,7 @@ class GroupExpectations(unittest.TestCase):
     def test_query_checker_rejects_failed_process_even_with_complete_output(self):
         checker = COMPOSITION["QueryChecks"](Path("unused"), Path("unused"))
         result = subprocess.CompletedProcess(
-            [], 1, "row=int64:1\nrow_count=1\nstatus=queried\n", "failure"
+            [], 1, "status=querying\nrow=int64:1\nrow_count=1\nstatus=queried\n", "failure"
         )
         with patch.object(checker, "run", return_value=result), self.assertRaises(AssertionError):
             checker.composed("failed", "unused", [["int64:1"]])

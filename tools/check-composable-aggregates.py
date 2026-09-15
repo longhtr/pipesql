@@ -159,11 +159,14 @@ class QueryChecks:
         )
 
     def record(self, label, output, row_count):
+        lines = output.splitlines()
         completion = [
-            line for line in output.splitlines()
+            line for line in lines
             if line.startswith(("row_count=", "status="))
         ]
-        assert completion == [f"row_count={row_count}", "status=queried"], (label, output)
+        expected = ["status=querying", f"row_count={row_count}", "status=queried"]
+        assert completion == expected, (label, output)
+        assert lines[0] == expected[0] and lines[-2:] == expected[1:], (label, output)
         # Database placement is ambient; typed rows, schema and completion are evidence.
         result = "\n".join(
             line for line in output.splitlines() if not line.startswith("database=")
