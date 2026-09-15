@@ -4,7 +4,8 @@
 //! `Cell` copies borrowed values while preserving DOUBLE bits and DATE offsets.
 //! Both collectors require Finished within their work allowance; `query` compares
 //! ordered rows and checks release, while `collect_unordered` sorts for multiset
-//! comparison. Expected answers and failure interpretation stay in the test.
+//! comparison. A shared cancellation exercise checks early teardown; expected
+//! row values and capability-specific failures stay in each test.
 
 use super::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
@@ -179,6 +180,69 @@ fn collect_rows(result: &mut QueryResult<'_, '_>, steps: usize, context: &str) -
         }
     }
     panic!("bounded progress allowance exhausted: {context}");
+}
+
+/// Exercise early query teardown; successful row values stay in capability tests.
+pub(super) fn assert_cancel_and_drop_release(db: &Database, sql: &str) {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum StopAt {
+        Progress,
+        Rows,
+        AbandonRows,
+    }
+    let resident = db.reserved_memory_bytes();
+    let prepared = db
+        .prepare(sql)
+        .unwrap_or_else(|error| panic!("{sql}: {error}"));
+    let retained = db.reserved_memory_bytes();
+    for stop in [StopAt::Progress, StopAt::Rows, StopAt::AbandonRows] {
+        let cancel = CancellationToken::new();
+        let mut result = db
+            .execute(&prepared, &cancel)
+            .unwrap_or_else(|error| panic!("{sql}, {stop:?}: {error}"));
+        let mut stopped = false;
+        for _ in 0..512 {
+            match result.step() {
+                QueryStep::Progress => {
+                    if stop == StopAt::Progress {
+                        cancel.cancel();
+                    }
+                }
+                QueryStep::Rows(batch) => {
+                    assert!(!batch.is_empty(), "{sql}, {stop:?}");
+                    if stop == StopAt::AbandonRows {
+                        stopped = true;
+                        break;
+                    }
+                    assert_eq!(
+                        stop,
+                        StopAt::Rows,
+                        "{sql}: progress cancellation must precede output"
+                    );
+                    cancel.cancel();
+                }
+                QueryStep::Failed(Error::Cancelled) => {
+                    assert!(cancel.is_cancelled(), "{sql}, {stop:?}");
+                    assert!(
+                        matches!(result.step(), QueryStep::Failed(Error::Cancelled)),
+                        "{sql}, {stop:?}"
+                    );
+                    stopped = true;
+                    break;
+                }
+                QueryStep::Finished => {
+                    panic!("{sql}, {stop:?}: expected cancellation or abandonment")
+                }
+                QueryStep::Failed(error) => panic!("{sql}, {stop:?}: {error}"),
+            }
+        }
+        assert!(stopped, "{sql}, {stop:?}: progress allowance exhausted");
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(), retained, "{sql}, {stop:?}");
+        assert_eq!(db.reserved_temp_bytes(), 0, "{sql}, {stop:?}");
+    }
+    drop(prepared);
+    assert_eq!(db.reserved_memory_bytes(), resident, "{sql}");
 }
 
 pub(super) fn query(db: &Database, sql: &str, expected: Vec<Vec<Cell>>) {

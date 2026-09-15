@@ -225,53 +225,13 @@ fn string_length_rejects_unsupported_forms_with_owned_spans() {
 #[test]
 fn string_length_cancellation_and_abandonment_release_query_owners() {
     let (_directory, db) = text_fixture();
-    let baseline = db.reserved_memory_bytes();
     for sql in [
         "FROM texts |> SELECT BYTE_LENGTH(category) AS width",
         "FROM texts |> ORDER BY id |> SELECT BYTE_LENGTH(category) AS width",
         "FROM texts |> SELECT CHAR_LENGTH(category) AS width",
         "FROM texts |> ORDER BY id |> SELECT CHAR_LENGTH(category) AS width",
     ] {
-        let prepared = db.prepare(sql).unwrap();
-        let retained = db.reserved_memory_bytes();
-        // Cancel during progress, cancel after lending rows, then abandon rows.
-        for mode in 0..3 {
-            let cancel = CancellationToken::new();
-            let mut result = db.execute(&prepared, &cancel).unwrap();
-            let mut stopped = false;
-            for _ in 0..512 {
-                match result.step() {
-                    QueryStep::Progress => {
-                        if mode == 0 {
-                            cancel.cancel();
-                        }
-                    }
-                    QueryStep::Rows(batch) => {
-                        assert!(!batch.is_empty());
-                        if mode == 2 {
-                            stopped = true;
-                            break;
-                        }
-                        assert_eq!(mode, 1, "progress cancellation must precede output");
-                        cancel.cancel();
-                    }
-                    QueryStep::Failed(Error::Cancelled) => {
-                        assert!(cancel.is_cancelled());
-                        assert!(matches!(result.step(), QueryStep::Failed(Error::Cancelled)));
-                        stopped = true;
-                        break;
-                    }
-                    QueryStep::Finished => panic!("expected cancellation or abandonment"),
-                    QueryStep::Failed(error) => panic!("{error}"),
-                }
-            }
-            assert!(stopped);
-            drop(result);
-            assert_eq!(db.reserved_memory_bytes(), retained);
-            assert_eq!(db.reserved_temp_bytes(), 0);
-        }
-        drop(prepared);
-        assert_eq!(db.reserved_memory_bytes(), baseline);
+        assert_cancel_and_drop_release(&db, sql);
     }
     query(
         &db,

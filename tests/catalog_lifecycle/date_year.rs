@@ -1,3 +1,11 @@
+//! Check Gregorian year extraction against independent literal calendar boundaries.
+//!
+//! Stored day offsets and expected years cover leap-century rules and both DATE
+//! endpoints without calling the engine to derive answers. Scan, sorted and reopened
+//! results must retain dates and NULLs. Constant folding and composed consumers
+//! share the conversion contract; invalid inputs, demanded arithmetic and early
+//! teardown check source spans and reservation release.
+
 use super::*;
 
 // Literal Gregorian boundaries, independently checked with Python's datetime.

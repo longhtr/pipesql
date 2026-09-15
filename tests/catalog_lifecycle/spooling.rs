@@ -1,4 +1,11 @@
-//! Public spooling contract tests.
+//! Check that mixed grouped rows survive both memory and disk result storage.
+//!
+//! A repeated input pattern independently determines 1,024 expected rows, including
+//! NULLs, floating bits, DATE endpoints and long text. Two budgets require different
+//! storage paths; repeated/reordered output columns must retain the same values.
+//! The test observes temporary storage, enforces the memory cap, requires Finished
+//! and checks release. Failure-injection evidence lives in the separate campaigns.
+
 use super::*;
 
 #[test]

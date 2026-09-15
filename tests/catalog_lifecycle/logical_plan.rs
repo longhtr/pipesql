@@ -1,4 +1,11 @@
-//! Literal public diagnostics, sink failure and prepared ownership.
+//! Check that logical-plan output explains the prepared query without executing it.
+//!
+//! Literal reports distinguish source occurrences, column identities and output
+//! positions. Formatting must preserve the snapshot and reservations. A bounded
+//! sink fails at every output byte and rejects any subsequent write; appending rows
+//! afterward must leave the old plan and its report unchanged. Execution results
+//! are checked separately from the diagnostic text.
+
 use super::*;
 use std::fmt::{self, Write};
 

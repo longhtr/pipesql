@@ -1,3 +1,11 @@
+//! Check public ordering using independent ranks and literal row sequences.
+//!
+//! Ranks define NULL placement, NaN/zero ties, UTF-8 text order and DATE order;
+//! returned payloads must still retain their original bits and long strings.
+//! Aliases, hidden keys and composed producers challenge column identity. Ambiguous
+//! keys and excess query work must refuse without retaining reservations, while
+//! all 64 visible keys remain usable.
+
 use super::*;
 
 #[test]
