@@ -1,5 +1,10 @@
-//! Streams positional inputs through one output batch. Children own their
-//! cursors; the scheduler services input and replay requests between steps.
+//! Stream UNION ALL inputs through positional column mappings without deduplication.
+//!
+//! Drain the first child, then the second, copying demanded positions into the
+//! supplied output batch and applying this pipeline's filters and projections.
+//! Children keep their cursors; input and replay requests return to the scheduler.
+//! Track visited branches so replay does not reset an aggregate that LIMIT stopped
+//! before reaching. Errors install a failed state that cannot be replayed.
 use super::computed::RowValues;
 use super::planning::Pipeline;
 use super::{BATCH_ROWS, ConsumerInput, SetStep};
@@ -141,6 +146,7 @@ mod tests {
     use super::*;
     use crate::effects::Effects;
     use crate::execution::{Advance, State};
+    use crate::test_support::Directory;
     use crate::{
         AppendLimits, ColumnDeclaration, ColumnInput, ColumnValues, Config, DataType, Database,
         Value,
@@ -148,8 +154,8 @@ mod tests {
 
     #[test]
     fn union_admits_both_branches_before_io_even_for_a_zero_prefix() {
-        let path =
-            std::env::temp_dir().join(format!("pipesql-union-admission-{}", std::process::id()));
+        let directory = Directory::new();
+        let path = directory.0.join("database");
         let db = Database::create_empty(&path, Config::new(4_000_000, 2_000_000).unwrap()).unwrap();
         let cancel = CancellationToken::new();
         db.declare_table(
@@ -208,13 +214,12 @@ mod tests {
             }
         }
         db.close().unwrap();
-        std::fs::remove_dir_all(path).unwrap();
     }
 
     #[test]
     fn replay_resets_visited_branches_and_leaves_unvisited_aggregates_fresh() {
-        let path =
-            std::env::temp_dir().join(format!("pipesql-union-replay-{}", std::process::id()));
+        let directory = Directory::new();
+        let path = directory.0.join("database");
         let db = Database::create_empty(&path, Config::new(4_000_000, 2_000_000).unwrap()).unwrap();
         let cancel = CancellationToken::new();
         db.declare_table(
@@ -306,6 +311,5 @@ mod tests {
         assert_eq!(db.reserved_memory_bytes(), baseline);
         assert_eq!(db.reserved_temp_bytes(), 0);
         db.close().unwrap();
-        std::fs::remove_dir_all(path).unwrap();
     }
 }

@@ -1,4 +1,11 @@
-//! Prefix consumption owns counters and an output batch, never a child cursor.
+//! Select a bounded input prefix for LIMIT/OFFSET, then apply downstream row work.
+//!
+//! Keep separate skip and take counters: adding them could overflow, and offset
+//! must still be consumed when count is zero. Count candidate rows before filters
+//! in this pipeline, so a rejected row cannot extend the LIMIT quota. Each step
+//! requests input or consumes one bounded batch; the scheduler owns the child
+//! cursor and output storage. Replay resets these counters and requires the
+//! scheduler to rewind the child too. Cancellation or failure forbids replay.
 use crate::batch::Batch;
 use crate::execution::computed::RowValues;
 use crate::execution::planning::Pipeline;
@@ -126,25 +133,17 @@ mod tests {
     use crate::execution::planning::lower;
     use crate::execution::{QueryStep, planning};
     use crate::storage_format::RootState;
+    use crate::test_support::Directory;
     use crate::{DataType, Database, Value};
 
-    struct Directory(std::path::PathBuf);
-
-    impl Drop for Directory {
-        fn drop(&mut self) {
-            crate::test_cleanup::directory(&self.0);
-        }
-    }
-
-    fn database(name: &str, declared: bool) -> (Directory, Database) {
-        let directory = Directory(
-            std::env::temp_dir().join(format!("pipesql-limit-{name}-{}", std::process::id())),
-        );
+    fn database(declared: bool) -> (Directory, Database) {
+        let directory = Directory::new();
+        let path = directory.0.join("database");
         let config = crate::Config::new(2_000_000, 1_000_000).unwrap();
         let db = if declared {
-            Database::create_empty(&directory.0, config)
+            Database::create_empty(&path, config)
         } else {
-            Database::create(&directory.0, config)
+            Database::create(&path, config)
         }
         .unwrap();
         (directory, db)
@@ -152,7 +151,7 @@ mod tests {
 
     #[test]
     fn every_limit_phase_cancels_and_failed_state_cannot_replay() {
-        let (_directory, db) = database("phases", false);
+        let (_directory, db) = database(false);
         let query = db
             .prepare("FROM lineitem |> SELECT l_quantity |> LIMIT 2 OFFSET 1")
             .unwrap();
@@ -219,7 +218,7 @@ mod tests {
 
     #[test]
     fn limit_stops_unrequested_reads_but_propagates_admission_and_input_failures() {
-        let (_directory, db) = database("io", true);
+        let (_directory, db) = database(true);
         let cancel = CancellationToken::new();
         db.declare_table(
             "facts",
@@ -298,7 +297,7 @@ mod tests {
 
     #[test]
     fn limit_minimum_is_admitted_before_io_and_every_owner_reconciles() {
-        let (_directory, db) = database("minimum", true);
+        let (_directory, db) = database(true);
         let cancel = CancellationToken::new();
         db.declare_table(
             "facts",

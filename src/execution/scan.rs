@@ -1,7 +1,16 @@
-//! Shared scan scheduling, conditional demand, and batch publication.
+//! Turn checked storage columns into filtered batches through a resumable scan.
 //!
-//! The cursor fills a supplied batch; the runtime owns that output and decides
-//! when to advance or replay. Source modules own stored layouts and decoding.
+//! Begin selects a bounded row range; Filter follows predicate decisions; Output
+//! copies retained rows into the runtime's batch. Load only the columns needed
+//! for the current stage. A Boolean branch reached by no selected row skips its
+//! payload reads; scalar evaluation has its separate dependency-loading boundary.
+//! Each call reads a checked block or advances bounded row work, allowing the
+//! runtime to observe cancellation and progress without recursion.
+//!
+//! Source modules own layouts and decoding. This cursor owns selection, branch
+//! and computation scratch; the runtime owns output lifetime and terminal failure.
+//! If text fills a batch, publish only complete rows and retry the next row in a
+//! cleared batch. Declared-source replay resets selection and computed readiness.
 use crate::batch::{Batch, OwnedBatch};
 use crate::effects::Effects;
 use crate::execution::computed::BatchScratch;

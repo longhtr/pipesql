@@ -1,4 +1,16 @@
-//! Native source for the shared query controller.
+//! Read declared table units from the catalog generation pinned by preparation.
+//!
+//! `admit` allocates demanded column buffers, paths and scan scratch without I/O.
+//! Its `Admission` owner opens the pinned catalog only after runtime-wide memory
+//! admission. Compare the retained source schema before installing a table-data
+//! cursor; stable column identities locate values even when physical order differs.
+//! Advance opens and checks one unit's metadata, while `load` validates each
+//! demanded payload before exposing values. Buffers are reused across units.
+//!
+//! A read failure makes this source terminal. One rewind is allowed for replay;
+//! it resets unit state and rechecks the table index rather than trusting old bytes.
+//! The inline tests check actual capacities, refusal before I/O, read/truncation
+//! faults and released ownership against literal rows and observed effect cuts.
 use super::{AdmittedScan, ScanCursor, ScanPhase, Source};
 use crate::Database;
 use crate::batch::{Batch, OwnedBatch};
@@ -438,26 +450,13 @@ mod tests {
     use crate::effects::{Effect, Effects, Faults};
     use crate::execution::{QueryResult, QueryStep};
     use crate::frontend::{self, DataType};
+    use crate::test_support::Directory;
     use crate::{CancellationToken, Database, Error, Value, catalog, catalog_schema, native_unit};
-    use std::path::PathBuf;
-
-    struct Fixture(PathBuf);
-
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            crate::test_cleanup::directory(&self.0);
-        }
-    }
 
     #[test]
     fn native_payload_capacity_is_owned_and_admitted_before_io() {
         use crate::execution::planning;
-        let path = std::env::temp_dir().join(format!(
-            "pipesql-native-payload-capacity-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir(&path).unwrap();
-        let fixture = Fixture(path);
+        let fixture = Directory::new();
         let db = Database::create_empty(
             &fixture.0.join("db"),
             crate::Config::new(4_000_000, 1_000_000).unwrap(),
@@ -602,12 +601,7 @@ mod tests {
             }
             panic!("native query exceeded finite step budget");
         }
-        let path = std::env::temp_dir().join(format!(
-            "pipesql-native-query-faults-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir(&path).unwrap();
-        let fixture = Fixture(path);
+        let fixture = Directory::new();
         let db = Database::create_catalog_with_effects(
             &fixture.0.join("db"),
             crate::Config::new(2_000_000, 1_000_000).unwrap(),

@@ -1,5 +1,12 @@
-//! Legacy fixed-schema source: demanded buffers, checked stored values, and unit admission.
-//! Metadata is validated before payload; a column is loaded only when demanded.
+//! Read the legacy lineitem unit into reusable, demand-sized column buffers.
+//!
+//! `Layout` maps the query's required fields into one admitted arena. Opening
+//! checks the unit header and descriptor sequence against the published root
+//! before payload reads. `load_column` reads and validates one required block;
+//! the shared scan controller owns filtering, row selection and batch publication.
+//! DATE blocks cover two numeric/key blocks, so their loaded position is tracked
+//! separately. `StoredColumn` borrows checked bytes for typed access or bulk decode.
+//! This source has no replay transition; errors propagate to the enclosing result.
 use super::{AdmittedScan, ScanCursor, ScanPhase, Source};
 use crate::batch::{Batch, ColumnMut, OwnedBatch};
 use crate::effects::{Effect, Effects, QueryEffect};

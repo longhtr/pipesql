@@ -1,4 +1,11 @@
-//! Full-partition count when input demand contains no values to retain.
+//! Evaluate COUNT(*) OVER () when no input values must survive the counting pass.
+//!
+//! This window expression preserves rows: three input rows produce three copies
+//! of the count 3. When demand needs no input fields, a counter can reconstruct
+//! those rows without a spool. Consume all input before emitting; then evaluate
+//! one candidate per step so a later LIMIT can stop ordinary computations.
+//! Replay reuses the completed count once, without rereading input. Demanding a
+//! raw field here is a plan defect; exceeding the row limit is resource refusal.
 use crate::batch::Batch;
 use crate::execution::computed::RowValues;
 use crate::execution::planning::Pipeline;
