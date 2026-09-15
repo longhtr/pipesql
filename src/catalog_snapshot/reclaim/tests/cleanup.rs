@@ -261,7 +261,7 @@ fn process_death_during_scratch_creation_or_unlink_heals_on_reopen() {
                 .unwrap(),
             )
             .arg("--test-threads=1")
-            .env(DIRECTORY, &directory.0.join("database"))
+            .env(DIRECTORY, directory.0.join("database"))
             .env(STAGE, stage)
             .stdout(std::process::Stdio::null())
             .status()
