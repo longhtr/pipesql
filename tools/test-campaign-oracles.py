@@ -157,6 +157,16 @@ class GroupExpectations(unittest.TestCase):
             "sha256": hashlib.sha256(output.encode()).hexdigest(),
         }])
 
+    def test_result_digest_ignores_only_database_placement(self):
+        checker = COMPOSITION["QueryChecks"](Path("unused"), Path("unused"))
+        body = "columns=v:int64:required\nrow=int64:1\nrow_count=1\nstatus=queried\n"
+        checker.record("first", "database=/first/path\n" + body, 1)
+        checker.record("second", "database=/second/path\n" + body, 1)
+        checker.record("changed", "database=/first/path\n" + body.replace("int64:1", "int64:2"), 1)
+        self.assertEqual(checker.observations[0]["sha256"], hashlib.sha256(body.encode()).hexdigest())
+        self.assertEqual(checker.observations[0]["sha256"], checker.observations[1]["sha256"])
+        self.assertNotEqual(checker.observations[0]["sha256"], checker.observations[2]["sha256"])
+
     def test_query_checker_requires_exact_schema(self):
         checker = COMPOSITION["QueryChecks"](Path("unused"), Path("unused"))
         for columns in ("other:int64:required", "v:double:required", "v:int64:nullable", ""):

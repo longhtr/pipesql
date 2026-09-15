@@ -164,11 +164,15 @@ class QueryChecks:
             if line.startswith(("row_count=", "status="))
         ]
         assert completion == [f"row_count={row_count}", "status=queried"], (label, output)
+        # Database placement is ambient; typed rows, schema and completion are evidence.
+        result = "\n".join(
+            line for line in output.splitlines() if not line.startswith("database=")
+        ) + "\n"
         self.observations.append(
             {
                 "case": label,
                 "rows": row_count,
-                "sha256": hashlib.sha256(output.encode()).hexdigest(),
+                "sha256": hashlib.sha256(result.encode()).hexdigest(),
             }
         )
 

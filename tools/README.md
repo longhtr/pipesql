@@ -486,6 +486,8 @@ remain unchanged through a successful campaign. The composition checker also
 requires a new work directory with a supplied CLI; it refuses an existing one.
 Without an explicit CLI, both checkers use the gate stock build or create a
 fresh temporary target.
+Composition result hashes omit only the `database=` placement header; typed rows,
+schema and completion remain in the digest.
 The composition campaign also builds the retained `event_report` example in its
 owned work directory to seed typed report tables. Its expected rows are separate
 literals; the example does not compute the campaign oracle.
