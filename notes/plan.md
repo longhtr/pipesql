@@ -72,9 +72,9 @@ four fresh workflows per platform. Paired stock creation medians fell from
 28.236 to 24.674 ms on macOS and from 70.212 to 59.562 ms on Linux. These are
 scoped creation observations, not general OS or whole-gate performance claims.
 
-## Next: repository consolidation
+## Active repository consolidation
 
-After strict creation validation, consolidate the repository before adding
+Strict creation validation is complete. Consolidate the repository before adding
 features. Begin with fresh source and contract inspection, tracing the current
 production flows and test/tool entry points. The earlier build-sharing proposal
 is a candidate, not the scope of this goal.
@@ -105,9 +105,12 @@ example traceable through parsing, binding, validated plans, execution, storage,
 publication and recovery. Delete duplicate facts, obsolete instructions and
 obvious narration; explain concepts where they first matter.
 
-Choose the final expensive checkpoint before implementation. Use the verification
-ladder for increments, then run the required final checkpoint once the integrated
-change is ready. Demonstrate the resulting structure, justified removals/merges,
+The final checkpoint is sequential macOS and qualified GNU arm64 Linux full
+gates on matching frozen inputs, followed by affected fresh examples. Gate
+mechanics, shared artifacts and failure propagation change in this goal, so both
+platforms need qualification. Use focused tooling and capability checks for
+increments; run the full checkpoint once the integrated change is ready.
+Demonstrate the resulting structure, justified removals/merges,
 preserved independent evidence, commands at each level, measured build/gate time
 before and after, complete required coverage, a short code reading path and any
 remaining complexity that earns its cost. Finish cleanup, authoritative guides
@@ -115,7 +118,7 @@ and coherent local commits; do not stop at the inventory or proposal.
 
 ## Path to the internal 0.1.0 checkpoint
 
-Finish strict creation validation first. The next checkpoint is a useful local
+After repository consolidation, the next checkpoint is a useful local
 analytics workflow that can be followed without writing a Rust program: declare
 tables, import typed data, query a report, understand its execution, export a
 complete result and resolve an interrupted import. Extend the existing event
@@ -133,7 +136,7 @@ not tasks to activate together. Scope each goal from the actual preceding result
 
 | Order | Outcome | Estimated goals | Completion evidence |
 | --- | --- | --- | --- |
-| 1 | Consolidate the repository before extending it. | 1 | Complete the inventory-driven implementation and acceptance criteria in [repository consolidation](#next-repository-consolidation). |
+| 1 | Consolidate the repository before extending it. | 1 | Complete the inventory-driven implementation and acceptance criteria in [repository consolidation](#active-repository-consolidation). |
 | 2 | Expose declared database creation, table declaration, schema inspection and logical plans through the stock CLI. | 1 | A fresh event-report schema can be created and inspected through existing library owners; invalid declarations retain typed failures and cause no publication. Reuse `PreparedQuery::logical_plan`; it reports logical structure, not runtime costs. Choose one explicit schema input format, with no parallel SQL frontend. |
 | 3 | Import a documented CSV profile into a declared table with bounded streaming buffers. | 2 | One goal owns decoding, types, NULLs, quoting, limits and byte-offset errors; one integrates append, cancellation, transaction tokens, reopen and ambiguous-outcome resolution. Malformed input cannot become reported success. Independent fixtures and refusal cuts cover both layers. |
 | 4 | Export typed query results in a documented machine-readable form. | 1 | A fresh report round-trips supported values, preserves NULL distinctions and requires successful query completion. File output has explicit completion/publication rules; stdout and sink failures cannot imply a complete file. Reuse the query cursor. |

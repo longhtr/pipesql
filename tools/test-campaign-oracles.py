@@ -134,12 +134,28 @@ class GroupExpectations(unittest.TestCase):
             "row=int64:2\nrow_count=1\nstatus=queried\n",
             "row=int64:1\nrow_count=1\n",
             "row=int64:1\nrow_count=0\nstatus=queried\n",
+            "row=int64:1\nrow_count=10\nstatus=queried\n",
+            "row=int64:1\nrow_count=1\nstatus=queried-extra\n",
+            "row=int64:1\nrow_count=1\nrow_count=1\nstatus=queried\n",
+            "row=int64:1\nrow_count=1\nstatus=queried\nstatus=queried\n",
         ):
             with self.subTest(output=output), patch.object(
                 checker, "run", return_value=subprocess.CompletedProcess([], 0, output, "")
             ), self.assertRaises(AssertionError):
                 checker.composed("negative", "unused", [["int64:1"]])
         self.assertEqual(checker.observations, [])
+
+    def test_query_checker_records_exact_completion(self):
+        checker = COMPOSITION["QueryChecks"](Path("unused"), Path("unused"))
+        output = "row=int64:1\nrow_count=1\nstatus=queried\n"
+        with patch.object(
+            checker, "run", return_value=subprocess.CompletedProcess([], 0, output, "")
+        ):
+            checker.composed("valid", "unused", [["int64:1"]])
+        self.assertEqual(checker.observations, [{
+            "case": "valid", "rows": 1,
+            "sha256": hashlib.sha256(output.encode()).hexdigest(),
+        }])
 
     def test_query_checker_requires_exact_schema(self):
         checker = COMPOSITION["QueryChecks"](Path("unused"), Path("unused"))

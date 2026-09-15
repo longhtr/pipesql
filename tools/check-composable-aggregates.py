@@ -158,6 +158,20 @@ class QueryChecks:
             cwd=ROOT,
         )
 
+    def record(self, label, output, row_count):
+        completion = [
+            line for line in output.splitlines()
+            if line.startswith(("row_count=", "status="))
+        ]
+        assert completion == [f"row_count={row_count}", "status=queried"], (label, output)
+        self.observations.append(
+            {
+                "case": label,
+                "rows": row_count,
+                "sha256": hashlib.sha256(output.encode()).hexdigest(),
+            }
+        )
+
     def aggregate(
         self,
         label,
@@ -178,17 +192,7 @@ class QueryChecks:
             actual[:3],
             expected[:3],
         )
-        assert (
-            f"row_count={len(expected)}" in call.stdout
-            and "status=queried" in call.stdout
-        )
-        self.observations.append(
-            {
-                "case": label,
-                "rows": len(expected),
-                "sha256": hashlib.sha256(call.stdout.encode()).hexdigest(),
-            }
-        )
+        self.record(label, call.stdout, len(expected))
 
     def composed(self, label, sql, expected, database="data", ordered=True, limits=QUERY_LIMITS, columns=None):
         call = self.run(database, sql, limits)
@@ -201,17 +205,7 @@ class QueryChecks:
             actual[:4],
             expected[:4],
         )
-        assert (
-            f"row_count={len(expected)}" in call.stdout
-            and "status=queried" in call.stdout
-        )
-        self.observations.append(
-            {
-                "case": label,
-                "rows": len(expected),
-                "sha256": hashlib.sha256(call.stdout.encode()).hexdigest(),
-            }
-        )
+        self.record(label, call.stdout, len(expected))
 
 
 def check_grouping(queries, rows):
