@@ -1,4 +1,9 @@
-// Single-threaded disposable observer around regular-file native byte I/O.
+/* Intercept regular-file byte I/O for check-native-io.py's disposable caller.
+ * While armed, count one selected call kind and refuse or shorten selected calls.
+ * Short transfers execute real I/O; negative error selectors first allow progress
+ * and then refuse its continuation. Diagnostic pipes are excluded. The Rust caller
+ * owns semantic/outcome checks; the Python campaign owns position coverage.
+ * Control state is single-threaded and never installed in a shipped artifact. */
 #include <errno.h>
 #include <stdint.h>
 #include <sys/stat.h>

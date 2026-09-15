@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Observe actual linked native sync calls and refusal; no power-loss claim."""
+"""Check synchronization refusal at the native boundary of stock public calls.
+
+Build an identified observer and stock-linked caller, census each operation, then
+refuse every observed synchronization position. The caller checks propagated
+errors, cleanup and healed receipt resolution; counters reject weaker fallbacks.
+A standard-library retry control proves interception, and a read-only query must
+make no sync calls. This observes software behavior, not survival of power loss."""
 from pathlib import Path
 import argparse
 import errno

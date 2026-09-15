@@ -1,5 +1,9 @@
-/* Observe Darwin root stat and Linux pathname helper entries. The observer
- * delays/refuses one actor; it neither resolves paths nor changes the filesystem. */
+/* Observe native pathname resolution for check-native-initialization.py.
+ * Per-thread actor IDs select one call to delay or refuse. Atomic handshakes let
+ * the Rust caller prove that another actor progresses during the delay. Darwin
+ * observes root stat; Linux observes root/component lstat and symlink readlink.
+ * Calls otherwise reach the real implementation. The observer neither resolves
+ * paths nor changes files; the caller checks names, errors and later reuse. */
 #include <errno.h>
 #include <stdatomic.h>
 #include <stdint.h>

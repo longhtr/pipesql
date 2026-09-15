@@ -1,4 +1,11 @@
-//! Native byte-I/O observation around stock public calls, not a crash model.
+//! Check public outcomes under observed native I/O errors and short transfers.
+//!
+//! Setup finishes before arming the companion observer. Legacy calls check honest
+//! publication/reopen outcomes; composed queries also check literal results and
+//! complete memory/temp release before reuse. Positive short transfers must finish,
+//! while refusals must reach the caller. Standard-library calls are interception
+//! controls. `check-native-io.py` selects call positions and owns each process/root.
+
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues,
     CommitResolution, Config, DataType, Database, Error, QueryResult, QueryStep, Value,

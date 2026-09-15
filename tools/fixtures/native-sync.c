@@ -1,5 +1,9 @@
-// Disposable synchronization observer. Only the fixture's known fcntl signatures
-// are forwarded; an unexpected command terminates rather than reading wrong varargs.
+/* Intercept full synchronization calls for check-native-sync.py's disposable caller.
+ * Count/refuse calls only while armed and record attempted weaker substitutions.
+ * Darwin observes F_FULLFSYNC; Linux observes fsync. All successful calls reach
+ * the real OS primitive. Only known fcntl signatures are forwarded: an unexpected
+ * command exits rather than interpreting incompatible variable arguments.
+ * The Rust caller owns outcome checks; this observer makes no durability claim. */
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>

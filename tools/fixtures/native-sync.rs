@@ -1,4 +1,11 @@
-//! Native synchronization observation around stock public calls, not a crash model.
+//! Check public outcomes after the native synchronization observer refuses a call.
+//!
+//! Arm observation only around the selected operation. Primitive calls must make
+//! one attempt, public failures must propagate, and no weaker sync may substitute.
+//! After disabling the fault, reopen and resolve published tokens or retry clean
+//! creation/loading. A query is the no-sync control. `check-native-sync.py` owns
+//! the fresh processes, artifact identities and directory cleanup.
+
 use pipesql::{
     CancellationToken, CommitResolution, Config, Database, Error, QueryResult, QueryStep,
 };

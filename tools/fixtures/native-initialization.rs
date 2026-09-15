@@ -1,4 +1,11 @@
-//! Unmodified public rlib under native effect refusal and explicit scheduling.
+//! Drive stock database creation while a native observer delays or refuses resolution.
+//!
+//! One actor can remain inside the resolver while a second creates independently;
+//! explicit handshakes prove the overlap. A third attempt checks later reuse.
+//! Literal expected paths, exact errors and authority bytes constrain outcomes,
+//! followed by public reopen. `check-native-initialization.py` supplies a fresh
+//! process and directory for every mode/site/spelling and owns cleanup.
+
 use pipesql::{Config, Database, Error};
 use std::path::{Path, PathBuf};
 unsafe extern "C" {

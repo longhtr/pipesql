@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Public create/reopen across target-native resolution entry and refusal."""
+"""Exercise stock creation across native path-resolution failures and overlap.
+
+Build an identified native observer and stock-linked Rust caller. Fresh processes
+cover platform pathname spellings, selected resolver entries and a delayed first
+actor while a second proceeds. The caller checks resolved names, exact failures,
+subsequent creation and byte-preserving reopen. Counts prove each boundary ran;
+this is a finite native scheduling campaign, not general concurrency qualification."""
 from pathlib import Path
 import argparse
 import errno

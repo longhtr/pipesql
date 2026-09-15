@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Observe linked native byte-I/O refusal, outside the engine effect simulator."""
+"""Check native byte-I/O failures and partial transfers through stock public calls.
+
+An identified observer counts regular-file read/write/pread/pwrite calls. Healthy
+controls require the expected call kinds, so a spill campaign cannot silently
+become memory-only. Fresh processes then refuse observed positions, shorten real
+transfers and fail their continuations; the caller checks outcomes and reuse.
+Focused modes cover their named workloads only. --controls-only reports a census,
+not the failure campaign. Subprocess supervision and builds use shared helpers."""
 from pathlib import Path
 import argparse
 import errno
