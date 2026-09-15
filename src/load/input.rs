@@ -1,4 +1,16 @@
-//! Source identity and bounded scans. Pass one admits rows; pass two feeds staging.
+//! Read a regular input file while checking the source identity used by the load.
+//!
+//! `inspect_input` validates the requested path and records file identity, size
+//! and timestamps. Each `scan_pass` opens that source and compares its metadata
+//! before and after reading. A final pathname check follows unit construction.
+//! Observed replacement or modification returns an input error with byte context.
+//!
+//! The pure scanner in `load_input` parses each bounded chunk. Pass one returns
+//! counts and fingerprints for admission; pass two also feeds projected rows to
+//! `Staging`. Read errors and cancellation stop the pass. The caller requires an
+//! unchanged input file and compares the two pass summaries before publication;
+//! these observations do not lock the input against another writer.
+
 use super::staging::Staging;
 use crate::effects::{Effect, Effects, LoadEffect};
 use crate::error::io_error;

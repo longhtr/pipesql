@@ -1,3 +1,12 @@
+//! Challenge load outcomes by refusing, shortening, cancelling or interrupting effects.
+//!
+//! Cases trace a healthy load, cut its actual effects and inspect typed outcomes,
+//! retained temporary debt, transaction resolution and healing after reopen.
+//! Process-death cases require the child to reach a selected completion marker
+//! before killing it. Parent helpers independently check root/fence bytes; each
+//! case states its expected generation and outcome. These cuts do not simulate
+//! device power loss. Run the `load::tests::failures` library test filter.
+
 use crate::effects::{DirectoryKind, Effect, Effects, Faults, LoadEffect};
 use crate::load::tests::{LOAD_EFFECT_COUNT, TempDir, config, independent_namespace_matches, row};
 use crate::namespace::{ROOT_A_NAME, UNIT_NAME, UNITS_NAME};

@@ -1,5 +1,20 @@
-//! Legacy lineitem load admission and outcome ownership. Two input passes build
-//! one private unit; the shared publisher and recovery settle its commit outcome.
+//! Import one fixed-schema lineitem file and settle its publication outcome.
+//!
+//! The first input pass validates rows and calculates the temporary-space peak.
+//! After admission, the loader durably issues an attempt identity. A second pass
+//! writes seven column streams; `unit` assembles, reads back and synchronizes one
+//! private unit before handing its new root state to the shared publisher.
+//!
+//! This module owns the database's load state and resource lifetimes. Before
+//! namespace mutation it makes the handle unavailable, so an error or unwind
+//! cannot leave the caller using unconfirmed state. A definite failure invokes
+//! recovery; an uncertain publication returns the transaction token for later
+//! resolution. Successful commit and confirmed rollback release temporary debt.
+//! Ambiguity or failed cleanup retains that charge until reopen, while the load
+//! arena and memory reservation are released before the operation returns.
+//!
+//! This path admits one load into an empty legacy database. Declared tables use
+//! the separate append owner in `catalog_snapshot::append`.
 
 use crate::effects::Effects;
 use crate::load_input::MAX_CHUNK_BYTES;
@@ -25,8 +40,8 @@ impl Database {
     /// Load the fixed-schema lineitem table into an empty legacy database.
     ///
     /// Input must be an unchanged regular file at an absolute bounded path. Only
-    /// one load may commit. An uncertain commit or failed cleanup retains its
-    /// reservation and requires reopen before resolution or further work.
+    /// one load may commit. An uncertain commit or failed cleanup retains the
+    /// temporary-space charge and requires reopen before resolution or further work.
     pub fn load_lineitem(
         &mut self,
         input: &Path,

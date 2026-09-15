@@ -1,5 +1,17 @@
-//! Seven bounded column streams backed by disjoint regions of the load arena.
-//! First-pass row admission limits every write before its effect.
+//! Split parsed rows into seven private column files without retaining the table.
+//!
+//! Each column borrows a disjoint region of the load arena. Appending a row copies
+//! its values into those regions and flushes full blocks to the matching files.
+//! Column widths differ, so `COLUMNS` owns both file order and buffer geometry.
+//! `finish` flushes the remaining bytes, checks file extents and returns checksums
+//! for unit assembly.
+//!
+//! The first pass's admitted row count bounds construction. An extra row refuses
+//! before touching any column; every flush also checks its byte extent before I/O.
+//! A failed append ends construction and can leave partially written files.
+//! The load controller owns recovery and their temporary-space charge; dropping
+//! `Staging` closes handles but does not claim that those files were removed.
+
 use crate::effects::{Effect, Effects, LoadEffect, write_nonempty};
 use crate::error::io_error;
 use crate::load_input::ProjectedRow;

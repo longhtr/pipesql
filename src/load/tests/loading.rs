@@ -1,3 +1,12 @@
+//! Check input admission, unit construction and reopen through the real legacy loader.
+//!
+//! Healthy fixtures include empty input and rows crossing column-block boundaries.
+//! Cases alter source identity, staging bytes or committed metadata and require
+//! the corresponding refusal, cleanup or unavailable-handle outcome. Resource
+//! checks distinguish refusal before effects from failures during construction.
+//! Expected rows and byte offsets are local literals; parent helpers supply
+//! independent namespace checks. Run `load::tests::loading` in the library suite.
+
 use crate::effects::{DirectoryKind, Effect, Effects, Faults, LoadEffect};
 use crate::load::LOAD_MEMORY_BYTES;
 use crate::load::staging::COLUMNS;

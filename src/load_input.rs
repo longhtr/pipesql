@@ -1,3 +1,17 @@
+//! Parse bounded lineitem bytes into the seven columns stored by the legacy loader.
+//!
+//! `Scanner` carries an unfinished row across input chunks. Each complete line
+//! must contain sixteen delimiter-terminated fields; fields 5 through 11 become
+//! typed little-endian values in `ProjectedRow`. Other fields contribute to the
+//! input fingerprint but are not stored as queryable columns.
+//!
+//! Call `begin_chunk` before consuming its bytes and `finish` at end of input.
+//! Chunk, input, row and row-count bounds are checked before growth. An unfinished
+//! final line or invalid projected value fails with a bounded parsing reason.
+//! `Scan` reports counts plus checksums of original and projected bytes so the
+//! loader can compare its two passes. Files, source identity and cancellation
+//! belong to `load::input`; this parser owns no I/O or heap storage.
+
 use crate::storage_format::Crc32c;
 
 pub(super) const MAX_INPUT_BYTES: u64 = 1_073_741_824;

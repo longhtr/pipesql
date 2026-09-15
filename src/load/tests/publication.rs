@@ -1,3 +1,11 @@
+//! Protect issued attempt identities and committed data across publication and repair.
+//!
+//! Tests construct root/fence transitions, interrupt their writes and reopen the
+//! database. An issued attempt must never be reused, and a newer invalid root
+//! must not authorize fallback or cleanup. Invalid transitions are checked before
+//! effects. Literal byte mutations and the parent's independent CRC/root checks
+//! supplement production reopen. Run `load::tests::publication` in the library suite.
+
 use crate::effects::{Effect, Effects, Faults, LoadEffect};
 use crate::load::staging::COLUMNS;
 use crate::load::tests::{TempDir, config, independent_crc32c, independent_namespace_matches, row};

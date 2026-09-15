@@ -1,3 +1,8 @@
+//! Verify that staging refuses the first unadmitted row without changing any column.
+//! Trusted row allowances straddle flush boundaries; saved buffers, counters and
+//! effect counts provide the before/after comparison. This isolates production
+//! staging from source-file mutation. Run `load::staging::tests` in the library suite.
+
 use super::{STAGING_BUFFER_BYTES, Staging};
 use crate::effects::Effects;
 use crate::load::tests::{TempDir, row};

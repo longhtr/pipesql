@@ -1,5 +1,18 @@
-//! Build a private legacy unit, independently read it back, then attach it through
-//! the publisher. Only encoded metadata survives the assembly/readback boundary.
+//! Assemble staged columns into one legacy unit and hand it to publication.
+//!
+//! `build_private_unit` runs the second input pass, compares its summary with the
+//! first, then copies staged blocks behind a header and descriptor region. Typed
+//! assembly descriptors die before `verify_unit` reads the actual file. Readback
+//! decodes metadata, checks zero padding and verifies each payload checksum; only
+//! encoded metadata and its checksum cross from assembly into that check.
+//!
+//! The completed private file is synchronized before staging files are removed.
+//! `publish_unit` links it into the unit directory, synchronizes that namespace
+//! change and calls the shared root publisher. Linking alone does not commit it.
+//! Failures retain the publisher's definite/uncertain classification so the load
+//! controller can choose rollback or reopen. That caller owns admission and cleanup;
+//! this module borrows its arena throughout construction and readback.
+
 use super::input::{InputSource, scan_pass};
 use super::staging::{BLOCK_BYTES, COLUMNS, STAGING_BUFFER_BYTES, Staging};
 use crate::effects::{

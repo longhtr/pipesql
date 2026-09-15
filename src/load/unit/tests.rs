@@ -1,3 +1,8 @@
+//! Check private-unit readback against literal empty and nonempty format fixtures.
+//! Healthy bytes must pass; a change at either padding edge must fail, including
+//! when no payload exists to trigger a read. This exercises production readback,
+//! not fixture generation. Run `load::unit::tests` in the library suite.
+
 use super::{BLOCK_BYTES, verify_unit};
 use crate::effects::Effects;
 use crate::load::tests::TempDir;
