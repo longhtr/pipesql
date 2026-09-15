@@ -1,4 +1,3 @@
-use super::order::{integers, query};
 use super::*;
 
 fn fixture(values: ColumnValues<'_>, validity: &[u8]) -> (Directory, Database) {
@@ -156,7 +155,7 @@ fn public_cast_preserves_double_bits_through_scan_and_materialization() {
 
 #[test]
 fn public_cast_owns_literals_and_composes_with_typed_identities() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let prepared = {
         let sql = String::from(
             "FROM facts |> SELECT CAST(9007199254740993 AS FLOAT64) AS wide, CAST(1 AS DOUBLE) + 2 AS n, (CAST((CAST(1 AS DOUBLE) + 2) AS FLOAT64)) * 2 AS nested",
@@ -171,7 +170,7 @@ fn public_cast_owns_literals_and_composes_with_typed_identities() {
     let cancel = CancellationToken::new();
     let mut result = db.execute(&prepared, &cancel).unwrap();
     assert_eq!(
-        collect(&mut result),
+        collect_unordered(&mut result),
         vec![
             vec![
                 Cell::Number(0x4340_0000_0000_0000),
@@ -250,7 +249,7 @@ fn public_cast_owns_literals_and_composes_with_typed_identities() {
 
 #[test]
 fn public_cast_rejects_wrong_grammar_types_and_targets_with_owned_spans() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let baseline = db.reserved_memory_bytes();
     for (expression, exact) in [
         ("CAST()", None),
@@ -389,7 +388,7 @@ fn owned_addition_failure(db: &Database, sql: String, expression: &str) {
 
 #[test]
 fn public_cast_cancellation_and_abandonment_release_query_owners() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let baseline = db.reserved_memory_bytes();
     for sql in [
         "FROM facts |> SELECT CAST(i AS FLOAT64) AS n",

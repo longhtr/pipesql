@@ -1,9 +1,8 @@
-use super::order::{integers, query};
 use super::*;
 
 #[test]
 fn byte_length_counts_utf8_bytes_nulls_and_maximal_values() {
-    let (directory, db) = super::text_filter::fixture();
+    let (directory, db) = text_fixture();
     let expected = [
         Some(0),
         Some(1),
@@ -42,7 +41,7 @@ fn byte_length_counts_utf8_bytes_nulls_and_maximal_values() {
 
 #[test]
 fn byte_length_literals_own_decoded_values_and_compose_with_constants() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let prepared = {
         let sql = String::from(
             "FROM facts |> SELECT BYTE_LENGTH('é') AS a, (BYTE_LENGTH(('\\u96EA'))) AS b, BYTE_LENGTH('') AS c, BYTE_LENGTH('12345678901234567890123456789012') AS d, BYTE_LENGTH('\\000') AS e",
@@ -57,7 +56,7 @@ fn byte_length_literals_own_decoded_values_and_compose_with_constants() {
     let cancel = CancellationToken::new();
     let mut result = db.execute(&prepared, &cancel).unwrap();
     assert_eq!(
-        collect(&mut result),
+        collect_unordered(&mut result),
         vec![
             vec![
                 Cell::Integer(2),
@@ -81,7 +80,7 @@ fn byte_length_literals_own_decoded_values_and_compose_with_constants() {
 
 #[test]
 fn byte_length_preserves_range_inputs_and_conditional_dependencies() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     query(
         &db,
         "FROM facts AS f |> SET s = BYTE_LENGTH(s) |> ORDER BY id |> SELECT f.s, s",
@@ -116,7 +115,7 @@ fn byte_length_preserves_range_inputs_and_conditional_dependencies() {
 
 #[test]
 fn byte_length_crosses_join_group_and_set_materialization() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     query(
         &db,
         "FROM facts AS a |> LEFT JOIN (FROM facts |> WHERE id = 0) AS b ON a.id = b.id |> ORDER BY a.id |> SELECT BYTE_LENGTH(b.s) AS n",
@@ -152,7 +151,7 @@ fn byte_length_crosses_join_group_and_set_materialization() {
 
 #[test]
 fn string_length_rejects_unsupported_forms_with_owned_spans() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let baseline = db.reserved_memory_bytes();
     for function in ["BYTE_LENGTH", "CHAR_LENGTH"] {
         for expression in [
@@ -217,7 +216,7 @@ fn string_length_rejects_unsupported_forms_with_owned_spans() {
 
 #[test]
 fn string_length_cancellation_and_abandonment_release_query_owners() {
-    let (_directory, db) = super::text_filter::fixture();
+    let (_directory, db) = text_fixture();
     let baseline = db.reserved_memory_bytes();
     for sql in [
         "FROM texts |> SELECT BYTE_LENGTH(category) AS width",

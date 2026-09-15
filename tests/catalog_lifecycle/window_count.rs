@@ -1,4 +1,3 @@
-use super::order::{integers, query};
 use super::*;
 
 #[test]
@@ -291,21 +290,24 @@ fn analytic_snapshot_retains_typed_rows_across_append_and_reclamation() {
         }
     }
     db.reclaim(&cancel).unwrap();
-    assert!(collect(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
+    assert!(collect_unordered(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
     let old = old.unwrap();
     let old_count = old_count.unwrap();
     assert_eq!(
-        collect(&mut db.execute(&old_count, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&old_count, &cancel).unwrap()),
         integers(&[3; 3])
     );
     let current_count = db
         .prepare("FROM facts |> SELECT COUNT(*) OVER () AS n")
         .unwrap();
     assert_eq!(
-        collect(&mut db.execute(&current_count, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&current_count, &cancel).unwrap()),
         integers(&[6; 6])
     );
-    assert_eq!(collect(&mut db.execute(&old, &cancel).unwrap()), expected);
+    assert_eq!(
+        collect_unordered(&mut db.execute(&old, &cancel).unwrap()),
+        expected
+    );
     let current = db.prepare(sql).unwrap();
     for row in &mut expected {
         row[4] = Cell::Integer(6);
@@ -313,7 +315,7 @@ fn analytic_snapshot_retains_typed_rows_across_append_and_reclamation() {
     expected.extend(expected.clone());
     expected.sort_unstable();
     assert_eq!(
-        collect(&mut db.execute(&current, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&current, &cancel).unwrap()),
         expected
     );
     drop(old);
@@ -321,7 +323,7 @@ fn analytic_snapshot_retains_typed_rows_across_append_and_reclamation() {
     drop(empty);
     db.reclaim(&cancel).unwrap();
     assert_eq!(
-        collect(&mut db.execute(&current, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&current, &cancel).unwrap()),
         expected
     );
     assert_eq!(db.reserved_temp_bytes(), 0);

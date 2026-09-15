@@ -1,4 +1,3 @@
-use super::order::{integers, query};
 use super::*;
 
 #[test]
@@ -170,7 +169,7 @@ fn public_except_preserves_typed_values_and_both_snapshot_inputs() {
             },
         ],
     );
-    assert!(collect(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
+    assert!(collect_unordered(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
     drop(empty);
     let prepared = db.prepare(sql).unwrap();
     let mut running = db.execute(&prepared, &cancel).unwrap();
@@ -217,16 +216,19 @@ fn public_except_preserves_typed_values_and_both_snapshot_inputs() {
         ],
     ];
     expected.sort_unstable();
-    assert_eq!(collect(&mut running), expected);
+    assert_eq!(collect_unordered(&mut running), expected);
     drop(running);
     assert_eq!(
-        collect(&mut db.execute(&prepared, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&prepared, &cancel).unwrap()),
         expected
     );
     drop(prepared);
     expected.retain(|row| row != &snow);
     let fresh = db.prepare(sql).unwrap();
-    assert_eq!(collect(&mut db.execute(&fresh, &cancel).unwrap()), expected);
+    assert_eq!(
+        collect_unordered(&mut db.execute(&fresh, &cancel).unwrap()),
+        expected
+    );
     drop(fresh);
     assert_eq!(db.reserved_memory_bytes(), baseline);
     assert_eq!(db.reserved_temp_bytes(), 0);
@@ -269,7 +271,7 @@ fn public_except_matches_an_independent_complete_row_set_oracle() {
                 );
                 let prepared = db.prepare(&sql).unwrap();
                 assert_eq!(
-                    collect(&mut db.execute(&prepared, &cancel).unwrap()),
+                    collect_unordered(&mut db.execute(&prepared, &cancel).unwrap()),
                     expected,
                     "{sql}"
                 );
@@ -350,7 +352,7 @@ fn public_except_compares_typed_nulls_in_every_scalar_position() {
         }
         expected.sort_unstable();
         assert_eq!(
-            collect(&mut db.execute(&prepared, &cancel).unwrap()),
+            collect_unordered(&mut db.execute(&prepared, &cancel).unwrap()),
             expected,
             "{sql}"
         );

@@ -1,72 +1,8 @@
-use super::order::{integers, query};
 use super::*;
-
-pub(super) fn fixture() -> (Directory, Database) {
-    let directory = Directory::new();
-    let db = Database::create_empty(&directory.database(), config()).unwrap();
-    let cancel = CancellationToken::new();
-    db.declare_table(
-        "texts",
-        &[
-            ColumnDeclaration {
-                name: "id",
-                data_type: DataType::Int64,
-                nullable: false,
-            },
-            ColumnDeclaration {
-                name: "category",
-                data_type: DataType::String,
-                nullable: true,
-            },
-        ],
-        &cancel,
-    )
-    .unwrap();
-    let long = "a".repeat(65_536);
-    let values = [
-        "",
-        "a",
-        "é",
-        "e\u{301}",
-        "line\nnext",
-        "line\\nnext",
-        "it's",
-        "ignored",
-        "\0",
-        &long,
-    ];
-    let mut append = db
-        .begin_append(
-            "texts",
-            AppendLimits {
-                batches: 1,
-                encoded_bytes: 100_000,
-            },
-            &cancel,
-        )
-        .unwrap();
-    append
-        .write(
-            &[
-                ColumnInput {
-                    values: ColumnValues::Int64(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-                    validity: &[255, 3],
-                },
-                ColumnInput {
-                    values: ColumnValues::String(&values),
-                    validity: &[127, 3],
-                },
-            ],
-            &cancel,
-        )
-        .unwrap();
-    append.commit(&cancel).unwrap();
-    (directory, db)
-}
 
 #[test]
 fn public_text_predicates_preserve_literal_values_and_composed_inputs() {
-    let (_directory, db) = fixture();
+    let (_directory, db) = text_fixture();
     for (literal, id) in [
         ("''", 0),
         ("'a'", 1),
@@ -138,7 +74,7 @@ fn public_text_predicates_preserve_literal_values_and_composed_inputs() {
 
 #[test]
 fn text_literal_ownership_cancellation_and_healed_reuse() {
-    let (_directory, db) = fixture();
+    let (_directory, db) = text_fixture();
     let baseline = db.reserved_memory_bytes();
     let mut source = String::from(
         "FROM texts |> WHERE category = 'é' OR category = 'absent' |> ORDER BY id |> WHERE NOT category IS NULL |> SELECT id",

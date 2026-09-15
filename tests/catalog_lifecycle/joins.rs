@@ -132,7 +132,10 @@ fn check_join_snapshots(small_stack: bool, left_join: bool) {
                 assert!(matches!(result.step(), QueryStep::Progress));
                 ready_tx.send(()).unwrap();
                 resume_rx.recv_timeout(timeout).unwrap();
-                assert_eq!(collect(&mut result), vec![vec![Cell::Integer(old_rows)]]);
+                assert_eq!(
+                    collect_unordered(&mut result),
+                    vec![vec![Cell::Integer(old_rows)]]
+                );
             })
             .unwrap();
         ready_rx.recv_timeout(timeout).unwrap();
@@ -176,12 +179,12 @@ fn check_join_snapshots(small_stack: bool, left_join: bool) {
         // before starting another join; its live pin crossed both publications.
         worker.join().unwrap();
         assert_eq!(
-            collect(&mut db.execute(&middle, &cancel).unwrap()),
+            collect_unordered(&mut db.execute(&middle, &cancel).unwrap()),
             vec![vec![Cell::Integer(middle_rows)]]
         );
         let fresh = db.prepare(sql).unwrap();
         assert_eq!(
-            collect(&mut db.execute(&fresh, &cancel).unwrap()),
+            collect_unordered(&mut db.execute(&fresh, &cancel).unwrap()),
             vec![vec![Cell::Integer(fresh_rows)]]
         );
     });
@@ -193,7 +196,7 @@ fn check_join_snapshots(small_stack: bool, left_join: bool) {
     let db = Database::open(&directory.database(), config).unwrap();
     let fresh = db.prepare(sql).unwrap();
     assert_eq!(
-        collect(&mut db.execute(&fresh, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&fresh, &cancel).unwrap()),
         vec![vec![Cell::Integer(fresh_rows)]]
     );
     drop(fresh);
@@ -506,7 +509,7 @@ fn left_join_nested_producers_preserve_nulls_and_expression_demand() {
         )
         .unwrap();
     assert_eq!(
-        collect(&mut db.execute(&healthy, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&healthy, &cancel).unwrap()),
         vec![vec![Cell::Integer(6)]]
     );
     drop(healthy);

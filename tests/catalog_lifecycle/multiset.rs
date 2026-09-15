@@ -1,4 +1,3 @@
-use super::order::{integers, query};
 use super::*;
 use std::collections::BTreeMap;
 
@@ -136,11 +135,13 @@ fn public_multiset_preserves_typed_classes_original_bits_and_snapshots() {
         ],
     ];
     expected.sort_unstable();
-    assert_eq!(normalized(collect(&mut running)), expected);
+    assert_eq!(normalized(collect_unordered(&mut running)), expected);
     drop(running);
     for prepared in [&except, &intersect] {
         assert_eq!(
-            normalized(collect(&mut db.execute(prepared, &cancel).unwrap())),
+            normalized(collect_unordered(
+                &mut db.execute(prepared, &cancel).unwrap()
+            )),
             expected
         );
     }
@@ -158,7 +159,7 @@ fn public_multiset_preserves_typed_classes_original_bits_and_snapshots() {
         .into_iter()
         .flat_map(|row| [row.clone(), row])
         .collect();
-    let fresh_rows = collect(&mut db.execute(&fresh, &cancel).unwrap());
+    let fresh_rows = collect_unordered(&mut db.execute(&fresh, &cancel).unwrap());
     for (label, mut bits) in [
         ("zero", vec![(-0.0_f64).to_bits(), 0.0_f64.to_bits()]),
         ("nan", vec![nan_a.to_bits(), nan_b.to_bits()]),

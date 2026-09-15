@@ -1,4 +1,3 @@
-use super::order::{integers, query};
 use super::*;
 
 fn failure(db: &Database, sql: &str, operation: &'static str, expression: &str) {
@@ -382,7 +381,7 @@ fn extend_executes_through_projection_filters_groups_joins_and_derived_inputs() 
 
 #[test]
 fn extend_retains_typed_values_nulls_and_original_range_members() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     query(
         &db,
         "FROM facts AS f |> EXTEND s AS text, d AS day |> ORDER BY id |> SELECT f.s, text, f.d, day",
@@ -2122,7 +2121,7 @@ fn public_log10_preserves_promotion_composition_and_demand() {
         .unwrap();
     let cancel = CancellationToken::new();
     let mut result = db.execute(&prepared, &cancel).unwrap();
-    let rows = collect(&mut result);
+    let rows = collect_unordered(&mut result);
     assert_eq!(rows.len(), 4);
     for (row, expected) in rows.iter().zip([
         0_u64,
@@ -2162,7 +2161,7 @@ fn check_public_logarithm(function: &str, references: &[(&str, u64)]) {
         );
         let cancel = CancellationToken::new();
         let mut result = db.execute(&prepared, &cancel).unwrap();
-        let rows = collect(&mut result);
+        let rows = collect_unordered(&mut result);
         let [row] = rows.as_slice() else {
             panic!("one logarithm row")
         };
@@ -2405,7 +2404,7 @@ fn public_exp_preserves_promotion_composition_and_demand() {
         );
         let cancel = CancellationToken::new();
         let mut result = db.execute(&prepared, &cancel).unwrap();
-        let rows = collect(&mut result);
+        let rows = collect_unordered(&mut result);
         let [row] = rows.as_slice() else {
             panic!("one exponential row")
         };
@@ -2743,7 +2742,7 @@ fn public_power_preserves_promotion_composition_and_demand() {
         .unwrap();
     let cancel = CancellationToken::new();
     let mut result = db.execute(&prepared, &cancel).unwrap();
-    let rows = collect(&mut result);
+    let rows = collect_unordered(&mut result);
     assert_eq!(rows.len(), 4);
     for (row, expected) in rows.iter().zip([1331.0_f64, 1728.0, 2197.0, 2744.0]) {
         let [Cell::Number(actual)] = row.as_slice() else {

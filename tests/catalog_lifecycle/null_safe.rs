@@ -1,10 +1,8 @@
-use super::null_predicate::fixture;
-use super::order::{integers, query};
 use super::*;
 
 #[test]
 fn public_null_safe_predicates_have_typed_two_valued_results() {
-    let (_directory, db) = fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     // The fixture has ids 0..3. n is NULL/zero/NaN/infinity; i is 0/7/NULL/9;
     // s is present/NULL/empty/é; d is epoch on the first three rows, then NULL.
     for (column, literal, distinct, same) in [
@@ -70,7 +68,7 @@ fn public_null_safe_predicates_have_typed_two_valued_results() {
 
 #[test]
 fn public_null_safe_predicates_reject_invalid_literals_and_keep_short_circuit_demand() {
-    let (_directory, db) = fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     for suffix in [
         "i IS DISTINCT",
         "i IS DISTINCT FROM",
@@ -162,7 +160,7 @@ fn public_null_safe_numeric_boundaries_and_snapshots_survive_reopen() {
         )
         .unwrap();
     append.commit(&cancel).unwrap();
-    assert!(collect(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
+    assert!(collect_unordered(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
     drop(empty);
     for reopen in [false, true] {
         if reopen {

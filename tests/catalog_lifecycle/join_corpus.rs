@@ -102,7 +102,7 @@ fn check(db: &Database, sql: &str, mut expected: Vec<Vec<Cell>>, context: &str) 
         .prepare(sql)
         .unwrap_or_else(|error| panic!("{context}: {sql}: {error}"));
     let mut result = db.execute(&query, &cancel).unwrap();
-    let actual = collect(&mut result);
+    let actual = collect_unordered(&mut result);
     expected.sort_unstable();
     assert_eq!(actual, expected, "{context}: {sql}");
     drop(result);

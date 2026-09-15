@@ -1,50 +1,5 @@
 use super::*;
 
-pub(super) fn query(db: &Database, sql: &str, expected: Vec<Vec<Cell>>) {
-    let baseline = db.reserved_memory_bytes();
-    let cancel = CancellationToken::new();
-    let prepared = db
-        .prepare(sql)
-        .unwrap_or_else(|error| panic!("{sql}: {error}"));
-    let mut result = db
-        .execute(&prepared, &cancel)
-        .unwrap_or_else(|error| panic!("{sql}: {error}"));
-    let mut rows = Vec::new();
-    let mut done = false;
-    for _ in 0..100_000 {
-        match result.step() {
-            QueryStep::Progress => (),
-            QueryStep::Rows(batch) => {
-                for row in 0..batch.len() {
-                    rows.push(
-                        (0..batch.column_count())
-                            .map(|column| owned_cell(batch.value(row, column).unwrap()))
-                            .collect::<Vec<_>>(),
-                    );
-                }
-            }
-            QueryStep::Finished => {
-                done = true;
-                break;
-            }
-            QueryStep::Failed(error) => panic!("{sql}: {error}"),
-        }
-    }
-    assert!(done, "bounded ordering fixture: {sql}");
-    assert_eq!(rows, expected, "{sql}");
-    drop(result);
-    drop(prepared);
-    assert_eq!(db.reserved_memory_bytes(), baseline, "{sql}");
-    assert_eq!(db.reserved_temp_bytes(), 0, "{sql}");
-}
-
-pub(super) fn integers(values: &[i64]) -> Vec<Vec<Cell>> {
-    values
-        .iter()
-        .map(|value| vec![Cell::Integer(*value)])
-        .collect()
-}
-
 #[test]
 fn public_order_preserves_hidden_keys_aliases_and_composed_producers() {
     let (_directory, db) = join_fixture();

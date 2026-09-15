@@ -72,7 +72,7 @@ fn extrema_nan_does_not_suppress_later_demanded_errors() {
         let query = db.prepare(&sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         let mut result = db.execute(&query, &cancel).unwrap();
-        assert_eq!(collect(&mut result), vec![vec![Cell::Integer(2)]]);
+        assert_eq!(collect_unordered(&mut result), vec![vec![Cell::Integer(2)]]);
         drop(result);
         assert_eq!(db.reserved_memory_bytes(), baseline);
     }
@@ -104,7 +104,7 @@ fn text_extrema_preserve_nulls_empty_text_and_unicode_order() {
     let sql = "FROM words |> AGGREGATE MIN(word) AS lo, MAX(word) AS hi, COUNT(word) AS n";
     let empty = db.prepare(sql).unwrap();
     assert_eq!(
-        collect(&mut db.execute(&empty, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&empty, &cancel).unwrap()),
         vec![vec![Cell::Null, Cell::Null, Cell::Integer(0)]]
     );
     drop(empty);
@@ -139,7 +139,7 @@ fn text_extrema_preserve_nulls_empty_text_and_unicode_order() {
         let query = db.prepare(&sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         let mut result = db.execute(&query, &cancel).unwrap();
-        assert_eq!(collect(&mut result), expected, "{sql}");
+        assert_eq!(collect_unordered(&mut result), expected, "{sql}");
         drop(result);
         assert_eq!(db.reserved_memory_bytes(), baseline);
         assert_eq!(db.reserved_temp_bytes(), 0);
@@ -172,7 +172,7 @@ fn date_extrema_preserve_type_nulls_and_repeated_aggregation() {
     let sql = "FROM dates |> AGGREGATE MIN(day) AS lo, MAX(day) AS hi, COUNT(day) AS n";
     let empty = db.prepare(sql).unwrap();
     assert_eq!(
-        collect(&mut db.execute(&empty, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&empty, &cancel).unwrap()),
         vec![vec![Cell::Null, Cell::Null, Cell::Integer(0)]]
     );
     drop(empty);
@@ -207,7 +207,7 @@ fn date_extrema_preserve_type_nulls_and_repeated_aggregation() {
         let query=db.prepare(&sql).unwrap();
         let baseline=db.reserved_memory_bytes();
         let mut result=db.execute(&query, &cancel).unwrap();
-        assert_eq!(collect(&mut result), expected, "{sql}");
+        assert_eq!(collect_unordered(&mut result), expected, "{sql}");
         drop(result);
         assert_eq!(db.reserved_memory_bytes(), baseline);
         assert_eq!(db.reserved_temp_bytes(), 0);
@@ -245,7 +245,7 @@ fn numeric_extrema_preserve_nulls_special_values_and_shared_aggregation() {
     let sql = "FROM metrics |> AGGREGATE MIN(n) AS lo, MAX(n) AS hi, COUNT(n) AS present, MIN(d) AS dlo, MAX(d) AS dhi";
     let empty = db.prepare(sql).unwrap();
     assert_eq!(
-        collect(&mut db.execute(&empty, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&empty, &cancel).unwrap()),
         vec![vec![
             Cell::Null,
             Cell::Null,
@@ -297,7 +297,7 @@ fn numeric_extrema_preserve_nulls_special_values_and_shared_aggregation() {
         let query = db.prepare(&sql).unwrap();
         let baseline = db.reserved_memory_bytes();
         let mut result = db.execute(&query, &cancel).unwrap();
-        assert_eq!(collect(&mut result), expected, "{sql}");
+        assert_eq!(collect_unordered(&mut result), expected, "{sql}");
         drop(result);
         assert_eq!(db.reserved_memory_bytes(), baseline);
         assert_eq!(db.reserved_temp_bytes(), 0);
@@ -392,7 +392,7 @@ fn aggregates_follow_repeated_derived_and_joined_inputs() {
             .map(|row| row.into_iter().map(Cell::Integer).collect())
             .collect();
         assert_eq!(
-            collect(&mut db.execute(&query, &cancel).unwrap()),
+            collect_unordered(&mut db.execute(&query, &cancel).unwrap()),
             expected,
             "{sql}"
         );
@@ -426,7 +426,7 @@ fn count_arguments_count_present_values_without_summing_them() {
     let sql = "FROM facts |> AGGREGATE COUNT(*) AS nrows, COUNT(note) AS notes, COUNT(amount) AS amounts, COUNT(number) AS numbers, COUNT(day) AS days";
     let empty = db.prepare(sql).unwrap();
     assert_eq!(
-        collect(&mut db.execute(&empty, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&empty, &cancel).unwrap()),
         vec![vec![Cell::Integer(0); 5]]
     );
     drop(empty);
@@ -464,7 +464,7 @@ fn count_arguments_count_present_values_without_summing_them() {
         assert!(!definition.nullable);
     }
     assert_eq!(
-        collect(&mut db.execute(&query, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&query, &cancel).unwrap()),
         vec![vec![
             Cell::Integer(4),
             Cell::Integer(2),
@@ -478,7 +478,7 @@ fn count_arguments_count_present_values_without_summing_them() {
         .prepare(&format!("{sql} GROUP AND ORDER BY note"))
         .unwrap();
     assert_eq!(
-        collect(&mut db.execute(&grouped, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&grouped, &cancel).unwrap()),
         vec![
             vec![
                 Cell::Null,
@@ -511,7 +511,7 @@ fn count_arguments_count_present_values_without_summing_them() {
         .prepare("FROM facts |> AGGREGATE COUNT(amount*2) AS bad, COUNT(*) AS n |> SELECT n")
         .unwrap();
     assert_eq!(
-        collect(&mut db.execute(&hidden, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&hidden, &cancel).unwrap()),
         vec![vec![Cell::Integer(4)]]
     );
     drop(hidden);
@@ -573,7 +573,7 @@ fn declared_global_aggregates_preserve_types_null_counts_and_pinned_inputs() {
     assert!(empty.result_column(1).unwrap().nullable);
     assert_eq!(empty.result_column(2).unwrap().data_type, DataType::Double);
     assert_eq!(
-        collect(&mut db.execute(&empty, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&empty, &cancel).unwrap()),
         vec![vec![
             Cell::Integer(0),
             Cell::Null,
@@ -627,7 +627,7 @@ fn declared_global_aggregates_preserve_types_null_counts_and_pinned_inputs() {
     }
     // The old query still aggregates its empty generation after both appends.
     assert_eq!(
-        collect(&mut db.execute(&empty, &cancel).unwrap())[0][0],
+        collect_unordered(&mut db.execute(&empty, &cancel).unwrap())[0][0],
         Cell::Integer(0)
     );
     let query = db.prepare(sql).unwrap();
@@ -641,23 +641,26 @@ fn declared_global_aggregates_preserve_types_null_counts_and_pinned_inputs() {
         Cell::Number((11.0_f64 / 3.0).to_bits()),
     ]];
     let baseline = db.reserved_memory_bytes();
-    assert_eq!(collect(&mut db.execute(&query, &cancel).unwrap()), expected);
+    assert_eq!(
+        collect_unordered(&mut db.execute(&query, &cancel).unwrap()),
+        expected
+    );
     assert_eq!(db.reserved_memory_bytes(), baseline);
     let filtered = db.prepare("FROM facts |> SELECT n AS amount |> WHERE amount > 0 |> AGGREGATE SUM(amount) AS total, COUNT(*) AS nrows |> WHERE total = 9007199254741000 |> SELECT nrows, total").unwrap();
     assert_eq!(
-        collect(&mut db.execute(&filtered, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&filtered, &cancel).unwrap()),
         vec![vec![Cell::Integer(3), Cell::Integer(LARGE + 7)]]
     );
     let none = db.prepare("FROM facts |> WHERE n < -100 |> AGGREGATE SUM(n) AS total, AVG(d) AS mean, COUNT(*) AS nrows").unwrap();
     assert_eq!(
-        collect(&mut db.execute(&none, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&none, &cancel).unwrap()),
         vec![vec![Cell::Null, Cell::Null, Cell::Integer(0)]]
     );
     let grouped = db
         .prepare("FROM facts |> AGGREGATE COUNT(*) AS n GROUP BY other")
         .unwrap();
     assert_eq!(
-        collect(&mut db.execute(&grouped, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&grouped, &cancel).unwrap()),
         vec![
             vec![Cell::Null, Cell::Integer(3)],
             vec![Cell::Integer(1), Cell::Integer(1)],
@@ -691,7 +694,7 @@ fn declared_global_aggregates_preserve_types_null_counts_and_pinned_inputs() {
     writer.commit(&cancel).unwrap();
     let nulls = db.prepare("FROM empty_values |> AGGREGATE COUNT(*) AS nrows, SUM(n) AS total, AVG(n) AS mean, SUM(d) AS ds, AVG(d) AS dm").unwrap();
     assert_eq!(
-        collect(&mut db.execute(&nulls, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&nulls, &cancel).unwrap()),
         vec![vec![
             Cell::Integer(3),
             Cell::Null,
@@ -711,7 +714,10 @@ fn declared_global_aggregates_preserve_types_null_counts_and_pinned_inputs() {
     db.close().unwrap();
     let db = Database::open(&path, config()).unwrap();
     let query = db.prepare(sql).unwrap();
-    assert_eq!(collect(&mut db.execute(&query, &cancel).unwrap()), expected);
+    assert_eq!(
+        collect_unordered(&mut db.execute(&query, &cancel).unwrap()),
+        expected
+    );
     drop(query);
     db.close().unwrap();
     let query_path = directory.0.join("aggregate.sql");
@@ -825,7 +831,7 @@ fn declared_integer_sum_overflow_is_final_and_demanded() {
     }
     let query = db.prepare("FROM facts |> AGGREGATE SUM(n) AS total, AVG(n) AS mean, COUNT(*) AS nrows |> SELECT mean, nrows").unwrap();
     assert_eq!(
-        collect(&mut db.execute(&query, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&query, &cancel).unwrap()),
         vec![vec![
             Cell::Number((i64::MAX as f64).to_bits()),
             Cell::Integer(3)
@@ -847,7 +853,7 @@ fn declared_integer_sum_overflow_is_final_and_demanded() {
         .prepare("FROM facts |> AGGREGATE SUM(n) AS total")
         .unwrap();
     assert_eq!(
-        collect(&mut db.execute(&query, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&query, &cancel).unwrap()),
         vec![vec![Cell::Integer(i64::MAX)]]
     );
 }
@@ -911,7 +917,7 @@ fn declared_nullable_double_aggregates_preserve_exceptional_values() {
             .unwrap();
         writer.commit(&cancel).unwrap();
         let query = db.prepare(sql).unwrap();
-        let output = collect(&mut db.execute(&query, &cancel).unwrap());
+        let output = collect_unordered(&mut db.execute(&query, &cancel).unwrap());
         let Cell::Number(bits) = output[0][0] else {
             panic!("expected DOUBLE");
         };

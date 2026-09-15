@@ -37,7 +37,7 @@ fn scan_memory_upper_bound_admits_a_full_text_schema() {
     assert_eq!(db.reserved_memory_bytes(), prior_ownership);
     let mut result = db.execute(&query, &cancellation).unwrap();
     assert!(result.accounted_memory_bytes() <= allowance);
-    assert!(collect(&mut result).is_empty());
+    assert!(collect_unordered(&mut result).is_empty());
     drop(result);
     assert_eq!(db.reserved_memory_bytes(), prior_ownership);
     assert_eq!(db.reserved_temp_bytes(), 0);
@@ -167,9 +167,9 @@ fn check_complete_declared_schema(small_stack: bool) {
                     assert_eq!(q.result_column(i).unwrap().data_type, kinds[i % 4]);
                 }
                 let mut result = db.execute(&q, &cancel).unwrap();
-                assert_eq!(collect(&mut result), expected);
+                assert_eq!(collect_unordered(&mut result), expected);
             }
-            order::query(
+            fixtures::query(
                 &db,
                 "FROM wide |> WHERE c60 IS DISTINCT FROM ROUND(FLOOR(6000+SIGN(1)))",
                 vec![expected[0].clone(), expected[2].clone()],
@@ -184,18 +184,18 @@ fn check_complete_declared_schema(small_stack: bool) {
                 .map(|row| [63, 60, 61, 62].iter().map(|&i| row[i].clone()).collect())
                 .collect();
             selected.sort_unstable();
-            assert_eq!(collect(&mut result), selected);
+            assert_eq!(collect_unordered(&mut result), selected);
             drop(result);
             drop(q);
             let q = db
                 .prepare("FROM wide |> AGGREGATE SUM(c60) AS total")
                 .unwrap();
             assert_eq!(
-                collect(&mut db.execute(&q, &cancel).unwrap()),
+                collect_unordered(&mut db.execute(&q, &cancel).unwrap()),
                 vec![vec![Cell::Integer(18003)]]
             );
             drop(q);
-            order::query(
+            fixtures::query(
                 &db,
                 "FROM wide |> SELECT c60+1 AS x, c61*2 AS y |> WHERE x >= 6002 |> ORDER BY x",
                 vec![
@@ -203,12 +203,12 @@ fn check_complete_declared_schema(small_stack: bool) {
                     vec![Cell::Integer(6003), Cell::Number(123.0_f64.to_bits())],
                 ],
             );
-            order::query(
+            fixtures::query(
                 &db,
                 "FROM wide |> SELECT c60+1 AS x |> AGGREGATE SUM(x) AS s |> SELECT s+1 AS total",
                 vec![vec![Cell::Integer(18007)]],
             );
-            order::query(
+            fixtures::query(
                 &db,
                 "FROM wide |> SELECT NULLIF(c60, 6001) AS x, NULLIF(c61, -1.0) AS y",
                 vec![
@@ -225,7 +225,7 @@ fn check_complete_declared_schema(small_stack: bool) {
                 .prepare(&format!("FROM wide |> AGGREGATE SUM({arguments}) AS total"))
                 .unwrap();
             assert_eq!(
-                collect(&mut db.execute(&q, &cancel).unwrap()),
+                collect_unordered(&mut db.execute(&q, &cancel).unwrap()),
                 vec![vec![Cell::Integer(144048)]]
             );
             drop(q);
@@ -242,7 +242,7 @@ fn check_complete_declared_schema(small_stack: bool) {
             );
             let q = db.prepare(&grouped).unwrap();
             assert_eq!(
-                collect(&mut db.execute(&q, &cancel).unwrap()),
+                collect_unordered(&mut db.execute(&q, &cancel).unwrap()),
                 (6000..6003)
                     .map(|v| vec![Cell::Integer(v); 64])
                     .collect::<Vec<_>>()
@@ -268,7 +268,7 @@ fn check_complete_declared_schema(small_stack: bool) {
             drop(q);
             let q = db.prepare("FROM wide |> SELECT c60").unwrap();
             assert_eq!(
-                collect(&mut db.execute(&q, &cancel).unwrap()),
+                collect_unordered(&mut db.execute(&q, &cancel).unwrap()),
                 (6000..6003)
                     .map(|v| vec![Cell::Integer(v)])
                     .collect::<Vec<_>>()
@@ -326,7 +326,7 @@ fn ordering_retains_original_values_beyond_visible_row_width() {
         "FROM wide AS w |> SET c0=c0+1 |> ORDER BY {} |> SELECT w.c0",
         names.join(", ")
     );
-    order::query(&db, &sql, order::integers(&[1, 2]));
+    fixtures::query(&db, &sql, fixtures::integers(&[1, 2]));
 }
 
 #[test]
@@ -423,7 +423,7 @@ fn check_set_width() {
         let prepared = db.prepare(&sql).unwrap();
         assert_eq!(prepared.result_column_count(), 64);
         assert_eq!(
-            collect(&mut db.execute(&prepared, &cancel).unwrap()),
+            collect_unordered(&mut db.execute(&prepared, &cancel).unwrap()),
             expected
         );
         drop(prepared);

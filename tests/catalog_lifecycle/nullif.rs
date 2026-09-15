@@ -1,4 +1,3 @@
-use super::order::{integers, query};
 use super::*;
 
 #[test]
@@ -188,7 +187,7 @@ fn public_nullif_retains_stored_double_bits_and_prepared_snapshots() {
         )
         .unwrap();
     append.commit(&cancel).unwrap();
-    assert!(collect(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
+    assert!(collect_unordered(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
     drop(empty);
     let expected = vec![
         vec![Cell::Number(bits[0])],

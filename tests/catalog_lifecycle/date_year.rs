@@ -1,4 +1,3 @@
-use super::order::{integers, query};
 use super::*;
 
 // Literal Gregorian boundaries, independently checked with Python's datetime.
@@ -105,7 +104,7 @@ fn date_year_folds_owned_constants_and_reuses_date_shifts() {
     let cancel = CancellationToken::new();
     let mut result = db.execute(&prepared, &cancel).unwrap();
     assert_eq!(
-        collect(&mut result),
+        collect_unordered(&mut result),
         vec![vec![
             Cell::Integer(1),
             Cell::Integer(2000),
@@ -144,7 +143,7 @@ fn date_year_folds_owned_constants_and_reuses_date_shifts() {
 
 #[test]
 fn date_year_composes_with_identity_demand_and_numeric_consumers() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     query(
         &db,
         "FROM facts AS f |> SET d = EXTRACT(YEAR FROM d) |> ORDER BY id |> SELECT f.d, d",
@@ -183,7 +182,7 @@ fn date_year_composes_with_identity_demand_and_numeric_consumers() {
 
 #[test]
 fn date_year_crosses_join_group_and_set_materialization() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     query(
         &db,
         "FROM facts AS a |> LEFT JOIN (FROM facts |> WHERE id = 0) AS b ON a.id = b.id |> ORDER BY a.id |> SELECT EXTRACT(YEAR FROM b.d) AS y",
@@ -220,7 +219,7 @@ fn date_year_crosses_join_group_and_set_materialization() {
 
 #[test]
 fn date_year_rejects_unsupported_parts_types_and_expressions_with_owned_spans() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let baseline = db.reserved_memory_bytes();
     for (expression, token) in [
         ("EXTRACT(MONTH FROM d)", "MONTH"),

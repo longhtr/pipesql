@@ -78,7 +78,7 @@ fn public_distinct_scalar_equivalence_empty_input_and_composition() {
     unordered(
         &db,
         "FROM facts |> DISTINCT |> AGGREGATE COUNT(*) AS n",
-        order::integers(&[0]),
+        fixtures::integers(&[0]),
     );
     let numbers = [
         -0.0,
@@ -177,12 +177,12 @@ fn public_distinct_scalar_equivalence_empty_input_and_composition() {
     unordered(
         &db,
         "FROM facts |> DISTINCT |> AGGREGATE COUNT(*) AS n",
-        order::integers(&[expected.len() as i64]),
+        fixtures::integers(&[expected.len() as i64]),
     );
     unordered(
         &db,
         "FROM facts |> AGGREGATE COUNT(*) AS n GROUP BY i |> SELECT n |> DISTINCT",
-        order::integers(&[40, 80]),
+        fixtures::integers(&[40, 80]),
     );
     unordered(
         &db,
@@ -283,10 +283,10 @@ fn check_wide_distinct(small_stack: bool) {
                 if small_stack {
                     pipesql_filesystem::test_assert_small_stack();
                 }
-                order::query(
+                fixtures::query(
                     &db,
                     "FROM wide |> DISTINCT |> SELECT c0",
-                    order::integers(&[0, 0]),
+                    fixtures::integers(&[0, 0]),
                 );
                 // A bodyless stage can remap 64 identities without consuming 64 tokens.
                 // Exercise the complete stage budget, not the aggregate-output budget.
@@ -294,7 +294,7 @@ fn check_wide_distinct(small_stack: bool) {
                 let baseline = db.reserved_memory_bytes();
                 let prepared = db.prepare(&sql).unwrap();
                 let mut result = db.execute(&prepared, &cancel).unwrap();
-                let mut rows = collect(&mut result);
+                let mut rows = collect_unordered(&mut result);
                 rows.sort();
                 let zero = vec![Cell::Integer(0); 64];
                 let mut one = zero.clone();
@@ -315,7 +315,7 @@ fn check_wide_distinct(small_stack: bool) {
 #[test]
 fn public_distinct_preserves_visible_ranges_and_duplicate_outputs() {
     let (_directory, db) = join_fixture();
-    order::query(
+    fixtures::query(
         &db,
         "FROM facts AS f |> DISTINCT |> SELECT f.k AS k, f.k AS duplicate |> DISTINCT |> AS d |> ORDER BY d.k |> SELECT d.k, d.duplicate",
         vec![
@@ -401,7 +401,7 @@ fn public_distinct_keeps_pinned_inputs_through_append_reclaim_and_joins() {
     db.reclaim(&cancel).unwrap();
     let mut result = db.execute(&old, &cancel).unwrap();
     assert_eq!(
-        collect(&mut result),
+        collect_unordered(&mut result),
         vec![
             vec![Cell::Null],
             vec![Cell::Integer(1)],
@@ -421,7 +421,7 @@ fn public_distinct_keeps_pinned_inputs_through_append_reclaim_and_joins() {
         "FROM facts AS f |> JOIN dimensions AS d ON f.k=d.k |> SELECT f.k |> DISTINCT",
         "FROM facts |> SELECT k |> DISTINCT |> AS f |> JOIN dimensions AS d ON f.k=d.k |> SELECT f.k |> DISTINCT",
     ] {
-        unordered(&db, sql, order::integers(&[1, 2]));
+        unordered(&db, sql, fixtures::integers(&[1, 2]));
     }
     drop(old);
     db.close().unwrap();

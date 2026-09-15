@@ -384,7 +384,7 @@ fn declared_grouping_preserves_nullable_text_float_and_date_keys() {
         .unwrap();
     writer.commit(&cancel).unwrap();
     assert!(
-        collect(&mut db.execute(&empty, &cancel).unwrap()).is_empty(),
+        collect_unordered(&mut db.execute(&empty, &cancel).unwrap()).is_empty(),
         "old grouped query retains the empty generation"
     );
     let query = db.prepare(sql).unwrap();
@@ -402,7 +402,7 @@ fn declared_grouping_preserves_nullable_text_float_and_date_keys() {
     }
     let baseline = db.reserved_memory_bytes();
     assert_eq!(
-        collect(&mut db.execute(&query, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&query, &cancel).unwrap()),
         vec![
             vec![
                 Cell::Null,
@@ -433,7 +433,7 @@ fn declared_grouping_preserves_nullable_text_float_and_date_keys() {
     assert_eq!(db.reserved_memory_bytes(), baseline);
     let hidden = db.prepare("FROM facts |> SELECT note AS key, amount |> AGGREGATE SUM(amount*2) AS bad, COUNT(*) AS n GROUP BY key |> WHERE n > 1 |> SELECT n, key").unwrap();
     assert_eq!(
-        collect(&mut db.execute(&hidden, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&hidden, &cancel).unwrap()),
         vec![
             vec![Cell::Integer(2), Cell::Text("a".into())],
             vec![Cell::Integer(3), Cell::Text("é".into())],

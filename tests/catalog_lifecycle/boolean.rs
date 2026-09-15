@@ -1,9 +1,8 @@
-use super::order::{integers, query};
 use super::*;
 
 #[test]
 fn boolean_filters_preserve_null_nan_precedence_and_producer_composition() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     for (predicate, expected) in [
         ("NOT n < 0", vec![1, 2, 3]),
         ("n >= 0", vec![1, 3]),
@@ -84,7 +83,7 @@ fn boolean_filters_preserve_null_nan_precedence_and_producer_composition() {
 
 #[test]
 fn boolean_filters_preserve_conditional_computed_demand() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     for predicate in [
         "n<0 AND bad>0",
         "id NOT BETWEEN 0 AND 3 AND bad>0",
@@ -274,7 +273,7 @@ fn boolean_scan_scratch_fits_reported_stack_allowance() {
 }
 
 fn check_boolean_scan_scratch(small_stack: bool) {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let thread = if small_stack {
         std::thread::Builder::new().stack_size(pipesql_filesystem::TEST_SMALL_STACK_REQUEST_BYTES)
     } else {

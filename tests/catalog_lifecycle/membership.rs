@@ -1,9 +1,8 @@
-use super::order::{integers, query};
 use super::*;
 
 #[test]
 fn literal_membership_preserves_duplicates_null_and_negation() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     for (predicate, expected) in [
         ("id IN (1, 3, 1)", vec![1, 3]),
         ("id IN (NULL, 1, 3, NULL)", vec![1, 3]),
@@ -29,7 +28,7 @@ fn literal_membership_preserves_duplicates_null_and_negation() {
 
 #[test]
 fn membership_checks_types_and_composes_with_producers() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     for (predicate, expected) in [
         ("i IN (7, 9, 7)", vec![1, 3]),
         ("NOT i IN (7)", vec![0, 3]),
@@ -218,7 +217,7 @@ fn membership_matches_independent_nullable_set_model() {
 
 #[test]
 fn membership_preserves_conditional_demand_and_release() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     for (sql, expected) in [
         (
             "FROM facts |> SELECT id, id*9223372036854775807 AS bad |> WHERE id IN (2, 3) OR bad IN (0, 9223372036854775807) |> ORDER BY id |> SELECT id",
@@ -274,7 +273,7 @@ fn membership_preserves_conditional_demand_and_release() {
 
 #[test]
 fn membership_retains_stage_bounds_cancellation_and_early_drop() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let negated_limit = format!(
         "FROM facts |> SELECT id |> WHERE id NOT IN ({})",
         ["0"; 15].join(", ")

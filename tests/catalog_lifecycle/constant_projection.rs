@@ -1,9 +1,8 @@
-use super::order::query;
 use super::*;
 
 #[test]
 fn select_materializes_owned_string_and_date_constants() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     query(
         &db,
         "FROM facts |> SELECT '雪' AS label, DATE '1970-01-02' AS day",
@@ -13,7 +12,7 @@ fn select_materializes_owned_string_and_date_constants() {
 
 #[test]
 fn extend_constants_preserve_input_values_and_row_count() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     query(
         &db,
         "FROM facts |> EXTEND 'source' AS label, DATE_ADD(DATE '1970-01-01', INTERVAL 1 DAY) AS day |> ORDER BY id |> SELECT id, label, day",
@@ -25,7 +24,7 @@ fn extend_constants_preserve_input_values_and_row_count() {
 
 #[test]
 fn set_constants_preserve_original_range_values() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     query(
         &db,
         "FROM facts AS f |> SET s='replacement', d=DATE '1969-12-31' |> ORDER BY id |> SELECT f.s, s, d",
@@ -43,7 +42,7 @@ fn set_constants_preserve_original_range_values() {
 
 #[test]
 fn constants_compose_with_filters_grouping_and_union() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     query(
         &db,
         "FROM facts |> SELECT '雪' AS label, DATE '1970-01-02' AS day |> WHERE label IN ('雪', NULL) AND day = DATE '1970-01-02' |> AGGREGATE COUNT(*) AS n GROUP BY label, day |> SELECT label, day, n",
@@ -70,7 +69,7 @@ fn constants_compose_with_filters_grouping_and_union() {
 
 #[test]
 fn malformed_constants_fail_preparation_even_when_undemanded() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let baseline = db.reserved_memory_bytes();
     for constant in [
         "DATE '2023-02-29'",
@@ -90,7 +89,7 @@ fn malformed_constants_fail_preparation_even_when_undemanded() {
 
 #[test]
 fn prepared_constants_outlive_source_and_release_on_early_drop() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let baseline = db.reserved_memory_bytes();
     let prepared = {
         let source =

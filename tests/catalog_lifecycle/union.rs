@@ -1,4 +1,3 @@
-use super::order::{integers, query};
 use super::*;
 
 #[test]
@@ -448,7 +447,7 @@ fn public_union_keeps_typed_bytes_and_one_snapshot_across_branches() {
     };
     append("first");
     append("second");
-    assert!(collect(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
+    assert!(collect_unordered(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
     drop(empty);
     let prepared = db.prepare(sql).unwrap();
     assert_eq!(prepared.result_column(0).unwrap().name, Some("note"));
@@ -470,17 +469,20 @@ fn public_union_keeps_typed_bytes_and_one_snapshot_across_branches() {
     ];
     let mut expected: Vec<_> = pair.iter().cycle().take(4).cloned().collect();
     expected.sort_unstable();
-    assert_eq!(collect(&mut running), expected);
+    assert_eq!(collect_unordered(&mut running), expected);
     drop(running);
     assert_eq!(
-        collect(&mut db.execute(&prepared, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&prepared, &cancel).unwrap()),
         expected
     );
     drop(prepared);
     let fresh = db.prepare(sql).unwrap();
     let mut expected: Vec<_> = pair.iter().cycle().take(6).cloned().collect();
     expected.sort_unstable();
-    assert_eq!(collect(&mut db.execute(&fresh, &cancel).unwrap()), expected);
+    assert_eq!(
+        collect_unordered(&mut db.execute(&fresh, &cancel).unwrap()),
+        expected
+    );
     drop(fresh);
     assert_eq!(db.reserved_temp_bytes(), 0);
     db.close().unwrap();
@@ -527,7 +529,7 @@ fn public_union_distinct_keeps_typed_representatives_and_prepared_snapshot() {
         )
         .unwrap();
     writer.commit(&cancel).unwrap();
-    assert!(collect(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
+    assert!(collect_unordered(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
     drop(empty);
     let prepared = db.prepare(sql).unwrap();
     let mut running = db.execute(&prepared, &cancel).unwrap();
@@ -598,12 +600,18 @@ fn public_union_distinct_keeps_typed_representatives_and_prepared_snapshot() {
         ]);
         assert_eq!(rows, expected);
     };
-    check(collect(&mut running), false);
+    check(collect_unordered(&mut running), false);
     drop(running);
-    check(collect(&mut db.execute(&prepared, &cancel).unwrap()), false);
+    check(
+        collect_unordered(&mut db.execute(&prepared, &cancel).unwrap()),
+        false,
+    );
     drop(prepared);
     let fresh = db.prepare(sql).unwrap();
-    check(collect(&mut db.execute(&fresh, &cancel).unwrap()), true);
+    check(
+        collect_unordered(&mut db.execute(&fresh, &cancel).unwrap()),
+        true,
+    );
     drop(fresh);
     assert_eq!(db.reserved_memory_bytes(), baseline);
     assert_eq!(db.reserved_temp_bytes(), 0);

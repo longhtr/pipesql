@@ -1,4 +1,3 @@
-use super::order::{integers, query};
 use super::*;
 
 #[test]

@@ -67,7 +67,7 @@ fn declared_tables_append_and_snapshot_queries_survive_reopen() {
         ]);
         text.clear();
         text.push_str(next);
-        assert!(collect(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
+        assert!(collect_unordered(&mut db.execute(&empty, &cancel).unwrap()).is_empty());
     }
     expected.sort_unstable();
     let committed = append.commit(&cancel).unwrap();
@@ -79,7 +79,7 @@ fn declared_tables_append_and_snapshot_queries_survive_reopen() {
     let aborted = other.transaction();
     other.abort().unwrap();
     db.declare_table("third", &declarations(), &cancel).unwrap();
-    assert_eq!(collect(&mut running), expected);
+    assert_eq!(collect_unordered(&mut running), expected);
     drop(running);
     drop(query);
     drop(empty);
@@ -95,9 +95,12 @@ fn declared_tables_append_and_snapshot_queries_survive_reopen() {
         CommitResolution::Aborted
     );
     let query = db.prepare(sql).unwrap();
-    assert_eq!(collect(&mut db.execute(&query, &cancel).unwrap()), expected);
+    assert_eq!(
+        collect_unordered(&mut db.execute(&query, &cancel).unwrap()),
+        expected
+    );
     let other = db.prepare("FROM other |> SELECT note").unwrap();
-    assert!(collect(&mut db.execute(&other, &cancel).unwrap()).is_empty());
+    assert!(collect_unordered(&mut db.execute(&other, &cancel).unwrap()).is_empty());
     drop(other);
     drop(query);
     db.close().unwrap();
@@ -174,7 +177,7 @@ fn reclamation_preserves_all_pinned_generations_and_receipts() {
     ));
     assert_eq!(db.reclaim(&cancel).unwrap(), 3);
     for (count, query) in pins.iter().enumerate() {
-        let rows = collect(&mut db.execute(query, &cancel).unwrap());
+        let rows = collect_unordered(&mut db.execute(query, &cancel).unwrap());
         assert_eq!(
             rows,
             (1..=count)
@@ -204,7 +207,7 @@ fn reclamation_preserves_all_pinned_generations_and_receipts() {
     assert_eq!(next.generation(), commits.last().unwrap().generation() + 1);
     let query = reopened.prepare("FROM facts").unwrap();
     assert_eq!(
-        collect(&mut reopened.execute(&query, &cancel).unwrap()),
+        collect_unordered(&mut reopened.execute(&query, &cancel).unwrap()),
         (1..=4).map(|n| vec![Cell::Integer(n)]).collect::<Vec<_>>()
     );
     drop(query);
@@ -265,7 +268,7 @@ fn concurrent_readers_keep_generations_through_reclamation_and_early_drop() {
             // An already open file alone could survive an erroneous unlink.
             drop(result);
             assert_eq!(
-                collect(&mut reader_db.execute(&old, &cancel).unwrap()),
+                collect_unordered(&mut reader_db.execute(&old, &cancel).unwrap()),
                 vec![vec![Cell::Integer(11)]]
             );
         });
@@ -277,12 +280,12 @@ fn concurrent_readers_keep_generations_through_reclamation_and_early_drop() {
             middle_ready_tx.send(()).unwrap();
             middle_resume_rx.recv_timeout(timeout).unwrap();
             assert_eq!(
-                collect(&mut result),
+                collect_unordered(&mut result),
                 vec![vec![Cell::Integer(11)], vec![Cell::Integer(22)]]
             );
             drop(result);
             assert_eq!(
-                collect(&mut reader_db.execute(&middle, &cancel).unwrap()),
+                collect_unordered(&mut reader_db.execute(&middle, &cancel).unwrap()),
                 vec![vec![Cell::Integer(11)], vec![Cell::Integer(22)]]
             );
         });
@@ -319,7 +322,10 @@ fn concurrent_readers_keep_generations_through_reclamation_and_early_drop() {
         vec![Cell::Integer(44)],
     ];
     let fresh = db.prepare("FROM facts |> SELECT v").unwrap();
-    assert_eq!(collect(&mut db.execute(&fresh, &cancel).unwrap()), expected);
+    assert_eq!(
+        collect_unordered(&mut db.execute(&fresh, &cancel).unwrap()),
+        expected
+    );
     drop(fresh);
     assert_eq!(db.reserved_memory_bytes(), resident);
     db.close().unwrap();
@@ -331,7 +337,10 @@ fn concurrent_readers_keep_generations_through_reclamation_and_early_drop() {
         );
     }
     let fresh = db.prepare("FROM facts |> SELECT v").unwrap();
-    assert_eq!(collect(&mut db.execute(&fresh, &cancel).unwrap()), expected);
+    assert_eq!(
+        collect_unordered(&mut db.execute(&fresh, &cancel).unwrap()),
+        expected
+    );
     drop(fresh);
     assert_eq!(db.reserved_temp_bytes(), 0);
     db.close().unwrap();

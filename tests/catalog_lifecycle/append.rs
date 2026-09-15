@@ -50,13 +50,13 @@ fn public_append_failure_and_drop_recover_without_publishing() {
     );
     assert_eq!(db.reserved_temp_bytes(), 0);
     let query = db.prepare("FROM facts |> SELECT value").unwrap();
-    assert!(collect(&mut db.execute(&query, &cancel).unwrap()).is_empty());
+    assert!(collect_unordered(&mut db.execute(&query, &cancel).unwrap()).is_empty());
     let mut append = db.begin_append("facts", limits(), &cancel).unwrap();
     append.write(&input, &cancel).unwrap();
     append.commit(&cancel).unwrap();
     let query = db.prepare("FROM facts |> SELECT value").unwrap();
     assert_eq!(
-        collect(&mut db.execute(&query, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&query, &cancel).unwrap()),
         vec![vec![Cell::Integer(42)]]
     );
 }

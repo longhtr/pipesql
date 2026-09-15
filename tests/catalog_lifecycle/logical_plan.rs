@@ -30,7 +30,7 @@ fn logical_plan_distinguishes_relations_identities_and_output_positions() {
     assert_eq!(db.reserved_memory_bytes(), prepared);
     assert_eq!(db.reserved_temp_bytes(), 0);
     assert_eq!(
-        collect(&mut db.execute(&query, &CancellationToken::new()).unwrap()),
+        collect_unordered(&mut db.execute(&query, &CancellationToken::new()).unwrap()),
         [
             vec![Cell::Null, Cell::Integer(41), Cell::Integer(41)],
             vec![Cell::Integer(1), Cell::Integer(32), Cell::Integer(32)],
@@ -124,7 +124,7 @@ fn logical_plan_propagates_sink_failure_and_keeps_the_prepared_snapshot() {
     append.commit(&cancel).unwrap();
     assert_eq!(view.to_string(), before);
     assert_eq!(
-        collect(&mut db.execute(&query, &cancel).unwrap()),
+        collect_unordered(&mut db.execute(&query, &cancel).unwrap()),
         [
             vec![Cell::Integer(10)],
             vec![Cell::Integer(20)],
@@ -134,7 +134,10 @@ fn logical_plan_propagates_sink_failure_and_keeps_the_prepared_snapshot() {
     );
     drop(query);
     let fresh = db.prepare("FROM facts |> SELECT v").unwrap();
-    assert_eq!(collect(&mut db.execute(&fresh, &cancel).unwrap()).len(), 5);
+    assert_eq!(
+        collect_unordered(&mut db.execute(&fresh, &cancel).unwrap()).len(),
+        5
+    );
     drop(fresh);
     assert_eq!(db.reserved_memory_bytes(), resident);
     assert_eq!(db.reserved_temp_bytes(), 0);

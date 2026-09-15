@@ -1,4 +1,3 @@
-use super::order::{integers, query};
 use super::*;
 
 #[test]
@@ -120,7 +119,7 @@ fn public_intersect_matches_an_independent_complete_row_set_oracle() {
                 );
                 let prepared = db.prepare(&sql).unwrap();
                 assert_eq!(
-                    collect(&mut db.execute(&prepared, &cancel).unwrap()),
+                    collect_unordered(&mut db.execute(&prepared, &cancel).unwrap()),
                     expected,
                     "{sql}"
                 );
@@ -231,7 +230,7 @@ fn public_intersect_preserves_typed_equality_bits_and_pinned_inputs() {
         ],
     );
     for prepared in [&empty, &right_empty] {
-        assert!(collect(&mut db.execute(prepared, &cancel).unwrap()).is_empty());
+        assert!(collect_unordered(&mut db.execute(prepared, &cancel).unwrap()).is_empty());
     }
     drop(empty);
     drop(right_empty);
@@ -313,10 +312,12 @@ fn public_intersect_preserves_typed_equality_bits_and_pinned_inputs() {
         ],
     ];
     expected.sort_unstable();
-    assert_eq!(normalized(collect(&mut running)), expected);
+    assert_eq!(normalized(collect_unordered(&mut running)), expected);
     drop(running);
     assert_eq!(
-        normalized(collect(&mut db.execute(&prepared, &cancel).unwrap())),
+        normalized(collect_unordered(
+            &mut db.execute(&prepared, &cancel).unwrap()
+        )),
         expected
     );
     drop(prepared);
@@ -329,7 +330,7 @@ fn public_intersect_preserves_typed_equality_bits_and_pinned_inputs() {
     expected.sort_unstable();
     let fresh = db.prepare(sql).unwrap();
     assert_eq!(
-        normalized(collect(&mut db.execute(&fresh, &cancel).unwrap())),
+        normalized(collect_unordered(&mut db.execute(&fresh, &cancel).unwrap())),
         expected
     );
     drop(fresh);

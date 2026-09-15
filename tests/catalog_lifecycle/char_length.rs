@@ -1,9 +1,8 @@
-use super::order::{integers, query};
 use super::*;
 
 #[test]
 fn char_length_counts_scalars_across_scan_sort_and_reopen() {
-    let (directory, db) = super::text_filter::fixture();
+    let (directory, db) = text_fixture();
     let maximum = "😀".repeat(16_384);
     let cancel = CancellationToken::new();
     let mut append = db.begin_append("texts", limits(), &cancel).unwrap();
@@ -70,7 +69,7 @@ fn char_length_counts_scalars_across_scan_sort_and_reopen() {
 
 #[test]
 fn char_length_literals_fold_owned_decoded_scalars() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let prepared = {
         let sql = String::from(
             "FROM facts |> SELECT CHAR_LENGTH('é') AS a, (CHAR_LENGTH(('e\\u0301'))) AS b, CHAR_LENGTH('') AS c, CHAR_LENGTH('😀😀😀😀😀😀😀😀') AS d, CHAR_LENGTH('\\000') AS e",
@@ -85,7 +84,7 @@ fn char_length_literals_fold_owned_decoded_scalars() {
     let cancel = CancellationToken::new();
     let mut result = db.execute(&prepared, &cancel).unwrap();
     assert_eq!(
-        collect(&mut result),
+        collect_unordered(&mut result),
         vec![
             vec![
                 Cell::Integer(1),
@@ -121,7 +120,7 @@ fn char_length_literals_fold_owned_decoded_scalars() {
 
 #[test]
 fn char_length_preserves_identity_and_conditional_composition() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     query(
         &db,
         "FROM facts AS f |> SET s = CHAR_LENGTH(s) |> ORDER BY id |> SELECT f.s, s",
@@ -156,7 +155,7 @@ fn char_length_preserves_identity_and_conditional_composition() {
 
 #[test]
 fn char_length_crosses_join_group_and_set_materialization() {
-    let (_directory, db) = super::null_predicate::fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     query(
         &db,
         "FROM facts AS a |> LEFT JOIN (FROM facts |> WHERE id = 0) AS b ON a.id = b.id |> ORDER BY a.id |> SELECT CHAR_LENGTH(b.s) AS n",

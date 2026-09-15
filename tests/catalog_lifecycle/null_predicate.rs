@@ -1,64 +1,8 @@
-use super::order::{integers, query};
 use super::*;
-
-pub(super) fn fixture() -> Result<(Directory, Database), Error> {
-    let directory = Directory::new();
-    let db = Database::create_empty(&directory.database(), config())?;
-    let cancel = CancellationToken::new();
-    let columns = [
-        ("id", DataType::Int64),
-        ("n", DataType::Double),
-        ("s", DataType::String),
-        ("i", DataType::Int64),
-        ("d", DataType::Date),
-    ]
-    .map(|(name, data_type)| ColumnDeclaration {
-        name,
-        data_type,
-        nullable: name != "id",
-    });
-    db.declare_table("facts", &columns, &cancel)?;
-    let day = DateValue::from_days_since_unix_epoch(0).unwrap();
-    let mut append = db.begin_append(
-        "facts",
-        AppendLimits {
-            batches: 1,
-            encoded_bytes: 20_000,
-        },
-        &cancel,
-    )?;
-    append.write(
-        &[
-            ColumnInput {
-                values: ColumnValues::Int64(&[0, 1, 2, 3]),
-                validity: &[15],
-            },
-            ColumnInput {
-                values: ColumnValues::Double(&[0., 0., f64::NAN, f64::INFINITY]),
-                validity: &[14],
-            },
-            ColumnInput {
-                values: ColumnValues::String(&["present", "ignored", "", "é"]),
-                validity: &[13],
-            },
-            ColumnInput {
-                values: ColumnValues::Int64(&[0, 7, 0, 9]),
-                validity: &[11],
-            },
-            ColumnInput {
-                values: ColumnValues::Date(&[day; 4]),
-                validity: &[7],
-            },
-        ],
-        &cancel,
-    )?;
-    append.commit(&cancel)?;
-    Ok((directory, db))
-}
 
 #[test]
 fn public_null_predicates_distinguish_all_types_and_compose() {
-    let (_directory, db) = fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     for (column, null_id) in [("n", 0), ("s", 1), ("i", 2), ("d", 3)] {
         for negated in [false, true] {
             let test = if negated { "IS NOT NULL" } else { "IS NULL" };
@@ -137,7 +81,7 @@ fn public_null_predicates_distinguish_all_types_and_compose() {
 
 #[test]
 fn null_tests_preserve_demanded_errors_and_prior_predicate_order() {
-    let (_directory, db) = fixture().unwrap();
+    let (_directory, db) = nullable_facts().unwrap();
     let baseline = db.reserved_memory_bytes();
     for test in [
         "IS NULL",
