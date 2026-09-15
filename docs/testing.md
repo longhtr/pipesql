@@ -365,7 +365,9 @@ The shell command delegates to `python3 tools/check.py`. Both accept `--output
 /absolute/new-result-directory`; without it, the gate creates and prints a
 retained temporary result directory. Outputs must be outside the checkout and
 must not already exist. Script paths may be absolute when invoking the gate from
-another directory.
+another directory. The gate copies its inputs into a private, read-only source
+export before running checks. An edit during copying rejects the export; later
+checkout edits do not affect the run.
 
 The gate is sequential and stops at a failing stage. It runs formatting,
 maintenance, independent fixtures/models, warnings-denied release Clippy and
@@ -377,7 +379,7 @@ timeouts exit with status 124. Known regressions remain in the gate.
 
 The result directory contains complete stage logs, before/after source
 manifests, and `result.json` with scope, environment, commands, statuses, and
-input integrity. Changed inputs or failed cleanup prevent a passing receipt. The
+input integrity. Changes to the export or failed cleanup prevent a passing receipt. The
 manifests cover engine, filesystem, vendor, configuration, tests, tools, and
 documentation. They identify source bytes, not reproducible binaries. A Git
 parent revision is recorded when available. Retain the exact checked commit or a
@@ -386,7 +388,8 @@ input records.
 
 The gate uses an isolated Cargo target. After the Cargo test/doc stages it builds
 one stock CLI for both semantic campaigns, with no intervening build. It removes
-that target and the composition databases after completion or handled failure.
+that target, the source export and the composition databases after completion or
+handled failure.
 Native callers own separate temporary targets. Preserve
 useful receipts and failing cases according to the engineering guide, then
 remove old run directories. Parallel campaign execution still requires

@@ -30,7 +30,9 @@ class Completion(unittest.TestCase):
 
     def test_full_gate_requires_source_identity_and_cleanup(self):
         good = dict(status='passed', scope='full', source_sha256='expected',
-                    inputs_unchanged=True, finalization_errors=[], stages=[dict(status='passed')])
+                    inputs_unchanged=True, finalization_errors=[],
+                    stages=[dict(name=stage.name, status='passed', returncode=0)
+                            for stage in vm['stages']('full', Path('/gate'))])
         vm['validate_gate'](good, 'expected')
         for name, value in (('status', 'failed'), ('scope', 'core'),
                             ('source_sha256', 'changed'), ('inputs_unchanged', False),
@@ -40,6 +42,17 @@ class Completion(unittest.TestCase):
             bad[name] = value
             with self.subTest(name=name, value=value), self.assertRaises(ValueError):
                 vm['validate_gate'](bad, 'expected')
+        for records in (good['stages'][:-1], good['stages'][1:],
+                        list(reversed(good['stages'])),
+                        good['stages'] + good['stages'][-1:],
+                        [dict(status='passed')]):
+            bad = {**good, 'stages': records}
+            with self.subTest(records=records), self.assertRaises(ValueError):
+                vm['validate_gate'](bad, 'expected')
+        bad = copy.deepcopy(good)
+        bad['stages'][0]['returncode'] = 7
+        with self.assertRaises(ValueError):
+            vm['validate_gate'](bad, 'expected')
         with self.assertRaises(ValueError):
             vm['validate_gate'](None, 'expected')
 

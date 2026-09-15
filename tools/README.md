@@ -11,7 +11,7 @@ assertions enabled.
 | Command | Inputs and output | Executes engine code? |
 | --- | --- | --- |
 | `python3 tools/check-maintenance.py` | Current guides, Python sources, and tooling unit fixtures; reports failures. | No |
-| `sh tools/check.sh` | Sequential gate with fresh outputs, source comparison, stage logs, and a result receipt. Accepts `--output` and `--scope`. | Yes |
+| `sh tools/check.sh` | Sequential gate over a private source export, with stage logs and a result receipt. Accepts `--output` and `--scope`. | Yes |
 | `python3 tools/check-linux-vm.py --image IMAGE --kernel KERNEL --output NEW_DIRECTORY` | Full-synchronization Linux VM gate and fresh examples; owns its images and containers. See [setup](../docs/testing.md#linux-verification-with-full-synchronization). | Yes |
 | `python3 tools/check-docs.py` | Current guides; checks relative links and Markdown anchors. | No |
 | `python3 tools/source-manifest.py` | Build/gate source trees; prints SHA-256 identities and checks Rust file inclusions. | No |
@@ -24,6 +24,9 @@ refusals, and limitations are specified in
 It is not a backup, repair, or online-consistency interface. Follow
 [Inspect a persisted catalog](../docs/testing.md#inspect-a-persisted-catalog) for
 the command and output ownership.
+
+Source discovery, hashing and export belong to [source-manifest.py](source-manifest.py).
+Both platform runners use that owner; campaign expectations remain separate.
 
 ## Linux VM verification owners
 

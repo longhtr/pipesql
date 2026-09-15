@@ -18,6 +18,7 @@ import sys
 import uuid
 
 from check_process import run
+from check import stages
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -71,21 +72,16 @@ def validate_gate(gate, source_sha256):
         raise ValueError('guest source differs from the frozen export')
     if gate.get('finalization_errors') != []:
         raise ValueError('guest gate cleanup failed')
-    if not gate.get('stages') or any(stage.get('status') != 'passed' for stage in gate['stages']):
-        raise ValueError('guest gate has missing or failed stages')
+    required = [stage.name for stage in stages('full', Path('/gate'))]
+    observed = gate.get('stages', [])
+    if [stage.get('name') for stage in observed] != required or any(
+        stage.get('status') != 'passed' or stage.get('returncode') != 0
+        for stage in observed
+    ):
+        raise ValueError('guest gate has missing, reordered or failed stages')
 
 
-def source_export(destination):
-    inputs = runpy.run_path(str(ROOT / 'tools/source-manifest.py'))['inputs'](ROOT)
-    records = []
-    for source in inputs:
-        relative = source.relative_to(ROOT)
-        target = destination / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
-        records.append(f'{hashlib.sha256(target.read_bytes()).hexdigest()}  {relative}\n')
-    return ''.join(records)
-
+source_export = runpy.run_path(str(ROOT / 'tools/source-manifest.py'))['source_export']
 
 def execute(image, kernel, output, bootstrap_only):
     work = output / 'work'
@@ -101,7 +97,7 @@ def execute(image, kernel, output, bootstrap_only):
             raise ValueError('image must be GNU arm64 Linux with the pinned tools')
         receipt['image'] = inspected['Id']
         receipt['kernel_sha256'] = hashlib.sha256(kernel.read_bytes()).hexdigest()
-        manifest = source_export(work / 'source')
+        manifest = source_export(ROOT, work / 'source')
         (output / 'inputs.sha256').write_text(manifest)
         receipt['source_sha256'] = hashlib.sha256(manifest.encode()).hexdigest()
         tag = uuid.uuid4().hex[:12]

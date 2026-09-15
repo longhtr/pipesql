@@ -18,7 +18,9 @@ class FixtureCoverage(unittest.TestCase):
     def test_catalog_schema_vectors_are_all_checked_without_overwriting(self):
         with tempfile.TemporaryDirectory() as directory:
             fixtures = Path(directory) / "fixtures"
-            shutil.copytree(TOOLS.parent / "tests/fixtures", fixtures)
+            shutil.copytree(
+                TOOLS.parent / "tests/fixtures", fixtures, copy_function=shutil.copyfile
+            )
             with redirect_stdout(io.StringIO()) as output:
                 CHECK(fixtures)
             self.assertIn("codec fixtures=44", output.getvalue())

@@ -3,6 +3,7 @@ import runpy
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 manifest = runpy.run_path(str(Path(__file__).with_name("source-manifest.py")))
 
@@ -14,6 +15,42 @@ class Inputs(unittest.TestCase):
         for name in manifest["TREES"]:
             (root / name).mkdir(parents=True, exist_ok=True)
         return root / "src/lib.rs"
+
+    def test_export_is_identified_and_independent_of_later_checkout_edits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "checkout"
+            root.mkdir()
+            source = self.fixture(root)
+            source.write_text("original")
+            frozen = root.parent / "frozen"
+            before = manifest["source_export"](root, frozen)
+            source.write_text("next edit")
+            self.assertEqual((frozen / "src/lib.rs").read_text(), "original")
+            self.assertEqual(manifest["source_manifest"](frozen), before)
+            self.assertNotEqual(manifest["source_manifest"](root), before)
+            self.assertEqual((frozen / "src/lib.rs").stat().st_mode & 0o222, 0)
+            with self.assertRaises(FileExistsError):
+                manifest["source_export"](root, frozen)
+            self.assertEqual(manifest["source_manifest"](frozen), before)
+
+    def test_edit_during_copy_rejects_and_removes_the_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "checkout"
+            root.mkdir()
+            source = self.fixture(root)
+            source.write_text("original")
+            frozen = root.parent / "frozen"
+            copy = manifest["shutil"].copy2
+
+            def copy_then_edit(input_path, output_path):
+                copy(input_path, output_path)
+                source.write_text("changed during export")
+
+            with patch.object(manifest["shutil"], "copy2", side_effect=copy_then_edit):
+                with self.assertRaisesRegex(ValueError, "changed while freezing"):
+                    manifest["source_export"](root, frozen)
+            self.assertFalse(frozen.exists())
+            self.assertEqual(source.read_text(), "changed during export")
 
     def test_sql_fixture_is_a_required_build_input(self):
         with tempfile.TemporaryDirectory() as directory:

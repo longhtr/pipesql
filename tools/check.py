@@ -26,11 +26,11 @@ class Stage:
     command: list[str]
 
 
-def stages(scope, output):
+def stages(scope, output, root=ROOT):
     """Keep the gate's commands and deadlines visible in execution order."""
     python = [sys.executable, "-B"]
     fixtures = sorted(
-        str(p.relative_to(ROOT)) for p in (ROOT / "tools/fixtures").glob("*.rs")
+        str(p.relative_to(root)) for p in (root / "tools/fixtures").glob("*.rs")
     )
     # Full host synchronization costs more than a VM disk using host fsync.
     # Keep finite supervision while allowing the measured storage-heavy paths.
@@ -155,12 +155,9 @@ def stages(scope, output):
     return common + native if scope == "full" else common
 
 
-def source_manifest(root):
-    inputs = runpy.run_path(str(ROOT / "tools/source-manifest.py"))["inputs"]
-    return "".join(
-        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(root)}\n"
-        for path in inputs(root)
-    )
+source_tools = runpy.run_path(str(ROOT / "tools/source-manifest.py"))
+source_manifest = source_tools["source_manifest"]
+source_export = source_tools["source_export"]
 
 
 def prepare_output(requested, root):
@@ -264,7 +261,10 @@ def execute(steps, *, root, output, scope, revision=None):
                 finalization_errors.append("build/gate inputs changed during the run")
         except Exception as error:
             finalization_errors.append(f"cannot verify final inputs: {error}")
-        for owned in (target, output / "composition"):
+        owned_outputs = [target, output / "composition"]
+        if root == output / "source":
+            owned_outputs.append(root)
+        for owned in owned_outputs:
             try:
                 if owned.exists():
                     shutil.rmtree(owned)
@@ -304,10 +304,12 @@ def main(argv=None):
     revision = source_revision(ROOT)
     output = prepare_output(options.output, ROOT)
     print(f"gate scope={options.scope} output={output}", flush=True)
+    frozen = output / "source"
     try:
+        source_export(ROOT, frozen)
         execute(
-            stages(options.scope, output),
-            root=ROOT,
+            stages(options.scope, output, frozen),
+            root=frozen,
             output=output,
             scope=options.scope,
             revision=revision,
@@ -323,6 +325,9 @@ def main(argv=None):
     except subprocess.TimeoutExpired as error:
         print(f"timed out: {error.cmd}; see {output / 'result.json'}", file=sys.stderr)
         raise SystemExit(124)
+    finally:
+        if frozen.exists():
+            shutil.rmtree(frozen)
 
 
 if __name__ == "__main__":

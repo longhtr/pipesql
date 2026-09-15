@@ -89,6 +89,22 @@ print('observed output')
             (self.output / "inputs-after.sha256").read_bytes(),
         )
 
+    def test_gate_uses_and_cleans_export_while_checkout_changes(self):
+        checkout = self.root
+        frozen = self.output / "source"
+        gate.source_export(checkout, frozen)
+        self.root = frozen
+        stage = self.stage(
+            "edit-checkout",
+            f"from pathlib import Path; Path({str(checkout / 'README.md')!r}).write_text('next edit'); "
+            "assert Path('README.md').read_text() == 'fixture\\n'",
+        )
+        result = self.execute([stage])
+        self.assertEqual(result["status"], "passed")
+        self.assertTrue(result["inputs_unchanged"])
+        self.assertEqual(checkout.joinpath("README.md").read_text(), "next edit")
+        self.assertFalse(frozen.exists())
+
     def test_failure_preserves_status_and_stops_before_next_stage(self):
         stages = [
             self.stage(

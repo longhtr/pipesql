@@ -8,6 +8,7 @@ required. Runtime benchmark inputs and observation drivers need separate records
 import hashlib
 from pathlib import Path
 import re
+import shutil
 
 ROOT = Path(__file__).resolve().parent.parent
 FILES = (
@@ -62,8 +63,30 @@ def inputs(root):
     return sorted(paths)
 
 
+def source_manifest(root):
+    return "".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(root)}\n"
+        for path in inputs(root)
+    )
+
+
+def source_export(root, destination):
+    """Copy identified inputs; reject a changing checkout before running checks."""
+    before = source_manifest(root)
+    destination.mkdir()
+    try:
+        for source in inputs(root):
+            target = destination / source.relative_to(root)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+            target.chmod(target.stat().st_mode & ~0o222)
+        if source_manifest(destination) != before or source_manifest(root) != before:
+            raise ValueError("source inputs changed while freezing the export")
+    except BaseException:
+        shutil.rmtree(destination)
+        raise
+    return before
+
+
 if __name__ == "__main__":
-    for path in inputs(ROOT):
-        print(
-            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(ROOT)}"
-        )
+    print(source_manifest(ROOT), end="")
