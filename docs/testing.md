@@ -272,20 +272,34 @@ so a checker that silently ignores failures cannot pass its own tests.
 
 ## Focused verification
 
-Choose the smallest check that can expose the changed contract. Examples:
+Keep a Cargo target between edits; a fresh build costs more than a warm test.
+Select the smallest check that exposes the changed contract. For example:
 
 ```sh
-cargo fmt --all --check
-python3 tools/check-fixtures.py
-python3 tools/test-q1-compare.py
-cargo test --release --offline --locked --test catalog_lifecycle -- --test-threads=1
+cargo test --release --offline --locked --test catalog_lifecycle \
+  char_length::char_length_literals_fold_owned_decoded_scalars -- --exact
 ```
 
-The fixture and comparator checks do not execute the engine. The Cargo test
-command does. Check test counts and selected names; a successful empty selection
-is not evidence. The [test map](../tests/README.md) and [tool
-inventory](../tools/README.md) locate more specific checks and distinguish
-public, internal, and stock-artifact paths.
+Confirm that the named test ran. For a broader string-length change, select the
+whole capability with `char_length::` and omit `--exact`. Include affected
+composition, refusal and cleanup cases from the [test map](../tests/README.md).
+For tooling changes, run the relevant `tools/test-*.py`; fixture and comparator
+checks do not execute the engine.
+
+Use this ladder:
+
+| Boundary | Commands and evidence |
+| --- | --- |
+| Edit | One exact test or tooling suite. Reuse the build target; ordinarily seconds. |
+| Focused capability | Affected test modules and stock campaign selections, including refusal and cleanup. A selection proves only the paths it runs. |
+| Integrated checkpoint | `cargo fmt --all --check`, `cargo clippy --release --offline --locked --workspace --all-targets -- -D warnings`, and `cargo test --release --offline --locked --workspace --all-targets -- --test-threads=1`. |
+| Full platform checkpoint | [`sh tools/check.sh`](#complete-local-gate), then the [qualified Linux runner](#linux-verification-with-full-synchronization) when both platforms need evidence. |
+
+Choose the expensive checkpoint before implementation. Run full platform checks
+for completed persistence, native, resource, concurrency or release checkpoints,
+including changes to their verification mechanics. A small edit or local commit
+does not require another full gate. Preserve exact source and artifact identity
+when reusing unchanged evidence.
 
 ## Qualify native sanitizer observations
 
@@ -422,7 +436,7 @@ Rust-test, and documentation stages only. Its receipt explicitly says `core`; it
 does not establish a passing full gate or qualify excluded platform tests.
 Windows process ownership and native campaigns remain unfinished.
 
-After the core gate, run the available native campaigns sequentially:
+When a changed native boundary needs focused observation, select its campaign:
 
 ```sh
 python3 tools/check-native-sync.py

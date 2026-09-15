@@ -357,227 +357,33 @@ These runners compile and execute code. C/Rust callers live in
 `fixtures/`; they are development scaffolding with their own unsafe and process
 ownership, not shipped adapters.
 
-Every diagnostic-allocation selection first runs
-[`allocation-capacity.rs`](fixtures/allocation-capacity.rs). It includes the
-production resource helper directly, using the same allocator observer as the
-public rlib probes. Three oversized requests must refuse before any allocation
-attempt, including requested-byte overflow. Empty, exact/spare-capacity and actual
-allocator-refusal controls distinguish preflight refusal from a disabled observer
-or unconditional rejection. Reservations remain live until returned vectors are
-dropped. This checks an internal capacity boundary; public query probes continue
-to use the stock rlib.
+The allocation runner starts with [capacity controls](fixtures/allocation-capacity.rs)
+that include the production resource helper. These distinguish refusal before
+allocation from allocator failure and a disabled observer. Public callers link
+the stock library.
 
-Use `python3 -B tools/check-diagnostic-allocation.py --ownership-only` to
-reconcile prepared queries, parked readers, and an append. The
+Use `--ownership-only` to select composed ownership checks. Their
 [resource equations](../docs/resources.md#interpret-composed-memory-observations)
-explain logical charges, requested/usable bytes, caller storage, and observer
-limits. It checks reader usable extents against admission, including one- and
-64-column INT64, DOUBLE, DATE and STRING ORDER BY/DISTINCT cases at short and
-384-byte database pathnames. STRING covers empty/short Unicode and 65,536-byte
-values. Each case checks complete nullable results, duplicate counts and final
-release. GNU/Linux additionally runs fresh callers with fixed 128-KiB and 64-MiB
-mmap thresholds, with observed allocator controls before the reader cases.
-Legacy lineitem cases check one/64-column fixed keys, empty and 32-byte UTF-8
-constants over two full batches, and global/grouped text extrema. They reconcile
-requested allocations with independently derived scan and aggregate charges at
-admission and output, then check complete release. A wrong attribution term must
-fail. Both pathname lengths run through the same selection.
-Prepared aggregate cases cover widths 1–10 and four partitions of the ten-entry
-budget across repeated stages. Widths 11–64 must reject and release preparation
-ownership. The caller checks each retained-vector allowance independently,
-executes COUNT results over 512 source rows, and rejects a wrong allowance.
-Analytic count cases cover empty input, one/nineteen counts, typed rows, 64 output
-columns, consecutive analytic stages and grouped composition. Twenty repeated
-calls must reject at the token bound without retaining preparation ownership.
-The caller samples requested/usable admission after every step and independently
-reconciles nonheap allowances at admission, first spill, emission and completion.
-Count-only cases require zero temporary consumption; typed input and the second
-stage of the consecutive-count case retain spill coverage. Both pathname lengths
-run all nineteen cases; a one-byte attribution error must fail. BYTE_LENGTH and
-CHAR_LENGTH each measure nullable Unicode text before and after analytic
-spooling, with independent byte/scalar expectations, complete results,
-requested/usable ownership and release checks. Numeric CAST runs before and after
-analytic spooling, retaining exact DOUBLE values for integers 0–511. Calendar-year
-extraction checks the DATE-to-INT64 result before and after the same spooling boundary.
-Composed-reader bound failures are reported after the
-barrier participants join. This selection also checks the complete append
-allocation-size ranges and full-width maximum-column growth, reuse, publication,
-and release. Its controls
-reject a missing rounding ceiling, a wrong result, and wrong attribution.
-The selection also observes 514 large blocking-buffer capacities and 91
-power-of-two hash layouts for the GROUPED caller; usable extents and final
-release are measured independently of the engine's sizing functions.
-[`grouping-ownership.rs`](fixtures/grouping-ownership.rs) adds 40 sequential public
-cases at 4 MB and 16 MB: one/three/five/seven/nine states for floating sums,
-integer sums, integer minima, and mixed layouts. It retains allocator reuse
-between queries, checks every row against the literal input values, compares the
-complete prepared/result owner with requested and usable extents, and checks
-release. A fresh size census alone does not establish these history-dependent
-observations.
+define requested bytes, allocator-usable extents, caller storage and exclusions.
+The fixture owners keep the workload and expected results together:
 
-The catalog allocation campaign includes analytic count followed by ordering and
-aggregation, with an independent total of 16 for its four-row input. A separate
-count-only query retains the same total and exercises the counter's allocations. The native
-I/O composition campaign also consumes analytic count after a LEFT JOIN. Its
-right input retains only key 1, so two left groups survive but only the matched
-group contributes to AVG; the expected result is 60. The catalog allocation
-campaign's derived LEFT JOIN retains four matching pairs and one unmatched row,
-with an expected count of five. The separate inner-join ordering query retains
-its eight-pair check. Its negated NOT IN list retains the same NULL-aware
-membership result. Native I/O selects the right key with NOT BETWEEN, retaining
-the expected mean of 60. Native I/O checks a total of three after SIGN of each
-positive DIV/MOD quotient over three count-only rows. Its ABS/division aggregate
-remains 4.5; a separate FLOOR/CEIL/ROUND aggregate returns nine across the same three
-count-only rows after SQRT(n*n) recovers each count of three.
-EXP(LN(n/n))-1+LOG10(n/n) contributes zero. Catalog allocation phases
-separately prepare, execute and consume a nullable division/filter query with
-count two after ABS of the negated ratio and SQRT of ROUND/CEIL/SIGN of an exact
-oddness check on INT64 amounts above 2^53. Each unary result remains one. The filter retains the exact ratio check.
-DIV by one must preserve the first amount exactly before filtering. COALESCE must select that exact value without evaluating its failing
-fallback. A demanded SAFE_DIVIDE result must be NULL without losing its row;
-a second COALESCE evaluates NULLIF of the original ratio and the NULL result.
-NULLIF retains that ratio; FLOOR rounds 1.75 down to one, LN returns zero,
-EXP restores one and LOG10(1) contributes zero.
-IS NOT DISTINCT FROM NULL keeps the missing-value rows in the catalog query. Native I/O uses IS NOT DISTINCT FROM zero to select
-the defaults, then checks that NULLIF converts three
-COALESCE defaults back to NULL, so COUNT returns zero; an outer COALESCE skips
-a failing fallback after the count. These queries retain the existing allocation
-and I/O schedules while checking both NULLIF decisions.
-Fixed-buffer diagnostic controls render division-by-zero, square-root, natural-logarithm
-and base-ten-logarithm domain errors, exponential overflow and captured causes under
-allocation denial. These retain refusal, recovery and
-healthy-reuse checks around the full sequence.
+| Owner | Evidence |
+| --- | --- |
+| [composed-ownership.rs](fixtures/composed-ownership.rs) | Wide sets and joins, repeated aggregation, typed rows and independent heap attribution. |
+| [result-ownership.rs](fixtures/result-ownership.rs) | Partial results, demanded errors and interleaved report histories, including constructor/preparation refusal. |
+| [transient-ownership.rs](fixtures/transient-ownership.rs) | Allocations within individual calls, sampled after allocation and before physical free. Calibration challenges an otherwise invisible temporary owner. |
+| [catalog-allocation.rs](fixtures/catalog-allocation.rs) | Every admitted allocation prefix, live errors, receipts, healed rows and complete release. |
 
-INTERSECT uses the same descriptor allocation, two sorted-input constructors,
-scratch files and read/write owners as EXCEPT. The existing allocation-prefix
-and native-I/O campaigns continue to exercise those owners. Both operations run
-the internal exact/short admission, cancellation, reader corruption and replay
-schedules. The independent analytic ownership campaign adds INTERSECT with
-256 shared rows and checks actual heap attribution and release at every step;
-its expected rows do not call production set comparison. The ALL controls use
-unequal duplicate counts and require 768 rows apiece after difference or
-intersection, including per-step ownership and terminal release. Both ALL forms
-also run the common internal failure schedules. They allocate no new merge
-storage; the public prefix and native-I/O sweeps retain the shared constructors
-and file effects rather than duplicating the same schedules per quantifier.
+Checkpoint samples and within-call observations protect different boundaries.
+Keep both, along with controls that omit an observation, change an expected row
+or invent an owner. The supervisor must reject incomplete or reordered coverage
+records. None of these bounded workloads establishes arbitrary allocator-history
+or whole-process/RSS bounds.
 
-EXCEPT coverage compares complete rows in both native-I/O and allocation
-campaigns. The native input retains only key 2, whose amount is 90. Allocation
-refusal removes the NULL-note amounts and retains one distinct named amount.
-The analytic ownership campaign also consumes a typed EXCEPT result through
-window count, checking all 256 surviving rows and requested/usable charges at
-every returned step. The catalog work ceiling is 1,100 allocation prefixes;
-the EXCEPT healthy census observed 1,056.
-This ceiling bounds campaign work and does not change engine admission.
-
-The same selection runs `partial-result-shapes` from
-[`result-ownership.rs`](fixtures/result-ownership.rs) at both pathname lengths.
-Its ordered 257-row workload checks a 256-row prefix followed by addition
-overflow, cancellation after a nonempty prefix, and complete healthy output.
-Each phase uses the existing allocation-event observer: preparation, construction,
-individual steps, repeated terminal state, owned-error transfer and prepared
-release. Terminal steps must free real allocations; repeated terminal steps and
-consuming the remaining result handle must allocate and free none. Owned errors
-retain their category and literal span after the prepared plan drops.
-Before execution, successful and failed logical-plan formatting into fixed caller
-storage must each produce zero allocation and free events. The same observer's
-nonzero preparation events serve as its positive control.
-`complete_partial_results` requires all three distinct records, their row counts,
-phase events, nonnegative requested/usable headroom and final release.
-`partial-result-prefix-negative` changes the expected prefix count;
-`partial-result-terminal-negative` leaves post-prefix steps unobserved. Both must
-fail at their intended oracle. These checks extend observed histories without
-claiming arbitrary allocator behavior or whole-process bounds.
-
-The ownership selection runs `event-report-history` from the same caller at
-both pathname lengths. Its sixteen typed events and literal thirteen-group answer
-match the [report lesson](../docs/event-report.md). Three complete executions are
-interleaved with partial-result drop and spill cancellation. Between the first
-and second histories, preparation and constructor sweeps deny every allocation
-prefix, including zero and a healthy full-prefix control. Errors remain live
-while counters, reservations, descriptors and formatting are checked.
-The existing observer measures successful allocations and owners immediately
-before free, so balanced endpoint counters cannot hide early reservation release.
-`complete_event_report` requires the complete prefix sequences, exact row counts,
-phase order, nonnegative requested/usable headroom and balanced execution events.
-
-Four controls must fail: `event-report-attribution-negative` counts an extra
-resident owner; `event-report-preparation-negative` and
-`event-report-construction-negative` omit observation for prefix one;
-`event-report-terminal-negative` omits the cancelled terminal step. Retain these
-controls alongside the existing combined-history native-reuse diagnostic. Passing
-this report's bounded histories does not qualify arbitrary allocator reuse.
-
-The ownership selection also runs `wide_set_shapes` in
-[`composed-ownership.rs`](fixtures/composed-ownership.rs) at short and 384-byte
-paths. A two-column left source repeats one nullable STRING across 61 positions;
-a declared 62-column right source supplies each position separately. Together
-they reach the 64-source-column bound without exceeding the query token bound.
-All six UNION/EXCEPT/INTERSECT forms check literal row-id sequences, every STRING
-position and final release. NULL, empty, embedded-NUL UTF-8 and 65,536-byte cells
-exercise different record and output extents. The caller samples requested and
-usable allocations against prepared/result charges after execute and every step.
-UNION ALL must use no temporary bytes; the sorted forms must use external storage.
-A nonexistent measured owner must fail the usable-byte attribution guard.
-
-`wide_left_join_shape` uses the same caller and both pathname lengths. Three
-left fields and 61 right fields produce 64 columns. Six rows per side include
-unequal duplicate groups, unmatched left keys and NULL keys. A literal 11-pair
-oracle checks every field without assuming equal-key order, including nullable,
-empty, embedded-NUL UTF-8 and 65,536-byte STRING values. The caller requires
-external storage and checks requested/usable charges through execute, every step,
-Finished and release. The existing false-attribution mechanism must reject a
-nonexistent owner after the complete rows and release have been checked.
-
-[`transient-ownership.rs`](fixtures/transient-ownership.rs) additionally arms a
-borrowed, thread-local observer inside this workload's preparation, execute,
-step and release calls.
-The allocator samples live requested/usable increments after allocation and
-before physical free against the current database charge. Caller setup, row
-checks and reporting run outside the scope. The caller prints event counts and
-minimum requested/usable headroom, requires both event types and nonnegative
-headroom, and preserves the independent checkpoint equations. Calibration
-detects an uncharged 65,536-byte allocation created and freed within one call
-despite unchanged entry/exit counters; a second case observes only its free and
-must still detect the live owner. `wide-left-join-observer-negative` disables
-calibration observation and must fail calibration. Separate phase samples require
-preparation allocation/free events and prepared-plan free events. Two repetitions
-abandon the result immediately after execute and after Progress with live
-temporary storage; each requires observed frees and full heap, descriptor and
-reservation restoration. A finished result has already released its heap inside
-step, so its drop is checked for charge release without requiring heap events.
-`wide-left-join-lifecycle-negative` leaves preparation unobserved and must fail
-phase coverage; the supervisor also rejects missing lifecycle completion output.
-These checks cover the exercised single-threaded Rust allocation events, excluding
-foreign allocations, allocator metadata/retained pages, other process mappings
-and RSS.
-
-Before that complete join, `check_failed_join_preparation` reuses the same
-allocator harness to census preparation alone and sweep every refused prefix,
-including zero and a healthy full-prefix control. A 32-allocation caller work
-ceiling bounds the sweep; it is not an engine admission allowance. Heap and
-reservation counters must return to baseline while refusal remains armed. Faults
-and their census are then suspended for caller descriptor enumeration and
-reporting, without another engine operation. Each returned
-error stays live while heap, descriptors and reservations are checked, followed
-by error release. A late constant EXP error checks partial-plan cleanup and its
-owned span after the caller's query text is freed. Prefix zero reports no sample;
-other failed calls must observe all successful allocations and their frees.
-`wide-left-join-failure-negative` suppresses one failed-call observation and must
-fail event coverage. The supervisor independently rejects incomplete, duplicated
-or reordered prefix traces and requires the final healthy control.
-
-`check_failed_join_construction` runs in a separate fresh
-`wide-left-join-construction` caller at both pathname lengths. The prepared query
-is fixed and excluded from the observer's baseline. A healthy execute-only census
-sets the complete prefix sweep, bounded by 512 allocations of campaign work.
-Refusal stays armed through heap/charge reconciliation and fixed-buffer error
-formatting. Descriptor checks follow with the error live. Every successful
-allocation in a refused prefix must have an observed free and nonnegative
-headroom. The full-prefix result reconciles its public charge, and the complete
-11-pair join and lifecycle checks follow the sweep. The
-`wide-left-join-construction-negative` mode omits prefix-one observation; the
-supervisor must reject it and incomplete or invalid prefix records.
+Set-operation quantifiers share the same sorted-input allocation and I/O owners.
+Their internal failure schedules are shared; public semantic and ownership cases
+retain independent expectations for each operation and multiplicity rule.
+Do not duplicate a constructor sweep solely to repeat a language spelling.
 
 The raw caller also retains `wide-left-join-construction-sequence`, which follows
 the complete sweep with the changed-width demanded-expression histories. This is
@@ -607,35 +413,10 @@ A nonzero result is a diagnostic failure, not a passing gate. The
 [evidence](../notes/evidence.md#failed-wide-join-construction) records the observed
 Darwin extent and scope of the repair.
 
-`check_failed_join_execution` replaces the unique `text60` output with a
-numeric expression, retaining 64 columns and the other wide nullable STRINGs.
-Three expressions demand the same late LOG10 domain error directly, through a
-SAFE_DIVIDE argument and through a COALESCE fallback. Query text is freed before
-execution. A fresh observer for each step prevents construction events from
-standing in for failure coverage. Each error must follow live external work and
-free runtime owners in the failing call with nonnegative requested/usable headroom.
-Heap and descriptors already match the prepared baseline while the failed result
-remains live; its charge equals its inline handle size. Repeated failure has no
-heap events. Error extraction releases the handle charge, and prepared-query
-release restores the original baseline while the error remains live.
-`wide-left-join-execution-negative` observes construction but omits step
-observations; the missing failure frees must reject it. The supervisor requires
-all three complete histories, positive external storage and observed frees, valid
-step counts and nonnegative headroom. The complete literal healthy join follows
-these errors. This is selected demanded-error coverage, not an exhaustive
+Demanded-error cases in the composed caller require live external work before
+failure, immediate runtime release, stable repeated failure and an owned source
+span after query teardown. They are selected error histories, not an exhaustive
 execution-allocation sweep.
-
-The same selection runs the nullable self-join, aggregation, and ordering workload
-at 2.2 MB and 12 MB. `joined_shapes` in
-[`composed-ownership.rs`](fixtures/composed-ownership.rs) checks all 4,096 descending
-groups, NULL counts and sums, and final heap/descriptor/reservation release.
-It samples requested and usable allocations after execute and every public step,
-including Finished, against the current prepared/result charge. A nonexistent
-owner in the negative control must fail the same usable-byte guard after full
-rows and release. The subprocess deadline bounds completion; the sample count
-is not capped to the smaller grouping workload's step count. These stable
-boundaries do not measure allocations made and freed inside a step or qualify
-other schemas, allocator histories, or RSS.
 
 Catalog controls also check the combined GROUPED prepared-query/result owner
 against requested and allocator-usable bytes while preserving complete nullable
@@ -703,13 +484,14 @@ The semantic campaigns accept an explicit stock CLI for focused work. They check
 that it is executable, print its SHA-256 identity, and require that identity to
 remain unchanged through a successful campaign. The composition checker also
 requires a new work directory with a supplied CLI; it refuses an existing one.
-Without supplied artifacts, both checkers build in a fresh temporary target.
+Without an explicit CLI, both checkers use the gate stock build or create a
+fresh temporary target.
 The composition campaign also builds the retained `event_report` example in its
 owned work directory to seed typed report tables. Its expected rows are separate
 literals; the example does not compute the campaign oracle.
-The full gate builds one stock CLI after its Cargo checks and supplies it to both
-campaigns sequentially. Each campaign checks its hash before and after execution.
-The gate removes the shared target and composition databases during finalization.
+Both campaigns check the CLI hash before and after execution. The
+[gate procedure](../docs/testing.md#complete-local-gate) owns shared build and
+cleanup rules.
 
 ### Isolate native allocation reuse
 
