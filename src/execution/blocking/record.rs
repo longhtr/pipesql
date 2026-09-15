@@ -1,4 +1,19 @@
-//! Typed row frames: field layout, SQL key comparison, and checked encoding.
+//! Encode, compare and validate the rows retained by blocking operators.
+//!
+//! A `RowLayout` puts comparison fields first and keeps remaining payload fields
+//! once. A `SortRecord` adds a source ordinal, layout tag, argument validity and
+//! checksum. The ordinal breaks key ties without changing the stored value bits.
+//! Aggregate arguments can be retained separately from the key and row payload.
+//!
+//! Comparison and hashing agree on grouping classes: NULLs group together, all
+//! NaNs group together, and the two zero signs compare equal. Stored keys preserve
+//! their original bits. Joins separately apply ordinary equality, which rejects
+//! NULL and NaN matches. Sort direction and NULL placement are separate policies.
+//!
+//! Reads bound untrusted lengths before extending an admitted buffer, then check
+//! checksums, layout, typed values and validity masks. These transient frames are
+//! internal query state; their tags do not declare a stable database file format.
+
 use super::io::{Io, ReadAt, ReadBuffer};
 use super::{MAX_FRAME_BYTES, RECORD_HEADER, RECORD_MAGIC};
 use crate::batch::Batch;

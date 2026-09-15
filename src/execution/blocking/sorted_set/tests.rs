@@ -1,3 +1,11 @@
+//! Check all four sorted-set modes across spill, replay, refusal and cleanup.
+//!
+//! Repeated projected positions and duplicate input keys force multi-run work.
+//! Literal ranges and multiplicities define the expected rows. Actual capacities
+//! constrain admission independently of its equations; observed-phase cancellation
+//! and damaged files challenge both input owners. Each failure must be terminal
+//! and permit healthy reuse after cleanup.
+
 use super::*;
 use crate::Value;
 use crate::effects::Faults;
@@ -62,24 +70,10 @@ fn check_physical_account(result: &mut QueryResult<'_, '_>) {
     let inline = runtime.controller_inline_bytes(&result.plan);
     assert_eq!(inline, size_of::<SortedSet<'_>>() as u64);
     let sorted_set = sorted_set(result);
-    fn bytes<T>(v: &Vec<T>) -> usize {
-        v.capacity() * size_of::<T>()
-    }
     let mut physical = size_of::<SortedSet<'_>>();
     let mut creation = 0;
     for side in &sorted_set.sides {
-        let run = &side.sort.buffer;
-        let merge = &side.sort.merge;
-        physical += bytes(&side.record.bytes)
-            + bytes(&run.bytes)
-            + bytes(&run.spans)
-            + bytes(&run.work)
-            + merge.writer.allocated_bytes()
-            + bytes(&merge.pair.previous_key)
-            + bytes(&merge.pair.left.record.bytes)
-            + bytes(&merge.pair.right.record.bytes)
-            + merge.pair.left.reader.allocated_bytes()
-            + merge.pair.right.reader.allocated_bytes();
+        physical += side.record.bytes.capacity() + side.sort.allocated_heap_bytes();
         if matches!(side.files, Files::Pending(_)) {
             creation += crate::scratch::Creation::memory_requirement_bytes();
         }

@@ -1,3 +1,12 @@
+//! Challenge the checked row codec and external merge sorter below SQL execution.
+//!
+//! Construct typed records and overlapping runs, then compare complete output with
+//! test-owned sequences and literal bytes. Tiny row/byte limits force spilling and
+//! odd merge passes. Checksummed mutations isolate layout and value validation;
+//! independent persistent-format fixtures remain a separate kind of evidence.
+//! Observed I/O cuts, cancellation and temporary-space refusal must stop partial
+//! work and restore ownership. Operator tests cover how SQL consumes these runs.
+
 use super::test_support::{Directory, schema};
 use super::*;
 use crate::batch::Batch;

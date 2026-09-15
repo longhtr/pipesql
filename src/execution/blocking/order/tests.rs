@@ -1,8 +1,15 @@
+//! Check ordering, duplicate removal and window spooling through the real runtime.
+//!
+//! Reversed input and repeated keys force merges; literal row sequences define
+//! expected order and multiplicity. Inspect actual buffer capacities at admission
+//! and transitions, then cancel each observed phase or damage retained bytes.
+//! Exact-budget success, one-byte refusal and healthy reuse constrain ownership.
+
 use super::*;
 use crate::effects::Effect;
 use crate::effects::Faults;
 use crate::execution::blocking::MergePhase;
-use crate::execution::blocking::test_support::Directory;
+use crate::execution::blocking::test_support::{Directory, two_column_database};
 use crate::execution::blocking::{Files, RECORD_HEADER};
 use crate::execution::{QueryResult, QueryStep, State};
 use crate::frontend::DataType;
@@ -14,60 +21,6 @@ const UNION_DISTINCT_QUERY: &str = "FROM facts |> SELECT k, k+0 AS copy |> UNION
 const WINDOW_QUERY: &str =
     "FROM facts |> SELECT v, k, COUNT(*) OVER () AS n |> WHERE n=180 AND k>=0 |> SELECT v";
 const STEPS: usize = 100_000;
-
-fn database(directory: &Directory) -> Database {
-    let db = Database::create_empty(
-        &directory.0.join("db"),
-        Config::new(8_000_000, 8_000_000).unwrap(),
-    )
-    .unwrap();
-    let cancel = CancellationToken::new();
-    db.declare_table(
-        "facts",
-        &["k", "v"].map(|name| ColumnDeclaration {
-            name,
-            data_type: DataType::Int64,
-            nullable: false,
-        }),
-        &cancel,
-    )
-    .unwrap();
-    // 180 rows exceed the sorter's byte-limited first run. Adjacent equal keys
-    // cross run boundaries; reverse input order cannot masquerade as a merge.
-    for start in [0, 90] {
-        let values: Vec<i64> = (start..start + 90).rev().collect();
-        let keys: Vec<_> = values.iter().map(|v| v / 2).collect();
-        let mut valid = [255; 12];
-        valid[11] = 3;
-        let mut append = db
-            .begin_append(
-                "facts",
-                AppendLimits {
-                    batches: 1,
-                    encoded_bytes: 10_000,
-                },
-                &cancel,
-            )
-            .unwrap();
-        append
-            .write(
-                &[
-                    ColumnInput {
-                        values: ColumnValues::Int64(&keys),
-                        validity: &valid,
-                    },
-                    ColumnInput {
-                        values: ColumnValues::Int64(&values),
-                        validity: &valid,
-                    },
-                ],
-                &cancel,
-            )
-            .unwrap();
-        append.commit(&cancel).unwrap();
-    }
-    db
-}
 
 fn order<'a, 'db>(result: &'a mut QueryResult<'db, '_>) -> &'a mut Order<'db> {
     let State::Running(runtime) = &mut result.state else {
@@ -83,23 +36,9 @@ fn check_physical_account(result: &mut QueryResult<'_, '_>) {
     let inline = runtime.controller_inline_bytes(&result.plan);
     assert_eq!(inline, size_of::<Order<'_>>() as u64);
     let order = order(result);
-    fn bytes<T>(v: &Vec<T>) -> usize {
-        v.capacity() * size_of::<T>()
-    }
     let input = &order.input;
-    let run = &input.sort.buffer;
-    let merge = &input.sort.merge;
-    let physical = size_of::<Order<'_>>()
-        + bytes(&input.record.bytes)
-        + bytes(&run.bytes)
-        + bytes(&run.spans)
-        + bytes(&run.work)
-        + merge.writer.allocated_bytes()
-        + bytes(&merge.pair.previous_key)
-        + bytes(&merge.pair.left.record.bytes)
-        + bytes(&merge.pair.right.record.bytes)
-        + merge.pair.left.reader.allocated_bytes()
-        + merge.pair.right.reader.allocated_bytes();
+    let physical =
+        size_of::<Order<'_>>() + input.record.bytes.capacity() + input.sort.allocated_heap_bytes();
     let creation = if matches!(input.files, Files::Pending(_)) {
         crate::scratch::Creation::memory_requirement_bytes()
     } else {
@@ -131,7 +70,7 @@ fn phase_index(phase: Phase) -> usize {
 #[test]
 fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
     let directory = Directory::new();
-    let db = database(&directory);
+    let db = two_column_database(&directory);
     let cancel = CancellationToken::new();
     const DIVISION_QUERY: &str =
         "FROM facts |> EXTEND v/2 AS ratio |> WHERE ratio>=0 |> ORDER BY k DESC, v ASC |> SELECT v";
@@ -223,7 +162,7 @@ fn order_exact_admission_precedes_io_and_reconciles_each_transition() {
 #[test]
 fn cancellation_covers_every_order_phase_and_completion() {
     let directory = Directory::new();
-    let db = database(&directory);
+    let db = two_column_database(&directory);
     for sql in [QUERY, DISTINCT_QUERY, UNION_DISTINCT_QUERY, WINDOW_QUERY] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
@@ -273,7 +212,7 @@ fn cancellation_covers_every_order_phase_and_completion() {
 #[test]
 fn sorted_output_faults_and_temp_refusal_are_terminal_and_release_owners() {
     let directory = Directory::new();
-    let db = database(&directory);
+    let db = two_column_database(&directory);
     for sql in [QUERY, DISTINCT_QUERY, UNION_DISTINCT_QUERY, WINDOW_QUERY] {
         let query = db.prepare(sql).unwrap();
         let baseline = db.reserved_memory_bytes();
@@ -565,7 +504,7 @@ fn merge_consumption_rejects_late_corruption_and_stays_failed_after_restore() {
     use std::os::unix::fs::FileExt;
 
     let directory = Directory::new();
-    let db = database(&directory);
+    let db = two_column_database(&directory);
     let query = db.prepare(QUERY).unwrap();
     let baseline = db.reserved_memory_bytes();
     let cancel = CancellationToken::new();

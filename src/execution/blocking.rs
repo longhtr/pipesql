@@ -1,4 +1,20 @@
-//! Shared blocking-operator infrastructure: bounded row records, runs, merge buffers, and sorting.
+//! Sort rows that cannot be emitted until their input has been collected.
+//!
+//! `RowSort` builds bounded sorted runs: chunks ordered in memory and written to
+//! scratch. When input ends, `MergePasses` combines pairs of runs, alternating two
+//! files until one remains. It streams run headers instead of keeping a list that
+//! grows with input size. Equal keys are ordered by their unique source ordinal.
+//!
+//! `record` owns typed encoding and comparison; `io` owns bounded byte transfers.
+//! This module owns run construction, merge cursors and their memory charges.
+//! `SortedInput` connects those pieces for ORDER/DISTINCT, joins and set operations;
+//! aggregate grouping uses the sorter directly to retain evaluated arguments.
+//!
+//! Space is reserved before source work. A full run leaves the pending input row
+//! with its caller until spilling finishes. Readers check run identity, extents,
+//! checksums and ordering; a failed merge cannot retry partial output. Scratch is
+//! disposable query state, not a persistent database format or published result.
+
 use crate::effects::Effects;
 use crate::execution::{BATCH_ROWS, MAX_AGGREGATE_ROWS};
 use crate::frontend::{MAX_AGGREGATE_COLUMNS, MAX_ROW_VALUES};

@@ -1,4 +1,15 @@
-//! Ordering, duplicate removal and full-partition count over checked sorted input.
+//! Emit ordered rows, distinct rows or a full-partition count from retained input.
+//!
+//! All three modes use `SortedInput`. ORDER compares the requested key prefix;
+//! DISTINCT compares complete rows and skips duplicates before demanding downstream
+//! expressions. COUNT(*) OVER () retains payload rows with an empty sort key, so
+//! source ordinals preserve their order while every row receives the total count.
+//!
+//! Collection and sorting finish before emission. Output checks monotonic key and
+//! ordinal order, and replay restarts the retained cursor once without reopening
+//! the source. Memory charges outlive their allocations; a failed step makes the
+//! controller terminal and lets the enclosing query release its scratch owners.
+
 use super::{RowLayout, SortPhase, SortedInput, append_bytes};
 use crate::batch::Batch;
 use crate::effects::Effects;

@@ -1,4 +1,15 @@
-//! Bounded buffered transfers over a borrowed scratch-file effect authority.
+//! Transfer bounded byte ranges between sort buffers and borrowed scratch files.
+//!
+//! Small records share 64 KiB buffers; larger records pass through the same buffers
+//! in chunks. Each read is bounded by its run's end and the maximum frame size.
+//! A failed refill clears the readable extent before I/O, so old bytes cannot
+//! stand in for the requested range. Decoding and checksums belong to `record`.
+//!
+//! Writers advance their file offset only after a successful flush. Callers must
+//! flush before switching files; drop does not hide a fallible write. `Io` borrows
+//! scratch, cancellation and fault observation for one call, leaving lifetime and
+//! resource ownership with the operator.
+
 use super::MAX_FRAME_BYTES;
 use crate::effects::Effects;
 use crate::resources::allocate;

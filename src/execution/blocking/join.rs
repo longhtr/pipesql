@@ -1,4 +1,15 @@
-//! Duplicate-preserving equality join over the shared checked row sorter.
+//! Match two sorted inputs while preserving every duplicate equality match.
+//!
+//! After collecting and sorting both sides, advance the smaller key until keys
+//! match. Bookmark the first matching right row and rewind to it for each equal
+//! left row: two left rows and three right rows produce six pairs without keeping
+//! the whole matching group in memory. NULLs and NaNs do not match ordinary equality.
+//!
+//! A LEFT JOIN emits NULL right fields when a left row has no match. Filters run
+//! after matching; rejecting a pair does not turn it into an unmatched row.
+//! Replay rereads the retained sorted inputs once. A failed step is terminal;
+//! each side retains its own admitted buffers and scratch until query cleanup.
+
 use super::{
     CursorPosition as Bookmark, RowLayout, SortPhase, SortedInput, append_bytes, compare_values,
 };

@@ -1,6 +1,15 @@
-//! Complete-row difference and intersection over two admitted sorted inputs.
-//! Both branches finish before comparison. The operation chooses which left
-//! occurrences emit; sorting, replay, and failure ownership are shared.
+//! Compute EXCEPT and INTERSECT by comparing two complete sorted row streams.
+//!
+//! Both branches finish before comparison. DISTINCT emits at most one left row
+//! per comparison class; ALL pairs occurrences one-to-one. For a row appearing
+//! three times on the left and twice on the right, EXCEPT ALL emits one occurrence
+//! and INTERSECT ALL emits two. NULL/NaN classes follow the row comparator.
+//!
+//! Each side decodes its own nullable layout. Position maps preserve repeated
+//! projected fields even when the child stores one physical copy. Downstream
+//! expressions run only for selected rows. Replay restarts retained cursors once;
+//! corruption, I/O failure or cancellation leaves the controller terminal.
+
 use super::{RowLayout, SortPhase, SortedInput, append_bytes, compare_values, read_value};
 use crate::batch::Batch;
 use crate::effects::Effects;

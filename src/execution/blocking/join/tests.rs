@@ -1,3 +1,11 @@
+//! Check join ownership through both input sorts and duplicate-group rewinds.
+//!
+//! The shared two-column fixture supplies predictable duplicate pairs and unmatched
+//! LEFT JOIN rows. Expected pairs come from test-owned integer ranges. Inspect
+//! actual allocations, cancel observed phases and fail each side's storage work,
+//! including second-input bootstrap after the first input is retained. Terminal
+//! errors must release query owners while preserving any real namespace debt.
+
 use super::*;
 use crate::effects::Effect;
 use crate::effects::Faults;
@@ -28,24 +36,10 @@ fn check_physical_account(result: &mut QueryResult<'_, '_>) {
     let inline = runtime.controller_inline_bytes(&result.plan);
     assert_eq!(inline, size_of::<Join<'_>>() as u64);
     let join = join(result);
-    fn bytes<T>(v: &Vec<T>) -> usize {
-        v.capacity() * size_of::<T>()
-    }
     let mut physical = size_of::<Join<'_>>();
     let mut creation = 0;
     for side in &join.sides {
-        let run = &side.sort.buffer;
-        let merge = &side.sort.merge;
-        physical += bytes(&side.record.bytes)
-            + bytes(&run.bytes)
-            + bytes(&run.spans)
-            + bytes(&run.work)
-            + merge.writer.allocated_bytes()
-            + bytes(&merge.pair.previous_key)
-            + bytes(&merge.pair.left.record.bytes)
-            + bytes(&merge.pair.right.record.bytes)
-            + merge.pair.left.reader.allocated_bytes()
-            + merge.pair.right.reader.allocated_bytes();
+        physical += side.record.bytes.capacity() + side.sort.allocated_heap_bytes();
         if matches!(side.files, Files::Pending(_)) {
             creation += crate::scratch::Creation::memory_requirement_bytes();
         }
