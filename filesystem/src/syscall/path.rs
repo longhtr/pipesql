@@ -1,6 +1,16 @@
-//! Call-local Darwin canonical naming. Derived from the reviewed Apple/FreeBSD
-//! realpath traversal and suffix-cursor experiment; not a physical-identity lease.
-//! Fixed scratch stays private; only a complete checked name escapes on success.
+//! Resolve an absolute Darwin pathname using the filesystem's names and mount facts.
+//!
+//! Traversal keeps a resolved prefix and an unread suffix in fixed buffers. Each
+//! ordinary step consumes a component; a symlink replaces the suffix and consumes
+//! a finite link allowance. Native name records preserve filesystem spelling,
+//! and mount checks reconcile names when traversal crosses devices.
+//!
+//! Every native helper entry spends a work credit before the call. A native
+//! error, exhausted allowance or oversized name returns without publishing a
+//! partial result. The result is a name, not an identity lease: the engine still
+//! checks the objects it opens. Apple/FreeBSD adaptation terms are consolidated
+//! in the repository's `THIRD_PARTY.md`.
+
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 

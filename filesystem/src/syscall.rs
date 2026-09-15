@@ -1,6 +1,16 @@
-//! Native filesystem calls. libc supplies target ABI types/constants; no layouts,
-//! allocator pointers or mutable native buffers escape. Fresh descriptors are
-//! immediately transferred into safe File owners.
+//! Convert bounded Rust arguments into synchronous native filesystem calls.
+//!
+//! Path helpers copy names into terminated stack buffers before entering libc.
+//! Both names are checked before rename or link. Successful opens transfer each
+//! fresh descriptor directly into a `File`; errors retain their native cause.
+//! The path children own multi-step canonicalization, while this module owns
+//! individual opens, metadata queries, mutations, synchronization and directory reads.
+//!
+//! libc supplies the target ABI types and constants. Safety comments beside each
+//! call state pointer lifetimes and initialization requirements. Native layouts
+//! and mutable buffers do not escape. Interrupted calls propagate without an
+//! unbounded retry loop or a weaker synchronization fallback.
+
 use crate::{BUFFER_BYTES, DirectoryBuffer, MAX_PATH_BYTES};
 use std::ffi::CStr;
 use std::fs::File;

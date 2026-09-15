@@ -1,13 +1,19 @@
-//! Private bounded OS effects, not a stable API. Engine semantics stay in PipeSQL.
+//! Give the engine safe, bounded access to native filesystem operations and mutexes.
 //!
-//! Directory owns a freshly opened, unshared cursor and borrows one 8-KiB buffer.
-//! Names borrow that buffer until the next mutable call. Neither descriptor nor
-//! mutable bytes escape. EOF/error is terminal; drop closes the sole descriptor.
-//! Each call either yields a name, finishes, or fails within 65 raw records and
-//! at most 65 bounded reads per call. Callers set the finite total raw-record
-//! limit; the default namespace reader permits 64 records. No retries, callbacks, locks,
-//! background work, or implicit directory-sized caches. Callers own cancellation
-//! checks between names and their stricter semantic entry limits.
+//! The engine passes paths, borrowed files and admitted scratch through this
+//! private crate. Native pointers and ABI-specific buffers remain inside
+//! `syscall` and `mutex`; successful opens return ordinary owned `File` handles.
+//! `metadata` puts pathname and descriptor observations in one comparable form.
+//!
+//! Canonicalization resolves names with a finite native-call allowance. Directory
+//! traversal borrows fixed storage and returns one name at a time. Mutex storage
+//! is allocated fallibly before native initialization. Each API states its own
+//! progress, error and lifetime contract below.
+//!
+//! PipeSQL retains database semantics: which names are valid, when to synchronize,
+//! where cancellation is legal and whether a failure requires recovery. These
+//! primitives do not decide transaction outcomes. The implementation currently
+//! supports macOS and Linux; this crate is not a stable external API.
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 compile_error!("the bounded filesystem boundary supports macOS and Linux only");
@@ -224,6 +230,18 @@ impl Default for DirectoryBuffer {
     }
 }
 
+/// A freshly opened, unshared directory cursor borrowing one 8-KiB buffer.
+///
+/// Returned names borrow the buffer until the next mutable call; neither the
+/// descriptor nor mutable bytes escape. Each call consumes at most 65 raw
+/// records and performs at most 65 bounded reads. Dot and vacant records count
+/// as work even though they do not produce names. `open` permits 64 total raw
+/// records; `open_bounded` accepts an explicit total limit.
+///
+/// End-of-directory and errors terminate the cursor. Propagate the first error:
+/// subsequent calls return None. Drop closes the sole descriptor. Traversal has
+/// no retries, callbacks, locks, background work or directory-sized cache.
+/// Callers check cancellation between names and enforce semantic entry limits.
 pub struct Directory<'buffer> {
     file: File,
     buffer: &'buffer mut DirectoryBuffer,

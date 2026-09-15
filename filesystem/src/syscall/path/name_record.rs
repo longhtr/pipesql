@@ -1,4 +1,11 @@
-//! Checked borrowed decoding of the exact Darwin name/device/type/object request.
+//! Decode the packed getattrlist response used by Darwin name traversal.
+//!
+//! The name uses a signed offset relative to its attribute-reference field.
+//! `decode` checks that range and its single NUL terminator before borrowing the
+//! raw filename bytes. Malformed lengths, separators or dot names return None;
+//! a valid filename need not be UTF-8. This is one fixed attribute layout, not a
+//! general native-record decoder.
+
 const FIXED_BYTES: usize = 28;
 const NAME_BYTES: usize = 1024;
 pub(crate) const RECORD_BYTES: usize = FIXED_BYTES + NAME_BYTES;

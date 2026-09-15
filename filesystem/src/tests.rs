@@ -1,3 +1,14 @@
+//! Exercise native path and directory behavior and check borrowed record decoding.
+//!
+//! Literal packed records challenge offsets, lengths and flags without a syscall.
+//! Real temporary files then compare canonical names and metadata with standard
+//! library observations, including symlinks, permission errors and path limits.
+//! Independent directory cursors and joined workers check ownership under overlap.
+//! The feature-gated stack observer includes an oversized-thread negative control.
+//!
+//! Run the pipesql-filesystem library tests. Native injection and sanitizer
+//! campaigns remain separate evidence; these tests do not drive database recovery.
+
 use super::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 

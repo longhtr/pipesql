@@ -1,4 +1,12 @@
-//! Canonical identity shared by path inspection and independently opened files.
+//! Normalize pathname and open-file metadata so the engine can compare them.
+//!
+//! `FileIdentity` is the device/inode pair, separate from a pathname or file size.
+//! Comparing it before and after open detects an observed replacement between
+//! those operations. Both native stat results and Rust metadata use the same
+//! integer representation, including Darwin's signed device identifier bits.
+//! Invalid native lengths or conversions return an error rather than narrowing.
+//! This module copies facts; the caller owns the file handle and database lease.
+
 use std::fs;
 use std::io;
 use std::os::unix::fs::MetadataExt;

@@ -1,4 +1,18 @@
-//! Fallibly allocated, stationary pthread mutex storage. No lazy Rust allocation.
+//! Protect a value with a native mutex whose storage never moves after initialization.
+//!
+//! A pthread mutex contains native state that cannot be moved like an ordinary
+//! Rust value. `new` allocates its final storage fallibly, initializes it there,
+//! then returns a movable owner of that allocation. Locking performs no further
+//! Rust allocation. A guard borrows the owner and unlocks on the acquiring thread
+//! when dropped; its type prevents transfer to another thread.
+//!
+//! Unwinding through a guard poisons the mutex so later callers cannot observe
+//! interrupted mutation as healthy state. `try_lock` distinguishes contention
+//! from native failure; blocking `lock` leaves progress assumptions to its caller.
+//! If a guard is forgotten, destruction retains the locked storage instead of
+//! destroying a live native mutex. The engine does not expose guards through its
+//! public API.
+
 use std::cell::UnsafeCell;
 use std::io;
 use std::marker::PhantomData;

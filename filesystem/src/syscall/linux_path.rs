@@ -1,5 +1,16 @@
-//! Bounded Linux name traversal. The result names a path, not an identity lease.
-//! Pending symlink suffixes have a separate caller-accounted overflow owner.
+//! Resolve an absolute Linux pathname by walking components and expanding symlinks.
+//!
+//! `ResolvedName` holds the completed prefix. `Pending` holds the unread suffix,
+//! with symlink targets inserted before it. Expansion can make that suffix longer
+//! than the eventual resolved name, so overflow storage is separately admitted
+//! through the caller's `PathScratch`. Failure to grow preserves pending bytes
+//! and returns the caller's error.
+//!
+//! Components advance a cursor; symlinks and native calls have finite allowances.
+//! Directory checks precede `..` and trailing-separator simplification so lexical
+//! cleanup cannot hide a native path error. The completed result names a path;
+//! it grants no lease on the objects the engine later opens.
+
 use crate::{CanonicalizeError, MAX_NATIVE_PATH_CALLS, MAX_PATH_BYTES, PathScratch};
 use std::ffi::CStr;
 use std::io;
