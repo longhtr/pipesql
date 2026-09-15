@@ -1,4 +1,17 @@
-//! Bounded producer scheduling over independently owned batches and cursors.
+//! Schedule query producers without recursive calls or shared mutable batches.
+//!
+//! Each node owns a controller and output batch. Inputs precede their consumer and
+//! have one parent, so an index can walk down to requested input and back up when
+//! rows or end-of-input arrive. For example, an aggregate requests scan batches
+//! until it can emit its own result. Intermediate rows remain with their producer
+//! until consumed; only the root batch becomes a public result.
+//!
+//! Admission constructs all mandatory owners before opening sources and protects
+//! later aggregate minima from optional growth. Replay is an explicit phase that
+//! resets the selected owner, descending through LIMIT when needed. Each public
+//! step performs bounded controller work and can return Progress without rows.
+//! `step` installs Failed before advancing: any error leaves a terminal runtime,
+//! whose buffers and controllers the enclosing QueryResult then releases.
 use crate::batch::{Batch, OwnedBatch};
 use crate::effects::Effects;
 use crate::execution::aggregation::Aggregation;

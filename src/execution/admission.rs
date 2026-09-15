@@ -1,4 +1,15 @@
-//! Validate a prepared query and admit every retained owner before source I/O.
+//! Construct an executable result without exposing a partially admitted runtime.
+//!
+//! `Database::execute` checks cancellation, semantic validity and snapshot
+//! ownership, then lowers and independently validates physical positions. Runtime
+//! construction reserves mandatory controllers, batches and scratch before source
+//! reads; optional aggregate growth cannot consume a later controller's minimum.
+//! A construction failure drops the owners already acquired and returns an error.
+//!
+//! Declared queries use their pinned catalog generation, including while an append
+//! constructs newer data. Legacy queries inspect the single published namespace
+//! after memory admission and refuse retained publication debt. A successful
+//! return establishes a runnable result, not successful query completion.
 use super::{QueryResult, RESULT_BYTES, State, computed};
 use crate::effects::Effects;
 use crate::execution::computed::BatchLayout;

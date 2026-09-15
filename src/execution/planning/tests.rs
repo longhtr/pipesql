@@ -1,25 +1,21 @@
-//! Physical graph mutations must be rejected without using builder inverses.
+//! Challenge physical validation by changing otherwise valid prepared plans.
+//!
+//! Build and validate a healthy control, then alter edges, positions, identities,
+//! predicate decisions or hidden demand. Literal expected positions distinguish
+//! source bytes from computed results; reservation checks protect plan ownership.
+//! These tests execute preparation and validators, not the query runtime. Expected
+//! mutations stay here rather than using inverse helpers from the plan builder.
 
 use super::*;
 use crate::CancellationToken;
 use crate::frontend::DataType;
-
-struct Directory(std::path::PathBuf);
-
-impl Drop for Directory {
-    fn drop(&mut self) {
-        crate::test_cleanup::directory(&self.0);
-    }
-}
+use crate::test_support::Directory;
 
 #[test]
 fn string_length_output_rejects_a_raw_string_position() {
-    let directory = Directory(std::env::temp_dir().join(format!(
-        "pipesql-physical-byte-length-{}",
-        std::process::id()
-    )));
+    let directory = Directory::new();
     let db = Database::create(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(4_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
@@ -37,12 +33,9 @@ fn string_length_output_rejects_a_raw_string_position() {
 
 #[test]
 fn literal_predicates_and_decisions_match_the_semantic_plan() {
-    let directory = Directory(std::env::temp_dir().join(format!(
-        "pipesql-physical-predicates-{}",
-        std::process::id()
-    )));
+    let directory = Directory::new();
     let db = Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(4_000_000, 2_000_000).unwrap(),
     )
     .unwrap();
@@ -88,11 +81,9 @@ fn literal_predicates_and_decisions_match_the_semantic_plan() {
 
 #[test]
 fn set_branch_positions_and_demands_are_validated_independently() {
-    let directory = Directory(
-        std::env::temp_dir().join(format!("pipesql-physical-set-{}", std::process::id())),
-    );
+    let directory = Directory::new();
     let db = Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(4_000_000, 2_000_000).unwrap(),
     )
     .unwrap();
@@ -198,11 +189,9 @@ fn set_branch_positions_and_demands_are_validated_independently() {
 
 #[test]
 fn distinct_input_coverage_and_fresh_output_mapping_are_validated() {
-    let directory = Directory(
-        std::env::temp_dir().join(format!("pipesql-physical-distinct-{}", std::process::id())),
-    );
+    let directory = Directory::new();
     let db = Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(4_000_000, 2_000_000).unwrap(),
     )
     .unwrap();
@@ -259,11 +248,9 @@ fn distinct_input_coverage_and_fresh_output_mapping_are_validated() {
 
 #[test]
 fn limit_inputs_bounds_positions_and_filter_placement_are_validated() {
-    let directory = Directory(
-        std::env::temp_dir().join(format!("pipesql-physical-limit-{}", std::process::id())),
-    );
+    let directory = Directory::new();
     let db = Database::create(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
@@ -308,11 +295,9 @@ fn limit_inputs_bounds_positions_and_filter_placement_are_validated() {
 
 #[test]
 fn ordering_positions_flags_and_hidden_demand_are_independently_validated() {
-    let directory = Directory(
-        std::env::temp_dir().join(format!("pipesql-physical-order-{}", std::process::id())),
-    );
+    let directory = Directory::new();
     let database = Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
@@ -391,11 +376,9 @@ fn ordering_positions_flags_and_hidden_demand_are_independently_validated() {
 
 #[test]
 fn join_pipelines_bind_both_inputs_and_validate_positions_independently() {
-    let directory = Directory(
-        std::env::temp_dir().join(format!("pipesql-physical-join-{}", std::process::id())),
-    );
+    let directory = Directory::new();
     let database = Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
@@ -611,11 +594,9 @@ fn join_pipelines_bind_both_inputs_and_validate_positions_independently() {
 
 #[test]
 fn retained_qualified_payloads_have_independent_identity_validation() {
-    let directory = Directory(
-        std::env::temp_dir().join(format!("pipesql-physical-retained-{}", std::process::id())),
-    );
+    let directory = Directory::new();
     let db = Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(4_000_000, 2_000_000).unwrap(),
     )
     .unwrap();
@@ -660,11 +641,9 @@ fn retained_qualified_payloads_have_independent_identity_validation() {
 
 #[test]
 fn typed_copy_slots_preserve_fresh_identity_without_numeric_storage() {
-    let directory = Directory(
-        std::env::temp_dir().join(format!("pipesql-physical-copy-{}", std::process::id())),
-    );
+    let directory = Directory::new();
     let db = Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(4_000_000, 2_000_000).unwrap(),
     )
     .unwrap();
@@ -710,11 +689,9 @@ fn typed_copy_slots_preserve_fresh_identity_without_numeric_storage() {
 
 #[test]
 fn constant_slots_preserve_identity_across_materialization() {
-    let directory = Directory(
-        std::env::temp_dir().join(format!("pipesql-physical-constants-{}", std::process::id())),
-    );
+    let directory = Directory::new();
     let db = Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(4_000_000, 2_000_000).unwrap(),
     )
     .unwrap();
@@ -754,11 +731,9 @@ fn constant_slots_preserve_identity_across_materialization() {
 
 #[test]
 fn analytic_input_slots_and_evaluation_boundary_are_validated() {
-    let directory = Directory(
-        std::env::temp_dir().join(format!("pipesql-physical-analytic-{}", std::process::id())),
-    );
+    let directory = Directory::new();
     let db = Database::create_empty(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(4_000_000, 2_000_000).unwrap(),
     )
     .unwrap();
@@ -808,11 +783,9 @@ fn analytic_input_slots_and_evaluation_boundary_are_validated() {
 
 #[test]
 fn date_year_output_rejects_a_raw_date_position() {
-    let directory = Directory(
-        std::env::temp_dir().join(format!("pipesql-physical-year-{}", std::process::id())),
-    );
+    let directory = Directory::new();
     let db = Database::create(
-        &directory.0,
+        &directory.0.join("database"),
         crate::Config::new(4_000_000, 1_000_000).unwrap(),
     )
     .unwrap();

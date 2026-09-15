@@ -1,4 +1,13 @@
-//! Lower semantic producers to physical pipelines and storage positions.
+//! Map a validated semantic query into executable producers and column positions.
+//!
+//! Semantic column identities survive aliases and reordering; execution needs a
+//! concrete slot in a source, intermediate batch or computed-value area. Walk
+//! relations in input-first order, create a pipeline at each producer boundary,
+//! and attach its filters and projections. Backward demand retains hidden keys
+//! and drops unused payloads; the final output still preserves repeated columns.
+//! The physical plan owns reserved pipeline storage and borrows semantic programs.
+//! This builder performs no source I/O. `validate` checks the resulting mappings
+//! through a separate decoding path before runtime construction can use them.
 
 use super::demand::{ColumnSet, demand_masks};
 use super::{

@@ -1,4 +1,18 @@
-//! Demand evaluation inside a producer, without crossing materialization boundaries.
+//! Evaluate only the scalar values demanded inside the current producer.
+//!
+//! A physical slot names raw/materialized input or a computed definition.
+//! `RowValues` reads raw slots through its caller and caches computed numeric
+//! results for one row. Conditional programs request values in evaluation order,
+//! so skipped COALESCE branches do not evaluate their fallback arithmetic.
+//! Source payload loading remains the scan's responsibility.
+//! An explicit stack follows earlier definitions; it never recursively evaluates
+//! a dependency or recomputes an expression owned by an upstream producer.
+//!
+//! `BatchLayout` sizes reusable numeric buffers from potential demand;
+//! `BatchScratch` fills only selected rows and requested results. Typed constants
+//! and STRING/DATE inputs retain their own representations. Arithmetic failures
+//! acquire the defining source span here. The enclosing scan/result owns the
+//! scratch reservation and terminates execution if evaluation fails.
 use super::{Error, Pipeline, Value};
 use crate::frontend::{
     Computation, DataType, MAX_COLUMNS, MAX_COMPUTED, MAX_ROW_VALUES, SemanticColumn,

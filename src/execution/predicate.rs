@@ -1,4 +1,11 @@
-//! Optional scan branch state. Row producers use the same physical leaf decisions.
+//! Evaluate one typed predicate and size optional per-row branch state.
+//!
+//! `PhysicalFilter` pairs a bound comparison with its input slot and forward
+//! Boolean decision. Ordinary comparisons with NULL satisfy neither requested
+//! truth value; null-safe comparisons and IS NULL produce a definite Boolean.
+//! Scan and computed-row consumers use this same leaf rule, then follow the
+//! decision offsets to preserve short-circuiting. `BranchScratch` reserves row
+//! cursors and selection storage only when the scan needs branching.
 use crate::execution::planning::Pipeline;
 use crate::execution::{BATCH_ROWS, COMPUTE_ROWS};
 use crate::frontend::{Comparison, FilterControl, FilterLiteral, Predicate};

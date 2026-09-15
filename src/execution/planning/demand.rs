@@ -1,5 +1,12 @@
-//! Backward column demand shared by lowering and physical validation.
-//! This is shared analysis, not an independent oracle for demanded evaluation.
+//! Work backward from query outputs to find columns each relation may need.
+//!
+//! Projection transfers demand through expressions; filters and grouping add their
+//! own inputs. DISTINCT and matching set operations need complete comparison rows
+//! even if a later SELECT hides columns. UNION ALL only carries demanded positions.
+//! The masks guide physical payload selection, not row-level conditional evaluation:
+//! a potentially needed COALESCE fallback can still be skipped for a particular row.
+//! Lowering and physical validation share this analysis; independent SQL cases
+//! must therefore test demanded behavior outside this shared premise.
 
 use super::MAX_PIPELINES;
 use crate::Error;

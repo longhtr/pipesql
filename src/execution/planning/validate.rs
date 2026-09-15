@@ -1,5 +1,13 @@
-//! Validate physical envelopes, edges, filters, mappings, and reachable outputs.
-//! Producer positions are decoded independently of the lowering implementation.
+//! Reject physical plans whose storage positions disagree with the semantic query.
+//!
+//! Check snapshot identity and admitted storage, then visit producers input first.
+//! Each edge must name an earlier matching relation; each payload, predicate and
+//! computation must resolve to the expected semantic column. Reachability rejects
+//! disconnected work. Position decoding is separate from the lowering builder,
+//! so a wrong slot cannot validate merely by reversing its construction formula.
+//! Demand masks and semantic accessors remain shared analysis. The mutation tests
+//! challenge physical representation; independent SQL oracles cover that shared
+//! semantic premise. Rejection returns Corrupt before source execution.
 
 use super::demand::{ColumnSet, demand_masks};
 use super::{
