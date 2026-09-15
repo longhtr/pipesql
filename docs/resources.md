@@ -791,9 +791,10 @@ attribution. It does not enlarge the contracts above.
 The CLI captures at most 12 native entries (program name, operation and five
 option/value pairs). It ignores program-name contents, bounds every other entry
 at 4,096 bytes before fallible copying, and uses an inline 12-slot argument
-array. At most 45,056 argument bytes are requested; valid dispatch retains at
-most two 4,096-byte path owners. Parsing transfers these owners and allocates no
-error text. Resolve transfers a validated 24-byte transaction token into its
+array. At most 45,056 argument bytes are requested; valid dispatch retains the
+database path and at most one source path or table name, each bounded to 4,096
+bytes. Parsing transfers these owners without allocating error text. Resolve
+transfers a validated 24-byte transaction token into its
 command variant; hex decoding uses a fixed array and allocates nothing. It needs
 no extra path owner or larger native argument allowance. Each command variant
 owns exactly its operation-specific input. Resolution uses ordinary
@@ -805,6 +806,13 @@ foreign pointer escapes. Linux instead reads `/proc/self/cmdline`, with a 4-MiB
 total work cap including ignored argv[0], and refuses inspection failure without
 fallback.
 
+Query, explanation and declaration share a caller-owned 4,097-byte source buffer.
+Declaration also uses a fixed 64-entry column array whose names borrow that
+buffer. Conversion creates no heap-owned column names. These inline buffers bound
+source conversion; they are not measurements of total compiler-generated stack
+frames. The library separately admits declaration and inspection storage through
+the database memory authority.
+
 Sinks are duplicated into owned descriptors before engine entry (at most two
 extra fds). Stdout has a 1,024-byte inline line buffer; diagnostics use 4,096
 inline bytes. Writes advance a byte cursor or return, including on interruption;
@@ -812,9 +820,10 @@ drop never flushes. Unavailable stderr preserves the command exit status without
 a secondary sink. Rust startup sanitizes shell-closed standard slots to
 `/dev/null`; closure after bootstrap is a distinct tested effect. Neither sink
 uses lazy stdio heap state. The ordinary gate covers allocation prefixes for
-create/open/load/query and durable/aborted/unknown resolution, including
-repairing open. It checks allocation-free parser control/refusal pairs, with
-requested Rust owners and descriptors restored after entry returns. Exact counts
+creation in both formats, declaration, inspection, legacy loading, query,
+explanation and
+durable/aborted/unknown resolution, including repairing open. It checks
+allocation-free parser control/refusal pairs, with requested Rust owners and descriptors restored after entry returns. Exact counts
 belong to the current result record, not this resource contract.
 
 CLI capture does not release the original process argument/environment storage.
