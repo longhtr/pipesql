@@ -251,7 +251,7 @@ schema.
 
 ### CLI source and path admission
 
-The CLI exposes `create`, `create-declared`, `open`, `load`, `query`, and `resolve`. A query source
+The CLI exposes `create`, `create-declared`, `open`, `load`, `query`, `explain`, and `resolve`. A query source
 must be a regular, non-symlink UTF-8 file of at most 4,096 bytes and remain
 unchanged while read. The CLI compares the opened descriptor with the initial
 pathname's type, identity, extent, and modification/change times. After reading,
@@ -272,6 +272,20 @@ CLI capture and parsing transfer bounded path owners without allocating error
 strings. Owned sinks avoid lazy standard-I/O buffers. [CLI resource
 ownership](resources.md#cli-startup-owners) covers startup limits, sink
 lifetime, and what remains outside those bounds.
+
+### Explain a query
+
+`explain` accepts the same `--query-file` and resource options as `query`. It
+checks the file and prepares the query, then writes `status=explaining`, the
+borrowed logical plan, and `status=explained`. Require exit 0 and the final marker;
+a sink failure can leave a partial explanation. It does not execute the query,
+so runtime arithmetic or payload errors may still occur when the query runs.
+Preparation errors still fail. Opening the database can perform recovery before
+explanation begins.
+
+The plan describes logical relationships, not a physical strategy or estimated
+cost. Its text is an unstable diagnostic; use the [preparation walkthrough](frontend.md#trace-a-query-through-preparation)
+for the library view.
 
 ### Resolve a CLI load outcome
 

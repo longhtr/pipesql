@@ -1,14 +1,16 @@
-//! Read one SQL file, prepare it and stream the public query result to CLI output.
+//! Prepare one checked SQL file, then explain its plan or stream its result.
 //!
 //! Admission requires a bounded regular file. Compare named and opened metadata
 //! before and after the fixed-buffer read; observed replacement or mutation fails
 //! before preparation. The caller must still keep the source unchanged while read.
+//! Preparation owns its literals and spans, so the source file closes before
+//! explanation or execution. Explain formats logical metadata without reading rows.
 //! Consume borrowed batches immediately and distinguish Progress, Rows, Finished
 //! and Failed. Only Finished permits the final row count and success marker;
 //! execution or sink failure can leave a visible prefix, never a complete result.
 
-use super::output::{output_error, write_query_header, write_value};
-use pipesql::{CancellationToken, Database, Error, QueryStep};
+use super::output::{output_error, write_database_status, write_query_header, write_value};
+use pipesql::{CancellationToken, Database, Error, PreparedQuery, QueryStep};
 use pipesql_filesystem as filesystem;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -39,11 +41,10 @@ fn validate_query_source(
     Ok(())
 }
 
-pub(super) fn execute_query_file(
-    database: &Database,
+fn prepare_query_file<'db>(
+    database: &'db Database,
     path: &Path,
-    output: &mut impl Write,
-) -> Result<(), Error> {
+) -> Result<PreparedQuery<'db>, Error> {
     let metadata = filesystem::symlink_metadata(path).map_err(|source| Error::Io {
         operation: "inspect query file",
         source,
@@ -106,7 +107,27 @@ pub(super) fn execute_query_file(
         message: "query file must be UTF-8",
         byte_offset: 0,
     })?;
-    let prepared = database.prepare(source)?;
+    database.prepare(source)
+}
+
+pub(super) fn explain_query_file(
+    database: &Database,
+    path: &Path,
+    output: &mut impl Write,
+) -> Result<(), Error> {
+    let prepared = prepare_query_file(database, path)?;
+    write_database_status(output, "explaining", database)?;
+    write!(output, "{}", prepared.logical_plan())
+        .and_then(|()| writeln!(output, "status=explained"))
+        .map_err(|source| output_error("write logical plan", source))
+}
+
+pub(super) fn execute_query_file(
+    database: &Database,
+    path: &Path,
+    output: &mut impl Write,
+) -> Result<(), Error> {
+    let prepared = prepare_query_file(database, path)?;
     let cancellation = CancellationToken::new();
     let mut result = database.execute(&prepared, &cancellation)?;
     write_query_header(output, database, &prepared)?;

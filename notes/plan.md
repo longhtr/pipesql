@@ -31,7 +31,9 @@ one CLI path over the existing library. First settle the bounded schema input
 and inspection interface against the event-report tables. `create-declared` now uses
 `Database::create_empty`; `create` retains legacy behavior. Focused parser and
 stock-process checks cover both forms, existing-path refusal and declaration
-compatibility. Declaration input, schema inspection and explain remain unfinished.
+compatibility. `explain` shares checked query-file preparation and formats the
+logical plan without execution; a runtime-failing query and broken sinks exercise
+that distinction. Declaration input and schema inspection remain unfinished.
 Select focused grammar/output checks during implementation, then the existing
 CLI allocation and publication campaigns plus the integrated checkpoint. Require
 both platforms' affected evidence before synchronizing this capability.

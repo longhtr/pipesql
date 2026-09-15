@@ -65,22 +65,24 @@ fn parser_accepts_load_only_with_input() {
 
 #[test]
 fn parser_accepts_query_only_with_query_file() {
-    let command = parse(args(&[
-        "pipesql",
-        "query",
-        "--database",
-        "/tmp/example",
-        "--query-file",
-        "/tmp/q6.pipe.sql",
-        "--memory-limit-bytes",
-        "2000000",
-        "--temp-limit-bytes",
-        "1000000",
-    ]))
-    .expect("query command");
-    assert!(
-        matches!(command.operation, Operation::Query(query_file) if query_file == Path::new("/tmp/q6.pipe.sql"))
-    );
+    for operation in ["query", "explain"] {
+        let command = parse(args(&[
+            "pipesql",
+            operation,
+            "--database",
+            "/tmp/example",
+            "--query-file",
+            "/tmp/q6.pipe.sql",
+            "--memory-limit-bytes",
+            "2000000",
+            "--temp-limit-bytes",
+            "1000000",
+        ]))
+        .expect("query command");
+        assert!(
+            matches!((operation, command.operation), ("query", Operation::Query(query_file)) | ("explain", Operation::Explain(query_file)) if query_file == Path::new("/tmp/q6.pipe.sql"))
+        );
+    }
 }
 
 #[test]
@@ -122,7 +124,14 @@ fn transaction_arguments_preserve_bytes_and_reject_invalid_tokens() {
     ] {
         assert!(parse_transaction(&OsString::from_vec(bytes)).is_err());
     }
-    for operation in ["create", "open", "load", "query"] {
+    for operation in [
+        "create",
+        "create-declared",
+        "open",
+        "load",
+        "query",
+        "explain",
+    ] {
         assert!(
             parse(args(&[
                 "pipesql",

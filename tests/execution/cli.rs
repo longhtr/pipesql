@@ -73,24 +73,60 @@ fn stock_cli_executes_query_file() {
     assert!(q1_stdout.contains("row=string:52|string:46|"));
     assert!(q1_stdout.contains("|int64:1\nrow_count=1"));
 
+    // Preparation can describe this expression; only execution reaches its error.
+    let failing_query = temp.0.join("division.sql");
+    fs::write(
+        &failing_query,
+        "FROM lineitem |> SELECT l_quantity / 0 AS bad",
+    )
+    .unwrap();
+    for operation in ["explain", "query"] {
+        let observed = Command::new(binary)
+            .arg(operation)
+            .arg("--database")
+            .arg(&database)
+            .arg("--query-file")
+            .arg(&failing_query)
+            .args(limits)
+            .output()
+            .unwrap();
+        let text = String::from_utf8(observed.stdout).unwrap();
+        assert!(!text.lines().any(|line| line.starts_with("row=")));
+        if operation == "explain" {
+            assert!(
+                observed.status.success(),
+                "{}",
+                String::from_utf8_lossy(&observed.stderr)
+            );
+            assert!(text.starts_with("status=explaining\n"));
+            assert!(text.lines().any(|line| line == "logical plan"));
+            assert!(text.ends_with("status=explained\n"));
+        } else {
+            assert_eq!(observed.status.code(), Some(1));
+            assert!(String::from_utf8_lossy(&observed.stderr).contains("division"));
+        }
+    }
+
     // Close the sink before spawning: closing a piped reader after spawn races
     // with a child that can finish its small output before the parent runs.
-    let (writer, reader) = std::os::unix::net::UnixStream::pair().unwrap();
-    drop(reader);
-    let stdout: std::os::fd::OwnedFd = writer.into();
-    let broken = Command::new(binary)
-        .arg("query")
-        .arg("--database")
-        .arg(&database)
-        .arg("--query-file")
-        .arg(&query)
-        .args(limits)
-        .stdout(stdout)
-        .stderr(Stdio::piped())
-        .output()
-        .expect("run broken-output query");
-    assert!(!broken.status.success());
-    assert!(String::from_utf8_lossy(&broken.stderr).contains("write command status"));
+    for operation in ["query", "explain"] {
+        let (writer, reader) = std::os::unix::net::UnixStream::pair().unwrap();
+        drop(reader);
+        let stdout: std::os::fd::OwnedFd = writer.into();
+        let broken = Command::new(binary)
+            .arg(operation)
+            .arg("--database")
+            .arg(&database)
+            .arg("--query-file")
+            .arg(&query)
+            .args(limits)
+            .stdout(stdout)
+            .stderr(Stdio::piped())
+            .output()
+            .expect("run broken-output query");
+        assert!(!broken.status.success());
+        assert!(String::from_utf8_lossy(&broken.stderr).contains("write command status"));
+    }
 
     for (name, bytes) in [
         ("oversized.sql", vec![b' '; 4_097]),

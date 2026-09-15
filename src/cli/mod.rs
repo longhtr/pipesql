@@ -10,7 +10,7 @@ use command::{Command, Operation};
 use diagnostic::print_error;
 use output::{output_error, write_database_status};
 use pipesql::{CancellationToken, CommitResolution, Database, Error};
-use query::execute_query_file;
+use query::{execute_query_file, explain_query_file};
 use std::io::Write;
 use std::process::ExitCode;
 
@@ -81,6 +81,7 @@ fn run(command: Command, output: &mut impl Write) -> Result<(), Error> {
                 .map_err(|source| output_error("write commit status", source))
         }
         Operation::Query(query_file) => execute_query_file(&database, &query_file, output),
+        Operation::Explain(query_file) => explain_query_file(&database, &query_file, output),
         Operation::Resolve(transaction) => {
             let resolution = database.resolve_commit(transaction)?;
             write_database_status(output, "resolved", &database)?;
