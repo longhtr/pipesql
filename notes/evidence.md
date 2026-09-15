@@ -6062,3 +6062,141 @@ were removed after receipt review. No creation verification process or container
 remained. The verification image, installed toolchains, existing checkout target
 and unrelated container were retained. Temporary consolidation preparation is
 separate unfinished work; it is not a retained creation archive.
+
+## Repository consolidation
+
+The checkpoint covers production ownership, module explanations, test fixtures,
+verification mechanics and the reading path before further language features.
+A temporary inventory outside the repository covered suites, fixture owners,
+models, campaigns and inputs. Module introductions were reviewed in subsystem
+groups, with implementation checks where an explanation depended on a specific
+mechanism. A structural scan found separated introductions in all 279 first-party
+source files; it does not assess their educational quality.
+
+### What changed
+
+| Recurring cost or confusion | Repair |
+| --- | --- |
+| Eight compatible stock builds per full gate | One identified stock library/CLI serves the seven campaign consumers. Compiler settings, source and artifact hashes must match. Test, example and instrumented profiles remain separate. |
+| Different source-copy mechanics and mutable long-run inputs | Both platform runners and the sanitizer runner use the existing source-manifest owner. Copy-time mutation is rejected; later checkout edits cannot alter a running export. |
+| Repeated temporary-directory and child cleanup | Public and internal fixtures use the existing guarded directory owner. A direct-child guard is shared by lease/load tests. Setup owns cleanup before its first write; buffered fixture input is explicitly flushed. |
+| Shared query helpers hidden in unrelated capability tests | One catalog fixture module owns inputs, typed collection and cancellation/drop mechanics. Callers retain their progress bounds, SQL, literal answers and equality normalization. |
+| Repeated fixtures and distant case meanings | Removed the duplicate ordering fixture, unused legacy counter inputs, repeated capacity inspection and snapshot append setup. Replay tuples keep all 42 SQL/answer/producer cases together; allocation barriers have named phases. |
+| Two parser tests with identical premises | One operator loop retains both EXCEPT/INTERSECT association cases and their span checks. The ordinary test count falls by one; neither case is removed. |
+| Recovery hidden behind a validation name | `recover_namespace` names the effectful entry and `repair_namespace` the mutation phase. Read-only inspection remains separate. No effect ordering, persisted bytes or admission limit changes. |
+| Completion checks accepting incomplete or obsolete output | Exact opening/terminal status and row-count checks replace substring acceptance. Q1 comparison now follows the actual CLI layout. Wrong, missing, duplicate and reordered records must fail. |
+
+No source file was deleted merely to reduce file count. Two concrete shared owners
+were added: catalog fixtures and the direct-child guard. The existing shell entry
+remains an argument/exit-preserving alias. Independent semantic answers, format
+encoders/decoders, native observers, process cuts and representation models remain
+separate because they challenge different premises. Retired-format fixtures still
+protect explicit rejection; they are not duplicate historical archives.
+
+### Iteration cost
+
+One actual counter-test edit took 2.68 s with the warm debug target, versus 57.59 s
+in release; both ran the same four tests. The old default example selected the
+whole catalog suite, about 87 s of execution. The guide now starts with an exact
+local test and requires release for optimized-stack, allocation and timing premises.
+This is build-loop evidence, not an engine throughput comparison.
+
+| Platform | Before | After | Measurement |
+| --- | --- | --- | --- |
+| macOS | 31.83 min | 27.26 min | Sum of passing stage times; baseline combines two runs, final is one complete gate. |
+| GNU arm64 Linux | 51.95 min | 48.79 min | Complete gates under the same full-synchronization VM policy. |
+
+The baseline at `0f1e47b` totaled 1,909.712 s on macOS and 3,116.736 s on Linux;
+final stage totals were 1,635.888 s and 2,927.229 s. Removing seven stock builds
+accounted for 159.23 s on Mac and 126.94 s on Linux in the earlier measurements. Whole-gate
+changes include host/cache variation and changed tooling checks; they are not a
+controlled OS comparison.
+
+### Final verification
+
+Both sequential 24-stage gates passed on the same 754-input export of `68f4445`.
+Its manifest SHA-256 is
+`88b5f20a58051f90041d85e374107091f297ca638525b9de5742c639f9e76de6`.
+Both receipts report unchanged inputs and no finalization errors. Rust 1.98.1
+with LLVM 22.1.8 built each platform with one Cargo job and warnings denied.
+
+| Evidence | macOS | GNU arm64 Linux |
+| --- | --- | --- |
+| Ordinary Rust tests; none ignored or filtered | 691 | 691 |
+| Separate lease child; six intentional filtered siblings | 1 | 1 |
+| Tooling tests / independent codec fixtures | 120 / 44 | 120 / 44 |
+| Semantic cases / composition records / portable result hashes | 24 / 350 / 247 | 24 / 350 / 247 |
+| Catalog allocation refusal prefixes, both pathname lengths | 0–1051; healthy 1052 | 0–1051; healthy 1052 |
+| CLI allocation prefixes | 545 | 545 |
+| Native initialization / synchronization / I/O cells | 30 / 217 / 1,378 | 80 / 217 / 1,378 |
+| Append cuts / recovery cuts / independent graph checks | 76 / 46 / 249 | 76 / 46 / 249 |
+| Event-report append cuts / recovery cuts / graph checks | 88 / 46 / 273 | 88 / 46 / 273 |
+| Graph mutations / oracle controls / report control / CLI limits | 48 / 2 / 1 / 3 | 48 / 2 / 1 / 3 |
+
+Genesis, lease contention and independent physical-column-order checks also passed.
+Semantic records match after replacing only their database pathname lines;
+composition records and all 247 result hashes match unchanged. Each platform then
+ran fresh `declared`, `event_report`, and high/low-budget `scaled_report` examples.
+All four finished successfully. macOS example build/execution took 35.373 s.
+
+Linux used private ext4 storage in the full-synchronization VM: one CPU, 2 GiB,
+uid/gid 1000 and no network device. Its success/failure bootstrap controls and
+shutdown records passed. The preserved image is
+`sha256:520be9ff830f944e49a3319cbf6f8ccfb2c1f21631947de50290efb98038e282`;
+kernel SHA-256 is
+`6747bf2ef8eebe6d5b0c45278b55b8f91524e671597a4553523b8ece6af5d9bb`.
+The two Darwin ACL exclusions remain explicit.
+
+Receipt SHA-256 identities:
+
+- macOS gate: `337f2cca0dd2ecaf6a7e5b0c1b7fdbe1ae33b29d364cb859d19d006bef97399f`.
+- macOS examples: `2a098ab010b0f2f6f03ba625d3c645d270f8fc5168a9c762db71fa16bf7772d6`.
+- Linux gate: `5beeed4efa1adf1ea75e8802c38a3dd02c716cab4d5590f30cd56968cc045e38`.
+- Linux environment/cleanup: `275277ee9662d266d435c9ed0ad986514456dc592c6c745ce58252b7f6187148`.
+
+Stock CLI SHA-256 is
+`655c8a6b363eac70f24d791144618be64f0009fb1188fb7df312f52707905065` on macOS and
+`60e2fcffe1afc1f227010cc6e5b73f4e1f2bd5ec9ccf111b1032c37aeb10e057` on Linux.
+Library SHA-256 is
+`a309b7f9bb152119e1ff6810a34a73e838de5802fb03e5422c9eb5fdb7b9716b` on macOS and
+`620f9e476b921359b59b4b366b6e58762b7f2dae9a360a3caf6c3f54dca63922` on Linux.
+
+A preceding attempt stopped at Clippy before runtime campaigns for an unnecessary
+borrow in test setup. Earlier partial runs are superseded by the complete gates;
+none is counted as a passing full checkpoint.
+
+After freezing, documentation repairs corrected the DISTINCT owner and explained
+shared budgets, cooperative cancellation, snapshots, admission, row selection,
+repeatable fault schedules, allocation sweeps and process cleanup. A blank line
+separates top-level documentation from source. Executable bodies remain unchanged;
+73 source-file diffs contain only comments or whitespace; README, engineering
+and plan changes are prose. Final warnings-denied Rust documentation compiled
+in 3.525 s at `37b99cd`; formatting and local documentation links passed.
+
+The separately frozen mutex diagnostic passed its four selected tests under
+stock, nightly and ASan profiles, with working clean/fault controls, in 20.78 s.
+Its receipt SHA-256 is
+`5b96e58b711e3e9c963078275163937d1ff0198f85b82f411279c12387145292`;
+input-manifest SHA-256 is
+`86ef29a33eb46e371e31cad3e5217a13991d7361949483d7de2cd2cfe1324fa4`.
+It does not establish general sanitizer or concurrency coverage.
+
+Use the [verification ladder](../docs/testing.md#focused-verification) for edit,
+focused, integrated and full commands. The [test map](../tests/README.md) and
+[tool guide](../tools/README.md) identify where to change each check. Start reading
+with the [event report](../docs/event-report.md), follow preparation through parser,
+binder and validators, then execution through scans, join, grouping and sorting.
+Follow its writes through append and publication; the [source map](../docs/source-map.md)
+traces reopen through namespace validation and recovery.
+
+The remaining cost is intentional where it observes another failure boundary:
+real synchronization, exhaustive refusal prefixes, native partial I/O, interrupted
+publication and independent graph decoding. The [qualification limits](../notes/plan.md#qualifications-that-remain-outside-this-internal-claim)
+remain: Windows, broader device/power-loss durability, arbitrary allocator history,
+whole-process memory and general sanitizer/concurrency coverage are unfinished.
+Host monitoring observed normal/warning memory pressure and swap between
+1,418.94 and 5,637.75 MiB. Sampled VM-process RSS reached 1,164.98 MiB; it is not
+an engine memory bound. Heavy platform runs and fresh examples were sequential.
+Owned builds, source exports, VM artifacts, databases, logs and the temporary
+inventory were removed after retaining these results. Toolchains, the verification
+image and the preexisting development target were preserved.

@@ -7,85 +7,22 @@ completed investigations, verification results and consequential limitations.
 
 ## Current baseline
 
-The finite internal analytical learning checkpoint is complete. All nine planned
-outcomes are verified; no checkpoint goal remains. The final tested source is
-`081b1f8`. Its [complete verification record](evidence.md#final-internal-analytical-checkpoint)
-covers matching 24-stage macOS/GNU arm64 Linux gates, 687 ordinary Rust tests per
-platform, 103 tooling tests, 44 codec fixtures, 24 semantic cases, 350 composition
-records and 18 fresh scenarios per platform. Subsequent work adds timing diagnostics and full-synchronization Linux
-verification. [Strict creation validation](evidence.md#strict-creation-validation) is verified.
+The [internal analytical checkpoint](evidence.md#final-internal-analytical-checkpoint)
+and [repository consolidation](evidence.md#repository-consolidation) are verified.
+The latter records shared test/tool ownership, the reading path, matching platform
+results and measured iteration costs. Completed work stays closed unless a concrete
+defect or new workload changes its scope.
 
-The [event-report lesson](../docs/event-report.md) is the entry point: build typed
-events and dimensions, append, reopen, report, retain an older snapshot, compare
-answers, reclaim and understand interrupted publication. The small literal
-fixture and scaled independent model connect query semantics to ownership and
-persistent effects. Allocation histories exposed one constructor-failure defect;
-[keeping the reservation owner intact](evidence.md#composed-report-allocation-histories)
-through fallible allocation repaired it without changing an allowance. The other
-checkpoint outcomes required no engine repair.
-
-The [language manifest](../docs/language.md#current-public-query-manifest),
+Start learning with the [event report](../docs/event-report.md). The
+[language manifest](../docs/language.md#current-public-query-manifest),
 [public interfaces](../docs/interfaces.md), [test map](../tests/README.md) and
-[tool map](../tools/README.md) own exact capabilities and verification entry points.
-The completed queue and its acceptance criteria remain in Git revision `081b1f8`;
-[evidence](evidence.md#final-internal-analytical-checkpoint) links the outcomes.
-Earlier language, tooling, append, reader and grouped-allocation work remains
-closed unless a concrete defect or new workload changes its scope. No historical
-archive is required.
+[tool map](../tools/README.md) own current capabilities and entry points.
 
-## Full-synchronization Linux checkpoint
-
-The [full-synchronization Linux gate](evidence.md#full-synchronization-linux-verification)
-passed all 24 stages and four fresh storage workflows. The runner verifies the
-host disk policy, native database placement, unprivileged identity, source
-integrity, command failures and owned cleanup. Host interruption also passed its
-cleanup control. The stronger storage policy required longer finite deadlines
-for three storage-heavy stages; engine code and fault coverage are unchanged.
-
-[Testing](../docs/testing.md#linux-verification-with-full-synchronization) owns the
-reproduction command. Routine Docker checks remain available for development;
-new persistence checkpoints need this full-storage path or an equivalent
-established premise. Broader power-loss/device and platform qualifications below
-remain unresolved. No additional verification framework is planned.
-
-## Synchronization comparison
-
-The [root-cause investigation](evidence.md#virtual-disk-synchronization-root-cause)
-is complete. The observed Docker disk uses a weaker host synchronization policy
-than native macOS PipeSQL. Changing only that policy in a controlled Linux VM
-reproduced the slowdown with both raw writes and the stock catalog caller. The
-[retained experiment](../tools/README.md#compare-virtual-disk-synchronization-guarantees)
-and qualification contract now make that distinction explicit. That investigation
-changed no engine or gate behavior; the completed analytical checkpoint stays
-closed.
-
-## Active repository consolidation
-
-The first module review missed introductions that name a responsibility without
-explaining its concepts or operation. Finish the documentation repair and
-checkpoint before new features:
-
-1. Recheck module introductions from a learner's starting point. Explain what the
-   module does, why its main concepts are needed, and how its code uses them.
-   API reference comments do not replace that introduction. Remove unexplained
-   internal terminology and verify concrete examples against the implementation.
-   Separate top-level documentation from code with a blank line.
-2. Run the final macOS and qualified GNU arm64 Linux gates sequentially on matching
-   frozen inputs, followed by fresh examples. Keep source and build ownership
-   separate so later development cannot change what a running campaign tests.
-3. Reconcile the temporary inventory with the final diff and results. Record
-   removed duplication, retained independent evidence, contract coverage and
-   measured build/gate costs in the evidence notes. Distinguish measurements from
-   controlled performance comparisons.
-4. Remove owned temporary material, review and commit the completed checkpoint,
-   then synchronize by fast-forward. Preserve the
-   [qualification limits](#qualifications-that-remain-outside-this-internal-claim).
-
-The [verification ladder](../docs/testing.md#focused-verification) governs each
-increment. A documentation-only repair does not require another persistence
-campaign. Code changes require the checks for the actual contract changed.
-Completion requires understandable code and accurate explanations as well as
-passing checks; no new feature begins while this review remains unfinished.
+The [synchronization investigation](evidence.md#virtual-disk-synchronization-root-cause)
+established why ordinary Docker timing cannot substitute for the qualified
+Linux storage path. Use the [full-synchronization workflow](../docs/testing.md#linux-verification-with-full-synchronization)
+for persistence checkpoints. Preserve the
+[remaining qualifications](#qualifications-that-remain-outside-this-internal-claim).
 
 ## Path to the internal 0.1.0 checkpoint
 
@@ -107,14 +44,13 @@ not tasks to activate together. Scope each goal from the actual preceding result
 
 | Order | Outcome | Estimated goals | Completion evidence |
 | --- | --- | --- | --- |
-| 1 | Consolidate the repository before extending it. | 1 | Complete the inventory-driven implementation and acceptance criteria in [repository consolidation](#active-repository-consolidation). |
-| 2 | Expose declared database creation, table declaration, schema inspection and logical plans through the stock CLI. | 1 | A fresh event-report schema can be created and inspected through existing library owners; invalid declarations retain typed failures and cause no publication. Reuse `PreparedQuery::logical_plan`; it reports logical structure, not runtime costs. Choose one explicit schema input format, with no parallel SQL frontend. |
-| 3 | Import a documented CSV profile into a declared table with bounded streaming buffers. | 2 | One goal owns decoding, types, NULLs, quoting, limits and byte-offset errors; one integrates append, cancellation, transaction tokens, reopen and ambiguous-outcome resolution. Malformed input cannot become reported success. Independent fixtures and refusal cuts cover both layers. |
-| 4 | Export typed query results in a documented machine-readable form. | 1 | A fresh report round-trips supported values, preserves NULL distinctions and requires successful query completion. File output has explicit completion/publication rules; stdout and sink failures cannot imply a complete file. Reuse the query cursor. |
-| 5 | Add conditional report expressions required by the event workflow. | 1 | A bounded searched CASE profile classifies events with independently checked NULL, type and demanded-error semantics. Reuse the expression demand machinery and show skipped failing branches. Defer unrelated scalar functions. |
-| 6 | Support a bounded partitioned, ordered reporting window. | 2 | First specify and implement partition/order/frame ownership over the shared sorting path; then complete the selected running-total use case with forced spill, peers, NULLs, numeric errors, cancellation and independent results. Do not claim the full window language. |
-| 7 | Exercise the complete import/report/export workflow above memory limits with concurrent snapshot ownership. | 1 | Fresh small literal and scaled model results agree; append/reopen/reclaim and interrupted import remain coherent. Measure end-to-end work and repair only demonstrated bottlenecks or contract violations. |
-| 8 | Consolidate the integrated capability and its learning path. | 1 | Both full platform gates and fresh workflows pass on identified inputs; interfaces, failure explanations and source maps match the implementation. Remove dead paths and duplicate prose found along those flows. Record remaining limits and stop this queue. |
+| 1 | Expose declared database creation, table declaration, schema inspection and logical plans through the stock CLI. | 1 | A fresh event-report schema can be created and inspected through existing library owners; invalid declarations retain typed failures and cause no publication. Reuse `PreparedQuery::logical_plan`; it reports logical structure, not runtime costs. Choose one explicit schema input format, with no parallel SQL frontend. |
+| 2 | Import a documented CSV profile into a declared table with bounded streaming buffers. | 2 | One goal owns decoding, types, NULLs, quoting, limits and byte-offset errors; one integrates append, cancellation, transaction tokens, reopen and ambiguous-outcome resolution. Malformed input cannot become reported success. Independent fixtures and refusal cuts cover both layers. |
+| 3 | Export typed query results in a documented machine-readable form. | 1 | A fresh report round-trips supported values, preserves NULL distinctions and requires successful query completion. File output has explicit completion/publication rules; stdout and sink failures cannot imply a complete file. Reuse the query cursor. |
+| 4 | Add conditional report expressions required by the event workflow. | 1 | A bounded searched CASE profile classifies events with independently checked NULL, type and demanded-error semantics. Reuse the expression demand machinery and show skipped failing branches. Defer unrelated scalar functions. |
+| 5 | Support a bounded partitioned, ordered reporting window. | 2 | First specify and implement partition/order/frame ownership over the shared sorting path; then complete the selected running-total use case with forced spill, peers, NULLs, numeric errors, cancellation and independent results. Do not claim the full window language. |
+| 6 | Exercise the complete import/report/export workflow above memory limits with concurrent snapshot ownership. | 1 | Fresh small literal and scaled model results agree; append/reopen/reclaim and interrupted import remain coherent. Measure end-to-end work and repair only demonstrated bottlenecks or contract violations. |
+| 7 | Consolidate the integrated capability and its learning path. | 1 | Both full platform gates and fresh workflows pass on identified inputs; interfaces, failure explanations and source maps match the implementation. Remove dead paths and duplicate prose found along those flows. Record remaining limits and stop this queue. |
 
 This is **9 planned goals after consolidation**, with a working estimate of
 **9–13** if the importer or window exposes prerequisite repairs. This is not a
@@ -123,8 +59,7 @@ milestones. Reassess after import integration and after the first window prototy
 split a goal when ownership or failure boundaries warrant it. Remove a proposed
 feature if the workflow no longer needs it, and explain the changed target.
 
-Repository consolidation comes first. Then design the declared-schema CLI around
-the event-report schema.
+Next, design the declared-schema CLI around the event-report schema.
 No buffer manager, parallel executor, format migration, distributed component or
 general optimizer is scheduled without a measured need in this workflow.
 
