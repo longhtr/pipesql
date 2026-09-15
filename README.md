@@ -15,6 +15,8 @@ unfinished; [platform status](docs/testing.md#platform-status) separates these f
 
 The library creates declared tables, appends typed batches, and queries
 immutable snapshots. One serialized writer can coexist with snapshot readers.
+The CLI creates and inspects declared tables and explains query plans. Typed
+row ingestion into these tables currently uses the library.
 Queries support SELECT and EXTEND projections, SET replacements, DROP and RENAME,
 STRING length and calendar-year projections, STRING/NULL/Boolean filters, COUNT/SUM/AVG/MIN/MAX,
 grouped and repeated aggregation, full-partition analytic count, full-row DISTINCT, equality joins, ORDER BY,
@@ -49,7 +51,9 @@ failure campaigns. A green local gate is not production certification.
 
 Start with [Create and query a declared table](docs/getting-started.md) for a
 complete library example. Then follow the [event report](docs/event-report.md)
-through query preparation, execution, append and recovery. After loading the documented `lineitem` input, this
+through query preparation, execution, append and recovery.
+[Inside PipeSQL](src/README.md) introduces the source code behind that workflow.
+After loading the documented `lineitem` input, this
 query groups selected rows and filters the aggregate result:
 
 ```sql

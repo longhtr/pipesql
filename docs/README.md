@@ -18,7 +18,8 @@ restrictions.
 
 ## Learn the implementation
 
-Run the declared-table example first, then [trace a query through
+Start with [Inside PipeSQL](../src/README.md) for the creation, write, query and
+recovery paths. Run the declared-table example, then [trace a query through
 preparation](frontend.md#trace-a-query-through-preparation). Keep the
 corresponding source open as you read: follow `bind_plan` into
 `Binder::bind_stage`, then inspect one projection or aggregate operation. The

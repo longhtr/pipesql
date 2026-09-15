@@ -111,7 +111,7 @@ def check(root, documents):
 
 def documents(root):
     paths = list(root.glob("*.md"))
-    for directory in ("docs", "notes", "tests", "tools"):
+    for directory in ("docs", "notes", "src", "tests", "tools"):
         paths.extend((root / directory).rglob("*.md"))
     # README is the root entry point; maintained guides live in the trees above.
     tracked_root_docs = {"README.md", "THIRD_PARTY.md"}

@@ -82,13 +82,19 @@ not tasks to activate together. Scope each goal from the actual preceding result
 | 7 | Consolidate the integrated capability and its learning path. | 1 | Both full platform gates and fresh workflows pass on identified inputs; interfaces, failure explanations and source maps match the implementation. Remove dead paths and duplicate prose found along those flows. Record remaining limits and stop this queue. |
 
 This is **9 planned goals after consolidation**, with a working estimate of
-**9–13** if the importer or window exposes prerequisite repairs. This is not a
-calendar estimate. The range is uncertainty, not permission to invent extra
-milestones. Reassess after import integration and after the first window prototype;
+**9–13** if the importer or window exposes prerequisite repairs. The current CLI
+goal is implemented but still awaiting complete verification;
+**8 planned goals remain after it**, or **8–12** with prerequisite repairs.
+Allow roughly **45–80 further working hours**, including focused verification,
+documentation, cleanup and several expensive platform checkpoints. CSV import
+and ordered windows carry the most uncertainty. This is a planning allowance,
+not a measured delivery rate or a promise of elapsed completion time.
+The range is uncertainty, not permission to invent extra milestones. Reassess
+after import integration and after the first window prototype;
 split a goal when ownership or failure boundaries warrant it. Remove a proposed
 feature if the workflow no longer needs it, and explain the changed target.
 
-Next, design the declared-schema CLI around the event-report schema.
+After the CLI checkpoint, implement CSV decoding against the event-report schema.
 No buffer manager, parallel executor, format migration, distributed component or
 general optimizer is scheduled without a measured need in this workflow.
 
