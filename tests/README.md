@@ -44,7 +44,7 @@ Expected answers and failure interpretation stay in each test.
 
 | Modules under `catalog_lifecycle/` | Responsibility |
 | --- | --- |
-| `append.rs`, `snapshots.rs` | Publication, pinned generations, overlapping readers, reclamation and receipts. |
+| `append.rs`, `snapshots.rs`, `schema.rs` | Publication, pinned generations, overlapping readers, schema inspection, reclamation and receipts. |
 | `aggregates.rs`, `grouping.rs`, `spooling.rs` | Aggregate semantics, admission, memory/disk execution and cancellation. |
 | `joins.rs`, `join_corpus.rs` | Join composition, NULL extension and independent row oracles. |
 | `computed.rs`, `constant_projection.rs`, `cast.rs`, `date_year.rs` | Scalar values, types, stored bits, ownership and demanded errors. |
@@ -63,6 +63,7 @@ They can inspect private phases and inject effects that public tests cannot.
 | Owner | Responsibility |
 | --- | --- |
 | [Database tests](../src/database/tests.rs), [creation](../src/database/tests/creation.rs) | Leases, exact genesis validation, repair, corruption and cleanup. |
+| [Schema inspection](../src/table_schema.rs) | Read refusals, cancellation at effects and admission before I/O. |
 | [Catalog snapshot tests](../src/catalog_snapshot/tests.rs) | Shared persisted setup; child suites own declaration, append, publication, namespace, snapshot and query contracts. |
 | [Reclamation tests](../src/catalog_snapshot/reclaim/tests.rs) | Scratch construction, protected graph traversal and cleanup/interruption schedules. |
 | [Legacy scratch tests](../src/scratch/tests.rs) | Namespace debt, writer inspection and process cuts at scratch effects. |

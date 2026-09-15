@@ -84,7 +84,7 @@ producers merely to reduce duplicated-looking checks.
 | [cli/mod.rs](../src/cli/mod.rs), [command.rs](../src/cli/command.rs) | Process entry, database lifetime, and command grammar with owned arguments. |
 | [source.rs](../src/cli/source.rs) | Bounded UTF-8 query/schema input, file identity checks and complete reads. |
 | [declaration.rs](../src/cli/declaration.rs) | Schema-file conversion and the public table-declaration call. |
-| [query.rs](../src/cli/query.rs), [output.rs](../src/cli/output.rs) | Query preparation, logical-plan output, streaming execution, and result encoding. |
+| [query.rs](../src/cli/query.rs), [output.rs](../src/cli/output.rs) | Query preparation, logical-plan output, streaming execution, and schema/result encoding. |
 | [arguments.rs](../src/cli/arguments.rs), [sink.rs](../src/cli/sink.rs), [diagnostic.rs](../src/cli/diagnostic.rs) | Bounded native argument capture, owned output descriptors, and allocation-free diagnostics. |
 
 
@@ -103,6 +103,7 @@ producers merely to reduce duplicated-looking checks.
 | [append.rs](../src/catalog_snapshot/append.rs), [admission.rs](../src/catalog_snapshot/append/admission.rs) | Typed batch writes and publication; separate table selection, buffer/reservation admission, and issuance. |
 | [construction.rs](../src/catalog_snapshot/construction.rs) | Shared private-object creation/synchronization, builder rollback, and exclusive orphan recovery. |
 | [reclaim.rs](../src/catalog_snapshot/reclaim.rs) and [inventory.rs](../src/catalog_snapshot/reclaim/inventory.rs) | Protected graph traversal, external name/reference inventory, and obsolete-object deletion. |
+| [table_schema.rs](../src/table_schema.rs) | Public schema inspection: pinned generation, charged reads and a borrowed callback view. |
 | [catalog.rs](../src/catalog.rs), [catalog_schema.rs](../src/catalog_schema.rs) | Catalog and schema codecs and validated identities. |
 | [table_data.rs](../src/table_data.rs), [native_unit.rs](../src/native_unit.rs), [success_index.rs](../src/success_index.rs) | Data indexes, typed unit payloads, and complete successful-attempt history. |
 | [storage_format.rs](../src/storage_format.rs) | Shared root/fence format, legacy codec, checksums, and publication identities. |

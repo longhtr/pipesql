@@ -79,6 +79,9 @@ mod order;
 #[path = "catalog_lifecycle/snapshots.rs"]
 mod snapshots;
 
+#[path = "catalog_lifecycle/schema.rs"]
+mod schema;
+
 #[path = "catalog_lifecycle/spooling.rs"]
 mod spooling;
 

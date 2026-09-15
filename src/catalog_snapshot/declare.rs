@@ -29,8 +29,9 @@ use crate::{CancellationToken, Commit, Error, ErrorCause};
 
 const CREATE_OBJECTS: u32 = 3;
 
-/// A named, typed column in a new table. Declaration assigns its persistent
-/// identity under exclusive writer authority.
+/// A column's name, type and NULLability, used for declaration and inspection.
+/// Declaration assigns its persistent identity under exclusive writer authority;
+/// inspection returns these same properties without exposing storage identities.
 #[derive(Clone, Copy)]
 pub struct ColumnDeclaration<'a> {
     pub name: &'a str,

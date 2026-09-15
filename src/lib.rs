@@ -48,6 +48,7 @@ mod storage_format;
 mod string_length;
 mod success_index;
 mod table_data;
+mod table_schema;
 mod text_literal;
 mod transaction;
 mod value;
@@ -62,6 +63,7 @@ pub use execution::{QueryResult, QueryStep, ResultBatch};
 pub use frontend::{DataType, LogicalPlan, PreparedQuery, ResultColumn};
 pub use native_unit::InputValues as ColumnValues;
 pub use storage_format::{DatabaseId, TransactionId};
+pub use table_schema::TableSchema;
 pub use transaction::{Append, Commit, CommitResolution};
 pub use value::{DateValue, StringValue, Value};
 

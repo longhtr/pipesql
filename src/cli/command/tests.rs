@@ -326,3 +326,32 @@ fn arguments_are_byte_bounded() {
     let oversized = OsString::from("x".repeat(MAX_ARGUMENT_BYTES + 1));
     assert!(check_argument(&oversized).is_err());
 }
+
+#[test]
+fn schema_requires_one_table_and_rejects_other_source_options() {
+    let base = [
+        "pipesql",
+        "schema",
+        "--database",
+        "/tmp/db",
+        "--memory-limit-bytes",
+        "1000000",
+        "--temp-limit-bytes",
+        "1000000",
+    ];
+    let valid: Vec<_> = base.into_iter().chain(["--table", "SELECT"]).collect();
+    let command = parse(args(&valid)).unwrap();
+    assert!(matches!(command.operation, Operation::Schema(name) if name == "SELECT"));
+    for suffix in [
+        vec![],
+        vec!["--table", "a", "--table", "b"],
+        vec!["--table", "a", "--schema-file", "/tmp/schema"],
+        vec!["--table", "a", "--query-file", "/tmp/query"],
+    ] {
+        let invalid: Vec<_> = base.into_iter().chain(suffix).collect();
+        assert!(parse(args(&invalid)).is_err(), "accepted {invalid:?}");
+    }
+    let mut wrong_operation = valid;
+    wrong_operation[1] = "open";
+    assert!(parse(args(&wrong_operation)).is_err());
+}

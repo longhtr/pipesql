@@ -136,7 +136,10 @@ impl fmt::Display for Error {
             ),
             Self::Contention(owner) => write!(formatter, "contention limit reached for {owner}"),
             Self::AlreadyExists => write!(formatter, "database path already exists"),
-            Self::NotFound => write!(formatter, "requested database or transaction was not found"),
+            Self::NotFound => write!(
+                formatter,
+                "requested database, table or transaction was not found"
+            ),
             Self::Locked => write!(formatter, "database is already open"),
             Self::Corrupt(message) => write!(formatter, "corrupt database namespace: {message}"),
             Self::UnsupportedVersion(version) => {

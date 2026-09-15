@@ -5,7 +5,7 @@
 //! writes directly to the caller's sink and returns the first write failure.
 //! `query` owns row framing and emits completion only after the result finishes.
 
-use pipesql::{DataType, Database, Error, PreparedQuery, Value};
+use pipesql::{DataType, Database, Error, PreparedQuery, TableSchema, Value};
 use std::io::{self, Write};
 
 pub(super) fn output_error(operation: &'static str, source: io::Error) -> Error {
@@ -56,12 +56,7 @@ pub(super) fn write_query_header(
         let column = prepared
             .result_column(index)
             .ok_or(Error::Corrupt("result column is missing"))?;
-        let data_type = match column.data_type {
-            DataType::Double => "double",
-            DataType::Int64 => "int64",
-            DataType::Date => "date",
-            DataType::String => "string",
-        };
+        let data_type = type_name(column.data_type);
         write!(
             output,
             "{}:{data_type}:{}",
@@ -77,6 +72,44 @@ pub(super) fn write_query_header(
     output
         .write_all(b"\n")
         .map_err(|source| output_error("write query schema", source))
+}
+
+pub(super) fn write_table_schema(
+    output: &mut impl Write,
+    database: &Database,
+    schema: &TableSchema<'_>,
+) -> Result<(), Error> {
+    write_database_status(output, "inspecting", database)?;
+    let result = (|| -> io::Result<()> {
+        writeln!(output, "table={}", schema.name())?;
+        writeln!(output, "generation={}", schema.generation())?;
+        writeln!(output, "column_count={}", schema.column_count())?;
+        for index in 0..schema.column_count() {
+            let column = schema.column(index).expect("validated schema position");
+            writeln!(
+                output,
+                "column[{index}]={}:{}:{}",
+                column.name,
+                type_name(column.data_type),
+                if column.nullable {
+                    "nullable"
+                } else {
+                    "required"
+                }
+            )?;
+        }
+        writeln!(output, "status=inspected")
+    })();
+    result.map_err(|source| output_error("write table schema", source))
+}
+
+fn type_name(data_type: DataType) -> &'static str {
+    match data_type {
+        DataType::Double => "double",
+        DataType::Int64 => "int64",
+        DataType::Date => "date",
+        DataType::String => "string",
+    }
 }
 
 pub(super) fn write_value(output: &mut impl Write, value: &Value<'_>) -> Result<(), Error> {

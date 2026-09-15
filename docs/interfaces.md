@@ -158,6 +158,21 @@ heap allocation; construction retains the existing memory and temporary-space
 reservations. Cancellation and invalid input release the admitted writer before
 returning. Column IDs are not part of the public input interface.
 
+`inspect_table(name, cancel, inspect)` lends one `TableSchema` to a synchronous
+callback. Lookup ignores ASCII case and preserves the declared spelling and
+column order. The view exposes the pinned generation and indexed
+`ColumnDeclaration` values; an out-of-range index returns `None`. It reads and
+validates catalog metadata without parsing SQL or reading row payloads.
+
+The snapshot pin and charged read buffers live through the callback. No registry
+mutex is held, so the callback can publish through the same database handle;
+its view keeps the original generation. Names cannot outlive the callback unless
+the caller copies them into its own storage. Read failures prevent the callback;
+callback errors propagate unchanged. Return and panic unwinding release inspection
+resources. Cancellation is checked before reads and before the callback; the
+callback controls cancellation of its own work. Invalid names return
+`Unsupported`, missing tables return `NotFound`, and legacy databases are refused.
+
 ## Streaming ingestion
 
 `Database::begin_append(name, limits, cancel)` resolves the table name, ignoring
@@ -251,11 +266,11 @@ schema.
 
 ### CLI source and path admission
 
-The CLI exposes `create`, `create-declared`, `declare`, `open`, `load`, `query`, `explain`, and `resolve`. A query or schema source
+The CLI exposes `create`, `create-declared`, `declare`, `schema`, `open`, `load`, `query`, `explain`, and `resolve`. A query or schema source
 must be a regular, non-symlink UTF-8 file of at most 4,096 bytes and remain
 unchanged while read. The CLI compares the opened descriptor with the initial
 pathname's type, identity, extent, and modification/change times. After reading,
-it rechecks the descriptor, pathname, and consumed length before preparing SQL.
+it rechecks the descriptor, pathname, and consumed length before parsing the source.
 These checks detect changes; they do not create an atomic snapshot of an
 externally mutable file.
 
@@ -300,6 +315,27 @@ Retain that token for `resolve` if needed. An existing table is rejected. A fail
 output write can follow a committed declaration, so output failure does not mean
 the table was rolled back. Ambiguous publication retains the library's outcome
 and token in its diagnostic. This command does not insert rows.
+
+### Inspect a table
+
+Run `schema --table NAME` with the database and budget options. The command uses
+`inspect_table` and writes `status=inspecting` and the common database/budget
+fields. The declaration above then produces:
+
+```text
+table=events
+generation=1
+column_count=4
+column[0]=id:int64:required
+column[1]=value:double:nullable
+column[2]=label:string:nullable
+column[3]=day:date:required
+status=inspected
+```
+
+Require exit 0 and the final marker; a failed sink can leave partial output.
+Lookup and validation failures emit no schema. As with every command that opens
+an existing database, opening can perform recovery before inspection begins.
 
 ### Explain a query
 

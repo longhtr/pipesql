@@ -75,6 +75,11 @@ fn run(command: Command, output: &mut impl Write) -> Result<(), Error> {
             write_database_status(output, "created", &database)
         }
         Operation::Declare(schema) => declaration::declare_file(&database, &schema, output),
+        Operation::Schema(name) => {
+            database.inspect_table(&name, &CancellationToken::new(), |schema| {
+                output::write_table_schema(output, &database, &schema)
+            })
+        }
         Operation::Open => write_database_status(output, "opened", &database),
         Operation::Load(input) => {
             let commit = database.load_lineitem(&input, &CancellationToken::new())?;

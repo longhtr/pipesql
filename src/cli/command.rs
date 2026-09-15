@@ -18,6 +18,7 @@ pub(super) enum Operation {
     CreateDeclared,
     Open,
     Declare(PathBuf),
+    Schema(String),
     Load(PathBuf),
     Query(PathBuf),
     Explain(PathBuf),
@@ -31,7 +32,7 @@ pub(super) struct Command {
 }
 
 fn usage() -> &'static str {
-    "usage: pipesql create|create-declared|declare|open|load|query|explain|resolve --database ABSOLUTE_PATH [--input ABSOLUTE_TBL] [--query-file ABSOLUTE_PATH] [--schema-file ABSOLUTE_PATH] [--transaction HEX_TOKEN] --memory-limit-bytes N --temp-limit-bytes N"
+    "usage: pipesql create|create-declared|declare|schema|open|load|query|explain|resolve --database ABSOLUTE_PATH [--input ABSOLUTE_TBL] [--query-file ABSOLUTE_PATH] [--schema-file ABSOLUTE_PATH] [--table NAME] [--transaction HEX_TOKEN] --memory-limit-bytes N --temp-limit-bytes N"
 }
 
 #[derive(Debug)]
@@ -76,6 +77,7 @@ pub(super) fn parse(arguments: impl Iterator<Item = OsString>) -> Result<Command
                 "create"
                     | "create-declared"
                     | "declare"
+                    | "schema"
                     | "open"
                     | "load"
                     | "query"
@@ -91,11 +93,12 @@ pub(super) fn parse(arguments: impl Iterator<Item = OsString>) -> Result<Command
     let mut input = None;
     let mut query_file = None;
     let mut schema_file = None;
+    let mut table = None;
     let mut transaction = None;
     let mut memory_limit = None;
     let mut temp_limit = None;
-    // A successful iteration consumes one of seven previously unseen options.
-    // Thus at most seven iterations advance; the next pair must terminate in an
+    // A successful iteration consumes one of eight previously unseen options.
+    // Thus at most eight iterations advance; the next pair must terminate in an
     // error. Argument capture separately bounds the entire native input.
     while let Some(option) = arguments.next() {
         check_argument(&option)?;
@@ -126,6 +129,14 @@ pub(super) fn parse(arguments: impl Iterator<Item = OsString>) -> Result<Command
             "--schema-file" => {
                 if schema_file.replace(PathBuf::from(value)).is_some() {
                     return Err("--schema-file may appear only once".into());
+                }
+            }
+            "--table" => {
+                let value = value
+                    .into_string()
+                    .map_err(|_| ArgumentError::from("--table must be UTF-8"))?;
+                if table.replace(value).is_some() {
+                    return Err("--table may appear only once".into());
                 }
             }
             "--transaction" => {
@@ -162,6 +173,9 @@ pub(super) fn parse(arguments: impl Iterator<Item = OsString>) -> Result<Command
     if operation != "declare" && schema_file.is_some() {
         return Err("--schema-file is accepted only for declare".into());
     }
+    if operation != "schema" && table.is_some() {
+        return Err("--table is accepted only for schema".into());
+    }
     let operation = match operation.as_str() {
         "create" => Operation::Create,
         "create-declared" => Operation::CreateDeclared,
@@ -169,6 +183,7 @@ pub(super) fn parse(arguments: impl Iterator<Item = OsString>) -> Result<Command
         "declare" => {
             Operation::Declare(schema_file.ok_or("--schema-file is required for declare")?)
         }
+        "schema" => Operation::Schema(table.ok_or("--table is required for schema")?),
         "load" => Operation::Load(input.ok_or("--input is required for load")?),
         "query" => Operation::Query(query_file.ok_or("--query-file is required for query")?),
         "explain" => Operation::Explain(query_file.ok_or("--query-file is required for explain")?),

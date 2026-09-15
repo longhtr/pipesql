@@ -229,7 +229,7 @@ fn stock_cli_declares_whole_schemas_before_publication() {
     let temp = TempDir::new();
     let path = temp.0.join("database");
     let schema = temp.0.join("events.schema");
-    let run = |operation: &str, schema: Option<&Path>| {
+    let run = |operation: &str, option: Option<(&str, &std::ffi::OsStr)>| {
         let mut command = Command::new(env!("CARGO_BIN_EXE_pipesql"));
         command.arg(operation).arg("--database").arg(&path).args([
             "--memory-limit-bytes",
@@ -237,8 +237,8 @@ fn stock_cli_declares_whole_schemas_before_publication() {
             "--temp-limit-bytes",
             "1048576",
         ]);
-        if let Some(schema) = schema {
-            command.arg("--schema-file").arg(schema);
+        if let Some((flag, value)) = option {
+            command.arg(flag).arg(value);
         }
         command.output().unwrap()
     };
@@ -248,7 +248,7 @@ fn stock_cli_declares_whole_schemas_before_publication() {
         "table events\nid int64 required\nid double nullable\n",
     ] {
         fs::write(&schema, text).unwrap();
-        let failure = run("declare", Some(&schema));
+        let failure = run("declare", Some(("--schema-file", schema.as_os_str())));
         assert_eq!(failure.status.code(), Some(1));
         assert!(failure.stdout.is_empty());
         let db = Database::open(&path, config()).unwrap();
@@ -256,7 +256,7 @@ fn stock_cli_declares_whole_schemas_before_publication() {
         db.close().unwrap();
     }
     fs::write(&schema, "table events\nid int64 required\nvalue double nullable\nlabel string nullable\nday date required\n").unwrap();
-    let success = run("declare", Some(&schema));
+    let success = run("declare", Some(("--schema-file", schema.as_os_str())));
     assert!(
         success.status.success(),
         "{}",
@@ -291,12 +291,58 @@ fn stock_cli_declares_whole_schemas_before_publication() {
     }
     drop(query);
     db.close().unwrap();
-    let duplicate = run("declare", Some(&schema));
+    let duplicate = run("declare", Some(("--schema-file", schema.as_os_str())));
     assert_eq!(duplicate.status.code(), Some(1));
     assert!(duplicate.stdout.is_empty());
     let db = Database::open(&path, config()).unwrap();
     assert_eq!(db.generation(), 1);
     db.close().unwrap();
+    let inspected = run("schema", Some(("--table", std::ffi::OsStr::new("EVENTS"))));
+    assert!(
+        inspected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&inspected.stderr)
+    );
+    let text = String::from_utf8(inspected.stdout).unwrap();
+    assert!(text.starts_with("status=inspecting\n"));
+    assert!(text.ends_with(concat!(
+        "table=events\ngeneration=1\ncolumn_count=4\n",
+        "column[0]=id:int64:required\n",
+        "column[1]=value:double:nullable\n",
+        "column[2]=label:string:nullable\n",
+        "column[3]=day:date:required\nstatus=inspected\n",
+    )));
+    // A closed peer before spawn makes the output failure deterministic.
+    let (writer, reader) = std::os::unix::net::UnixStream::pair().unwrap();
+    drop(reader);
+    let stdout: std::os::fd::OwnedFd = writer.into();
+    let broken = Command::new(env!("CARGO_BIN_EXE_pipesql"))
+        .args(["schema", "--table", "events", "--database"])
+        .arg(&path)
+        .args([
+            "--memory-limit-bytes",
+            "1048576",
+            "--temp-limit-bytes",
+            "1048576",
+        ])
+        .stdout(stdout)
+        .output()
+        .unwrap();
+    assert_eq!(broken.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&broken.stderr).contains("write command status"));
+    let missing = run("schema", Some(("--table", std::ffi::OsStr::new("missing"))));
+    assert_eq!(missing.status.code(), Some(1));
+    assert!(missing.stdout.is_empty());
+    let resolved = run(
+        "resolve",
+        Some(("--transaction", std::ffi::OsStr::new(token))),
+    );
+    assert!(resolved.status.success());
+    assert!(
+        String::from_utf8(resolved.stdout)
+            .unwrap()
+            .ends_with("resolution=durable\ngeneration=1\n")
+    );
 }
 
 // Measure the ordinary library handle, independently of test-only instrumentation.

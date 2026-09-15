@@ -36,7 +36,12 @@ logical plan without execution; a runtime-failing query and broken sinks exercis
 that distinction. `declare --schema-file` parses a complete bounded file before
 calling the library: `table NAME`, then `NAME TYPE required|nullable` per column.
 Shared source checks and literal schema/error tests pass; malformed and duplicate
-columns leave generation zero unchanged. Schema inspection remains unfinished.
+columns leave generation zero unchanged. `schema --table` now uses a borrowed
+`TableSchema` view over validated catalog bytes. Focused checks cover literal
+metadata, publication inside the callback, failure/unwind release, read faults,
+cancellation and admission before I/O. Stock CLI inspection and declaration-token
+resolution pass. The fresh event-report CLI walkthrough, allocation/publication
+campaign extensions and integrated/platform verification remain unfinished.
 Select focused grammar/output checks during implementation, then the existing
 CLI allocation and publication campaigns plus the integrated checkpoint. Require
 both platforms' affected evidence before synchronizing this capability.
