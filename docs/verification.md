@@ -109,20 +109,21 @@ in their dedicated sections below:
 
 ### Verification checkpoints
 
-During implementation, run focused checks for the affected semantics, ownership,
-failure and cleanup boundaries. An integrated engine capability also needs the
-ordinary workspace tests, formatting and warnings-denied compilation. Local
-commits may record those verified increments; they do not imply a passing full
-platform gate.
+Use four levels of verification:
 
-Run the full sequential gate at a completed capability checkpoint before claiming
-broad regression coverage or synchronizing that engine checkpoint. Persistence,
-native effects, allocation ownership, concurrency, toolchain and gate changes
-require the relevant complete macOS and GNU/Linux campaigns. Persistence claims
-use the qualified full-synchronization Linux path. Purely portable language or
-execution work uses the complete macOS gate and affected GNU/Linux tests during
-development, followed by both full platform gates at the integrated milestone.
-Documentation-only changes need the checks described in the engineering guide.
+| Level | Required scope |
+| --- | --- |
+| Edit loop | The smallest relevant test, normally seconds. |
+| Focused capability | Affected composition, refusal, cancellation and cleanup paths. |
+| Integrated checkpoint | Workspace tests, formatting and warnings-denied compilation. |
+| Full platform gate | Completed persistence, native, resource, concurrency or release checkpoints. |
+
+A narrow check does not establish broader evidence. Toolchain and gate changes
+must recheck the platform evidence they affect. Persistence claims use the
+qualified full-synchronization Linux path. Portable language changes normally
+progress through focused checks and an integrated checkpoint; a small goal does
+not itself require a full gate. Documentation-only changes need factual and link
+checks plus execution of changed commands or examples.
 
 Choose the checkpoint boundary before expensive verification. Several dependent
 implementation goals may form one capability checkpoint; keep their narrower

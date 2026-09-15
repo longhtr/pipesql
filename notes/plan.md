@@ -90,6 +90,47 @@ limits, remove owned artifacts, review and commit the verified change, and
 synchronize by fast-forward. This is a creation-path improvement, not a new
 explanation of the earlier platform timing discrepancy.
 
+## Next: repository consolidation
+
+After strict creation validation, consolidate the repository before adding
+features. Begin with fresh source and contract inspection, tracing the current
+production flows and test/tool entry points. The earlier build-sharing proposal
+is a candidate, not the scope of this goal.
+
+Create a temporary inventory outside the repository for every test suite,
+campaign, fixture, model, helper and verification wrapper. Record its protected
+contract or failure, production execution, oracle independence, overlapping
+checks, built artifact, approximate runtime, required run boundary and proposed
+disposition. Use source and measurements to decide what remains, merges,
+simplifies or disappears. Delete the inventory when the work is complete.
+
+Implement the resulting consolidation in verified local increments. Share common
+mechanics while keeping case meaning and expected results local. Within a frozen
+gate, build each compatible stock artifact once and share it immutably; separate
+feature sets, compiler options and instrumentation. Preserve source/artifact
+identity, subprocess failures and owned cleanup. Long checks consume an immutable
+source export so the working tree remains available for development.
+
+Remove tests that repeat the same path and premise; merge repeated setup where
+case failures remain clear. Preserve distinct invariant, public-behavior,
+independent-oracle, native-observation and platform evidence. Review production
+ownership alongside difficult tests and repair unclear boundaries rather than
+adding harness machinery. Do not introduce a framework, registry, generator or
+DSL to rearrange files.
+
+Consolidate documentation under its existing owners. Keep one runnable analytical
+example traceable through parsing, binding, validated plans, execution, storage,
+publication and recovery. Delete duplicate facts, obsolete instructions and
+obvious narration; explain concepts where they first matter.
+
+Choose the final expensive checkpoint before implementation. Use the verification
+ladder for increments, then run the required final checkpoint once the integrated
+change is ready. Demonstrate the resulting structure, justified removals/merges,
+preserved independent evidence, commands at each level, measured build/gate time
+before and after, complete required coverage, a short code reading path and any
+remaining complexity that earns its cost. Finish cleanup, authoritative guides
+and coherent local commits; do not stop at the inventory or proposal.
+
 ## Path to the internal 0.1.0 checkpoint
 
 Finish strict creation validation first. The next checkpoint is a useful local
@@ -110,7 +151,7 @@ not tasks to activate together. Scope each goal from the actual preceding result
 
 | Order | Outcome | Estimated goals | Completion evidence |
 | --- | --- | --- | --- |
-| 1 | Consolidate campaign build ownership and shorten test navigation. | 1 | The sequential gate builds one dedicated stock CLI/library set for compatible campaigns, while standalone runs retain fresh isolated builds. Keep observer builds, case expectations and failure interpretation local. Prove artifact/source checks, failure propagation and cleanup; compare coverage and total runtime. Reduce the test map to navigation and remove repeated contract prose. |
+| 1 | Consolidate the repository before extending it. | 1 | Complete the inventory-driven implementation and acceptance criteria in [repository consolidation](#next-repository-consolidation). |
 | 2 | Expose declared database creation, table declaration, schema inspection and logical plans through the stock CLI. | 1 | A fresh event-report schema can be created and inspected through existing library owners; invalid declarations retain typed failures and cause no publication. Reuse `PreparedQuery::logical_plan`; it reports logical structure, not runtime costs. Choose one explicit schema input format, with no parallel SQL frontend. |
 | 3 | Import a documented CSV profile into a declared table with bounded streaming buffers. | 2 | One goal owns decoding, types, NULLs, quoting, limits and byte-offset errors; one integrates append, cancellation, transaction tokens, reopen and ambiguous-outcome resolution. Malformed input cannot become reported success. Independent fixtures and refusal cuts cover both layers. |
 | 4 | Export typed query results in a documented machine-readable form. | 1 | A fresh report round-trips supported values, preserves NULL distinctions and requires successful query completion. File output has explicit completion/publication rules; stdout and sink failures cannot imply a complete file. Reuse the query cursor. |
@@ -126,12 +167,8 @@ milestones. Reassess after import integration and after the first window prototy
 split a goal when ownership or failure boundaries warrant it. Remove a proposed
 feature if the workflow no longer needs it, and explain the changed target.
 
-The first goal after creation removes a concrete recurring cost: several native
-campaigns rebuild the same stock library through `check_support.build_library`.
-Use one dedicated immutable stock build within the sequential gate; keep test
-binaries with different feature sets separate. Keep the existing gate and campaigns. Also run long checks from a frozen source
-export so ordinary edits do not invalidate their inputs. Then design the smallest declared-schema CLI
-interface around the event-report schema.
+Repository consolidation comes first. Then design the declared-schema CLI around
+the event-report schema.
 No buffer manager, parallel executor, format migration, distributed component or
 general optimizer is scheduled without a measured need in this workflow.
 
