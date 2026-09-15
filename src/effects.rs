@@ -1,9 +1,19 @@
-//! Named filesystem effects and deterministic fault injection.
+//! Name filesystem operations and make their failure boundaries repeatable in tests.
 //!
-//! Callers place `before` at the attempted effect and `after` at an explicit
-//! completion point. The counter includes refused attempts. Test callbacks may
-//! observe, cancel, or interrupt those points; the caller still owns recovery.
-//! These schedules supplement native failure tests, not replace OS behavior.
+//! A load or recovery operation passes one `Effects` value through its file work.
+//! Each `before` call counts an attempted effect, such as writing a root or syncing
+//! a directory. A test can fail attempt 5 on repeated runs to examine the same
+//! boundary. Refused attempts still count, so cleanup failures can be scheduled
+//! after the original failure. Production uses the default, fault-free schedule.
+//!
+//! Byte-transfer helpers perform real I/O and can stop one byte short under a test
+//! schedule. Callers place `after` only at explicit completion points; it adds no
+//! attempt and never infers completion after an error. Test callbacks can also
+//! request cancellation or interrupt the process at these boundaries.
+//!
+//! The caller still decides the commit outcome and owns cleanup or recovery.
+//! These are engine-selected checkpoints, not a trace of every OS call. Native
+//! failure campaigns separately observe the actual filesystem interface.
 
 use crate::error::io_error;
 use crate::{Error, file_io};
