@@ -1,4 +1,11 @@
-//! Shared public fixtures and result ownership; expected answers stay in each test.
+//! Share public input tables and complete result collection across capability tests.
+//!
+//! Fixtures include nullable typed rows, duplicate join keys and text edge cases.
+//! `Cell` copies borrowed values while preserving DOUBLE bits and DATE offsets.
+//! Both collectors require Finished within their work allowance; `query` compares
+//! ordered rows and checks release, while `collect_unordered` sorts for multiset
+//! comparison. Expected answers and failure interpretation stay in the test.
+
 use super::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
     DataType, Database, DateValue, Directory, Error, QueryResult, QueryStep, Value,
@@ -138,7 +145,7 @@ pub(super) fn assert_query_rows(query: &str, mut expected: Vec<Vec<Cell>>) {
     let mut result = db.execute(&prepared, &cancel).unwrap();
     let actual = collect_unordered(&mut result);
     expected.sort_unstable();
-    assert_eq!(actual, expected);
+    assert_eq!(actual, expected, "{query}");
     drop(result);
     drop(prepared);
     assert_eq!(db.reserved_memory_bytes(), resident);
@@ -148,8 +155,14 @@ pub(super) fn assert_query_rows(query: &str, mut expected: Vec<Vec<Cell>>) {
 
 /// Collect a small result as a multiset; this does not verify row order.
 pub(super) fn collect_unordered(result: &mut QueryResult<'_, '_>) -> Vec<Vec<Cell>> {
+    let mut rows = collect_rows(result, 1024, "small public fixture");
+    rows.sort_unstable();
+    rows
+}
+
+fn collect_rows(result: &mut QueryResult<'_, '_>, steps: usize, context: &str) -> Vec<Vec<Cell>> {
     let mut rows = Vec::new();
-    for _ in 0..1024 {
+    for _ in 0..steps {
         match result.step() {
             QueryStep::Rows(batch) => {
                 for row in 0..batch.len() {
@@ -161,14 +174,11 @@ pub(super) fn collect_unordered(result: &mut QueryResult<'_, '_>) -> Vec<Vec<Cel
                 }
             }
             QueryStep::Progress => (),
-            QueryStep::Finished => {
-                rows.sort_unstable();
-                return rows;
-            }
-            QueryStep::Failed(error) => panic!("query failed: {error}"),
+            QueryStep::Finished => return rows,
+            QueryStep::Failed(error) => panic!("{context}: {error}"),
         }
     }
-    panic!("small public fixture exceeded bounded progress allowance");
+    panic!("bounded progress allowance exhausted: {context}");
 }
 
 pub(super) fn query(db: &Database, sql: &str, expected: Vec<Vec<Cell>>) {
@@ -180,28 +190,7 @@ pub(super) fn query(db: &Database, sql: &str, expected: Vec<Vec<Cell>>) {
     let mut result = db
         .execute(&prepared, &cancel)
         .unwrap_or_else(|error| panic!("{sql}: {error}"));
-    let mut rows = Vec::new();
-    let mut done = false;
-    for _ in 0..100_000 {
-        match result.step() {
-            QueryStep::Progress => (),
-            QueryStep::Rows(batch) => {
-                for row in 0..batch.len() {
-                    rows.push(
-                        (0..batch.column_count())
-                            .map(|column| owned_cell(batch.value(row, column).unwrap()))
-                            .collect::<Vec<_>>(),
-                    );
-                }
-            }
-            QueryStep::Finished => {
-                done = true;
-                break;
-            }
-            QueryStep::Failed(error) => panic!("{sql}: {error}"),
-        }
-    }
-    assert!(done, "bounded ordering fixture: {sql}");
+    let rows = collect_rows(&mut result, 100_000, sql);
     assert_eq!(rows, expected, "{sql}");
     drop(result);
     drop(prepared);

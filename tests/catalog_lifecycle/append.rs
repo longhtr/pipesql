@@ -1,4 +1,10 @@
-//! Public append contract tests.
+//! Check the public append owner after invalid input, explicit abort and abandonment.
+//!
+//! A failed second write makes the append unusable; abort or reopen must settle
+//! its token as aborted and keep private rows invisible. A later healthy append
+//! returns the literal row 42. Separate literal DATE endpoints constrain caller
+//! input validation before any transaction is involved.
+
 use super::*;
 
 #[test]

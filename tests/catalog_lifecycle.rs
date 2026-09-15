@@ -1,3 +1,11 @@
+//! Exercise declared databases through the public Rust API and SQL frontend.
+//!
+//! Capability modules own literal answers, independent row models and rejection
+//! cases. `fixtures` shares only input construction, typed result capture and
+//! completion/release checks. Private phase injection and native failure campaigns
+//! remain separate. Run with `cargo test --release --test catalog_lifecycle`;
+//! `tests/README.md` maps capabilities and the verification guide selects scope.
+
 #![cfg(any(target_os = "macos", target_os = "linux"))]
 
 #[path = "catalog_lifecycle/aggregates.rs"]

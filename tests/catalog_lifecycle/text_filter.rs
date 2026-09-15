@@ -1,3 +1,10 @@
+//! Check text comparison and literal ownership through public query execution.
+//!
+//! Literal IDs distinguish escaped bytes, combining text, empty strings and NULLs;
+//! joins, grouping and sorted/derived inputs exercise the same comparison contract.
+//! Invalid literal/type combinations must fail preparation. Destroy the source
+//! string and cancel execution at successive steps, then require healthy reuse.
+
 use super::*;
 
 #[test]

@@ -1,3 +1,10 @@
+//! Check LIMIT/OFFSET as a boundary on the input stream, including early cleanup.
+//!
+//! Slice a literal ordered sequence for expected prefixes, then move filters,
+//! aggregation and joins across limits to expose different demand. Invalid bounds
+//! must fail preparation. OFFSET can still demand a failing input when LIMIT is
+//! zero; cancellation or abandoning a returned prefix must release its owners.
+
 use super::*;
 
 #[test]

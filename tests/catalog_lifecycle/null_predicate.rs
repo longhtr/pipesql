@@ -1,3 +1,10 @@
+//! Check NULL predicates on every public type and through composed producers.
+//!
+//! Literal row IDs distinguish NULL from NaN, infinity, zero and empty text.
+//! Empty aggregates and invalid syntax challenge result and preparation rules.
+//! Nullability facts must not suppress demanded arithmetic errors; retained spans,
+//! prior filters, LIMIT 0 and reservation release check that boundary.
+
 use super::*;
 
 #[test]
