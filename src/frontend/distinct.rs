@@ -7,7 +7,7 @@
 //!
 //! Binding assigns the new identities. Validation reconstructs the mapping from
 //! the input relation and rejects inconsistent identities, facts or unused slots.
-//! Physical duplicate removal belongs to execution's sorted-set operator; this
+//! Physical duplicate removal belongs to `execution::blocking::order`; this
 //! descriptor owns no rows, sorting buffers or aggregate state.
 
 use super::{
