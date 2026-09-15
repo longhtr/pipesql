@@ -1,4 +1,11 @@
-//! Observe the production helper's capacity preflight through the caller allocator.
+//! Observe allocation-capacity preflight through the caller's allocator.
+//!
+//! Include the private production resource helper directly, without adding an
+//! engine hook. Literal cases distinguish refusal before allocation, a refused
+//! allocator call, and admitted empty/exact/spare capacity. The reservation must
+//! outlive the returned vector and release independently. The parent
+//! `diagnostic-allocation.rs` owns the allocator and dispatches this probe.
+
 use super::{ALLOW, CALLS, DENY, Error, REFUSED, TRACK};
 use std::sync::atomic::Ordering;
 

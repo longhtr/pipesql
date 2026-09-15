@@ -1,4 +1,9 @@
-// Read-only GNU/Linux observation of the stock catalog caller's root identities.
+// Observe GNU/Linux root-file identity without changing production results.
+// Remember pathname lstat, then compare opened-descriptor fstat/statx on the same
+// thread. A disagreement emits both observations and a fresh pathname check;
+// failed or truncated diagnostics exit unsuccessfully. Extra metadata calls can
+// affect timing, so this is not a concurrency oracle. The stable/replacement
+// control and invocation live beside the diagnostic in tools/README.md.
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>

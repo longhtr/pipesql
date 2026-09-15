@@ -1,7 +1,10 @@
 /* Isolate allocator reuse from the engine and its Rust allocation observer.
  * The smaller request and larger usable extent come from the retained wide-join
  * diagnostic. Seeding with that larger extent is a controlled history, not a
- * reconstruction of every allocation in the original query. */
+ * reconstruction of every allocation in the original query. Cold mode skips
+ * that seed; both modes report requested/usable bytes only after freeing owners.
+ * tools/README.md owns the comparison command. This is an allocator diagnostic,
+ * not an engine admission or whole-process memory bound. */
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>

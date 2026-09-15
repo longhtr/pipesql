@@ -1,4 +1,12 @@
-//! Stock public catalog operations with an external native termination observer.
+//! Exercise stock catalog append and recovery around native termination cuts.
+//!
+//! The Python supervisor chooses a cut; the linked C observer records actual
+//! mutations and exits without Rust teardown. On fresh or reopened databases,
+//! literal row multiplicities and token histories distinguish unissued, aborted
+//! and committed attempts. A healthy retry must preserve earlier outcomes.
+//! Wrong-row and wrong-receipt modes must fail. The report module adds mixed typed
+//! input; check-catalog-interruption.py independently decodes each resulting graph.
+
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues,
     CommitResolution, Config, DataType, Database, Error, QueryStep, TransactionId, Value,

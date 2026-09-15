@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
-"""Stock native catalog process interruption at observed native mutation cuts.
+"""Check stock catalog recovery after termination at observed native mutation cuts.
 
-Fresh copies isolate each cut. Visible writes survive termination; this does not
-model power loss, torn writes, kernel failure or arbitrary concurrent mutations.
+Record a healthy append trace, then replay every before/after event on a fresh
+seed copy. Root-A replacements distinguish issuance from data publication.
+Interrupted recovery gets its own cut sequence. Rust callers verify literal
+rows, report groups and token outcomes after reopen and retry; the independent
+Python inspector separately checks raw graph contents. Wrong histories, rows
+and receipts must be rejected by the controls.
+
+The full gate invokes this campaign on frozen source. A standalone run owns
+disposable outputs unless --output requests a new retained replay directory.
+Visible writes survive termination: this does not model power loss, torn writes,
+kernel failure or arbitrary concurrent mutation. See tools/README.md for scope.
 """
 from pathlib import Path
 import argparse

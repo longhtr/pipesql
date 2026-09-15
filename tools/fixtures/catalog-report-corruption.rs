@@ -1,4 +1,11 @@
-//! Public demand and recovery checks over a quiescent mixed report graph.
+//! Distinguish metadata admission from demanded payload validation in the report.
+//!
+//! The Python graph campaign mutates quiescent copies of the stock-created input.
+//! Version, corrupt metadata and unresolved recovery have separate expected errors.
+//! A damaged measurement column may leave the report readable because that query
+//! does not use it; selecting measurement must then fail before rows and release.
+//! Local literal groups check healthy execution again after the failed demand.
+
 use pipesql::{
     AppendLimits, CancellationToken, Config, Database, Error, PreparedQuery, QueryStep, Value,
 };

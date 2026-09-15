@@ -1,5 +1,9 @@
-// Single-threaded stock caller. Observe real mutations and terminate
-// without engine teardown at one recorded before/after boundary. No write loss.
+// Record real native mutations and terminate at one before/after boundary.
+// The single-threaded Rust caller owns the trace descriptor and arms a cut;
+// cut zero records a healthy trace. Trace writes are excluded from observation.
+// At the chosen event, _exit(86) bypasses engine teardown while retaining visible
+// writes. check-catalog-interruption.py checks exact trace prefixes and reopened
+// outcomes. This models process termination, not power loss or torn writes.
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdint.h>

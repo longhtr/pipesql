@@ -1,4 +1,10 @@
-//! Narrow caller around unchanged CLI source; native rename refusal is external.
+//! Run the real CLI with an external rename-refusal observer.
+//!
+//! The included CLI keeps its own argument parsing, output and exit status. Arm
+//! the linked observer before entry, then report how many renames it saw without
+//! changing that status. check-cli-allocation.py supplies the cut and checks
+//! transaction output, publication outcome and healthy reopen separately.
+
 #[allow(dead_code)]
 mod cli {
     include!("../../src/cli/mod.rs");

@@ -1,4 +1,7 @@
-// Independent observer controls: a stable file and an intentional replacement.
+// Challenge the identity observer with a stable file and deliberate replacement.
+// Both files contain the same bytes, so pathname lstat and opened-descriptor statx
+// must distinguish identity rather than content. This standalone GNU/Linux caller
+// runs no engine code. tools/README.md owns compilation and observer comparison.
 #define _GNU_SOURCE
 #include <assert.h>
 #include <fcntl.h>

@@ -1,4 +1,11 @@
-//! Stock persisted graphs for an independent external reader.
+//! Create stock persisted graphs for the independent Python graph inspector.
+//!
+//! The seed has two tables, two data appends and aborted attempts. Local expected
+//! rows check NULLs, raw floating bits, text and DATE endpoints after reopen;
+//! receipt checks separately verify which attempts committed. Other modes hold
+//! a real lease or require public open/query rejection. check-catalog-graph.py
+//! owns copied mutations and independent decoding, including report cases.
+
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues,
     CommitResolution, Config, DataType, Database, DateValue, QueryStep, TransactionId, Value,

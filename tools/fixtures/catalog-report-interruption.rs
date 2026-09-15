@@ -1,4 +1,11 @@
-//! Mixed typed append/recovery history for the existing native cut observer.
+//! Carry the event report through interrupted append, recovery and healthy retry.
+//!
+//! Two writes form one publication. A prepared old report must retain its original
+//! rows after a successful append; reopened reports follow the settled attempt.
+//! Local OLD/NEW tuples supply expected groups independently of event_data's input
+//! construction. The parent caller owns tokens and observer setup; the Python
+//! supervisor owns cut enumeration, raw graph checks and wrong-answer controls.
+
 use super::{durable, interruption_start, interruption_stop, token};
 use pipesql::{
     AppendLimits, CancellationToken, CommitResolution, Config, Database, Error, PreparedQuery,

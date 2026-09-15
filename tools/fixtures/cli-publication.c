@@ -1,5 +1,7 @@
-// Single-threaded CLI caller observer: refuse one actual rename before it runs.
-// No namespace is changed by the observer; all other calls forward unchanged.
+// Refuse one actual rename before it runs in a single-threaded CLI caller.
+// All other calls forward unchanged; the observer does not edit the namespace.
+// cli-publication.rs arms the selected position and preserves the CLI exit status.
+// check-cli-allocation.py interprets tokens and persisted outcomes afterward.
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
