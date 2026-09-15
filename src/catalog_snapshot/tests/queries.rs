@@ -1,4 +1,11 @@
-//! Catalog scan values, pinned readers, demand, cancellation, and result ownership.
+//! Check native catalog readers from pinned object references to borrowed result rows.
+//!
+//! Literal text, dates, numeric bits and NULLs cross unit and batch boundaries.
+//! Reader-transfer and small-stack cases protect ownership beyond one call.
+//! Corrupt only a selected payload to distinguish skipped source reads from
+//! demanded reads: scalar branch skipping alone does not skip potential source
+//! dependencies. Cancellation and refusal must release the complete query owner.
+
 use super::{Fixture, append_columns, declarations, object};
 use crate::catalog;
 use crate::catalog_schema::{self, TableId};
@@ -15,7 +22,7 @@ fn catalog_native_text_feeds_bounded_result_ownership() {
     use crate::frontend::DataType;
     use crate::{StringValue, Value};
     let parent = Fixture::directory();
-    let path = parent.0.join("text-results");
+    let path = parent.root().join("text-results");
     let database = Database::create_catalog_with_effects(
         &path,
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
@@ -149,7 +156,7 @@ fn check_catalog_reader_transfer(small_stack: bool) {
     }
 
     let parent = Fixture::directory();
-    let path = parent.0.join("owned-readers");
+    let path = parent.root().join("owned-readers");
     let database = Database::create_catalog_with_effects(
         &path,
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
@@ -338,7 +345,7 @@ fn catalog_query_scans_pinned_generations_and_reopen() {
         panic!("query did not finish within its finite test budget");
     }
     let parent = Fixture::directory();
-    let path = parent.0.join("native-query");
+    let path = parent.root().join("native-query");
     let config = crate::Config::new(4_000_000, 2_000_000).unwrap();
     let db = Database::create_catalog_with_effects(&path, config, &mut Effects::default()).unwrap();
     let table = TableId::new(17).unwrap();
@@ -419,7 +426,7 @@ fn catalog_text_queries_fit_reported_stack_allowance() {
 fn check_catalog_text_queries(small_stack: bool) {
     use crate::{QueryStep, Value};
     let parent = Fixture::directory();
-    let path = parent.0.join("native-text-query");
+    let path = parent.root().join("native-text-query");
     let config = crate::Config::new(4_000_000, 2_000_000).unwrap();
     let db = Database::create_catalog_with_effects(&path, config, &mut Effects::default()).unwrap();
     let table = TableId::new(17).unwrap();
@@ -551,7 +558,7 @@ fn catalog_query_reads_only_demanded_payloads() {
     // Each independent fixture retains eight prepared pins, at the limit.
     for function in ["BYTE_LENGTH", "CHAR_LENGTH"] {
         let parent = Fixture::directory();
-        let path = parent.0.join("native-demand");
+        let path = parent.root().join("native-demand");
         let config = crate::Config::new(4_000_000, 2_000_000).unwrap();
         let db =
             Database::create_catalog_with_effects(&path, config, &mut Effects::default()).unwrap();
@@ -660,7 +667,7 @@ fn catalog_query_typed_nulls_cross_row_quanta() {
     use crate::frontend::DataType;
     use crate::{QueryStep, Value};
     let parent = Fixture::directory();
-    let path = parent.0.join("native-typed-query");
+    let path = parent.root().join("native-typed-query");
     let db = Database::create_catalog_with_effects(
         &path,
         crate::Config::new(4_000_000, 2_000_000).unwrap(),
@@ -796,7 +803,7 @@ fn year_extraction_reads_only_demanded_date_payloads() {
         AppendLimits, ColumnDeclaration, ColumnInput, ColumnValues, DataType, DateValue, QueryStep,
     };
     let parent = Fixture::directory();
-    let path = parent.0.join("year-demand");
+    let path = parent.root().join("year-demand");
     let db =
         Database::create_empty(&path, crate::Config::new(4_000_000, 2_000_000).unwrap()).unwrap();
     let cancel = CancellationToken::new();

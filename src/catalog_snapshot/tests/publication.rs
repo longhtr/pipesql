@@ -56,7 +56,7 @@ fn second_catalog_commit_effect_cuts_select_and_repair_an_honest_snapshot() {
         ..Faults::default()
     });
     if let Err(failure) = publish_snapshot(
-        &baseline.0,
+        baseline.root(),
         issued,
         second,
         &CancellationToken::new(),
@@ -83,7 +83,7 @@ fn second_catalog_commit_effect_cuts_select_and_repair_an_honest_snapshot() {
             ..Faults::default()
         });
         let result = publish_snapshot(
-            &fixture.0,
+            fixture.root(),
             issued,
             second,
             &CancellationToken::new(),
@@ -137,7 +137,7 @@ fn invalid_catalog_transitions_refuse_before_effects() {
         let mut effects = Effects::default();
         assert!(
             publish_snapshot(
-                &fixture.0,
+                fixture.root(),
                 old,
                 new,
                 &CancellationToken::new(),

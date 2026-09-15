@@ -1,4 +1,11 @@
-//! Streaming batch ownership, admission refusal, and cleanup through publication.
+//! Check append ownership across borrowed batches and one catalog publication.
+//!
+//! Literal numeric/text rows expose stored bits, NULLs and declaration-order mapping.
+//! Reuse caller buffers between writes, retain older snapshots and resolve receipts
+//! after reopen. Exact growth/space limits must refuse before unauthorized work;
+//! second-batch and commit cuts must clean the entire unpublished prefix or retain
+//! honest recovery debt. Ordinary and bounded-stack runs share the append flow.
+
 use super::{Fixture, append_columns, declarations, snapshot_cells, token};
 use crate::catalog;
 use crate::catalog_schema::{self, TableId};
@@ -27,7 +34,7 @@ fn positional_append_columns() -> [crate::catalog_snapshot::ColumnInput<'static>
 fn streaming_database() -> (Fixture, Database, TableId) {
     let fixture = Fixture::directory();
     let db = Database::create_catalog_with_effects(
-        &fixture.0.join("db"),
+        &fixture.root().join("db"),
         crate::Config::new(4_000_000, 2_000_000).unwrap(),
         &mut Effects::default(),
     )
@@ -50,7 +57,7 @@ fn streaming_database() -> (Fixture, Database, TableId) {
 fn catalog_engine_append_preserves_values_snapshots_and_receipts() {
     let fixture = Fixture::new();
     let config = crate::Config::new(2_000_000, 1_000_000).unwrap();
-    let database = Database::open(&fixture.0, config).unwrap();
+    let database = Database::open(fixture.root(), config).unwrap();
     let cancel = CancellationToken::new();
     let table = TableId::new(17).unwrap();
     database
@@ -102,7 +109,7 @@ fn catalog_engine_append_preserves_values_snapshots_and_receipts() {
     drop(new);
     drop(old);
     database.close().unwrap();
-    let database = Database::open(&fixture.0, config).unwrap();
+    let database = Database::open(fixture.root(), config).unwrap();
     for commit in [first, second] {
         assert_eq!(
             database.resolve_commit(commit.transaction()).unwrap(),
@@ -119,7 +126,7 @@ fn catalog_engine_append_preserves_values_snapshots_and_receipts() {
 fn catalog_engine_append_refuses_space_without_issuing() {
     let fixture = Fixture::new();
     let database =
-        Database::open(&fixture.0, crate::Config::new(2_000_000, 4520).unwrap()).unwrap();
+        Database::open(fixture.root(), crate::Config::new(2_000_000, 4520).unwrap()).unwrap();
     let cancel = CancellationToken::new();
     let table = TableId::new(17).unwrap();
     database
@@ -133,7 +140,7 @@ fn catalog_engine_append_refuses_space_without_issuing() {
             &mut Effects::default(),
         )
         .unwrap();
-    let before = fs::read(fixture.0.join(WAL_NAME)).unwrap();
+    let before = fs::read(fixture.root().join(WAL_NAME)).unwrap();
     assert!(matches!(
         database.catalog_writer().unwrap().append(
             table,
@@ -143,7 +150,7 @@ fn catalog_engine_append_refuses_space_without_issuing() {
         ),
         Err(Error::Resource { .. })
     ));
-    assert_eq!(fs::read(fixture.0.join(WAL_NAME)).unwrap(), before);
+    assert_eq!(fs::read(fixture.root().join(WAL_NAME)).unwrap(), before);
     assert_eq!(fs::read_dir(fixture.objects()).unwrap().count(), 3);
     assert_eq!(database.reserved_temp_bytes(), 0);
     database.catalog_writer().unwrap().abort_unbuilt().unwrap();
@@ -156,7 +163,7 @@ fn catalog_engine_append_cleans_construction_failures() {
     let table = TableId::new(17).unwrap();
     let setup = || {
         let fixture = Fixture::new();
-        let database = Database::open(&fixture.0, config).unwrap();
+        let database = Database::open(fixture.root(), config).unwrap();
         database
             .catalog_writer()
             .unwrap()
@@ -254,7 +261,7 @@ fn catalog_streaming_append_reuses_inputs_and_publishes_once() {
     use crate::catalog_snapshot::AppendLimits;
     use crate::{QueryStep, Value};
     let parent = Fixture::directory();
-    let path = parent.0.join("streaming-append");
+    let path = parent.root().join("streaming-append");
     let config = crate::Config::new(4_000_000, 2_000_000).unwrap();
     let db = Database::create_catalog_with_effects(&path, config, &mut Effects::default()).unwrap();
     let cancel = CancellationToken::new();

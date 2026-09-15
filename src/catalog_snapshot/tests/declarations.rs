@@ -1,4 +1,11 @@
-//! Table identities, bounded declaration construction, and rollback/reopen.
+//! Check table declaration from admission through publication, failure and reopen.
+//!
+//! Inspect persisted identities and old snapshots after successful declarations.
+//! Literal construction-space boundaries and unchanged WAL bytes constrain refusal
+//! before attempt issuance. Observed construction, unlink and synchronization cuts
+//! distinguish cleaned failures from recovery debt. Maximum-width cases also run
+//! on a separately bounded stack; they share functional assertions.
+
 use super::{Fixture, declarations, object, token};
 use crate::catalog;
 use crate::catalog_schema::{self, TableId};
@@ -13,7 +20,7 @@ use std::sync::{Arc, Mutex};
 fn catalog_engine_creates_declared_tables_and_preserves_old_views() {
     let fixture = Fixture::new();
     let config = crate::Config::new(2_000_000, 1_000_000).unwrap();
-    let database = Database::open(&fixture.0, config).unwrap();
+    let database = Database::open(fixture.root(), config).unwrap();
     let cancel = CancellationToken::new();
     let first = database
         .catalog_writer()
@@ -58,7 +65,7 @@ fn catalog_engine_creates_declared_tables_and_preserves_old_views() {
         .unwrap();
     assert_eq!(stored.table(), TableId::new(17).unwrap());
     assert_eq!(stored.column(1).unwrap(), declarations()[1]);
-    let before = fs::read(fixture.0.join(WAL_NAME)).unwrap();
+    let before = fs::read(fixture.root().join(WAL_NAME)).unwrap();
     assert!(
         database
             .catalog_writer()
@@ -72,7 +79,7 @@ fn catalog_engine_creates_declared_tables_and_preserves_old_views() {
             )
             .is_err()
     );
-    assert_eq!(fs::read(fixture.0.join(WAL_NAME)).unwrap(), before);
+    assert_eq!(fs::read(fixture.root().join(WAL_NAME)).unwrap(), before);
     assert_eq!(database.reserved_temp_bytes(), 0);
     for commit in [first, second] {
         assert_eq!(
@@ -82,7 +89,7 @@ fn catalog_engine_creates_declared_tables_and_preserves_old_views() {
     }
     drop(old);
     database.close().unwrap();
-    let database = Database::open(&fixture.0, config).unwrap();
+    let database = Database::open(fixture.root(), config).unwrap();
     let view = database.catalog_snapshot().unwrap();
     let catalog = view
         .read_catalog(&mut buffer, &cancel, &mut Effects::default())
@@ -103,9 +110,12 @@ fn catalog_engine_create_reserves_publication_peak_before_issuance() {
     // and one live replacement root (4096) require 4520 temporary bytes.
     for limit in [4519, 4520] {
         let fixture = Fixture::new();
-        let database =
-            Database::open(&fixture.0, crate::Config::new(2_000_000, limit).unwrap()).unwrap();
-        let before = fs::read(fixture.0.join(WAL_NAME)).unwrap();
+        let database = Database::open(
+            fixture.root(),
+            crate::Config::new(2_000_000, limit).unwrap(),
+        )
+        .unwrap();
+        let before = fs::read(fixture.root().join(WAL_NAME)).unwrap();
         let result = database.catalog_writer().unwrap().create_table(
             "facts",
             TableId::new(17).unwrap(),
@@ -118,7 +128,7 @@ fn catalog_engine_create_reserves_publication_peak_before_issuance() {
                 result,
                 Err(Error::Resource { required: 4520, .. })
             ));
-            assert_eq!(fs::read(fixture.0.join(WAL_NAME)).unwrap(), before);
+            assert_eq!(fs::read(fixture.root().join(WAL_NAME)).unwrap(), before);
             assert_eq!(fs::read_dir(fixture.objects()).unwrap().count(), 0);
         } else {
             assert_eq!(result.unwrap().transaction(), token(3));
@@ -133,7 +143,7 @@ fn catalog_engine_create_reserves_publication_peak_before_issuance() {
 fn catalog_engine_create_cleans_every_construction_failure() {
     let config = crate::Config::new(2_000_000, 1_000_000).unwrap();
     let baseline = Fixture::new();
-    let database = Database::open(&baseline.0, config).unwrap();
+    let database = Database::open(baseline.root(), config).unwrap();
     let trace = Arc::new(Mutex::new(Vec::new()));
     let observed = trace.clone();
     let mut effects = Effects::with_faults(Faults {
@@ -175,7 +185,7 @@ fn catalog_engine_create_cleans_every_construction_failure() {
         .0;
     for &(cut, _) in &trace[start..=end] {
         let fixture = Fixture::new();
-        let database = Database::open(&fixture.0, config).unwrap();
+        let database = Database::open(fixture.root(), config).unwrap();
         let result = database.catalog_writer().unwrap().create_table(
             "facts",
             TableId::new(17).unwrap(),
@@ -214,7 +224,7 @@ fn catalog_engine_create_cleans_every_construction_failure() {
     // missing filename after failed sync must not release the temporary charge.
     for offset in [1, 3] {
         let fixture = Fixture::new();
-        let database = Database::open(&fixture.0, config).unwrap();
+        let database = Database::open(fixture.root(), config).unwrap();
         let result = database.catalog_writer().unwrap().create_table(
             "facts",
             TableId::new(17).unwrap(),
@@ -233,7 +243,7 @@ fn catalog_engine_create_cleans_every_construction_failure() {
             Err(Error::RecoveryRequired { .. })
         ));
         database.close().unwrap();
-        let reopened = Database::open(&fixture.0, config).unwrap();
+        let reopened = Database::open(fixture.root(), config).unwrap();
         assert_eq!(fs::read_dir(fixture.objects()).unwrap().count(), 0);
         assert_eq!(
             reopened.resolve_commit(token(3)).unwrap(),
@@ -249,7 +259,7 @@ fn catalog_engine_create_recovery_retries_unlink_and_sync() {
     let config = crate::Config::new(2_000_000, 1_000_000).unwrap();
     let prepare = || {
         let fixture = Fixture::new();
-        let database = Database::open(&fixture.0, config).unwrap();
+        let database = Database::open(fixture.root(), config).unwrap();
         database
             .catalog_writer()
             .unwrap()
@@ -276,7 +286,7 @@ fn catalog_engine_create_recovery_retries_unlink_and_sync() {
     let trace = Arc::new(Mutex::new(Vec::new()));
     let observed = trace.clone();
     Database::open_with_effects(
-        &baseline.0,
+        baseline.root(),
         config,
         &mut Effects::with_faults(Faults {
             action: Some(Box::new(move |index, effect| {
@@ -306,7 +316,7 @@ fn catalog_engine_create_recovery_retries_unlink_and_sync() {
             .collect();
         assert!(
             Database::open_with_effects(
-                &fixture.0,
+                fixture.root(),
                 config,
                 &mut Effects::with_faults(Faults {
                     fail_at: Some(cut),
@@ -321,7 +331,7 @@ fn catalog_engine_create_recovery_retries_unlink_and_sync() {
         let barriers = Arc::new(AtomicU64::new(0));
         let observed = barriers.clone();
         let database = Database::open_with_effects(
-            &fixture.0,
+            fixture.root(),
             config,
             &mut Effects::with_faults(Faults {
                 action: Some(Box::new(move |_, effect| {
@@ -350,7 +360,7 @@ fn catalog_engine_create_recovery_retries_unlink_and_sync() {
 fn catalog_declaration_assigns_identities_across_abort_and_reopen() {
     use crate::catalog_snapshot::ColumnDeclaration;
     let parent = Fixture::directory();
-    let path = parent.0.join("declared-identities");
+    let path = parent.root().join("declared-identities");
     let config = crate::Config::new(4_000_000, 2_000_000).unwrap();
     let db = Database::create_catalog_with_effects(&path, config, &mut Effects::default()).unwrap();
     let cancel = CancellationToken::new();
@@ -433,7 +443,7 @@ fn catalog_declaration_assigns_identities_across_abort_and_reopen() {
 fn catalog_declaration_rejection_releases_writer_without_issuance() {
     use crate::catalog_snapshot::{ColumnDeclaration, REGISTRY_BYTES};
     let parent = Fixture::directory();
-    let path = parent.0.join("rejected-declarations");
+    let path = parent.root().join("rejected-declarations");
     let config = crate::Config::new(4_000_000, 2_000_000).unwrap();
     let db = Database::create_catalog_with_effects(&path, config, &mut Effects::default()).unwrap();
     let cancel = CancellationToken::new();
@@ -520,7 +530,7 @@ fn catalog_declaration_maximum_columns_has_bounded_reported_stack() {
 fn check_maximum_declaration(small_stack: bool) {
     use crate::catalog_snapshot::ColumnDeclaration;
     let parent = Fixture::directory();
-    let path = parent.0.join("maximum-declaration");
+    let path = parent.root().join("maximum-declaration");
     let config = crate::Config::new(4_000_000, 2_000_000).unwrap();
     let db = Database::create_catalog_with_effects(&path, config, &mut Effects::default()).unwrap();
     let names: Vec<_> = (0..64).map(|i| format!("column_{i}")).collect();

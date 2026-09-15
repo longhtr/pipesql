@@ -1,4 +1,11 @@
-//! Reader pins, concurrent publication, writer abandonment, and receipt lookup.
+//! Check pinned generations and transaction outcomes while catalog state changes.
+//!
+//! Hold old readers across publication, writer abandonment and abort gaps; compare
+//! their rows with new snapshots and durable receipt identities. Thread handoffs
+//! and effect callbacks check that publication does not hold the registry lock
+//! across I/O. Failed issuance, lookup, lease checks and exhausted pin/memory limits
+//! must leave honest outcomes and release temporary owners before healthy reuse.
+
 use super::{Fixture, first_commit, graph, snapshot_rows, token};
 use crate::catalog;
 use crate::effects::{Effects, Faults};
@@ -14,7 +21,7 @@ fn database_snapshot_survives_real_publication_and_abort_gap() {
     let (_, unit) = first_commit(&fixture);
     let database = Arc::new(
         Database::open(
-            &fixture.0,
+            fixture.root(),
             crate::Config::new(2_000_000, 1_000_000).unwrap(),
         )
         .unwrap(),
@@ -131,7 +138,7 @@ fn database_snapshot_capacity_and_abandoned_writer_preserve_old_views() {
     let fixture = Fixture::new();
     let (_, unit) = first_commit(&fixture);
     let database = Database::open(
-        &fixture.0,
+        fixture.root(),
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
@@ -189,7 +196,7 @@ fn database_snapshot_capacity_and_abandoned_writer_preserve_old_views() {
     drop(pins);
     database.close().unwrap();
     let reopened = Database::open(
-        &fixture.0,
+        fixture.root(),
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
@@ -202,7 +209,7 @@ fn catalog_writer_failure_reopens_to_an_honest_receipt() {
     let config = crate::Config::new(2_000_000, 1_000_000).unwrap();
     let baseline = Fixture::new();
     let (_, unit) = first_commit(&baseline);
-    let database = Database::open(&baseline.0, config).unwrap();
+    let database = Database::open(baseline.root(), config).unwrap();
     let mut writer = database.catalog_writer().unwrap();
     writer
         .issue(&CancellationToken::new(), &mut Effects::default())
@@ -221,7 +228,7 @@ fn catalog_writer_failure_reopens_to_an_honest_receipt() {
     for cut in 0..cuts {
         let fixture = Fixture::new();
         let (_, unit) = first_commit(&fixture);
-        let database = Database::open(&fixture.0, config).unwrap();
+        let database = Database::open(fixture.root(), config).unwrap();
         let old = database.catalog_snapshot().unwrap();
         let mut writer = database.catalog_writer().unwrap();
         assert_eq!(
@@ -255,7 +262,7 @@ fn catalog_writer_failure_reopens_to_an_honest_receipt() {
         );
         drop(old);
         database.close().unwrap();
-        let reopened = Database::open(&fixture.0, config).unwrap();
+        let reopened = Database::open(fixture.root(), config).unwrap();
         assert_eq!(
             reopened.resolve_commit(token(3)).unwrap(),
             CommitResolution::Durable(Commit {
@@ -284,7 +291,7 @@ fn catalog_resolution_failures_release_index_pins_and_scratch() {
     let fixture = Fixture::new();
     first_commit(&fixture);
     let database = Database::open(
-        &fixture.0,
+        fixture.root(),
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
@@ -332,7 +339,7 @@ fn catalog_issuance_failure_never_becomes_a_successful_receipt() {
     let config = crate::Config::new(2_000_000, 1_000_000).unwrap();
     let baseline = Fixture::new();
     first_commit(&baseline);
-    let database = Database::open(&baseline.0, config).unwrap();
+    let database = Database::open(baseline.root(), config).unwrap();
     let mut writer = database.catalog_writer().unwrap();
     let mut effects = Effects::default();
     writer
@@ -348,7 +355,7 @@ fn catalog_issuance_failure_never_becomes_a_successful_receipt() {
     for cut in 0..cuts {
         let fixture = Fixture::new();
         first_commit(&fixture);
-        let database = Database::open(&fixture.0, config).unwrap();
+        let database = Database::open(fixture.root(), config).unwrap();
         let old = database.catalog_snapshot().unwrap();
         let mut writer = database.catalog_writer().unwrap();
         let mut effects = Effects::with_faults(Faults {
@@ -369,7 +376,7 @@ fn catalog_issuance_failure_never_becomes_a_successful_receipt() {
         assert_eq!(snapshot_rows(&old, &fixture.objects()), 4);
         drop(old);
         database.close().unwrap();
-        let reopened = Database::open(&fixture.0, config).unwrap();
+        let reopened = Database::open(fixture.root(), config).unwrap();
         match reopened.resolve_commit(token(4)) {
             Err(Error::NotFound) => unissued_seen = true,
             Ok(CommitResolution::Aborted) => aborted_seen = true,
@@ -386,24 +393,32 @@ fn catalog_writer_checks_held_lease_before_publication() {
     let fixture = Fixture::new();
     first_commit(&fixture);
     let database = Database::open(
-        &fixture.0,
+        fixture.root(),
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
     let mut writer = database.catalog_writer().unwrap();
-    let root = fs::read(fixture.0.join(ROOT_A_NAME)).unwrap();
-    let wal = fs::read(fixture.0.join(WAL_NAME)).unwrap();
-    let original_lock = fixture.0.with_extension("held-lock");
-    fs::rename(fixture.0.join(crate::namespace::LOCK_NAME), &original_lock).unwrap();
-    fs::write(fixture.0.join(crate::namespace::LOCK_NAME), []).unwrap();
+    let root = fs::read(fixture.root().join(ROOT_A_NAME)).unwrap();
+    let wal = fs::read(fixture.root().join(WAL_NAME)).unwrap();
+    let original_lock = fixture.root().with_extension("held-lock");
+    fs::rename(
+        fixture.root().join(crate::namespace::LOCK_NAME),
+        &original_lock,
+    )
+    .unwrap();
+    fs::write(fixture.root().join(crate::namespace::LOCK_NAME), []).unwrap();
     assert!(matches!(
         writer.issue(&CancellationToken::new(), &mut Effects::default()),
         Err(Error::RecoveryRequired { .. })
     ));
-    assert_eq!(fs::read(fixture.0.join(ROOT_A_NAME)).unwrap(), root);
-    assert_eq!(fs::read(fixture.0.join(WAL_NAME)).unwrap(), wal);
-    fs::remove_file(fixture.0.join(crate::namespace::LOCK_NAME)).unwrap();
-    fs::rename(original_lock, fixture.0.join(crate::namespace::LOCK_NAME)).unwrap();
+    assert_eq!(fs::read(fixture.root().join(ROOT_A_NAME)).unwrap(), root);
+    assert_eq!(fs::read(fixture.root().join(WAL_NAME)).unwrap(), wal);
+    fs::remove_file(fixture.root().join(crate::namespace::LOCK_NAME)).unwrap();
+    fs::rename(
+        original_lock,
+        fixture.root().join(crate::namespace::LOCK_NAME),
+    )
+    .unwrap();
     drop(writer);
     database.close().unwrap();
 }
@@ -413,14 +428,14 @@ fn catalog_registry_and_lookup_share_the_database_memory_limit() {
     let fixture = Fixture::new();
     first_commit(&fixture);
     let database = Database::open(
-        &fixture.0,
+        fixture.root(),
         crate::Config::new(2_000_000, 1_000_000).unwrap(),
     )
     .unwrap();
     let path_bytes = database.path_memory_bytes();
     database.close().unwrap();
     let database = Database::open(
-        &fixture.0,
+        fixture.root(),
         crate::Config::new(
             path_bytes + catalog::SNAPSHOT_SCRATCH_BYTES as u64,
             1_000_000,
@@ -448,15 +463,16 @@ fn catalog_registry_and_lookup_share_the_database_memory_limit() {
 fn catalog_construction_charge_does_not_invalidate_settled_receipts() {
     let fixture = Fixture::new();
     first_commit(&fixture);
-    let database = Database::open(&fixture.0, crate::Config::new(2_000_000, 100).unwrap()).unwrap();
-    let before = fs::read(fixture.0.join(WAL_NAME)).unwrap();
+    let database =
+        Database::open(fixture.root(), crate::Config::new(2_000_000, 100).unwrap()).unwrap();
+    let before = fs::read(fixture.root().join(WAL_NAME)).unwrap();
     let mut writer = database.catalog_writer().unwrap();
     assert!(matches!(
         writer.reserve_construction(101),
         Err(Error::Resource { .. })
     ));
     assert_eq!(database.reserved_temp_bytes(), 0);
-    assert_eq!(fs::read(fixture.0.join(WAL_NAME)).unwrap(), before);
+    assert_eq!(fs::read(fixture.root().join(WAL_NAME)).unwrap(), before);
     writer.reserve_construction(100).unwrap();
     assert_eq!(database.reserved_temp_bytes(), 100);
     assert_eq!(

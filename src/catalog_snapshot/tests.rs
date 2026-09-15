@@ -1,5 +1,16 @@
-//! Shared on-disk catalog fixtures and value readers. Contract modules own their
-//! expectations and fault schedules; these helpers construct and inspect inputs.
+//! Build and inspect file graphs for catalog publication and recovery tests.
+//!
+//! `Fixture` can create an empty owned directory or a controlled catalog genesis.
+//! Retained independent schema/unit bytes anchor the first graph; later graphs use
+//! production encoders. Direct object writes let child suites create states that
+//! normal public calls cannot produce. Explicit synchronization establishes their
+//! starting files before fault observation begins.
+//!
+//! The common Directory owner handles cleanup even if setup fails. Graph helpers
+//! remain here; literal answers, invalid transitions and failure schedules belong
+//! to the child suites. Fixture construction alone is not evidence that database
+//! creation or recovery accepts the same state.
+
 use super::Snapshot;
 use crate::DatabaseId;
 use crate::catalog::{self, ObjectId, ObjectRef, TableEntry};
@@ -12,12 +23,12 @@ use crate::publication::publish_snapshot;
 use crate::storage_format;
 use crate::storage_format::{CatalogCommit, Replica, Root};
 use crate::storage_format::{RootState, WalRecord};
+use crate::test_support::Directory;
 use crate::{CancellationToken, Error, TransactionId};
 use crate::{success_index, table_data};
 use pipesql_filesystem as filesystem;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 fn database() -> DatabaseId {
     DatabaseId::new([7; 16]).unwrap()
@@ -63,33 +74,34 @@ fn graph(snapshot: WalRecord) -> CatalogCommit {
     graph
 }
 
-struct Fixture(PathBuf);
+struct Fixture {
+    directory: Directory,
+}
 
 impl Fixture {
     fn directory() -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let root = std::env::temp_dir().join(format!(
-            "pipesql-catalog-publication-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&root).unwrap();
-        Self(root)
+        Self {
+            directory: Directory::new(),
+        }
+    }
+
+    fn root(&self) -> &Path {
+        &self.directory.0
     }
 
     fn new() -> Self {
         let this = Self::directory();
-        let root = &this.0;
+        let root = this.root();
         fs::create_dir(root.join(UNITS_NAME)).unwrap();
         fs::create_dir(root.join(crate::namespace::PRIVATE_NAME)).unwrap();
-        this.put(&this.0.join(crate::namespace::LOCK_NAME), &[]);
+        this.put(&this.root().join(crate::namespace::LOCK_NAME), &[]);
         this.put(
-            &this.0.join(crate::namespace::CONTROL_NAME),
+            &this.root().join(crate::namespace::CONTROL_NAME),
             include_bytes!("../../tests/fixtures/catalog-roots/CONTROL"),
         );
         for (name, replica) in [(ROOT_A_NAME, Replica::A), (ROOT_B_NAME, Replica::B)] {
             this.put(
-                &this.0.join(name),
+                &this.root().join(name),
                 &storage_format::encode_root(Root {
                     database: database(),
                     issued: 2,
@@ -100,15 +112,15 @@ impl Fixture {
             );
         }
         this.put(
-            &this.0.join(WAL_NAME),
+            &this.root().join(WAL_NAME),
             &storage_format::encode_wal(genesis()).unwrap(),
         );
-        this.sync(&this.0);
+        this.sync(this.root());
         this
     }
 
     fn objects(&self) -> PathBuf {
-        self.0.join(UNITS_NAME)
+        self.root().join(UNITS_NAME)
     }
 
     fn path(&self, id: ObjectId) -> PathBuf {
@@ -244,8 +256,8 @@ impl Fixture {
 
     fn selected(&self) -> (WalRecord, Option<Replica>) {
         let mut effects = Effects::default();
-        let a_path = self.0.join(ROOT_A_NAME);
-        let b_path = self.0.join(ROOT_B_NAME);
+        let a_path = self.root().join(ROOT_A_NAME);
+        let b_path = self.root().join(ROOT_B_NAME);
         let a = crate::namespace::read_root_file(
             &a_path,
             filesystem::symlink_metadata(&a_path).unwrap().identity(),
@@ -265,8 +277,8 @@ impl Fixture {
         )
         .unwrap();
         let fence = crate::namespace::read_fence(
-            &self.0,
-            filesystem::symlink_metadata(self.0.join(WAL_NAME))
+            self.root(),
+            filesystem::symlink_metadata(self.root().join(WAL_NAME))
                 .unwrap()
                 .identity(),
             database(),
@@ -286,20 +298,20 @@ impl Fixture {
             effects,
         )?;
         crate::namespace::reconcile_roots(
-            &self.0,
+            self.root(),
             database(),
             selected.issued,
             selected.state,
             repair,
             [
-                self.0.join("ROOT.A.next").exists(),
-                self.0.join("ROOT.B.next").exists(),
+                self.root().join("ROOT.A.next").exists(),
+                self.root().join("ROOT.B.next").exists(),
             ],
             effects,
         )?;
-        let metadata = filesystem::symlink_metadata(self.0.join(WAL_NAME)).unwrap();
+        let metadata = filesystem::symlink_metadata(self.root().join(WAL_NAME)).unwrap();
         crate::namespace::reconcile_fence(
-            &self.0,
+            self.root(),
             metadata.identity(),
             metadata.len(),
             &storage_format::encode_wal(selected).unwrap(),
@@ -372,15 +384,9 @@ impl Fixture {
     }
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        crate::test_cleanup::directory(&self.0);
-    }
-}
-
 fn publish(fixture: &Fixture, old: WalRecord, new: WalRecord) {
     if let Err(failure) = publish_snapshot(
-        &fixture.0,
+        fixture.root(),
         old,
         new,
         &CancellationToken::new(),

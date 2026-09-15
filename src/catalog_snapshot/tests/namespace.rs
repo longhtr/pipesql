@@ -67,7 +67,7 @@ fn independent_catalog_roots_reach_the_complete_graph_and_history() {
             include_bytes!("../../../tests/fixtures/catalog-roots/WAL").as_slice(),
         ),
     ] {
-        fixture.put(&fixture.0.join(name), bytes);
+        fixture.put(&fixture.root().join(name), bytes);
     }
     let (snapshot, repair) = fixture.selected();
     assert_eq!(repair, None);
@@ -184,7 +184,7 @@ fn catalog_open_preserves_unresolved_graph_when_only_stale_root_survives() {
         ] {
             for missing in [false, true] {
                 let fixture = Fixture::directory();
-                let path = fixture.0.join("database");
+                let path = fixture.root().join("database");
                 let config = crate::Config::new(4_000_000, 2_000_000).unwrap();
                 let db = Database::create_empty(&path, config).unwrap();
                 let columns = [crate::ColumnDeclaration {
@@ -259,10 +259,10 @@ fn selected_graph_damage_refuses_before_root_repair() {
         state: issued.state,
     })
     .unwrap();
-    fs::write(fixture.0.join(ROOT_B_NAME), older).unwrap();
+    fs::write(fixture.root().join(ROOT_B_NAME), older).unwrap();
     assert_eq!(fixture.selected(), (second, Some(Replica::B)));
     let names = [ROOT_A_NAME, ROOT_B_NAME, WAL_NAME];
-    let before = names.map(|name| fs::read(fixture.0.join(name)).unwrap());
+    let before = names.map(|name| fs::read(fixture.root().join(name)).unwrap());
     for id in [
         object(3, 1),
         object(3, 2),
@@ -282,12 +282,12 @@ fn selected_graph_damage_refuses_before_root_repair() {
         );
         for (index, name) in names.iter().enumerate() {
             assert_eq!(
-                fs::read(fixture.0.join(name)).unwrap(),
+                fs::read(fixture.root().join(name)).unwrap(),
                 before[index],
                 "{id:?} {name}"
             );
         }
-        assert!(!fixture.0.join("ROOT.B.next").exists());
+        assert!(!fixture.root().join("ROOT.B.next").exists());
         fs::write(path, original).unwrap();
     }
     assert_eq!(
@@ -390,10 +390,10 @@ fn database_open_resolves_catalog_history_and_owns_its_lease() {
     for ordinal in 10..90 {
         fixture.put(&fixture.path(object(4, ordinal)), &[]);
     }
-    fs::remove_file(fixture.0.join(ROOT_B_NAME)).unwrap();
+    fs::remove_file(fixture.root().join(ROOT_B_NAME)).unwrap();
     let memory = crate::resources::MemoryAuthority::new(u64::MAX);
     let path_bytes = pipesql_filesystem::canonicalize(
-        &fixture.0,
+        fixture.root(),
         &mut crate::path::CanonicalizeScratch::new(&memory),
     )
     .unwrap()
@@ -405,7 +405,7 @@ fn database_open_resolves_catalog_history_and_owns_its_lease() {
         1_000_000,
     )
     .unwrap();
-    let database = Database::open(&fixture.0, config).unwrap();
+    let database = Database::open(fixture.root(), config).unwrap();
     assert_eq!(database.generation(), 2);
     assert_eq!(
         database.reserved_memory_bytes(),
@@ -443,15 +443,15 @@ fn database_open_resolves_catalog_history_and_owns_its_lease() {
         }) if required == config.memory_limit_bytes() + 8_192
     ));
     assert!(matches!(
-        Database::open(&fixture.0, config),
+        Database::open(fixture.root(), config),
         Err(Error::Locked)
     ));
     database.close().unwrap();
-    let reopened = Database::open(&fixture.0, config).unwrap();
+    let reopened = Database::open(fixture.root(), config).unwrap();
     assert_eq!(reopened.generation(), 2);
     reopened.close().unwrap();
     let query_config = crate::Config::new(config.memory_limit_bytes() + 8_192, 1_000_000).unwrap();
-    let database = Database::open(&fixture.0, query_config).unwrap();
+    let database = Database::open(fixture.root(), query_config).unwrap();
     assert!(matches!(
         database.prepare("FROM absent"),
         Err(Error::Bind { .. })
@@ -464,12 +464,12 @@ fn database_open_resolves_catalog_history_and_owns_its_lease() {
 fn database_catalog_admission_refuses_before_repair() {
     let fixture = Fixture::new();
     let (first, _) = first_commit(&fixture);
-    fs::remove_file(fixture.0.join(ROOT_B_NAME)).unwrap();
-    let root = fs::read(fixture.0.join(ROOT_A_NAME)).unwrap();
-    let wal = fs::read(fixture.0.join(WAL_NAME)).unwrap();
+    fs::remove_file(fixture.root().join(ROOT_B_NAME)).unwrap();
+    let root = fs::read(fixture.root().join(ROOT_A_NAME)).unwrap();
+    let wal = fs::read(fixture.root().join(WAL_NAME)).unwrap();
     let small = crate::Config::new(catalog::SNAPSHOT_SCRATCH_BYTES as u64 - 1, 1_000_000).unwrap();
     assert!(matches!(
-        Database::open(&fixture.0, small),
+        Database::open(fixture.root(), small),
         Err(Error::Resource {
             owner: "catalog recovery scratch",
             ..
@@ -479,16 +479,16 @@ fn database_catalog_admission_refuses_before_repair() {
     let schema_path = fixture.path(object(3, 1));
     let schema = fs::read(&schema_path).unwrap();
     fs::write(&schema_path, [0; 64]).unwrap();
-    assert!(Database::open(&fixture.0, config).is_err());
+    assert!(Database::open(fixture.root(), config).is_err());
     fs::write(&schema_path, schema).unwrap();
     let unexpected = fixture.objects().join("unknown");
     fs::write(&unexpected, []).unwrap();
-    assert!(Database::open(&fixture.0, config).is_err());
+    assert!(Database::open(fixture.root(), config).is_err());
     fs::remove_file(unexpected).unwrap();
-    assert!(!fixture.0.join(ROOT_B_NAME).exists());
-    assert_eq!(fs::read(fixture.0.join(ROOT_A_NAME)).unwrap(), root);
-    assert_eq!(fs::read(fixture.0.join(WAL_NAME)).unwrap(), wal);
-    let database = Database::open(&fixture.0, config).unwrap();
+    assert!(!fixture.root().join(ROOT_B_NAME).exists());
+    assert_eq!(fs::read(fixture.root().join(ROOT_A_NAME)).unwrap(), root);
+    assert_eq!(fs::read(fixture.root().join(WAL_NAME)).unwrap(), wal);
+    let database = Database::open(fixture.root(), config).unwrap();
     assert_eq!(database.generation(), graph(first).generation());
     database.close().unwrap();
 }
@@ -567,7 +567,7 @@ fn catalog_bootstrap_builds_a_fresh_database_and_reopens_values() {
         *include_bytes!("../../../tests/fixtures/catalog-roots/CONTROL")
     );
     let parent = Fixture::directory();
-    let path = parent.0.join("fresh");
+    let path = parent.root().join("fresh");
     let config = crate::Config::new(2_000_000, 1_000_000).unwrap();
     let database =
         Database::create_catalog_with_effects(&path, config, &mut Effects::default()).unwrap();
@@ -637,7 +637,7 @@ fn catalog_bootstrap_builds_a_fresh_database_and_reopens_values() {
 fn catalog_bootstrap_effect_failures_clean_before_retry() {
     let parent = Fixture::directory();
     let config = crate::Config::new(2_000_000, 1_000_000).unwrap();
-    let path = parent.0.join("control");
+    let path = parent.root().join("control");
     let mut effects = Effects::default();
     Database::create_catalog_with_effects(&path, config, &mut effects)
         .unwrap()
@@ -646,7 +646,7 @@ fn catalog_bootstrap_effect_failures_clean_before_retry() {
     let count = effects.count();
     assert!(count < 128);
     for cut in 0..count {
-        let path = parent.0.join(format!("cut-{cut}"));
+        let path = parent.root().join(format!("cut-{cut}"));
         assert!(
             Database::create_catalog_with_effects(
                 &path,
@@ -666,7 +666,7 @@ fn catalog_bootstrap_effect_failures_clean_before_retry() {
             .unwrap();
         Database::open(&path, config).unwrap().close().unwrap();
     }
-    let path = parent.0.join("memory-refusal");
+    let path = parent.root().join("memory-refusal");
     assert!(matches!(
         Database::create_catalog_with_effects(
             &path,
