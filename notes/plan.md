@@ -24,6 +24,16 @@ Linux storage path. Use the [full-synchronization workflow](../docs/testing.md#l
 for persistence checkpoints. Preserve the
 [remaining qualifications](#qualifications-that-remain-outside-this-internal-claim).
 
+## Active declared-schema CLI
+
+Expose creation, declaration, schema inspection and logical-plan output through
+one CLI path over the existing library. First settle the bounded schema input
+and inspection interface against the event-report tables. Current CLI creation
+is legacy-only; preserve that behavior explicitly while adding declared creation.
+Select focused grammar/output checks during implementation, then the existing
+CLI allocation and publication campaigns plus the integrated checkpoint. Require
+both platforms' affected evidence before synchronizing this capability.
+
 ## Path to the internal 0.1.0 checkpoint
 
 After repository consolidation, the next checkpoint is a useful local
