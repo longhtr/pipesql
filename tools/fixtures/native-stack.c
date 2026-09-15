@@ -1,4 +1,8 @@
-// Independent pthread premise check. No engine or Rust bindings are used.
+// Observe native thread stack bounds independently of the engine and Rust bindings.
+// Create a small thread and an oversized control, require each reported stack to
+// contain a live local address, then check opposite acceptance outcomes. GNU arm64
+// also checks native refusal below its minimum. check-filesystem-abi.py owns the
+// build/run; this measures allocated stack extent, not peak engine frame usage.
 #define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
 #include <assert.h>

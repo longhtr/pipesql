@@ -1,4 +1,7 @@
-// Independent native SDK check for the private directory boundary.
+// Check literal filesystem layouts and native mutex behavior against C SDK headers.
+// Compile-time offsets, sizes and flags protect the Rust/native ABI premise; a
+// runtime mutex control checks initialization, contention and destruction. The
+// check-filesystem-abi.py supervisor builds and runs this without engine code.
 #define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
 #include <stddef.h>

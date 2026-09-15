@@ -1,8 +1,14 @@
-"""Stock builds and explicit artifacts shared by verification callers.
+"""Build and identify stock engine artifacts and separate native observation callers.
 
 Standalone callers supply an owned build directory. Frozen gates supply one
-identified stock build; callers verify it before linking or execution. Campaign cases,
-oracles, environment changes, and result interpretation stay with their callers.
+stock build through PIPESQL_STOCK_BUILD; consumers compare its source/compiler
+profile and every artifact hash before linking or execution. Incompatible or
+changed artifacts fail instead of silently rebuilding. Native observer libraries
+and instrumented callers keep separate outputs from that stock library and CLI.
+
+Run this file with a new absolute output directory to produce the gate's stock
+build and stock.json identity record. Campaign cases, expected answers and result
+interpretation stay with their callers; subprocess ownership is in check_process.
 """
 
 from pathlib import Path

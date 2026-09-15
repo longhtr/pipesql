@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Reproduce retained codec fixtures using independent Python encoders.
 
-The encoders are independent development oracles, not production imports. This
-checks provenance drift, not recovery safety or the full corruption campaigns.
+The encoders are independent development oracles, not production imports. Compare
+the complete file set and every byte for each retained format, including rejected
+formats; extra files, symlinks and changed bytes fail. Run directly or through
+check-maintenance.py. This never replaces fixtures and checks provenance drift,
+not recovery safety or the full corruption campaigns.
 """
 
 import runpy

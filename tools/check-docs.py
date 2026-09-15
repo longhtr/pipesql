@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Check repository Markdown links and local heading anchors without dependencies."""
+"""Find broken local links in maintained repository Markdown.
+
+Skip fenced examples, resolve inline/reference links and check target paths and
+Markdown heading anchors, including repeated headings. Links cannot escape the
+repository. External URLs are ignored; this small reader is not a full Markdown
+parser or a prose-quality check. Run directly to print counts and file/line errors;
+any missing target, anchor or reference definition produces a failing exit status.
+"""
 
 from pathlib import Path
 import re

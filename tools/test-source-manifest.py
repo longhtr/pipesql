@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""Challenge source discovery and freezing with small literal checkout trees.
+
+Required includes must resolve inside the recorded set. A completed export must
+survive later checkout edits, while an edit during copying must reject and remove
+it. Existing destinations stay untouched. Run directly or through maintenance;
+these filesystem controls do not compile or execute the exported engine.
+"""
+
 import runpy
 from pathlib import Path
 import tempfile

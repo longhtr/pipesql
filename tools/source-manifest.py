@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Hash build/gate inputs and reject uncovered Rust file inclusions.
+"""Identify verification inputs and copy them into a private, read-only source export.
 
-Run from any directory. The output is a source manifest, not proof of a passing
-build or a bit-reproducible binary. Parent revision and artifact hashes are still
-required. Runtime benchmark inputs and observation drivers need separate records.
+inputs() discovers the maintained trees and rejects Rust inclusions outside that
+set. source_manifest() records each file's SHA-256. source_export() copies into a
+new directory, removes file write permissions and compares source/copy identities;
+a change during copying removes the incomplete export and fails the run. Both
+platform runners use these mechanics so later checkout edits cannot alter a gate.
+
+Run directly from any directory to print the manifest. It identifies source, not
+a passing build or a reproducible binary; receipts still need artifact identities
+and any runtime inputs outside the exported tree.
 """
 import hashlib
 from pathlib import Path

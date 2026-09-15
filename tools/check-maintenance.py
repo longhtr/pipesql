@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Check documentation, Python tools, and independent fixtures without a Rust build."""
+"""Run the fast repository checks that do not require a Rust build.
+
+Compile Python sources for syntax, discover top-level test-*.py suites, then check
+documentation links, source inclusion and independent fixture bytes. Run each
+check in a bounded child and propagate its failure. Invoke directly; check.py also
+uses this entry point. These checks establish tooling consistency, not DBMS behavior.
+"""
 
 from pathlib import Path
 import os

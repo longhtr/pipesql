@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Check the filesystem boundary against the installed native SDK, not Cargo bindings."""
+"""Check native layout and thread-stack premises using the installed C SDK.
+
+Build and execute filesystem-abi.c and native-stack.c in temporary storage. Their
+literal layout assertions and oversized-thread control are independent of Rust
+bindings; no engine code runs. Invoke directly or through check.py. A compiler
+error, failed assertion or timeout fails the check and releases its owned output.
+"""
 from pathlib import Path
 import argparse
 import tempfile

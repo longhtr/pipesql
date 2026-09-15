@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Challenge fixture discovery, byte comparison, and fresh generation outputs."""
+"""Challenge fixture comparison and generation without invoking production codecs.
+
+Damage copied retained bytes and require the checker to refuse without overwriting
+them. Compare fresh catalog vectors to retained files; existing output directories
+and dangling links must be refused. These controls check the tooling's treatment
+of evidence, while independent encoders own the expected bytes. Run directly or
+through check-maintenance.py.
+"""
 from contextlib import redirect_stdout
 import io
 from pathlib import Path
