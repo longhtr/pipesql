@@ -7,9 +7,9 @@ query blocks are rejected.
 
 PipeSQL is intended to run on **macOS, Linux, and Windows**. It is pre-release:
 formats and interfaces are unstable, and platform qualification is incomplete.
-Runtime checks cover the reviewed macOS path and a subset of Linux behavior.
-Linux integration coverage and durability qualification remain incomplete;
-Windows implementation remains unfinished.
+Runtime checks cover macOS and GNU arm64 Linux with documented platform
+exclusions. Broader durability qualification and Windows implementation remain
+unfinished; [platform status](docs/testing.md#platform-status) separates these facts.
 
 ## What works today
 
@@ -39,17 +39,17 @@ provisioning.
 ```sh
 cargo build --release --offline --locked
 python3 tools/check-maintenance.py
-sh tools/check.sh
 ```
 
-[Build and test](docs/testing.md) explains prerequisites, focused commands, full
-verification, failure diagnosis, and target-specific exclusions. The full gate
-runs on macOS and GNU/Linux as an unprivileged user. It includes independent
-fixtures, warnings-denied compilation, Rust tests, and semantic, resource, and
-native failure campaigns. A green local gate is not production certification.
+[Build and test](docs/testing.md#focused-verification) gives the fast edit loop and
+when to run `sh tools/check.sh`, the full platform gate. The maintenance command
+checks tooling and fixtures; it does not execute the database. Full verification
+includes warnings-denied compilation, Rust tests, and semantic, resource and native
+failure campaigns. A green local gate is not production certification.
 
 Start with [Create and query a declared table](docs/getting-started.md) for a
-complete library example. After loading the documented `lineitem` input, this
+complete library example. Then follow the [event report](docs/event-report.md)
+through query preparation, execution, append and recovery. After loading the documented `lineitem` input, this
 query groups selected rows and filters the aggregate result:
 
 ```sql
