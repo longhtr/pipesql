@@ -130,6 +130,12 @@ includes a 4,096-byte allocator allowance. Running queries borrow that plan.
 `memory_requirement_bytes()` is a conservative bound, not an exact query
 minimum. Parser stacks and caller source remain separately bounded and observed.
 
+Schema inspection reserves 11,392 bytes for the maximum catalog and one schema,
+plus two 4,096-byte path bounds, before file I/O. The existing `catalog::Scratch`
+owner checks the buffer's actual capacity. Its allocation and charge remain live
+through the callback; inspection adds no retained name copies or temporary files.
+[The interface](interfaces.md#declared-table-databases) specifies the borrowed view's lifetime.
+
 Query preparation admits two 4,096-byte pathname bounds before catalog I/O:
 one units directory and one overlapping catalog/schema object path. Catalog
 scratch charges only its buffer. The read paths and scratch drop before their

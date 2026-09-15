@@ -563,10 +563,14 @@ platforms cannot claim Darwin ACL coverage.
 ### CLI ownership and outcomes
 
 CLI checks use unchanged CLI source for native capture, allocation-free parsing
-and diagnostics, loaded output, and descriptor cleanup. Resolve durable,
+and diagnostics, command output, and descriptor cleanup. Allocation prefixes
+cover legacy and declared creation, declaration, schema inspection and logical
+plans. After declaration failure, reopen must expose the complete schema or
+report it absent; successful receipts resolve as durable. Resolve durable,
 aborted, and unknown tokens under allocation refusal and repairing open. Obtain
 ambiguous tokens from real CLI diagnostics and challenge both data-root rename
-positions, including an abort followed by a successful load. Unknown is never
+positions for both load and declaration, including an abort followed by a
+successful retry. Unknown is never
 aborted. Closed-sink tests distinguish runtime sanitization from closure after
 bootstrap.
 

@@ -115,6 +115,8 @@ def parser_cases(work):
         "--database",
         "--input",
         "--query-file",
+        "--schema-file",
+        "--table",
         "--transaction",
         "--memory-limit-bytes",
         "--temp-limit-bytes",
@@ -122,12 +124,19 @@ def parser_cases(work):
         "é" * 2048,
     ]:
         cases.append(["create", flag])
-    for operation in ["create", "open", "load", "query", "resolve"]:
+    for operation in [
+        "create", "create-declared", "declare", "schema", "open", "load",
+        "query", "explain", "resolve",
+    ]:
         base = [operation, *options(work / "absent")]
         if operation == "load":
             base += ["--input", str(work / "input.tbl")]
-        if operation == "query":
+        if operation in {"query", "explain"}:
             base += ["--query-file", str(ROOT / "tests/fixtures/q6.pipe.sql")]
+        if operation == "declare":
+            base += ["--schema-file", str(work / "events.schema")]
+        if operation == "schema":
+            base += ["--table", "events"]
         if operation == "resolve":
             base += ["--transaction", token]
         cases.append(base)
@@ -135,6 +144,8 @@ def parser_cases(work):
             ("--database", "/duplicate"),
             ("--input", "/input"),
             ("--query-file", "/query"),
+            ("--schema-file", "/schema"),
+            ("--table", "events"),
             ("--transaction", token),
             ("--memory-limit-bytes", "1"),
             ("--temp-limit-bytes", "1"),
@@ -246,6 +257,9 @@ class DatabaseFixtures(NamedTuple):
     loaded: Path
     history: Path
     tokens: dict[str, str]
+    declared_empty: Path
+    declared: Path
+    schema_path: Path
 
 
 def create_databases(work, run):
@@ -276,10 +290,23 @@ def create_databases(work, run):
         "resolve-aborted": token[:32] + "0100000000000000",
         "resolve-unknown": token[:32] + "0300000000000000",
     }
-    return DatabaseFixtures(input_path, empty, loaded, history, tokens)
+    schema_path = work / "events.schema"
+    schema_path.write_text(
+        "table events\nid int64 required\nvalue double nullable\n"
+        "label string nullable\nday date required\n"
+    )
+    declared_empty = work / "declared-empty"
+    assert run(["create-declared", *options(declared_empty)]).returncode == 0
+    declared = work / "declared"
+    shutil.copytree(declared_empty, declared)
+    assert run(["declare", *options(declared), "--schema-file", str(schema_path)]).returncode == 0
+    return DatabaseFixtures(
+        input_path, empty, loaded, history, tokens,
+        declared_empty, declared, schema_path,
+    )
 
 
-def heal_ambiguous(run, input_path, healed_ambiguity, database, result):
+def heal_ambiguous(run, retry_args, healed_ambiguity, database, result):
     ambiguous = re.search(
         rb"commit outcome is ambiguous for transaction ([0-9a-f]{48}):",
         result.stderr,
@@ -296,7 +323,7 @@ def heal_ambiguous(run, input_path, healed_ambiguity, database, result):
     outcome = match.group(1).decode()
     healed_ambiguity.add(outcome)
     if outcome == "aborted":
-        retry = run(["load", *options(database), "--input", str(input_path)])
+        retry = run([*retry_args, *options(database)])
         assert retry.returncode == 0, retry
         resolved_again = run(resolution_args)
         assert (
@@ -306,7 +333,7 @@ def heal_ambiguous(run, input_path, healed_ambiguity, database, result):
     return outcome
 
 
-def check_publication(work, compile, empty, input_path, heal_ambiguous):
+def check_publication(work, compile, fixtures, heal_load, heal_declaration):
     # Allocation refusal reaches durable ambiguity here. Native rename refusal
     # separately covers the first data-root replacement, before it takes effect.
     # Four renames are the issuance A/B and data A/B publication protocol.
@@ -323,56 +350,77 @@ def check_publication(work, compile, empty, input_path, heal_ambiguous):
             f"CLI {artifact.name} sha256={hashlib.sha256(artifact.read_bytes()).hexdigest()}",
             flush=True,
         )
-    for cut in [0, 3, 4]:
-        database = work / f"rename-cut-{cut}"
-        shutil.copytree(empty, database)
-        result = run_process(
-            [
-                str(work / "publication"),
-                "load",
-                *options(database),
-                "--input",
-                str(input_path),
-            ],
-            env={
-                **os.environ,
-                "PIPESQL_RENAME_CUT": str(cut),
-                **observer_environment(observer),
-            },
-            capture_output=True,
-            preexec_fn=limits,
-            timeout=20,
-            cwd=ROOT,
-        )
-        assert result.returncode == (0 if cut == 0 else 1), result
-        assert f"observed_renames={cut or 4}\n".encode() in result.stderr, result
-        if cut:
-            assert heal_ambiguous(database, result) == (
-                "aborted" if cut == 3 else "durable"
-            ), result
-        print(
-            f"CLI publication rename cut={cut}: {result.stderr.decode().strip()}",
-            flush=True,
-        )
+    for verb, baseline, source_flag, source_path, heal in [
+        ("load", fixtures.empty, "--input", fixtures.input_path, heal_load),
+        ("declare", fixtures.declared_empty, "--schema-file",
+         fixtures.schema_path, heal_declaration),
+    ]:
+        for cut in [0, 3, 4]:
+            database = work / f"{verb}-rename-cut-{cut}"
+            shutil.copytree(baseline, database)
+            result = run_process(
+                [
+                    str(work / "publication"),
+                    verb,
+                    *options(database),
+                    source_flag,
+                    str(source_path),
+                ],
+                env={
+                    **os.environ,
+                    "PIPESQL_RENAME_CUT": str(cut),
+                    **observer_environment(observer),
+                },
+                capture_output=True,
+                preexec_fn=limits,
+                timeout=20,
+                cwd=ROOT,
+            )
+            assert result.returncode == (0 if cut == 0 else 1), result
+            assert f"observed_renames={cut or 4}\n".encode() in result.stderr, result
+            if cut:
+                assert heal(database, result) == (
+                    "aborted" if cut == 3 else "durable"
+                ), result
+            print(
+                f"CLI {verb} publication rename cut={cut}: {result.stderr.decode().strip()}",
+                flush=True,
+            )
 
 
-def check_operations(work, run, fixtures, heal_ambiguous):
-    input_path, empty, loaded, history, tokens = fixtures
+def check_operations(work, run, fixtures, heal_load, heal_declaration):
+    tokens = fixtures.tokens
+    (work / "explain.sql").write_text("FROM events |> SELECT value / 0 AS bad")
+    expected_schema = (
+        b"table=events\ngeneration=1\ncolumn_count=4\n"
+        b"column[0]=id:int64:required\ncolumn[1]=value:double:nullable\n"
+        b"column[2]=label:string:nullable\ncolumn[3]=day:date:required\nstatus=inspected\n"
+    )
     cells = 0
-    for operation in ["create", "open", "load", "q1", "q6", *tokens]:
+    for operation in [
+        "create", "create-declared", "declare", "schema", "schema-missing",
+        "explain", "open", "load", "q1", "q6", *tokens,
+    ]:
 
         def cell(label, mode):
             database = work / label
-            if operation != "create":
-                source = (
-                    history
-                    if operation in tokens
-                    else empty if operation == "load" else loaded
-                )
+            if operation not in {"create", "create-declared"}:
+                if operation in tokens:
+                    source = fixtures.history
+                elif operation == "declare":
+                    source = fixtures.declared_empty
+                elif operation in {"schema", "schema-missing", "explain"}:
+                    source = fixtures.declared
+                elif operation == "load":
+                    source = fixtures.empty
+                else:
+                    source = fixtures.loaded
                 shutil.copytree(source, database)
             before = (
                 digest(database)
-                if operation in ["open", "q1", "q6", *tokens]
+                if operation in [
+                    "open", "q1", "q6", "schema", "schema-missing", "explain", *tokens
+                ]
                 else None
             )
             if operation == "resolve-repair":
@@ -380,11 +428,18 @@ def check_operations(work, run, fixtures, heal_ambiguous):
             verb = (
                 "resolve"
                 if operation in tokens
-                else "query" if operation.startswith("q") else operation
+                else "query" if operation.startswith("q")
+                else "schema" if operation == "schema-missing" else operation
             )
             args = [verb, *options(database)]
             if operation == "load":
-                args += ["--input", str(input_path)]
+                args += ["--input", str(fixtures.input_path)]
+            if operation == "declare":
+                args += ["--schema-file", str(fixtures.schema_path)]
+            if operation in {"schema", "schema-missing"}:
+                args += ["--table", "missing" if operation == "schema-missing" else "events"]
+            if operation == "explain":
+                args += ["--query-file", str(work / "explain.sql")]
             if operation in tokens:
                 args += ["--transaction", tokens[operation]]
             if operation.startswith("q"):
@@ -395,6 +450,8 @@ def check_operations(work, run, fixtures, heal_ambiguous):
                 )
                 args += ["--query-file", str(query)]
             result = run(args, mode)
+            # The probe appends its allocation census after the command output.
+            command_output = result.stdout.rsplit(b"cli allocations=", 1)[0]
             if before is not None and operation != "resolve-repair":
                 assert digest(database) == before, (label, "settled bytes changed")
             if operation in tokens:
@@ -425,11 +482,35 @@ def check_operations(work, run, fixtures, heal_ambiguous):
                     )
                     assert b"transaction was not found" in healed.stderr
             if operation == "load":
-                heal_ambiguous(database, result)
+                heal_load(database, result)
+            if operation == "declare":
+                heal_declaration(database, result)
+                settled = run(["schema", *options(database), "--table", "events"])
+                if settled.returncode == 0:
+                    assert settled.stdout.endswith(expected_schema), settled
+                else:
+                    assert settled.returncode == 1 and not settled.stdout, settled
+                    assert b"was not found" in settled.stderr, settled
+                if result.returncode == 0:
+                    assert settled.returncode == 0, settled
+                    token = re.search(rb"^transaction=([0-9a-f]{48})$", command_output, re.M)
+                    assert token is not None, result
+                    resolved = run([
+                        "resolve", *options(database),
+                        "--transaction", token.group(1).decode(),
+                    ])
+                    assert resolved.returncode == 0, resolved
+                    assert resolved.stdout.endswith(b"resolution=durable\ngeneration=1\n"), resolved
+            if result.returncode == 0 and operation == "schema":
+                assert command_output.endswith(expected_schema), result
+            if result.returncode == 0 and operation == "explain":
+                assert b"logical plan\n" in command_output, result
+                assert command_output.endswith(b"status=explained\n"), result
+                assert b"row=" not in result.stdout, result
             return result
 
         control = cell(f"{operation}-control", "entry-control")
-        expected_code = 1 if operation == "resolve-unknown" else 0
+        expected_code = 1 if operation in {"resolve-unknown", "schema-missing"} else 0
         assert control.returncode == expected_code, control.stderr
         calls, _ = census(control)
         print(f"CLI {operation} census={calls}", flush=True)
@@ -547,20 +628,28 @@ def main(argv=None):
         check_parser(run, parser_cases(work))
         cells = check_native_capture(run)
         fixtures = create_databases(work, run)
-        input_path, empty, loaded, history, _ = fixtures
         healed_ambiguity = set()
-        heal = partial(heal_ambiguous, run, input_path, healed_ambiguity)
-        check_publication(work, compile, empty, input_path, heal)
+        heal = partial(
+            heal_ambiguous, run, ["load", "--input", str(fixtures.input_path)],
+            healed_ambiguity,
+        )
+        declaration_outcomes = set()
+        heal_declaration = partial(
+            heal_ambiguous, run, ["declare", "--schema-file", str(fixtures.schema_path)],
+            declaration_outcomes,
+        )
+        check_publication(work, compile, fixtures, heal, heal_declaration)
         cells += check_operations(
-            work, run, fixtures, heal
+            work, run, fixtures, heal, heal_declaration
         )
         assert healed_ambiguity == {"aborted", "durable"}, healed_ambiguity
+        assert declaration_outcomes == {"aborted", "durable"}, declaration_outcomes
         print(
-            "CLI ambiguous-load tokens: stock resolution reaches aborted and durable; aborted stays aborted after retry",
+            "CLI ambiguous load/declaration tokens: stock resolution reaches aborted and durable; aborted stays aborted after retry",
             flush=True,
         )
 
-        check_output_sinks(work, stock, run, loaded, history)
+        check_output_sinks(work, stock, run, fixtures.loaded, fixtures.history)
         print(
             f"CLI: {cells} allocation-prefix cases; Rust owners/descriptors released; stock closed/broken sinks passed",
             flush=True,

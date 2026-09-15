@@ -30,6 +30,49 @@ all numeric projection rows, terminal `Finished`, and released query reservation
 before printing success. `Some(value)` means a present value; `None` means SQL NULL.
 A successful process exit is required even if you redirect the output.
 
+## Create and inspect the schema with the CLI
+
+You can create the same two tables without writing Rust. These commands use a
+separate empty database; typed row import still requires the library example above.
+The shell function supplies the same database and resource limits to each command.
+
+```sh
+cargo build --release --offline --locked --bin pipesql
+pipesql_schema_dir=$(mktemp -d)
+report_schema() {
+  target/release/pipesql "$@" --database "$pipesql_schema_dir/db" \
+    --memory-limit-bytes 16000000 --temp-limit-bytes 8000000
+}
+report_schema create-declared
+report_schema declare --schema-file "$PWD/examples/events.schema"
+report_schema declare --schema-file "$PWD/examples/dimensions.schema"
+report_schema schema --table events
+report_schema explain --query-file "$PWD/examples/event_report.sql"
+report_schema query --query-file "$PWD/examples/event_report.sql"
+```
+
+Require exit 0 from every command. Each declaration reports its committed
+generation and transaction token. Inspection reports generation 2, five columns,
+and `status=inspected`. The names, types and NULLability come from the validated
+stored schema. `explain` prints the join, projection, aggregation and ordering
+in the prepared logical plan. It does not run the query or estimate its cost.
+The final query reports `row_count=0` and `status=queried`: the tables have no rows.
+
+The [schema-file contract](interfaces.md#declare-a-table) defines the input grammar
+and failed-publication outcomes. Follow `declare_file` in
+[declaration.rs](../src/cli/declaration.rs) into `Database::declare_table` to see
+where text becomes a committed table. Follow `Database::inspect_table` in
+[table_schema.rs](../src/table_schema.rs) to see how a snapshot keeps the schema
+readable while its callback writes output. Query preparation and execution then
+use the same owners as the populated report below.
+
+Remove this separate database when finished:
+
+```sh
+unset -f report_schema
+rm -r -- "$pipesql_schema_dir"
+```
+
 ## Understand the input and answer
 
 Read the sixteen literal [events](../examples/support/event_data.rs). Each event

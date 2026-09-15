@@ -40,11 +40,18 @@ columns leave generation zero unchanged. `schema --table` now uses a borrowed
 `TableSchema` view over validated catalog bytes. Focused checks cover literal
 metadata, publication inside the callback, failure/unwind release, read faults,
 cancellation and admission before I/O. Stock CLI inspection and declaration-token
-resolution pass. The fresh event-report CLI walkthrough, allocation/publication
-campaign extensions and integrated/platform verification remain unfinished.
-Select focused grammar/output checks during implementation, then the existing
-CLI allocation and publication campaigns plus the integrated checkpoint. Require
-both platforms' affected evidence before synchronizing this capability.
+resolution pass. The fresh event-report CLI walkthrough passes on macOS using
+the report example's 16 MB/8 MB budgets; 2 MB correctly refuses grouping admission.
+The CLI campaign passes 135 allocation-free parser control/deny pairs and 811
+allocation-prefix cases. Load and declaration rename cuts resolve both aborted
+and durable outcomes; declaration failures reopen to a whole schema or absence.
+
+Finish with sequential full macOS and qualified GNU arm64 Linux gates on matching
+frozen inputs, followed by fresh examples. These gates include the integrated
+checkpoint. This boundary covers the new public inspection buffer/snapshot
+lifetime and CLI publication paths; do not repeat them for editorial changes.
+The CLI walkthrough must also run freshly on Linux. Review and synchronize only
+after both platforms' required evidence, documentation and cleanup are complete.
 
 ## Path to the internal 0.1.0 checkpoint
 
