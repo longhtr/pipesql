@@ -1,3 +1,11 @@
+//! Check that copied success histories preserve membership and reject incomplete evidence.
+//!
+//! Explicit attempt sequences cross block and capacity boundaries. Cases corrupt
+//! history bytes or interrupt append/lookup effects, requiring failure instead of
+//! a published reference or premature membership result. These are real-file
+//! writer/reader checks with locally stated answers, not an independent format
+//! oracle. Run `success_index::tests` in the library suite.
+
 use super::*;
 use crate::effects::Faults;
 use std::path::PathBuf;

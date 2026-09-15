@@ -1,5 +1,20 @@
-//! Immutable declared-table catalog references. Callers own the
-//! admitted namespace, buffers and snapshot lifetime; this module cannot publish.
+//! Locate a snapshot's tables and validate their references to immutable objects.
+//!
+//! A catalog entry names a table, its schema and its table-data index. `ObjectId`
+//! identifies a file by creating attempt and ordinal; `ObjectRef` adds its expected
+//! byte length and checksum. Opening an object checks pathname/file identity and
+//! extent before its role-specific decoder accepts the contents.
+//!
+//! `Catalog` and schemas borrow decoded bytes. `Scratch` owns a reusable buffer
+//! with a reservation that outlives its allocation. The caller retains the
+//! snapshot pin and authority to access its namespace; these readers cannot
+//! publish a replacement catalog.
+//!
+//! `validate_snapshot` follows the success history, catalog, schemas, table indexes
+//! and unit metadata. A bad reference rejects the selected graph. Payload checks
+//! remain with demanded column reads, so metadata admission does not read every
+//! stored value or establish that unrelated payloads are intact.
+
 use crate::catalog_schema::{self, Schema, TableId};
 use crate::effects::{Effect, Effects, MetadataKind};
 use crate::storage_format::{DatabaseId, FormatError, crc32c};

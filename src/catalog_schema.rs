@@ -1,5 +1,16 @@
-//! Immutable declared-table schemas shared by publication and query binding.
-//! The legacy format-4 schema does not use this codec.
+//! Describe a declared table's stored columns independently of their physical positions.
+//!
+//! Each column has a persistent identity, name, type and NULLability. Ordinal 0
+//! means the first column in this schema; it is not that column's identity.
+//! Native units use identities to match payloads to columns even when their
+//! physical order differs. Query-local identities are assigned later by binding.
+//!
+//! Encoding fills a caller-owned buffer. Decoding checks database/table identity,
+//! version, extent, checksum and column rules before returning a borrowed `Schema`.
+//! Names and descriptors remain in those immutable bytes rather than another
+//! allocation. Callers own file I/O and publication; the legacy fixed schema
+//! does not use this codec.
+
 use crate::frontend::DataType;
 use crate::storage_format::{DatabaseId, FormatError, crc32c};
 

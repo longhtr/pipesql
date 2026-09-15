@@ -1,3 +1,11 @@
+//! Check catalog/schema references through real files and deliberately invalid bytes.
+//!
+//! Cases challenge identity substitution, pathname replacement, resource limits
+//! and each graph-read effect. Corrupt fields receive fresh checksums so a checksum
+//! mismatch cannot conceal missing structural validation. Independent binary
+//! fixtures separately constrain both encoding and decoding. Run `catalog::tests`
+//! in the library suite; these readers do not exercise root publication.
+
 use super::*;
 use crate::catalog_schema::{ColumnId, ColumnSpec};
 use crate::effects::Faults;

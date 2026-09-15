@@ -1,3 +1,12 @@
+//! Check typed column storage, projected reads and private construction failures.
+//!
+//! Cases reorder physical columns while preserving identities, NULLs, UTF-8 and
+//! numeric bits. Corruption in a demanded column must fail without reading other
+//! payloads; failed refill must invalidate the old view. Capacity and effect cuts
+//! check refusal before writes or retention of private cleanup ownership.
+//! Independent binary fixtures and checksum-repaired corruptions challenge both
+//! codecs and structural validation. Run `native_unit::tests` in the library suite.
+
 use super::*;
 use crate::catalog_schema::{ColumnSpec, TableId};
 use crate::effects::Faults;

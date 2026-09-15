@@ -1,6 +1,18 @@
-//! Persistent identities, root/fence authority, and the fixed-schema unit codec.
-//! Codec functions only inspect or construct bytes; namespace/publication owners
-//! decide when those bytes may be read, repaired, or made durable.
+//! Encode and validate the bytes that identify a database and its published state.
+//!
+//! CONTROL records database identity. Root copies and the WAL fence record a
+//! snapshot and the highest issued attempt; namespace recovery decides which
+//! record has authority. This module also describes the legacy fixed-schema
+//! column unit. Declared-table schemas, indexes and units have separate codecs.
+//!
+//! Files use explicit byte layouts, format versions, reserved zero fields and
+//! CRC32C checksums rather than Rust's in-memory representation. Decoders check
+//! those constraints before returning typed facts. A valid transaction token
+//! identifies an attempt but does not establish that it committed.
+//!
+//! These functions inspect or construct bytes without I/O. Publication and
+//! namespace owners decide when to write, synchronize or repair them. Successful
+//! decoding establishes a representation, not durability or recovery authority.
 
 #[cfg(test)]
 use std::array;

@@ -1,5 +1,20 @@
-//! Declared-table native units. Construction writes an admitted, empty private file;
-//! the caller owns reservations, cleanup, synchronization and publication.
+//! Store one declared-table batch as independently readable column payloads.
+//!
+//! A unit has a header and one descriptor per column. Descriptors bind persistent
+//! column identities to types, offsets, lengths and payload checksums. A `UnitRef`
+//! anchors the metadata checksum, letting a scan validate that mapping without
+//! reading columns its query does not need.
+//!
+//! `requirements` validates input shape and computes workspace extents. `write`
+//! checks the supplied buffers before touching an empty private file, then encodes
+//! and reads back each payload. Its caller owns reservations, partial-file cleanup,
+//! synchronization and publication; returning a unit reference does not commit it.
+//!
+//! `read` opens the file and validates metadata against its schema. `read_column`
+//! checks one demanded payload's checksum and typed representation before lending
+//! values from the caller's buffer. `ColumnBuffer` invalidates its old view before
+//! a refill, so a failed read cannot expose stale or partially replaced values.
+
 use crate::catalog::{self, ObjectId};
 use crate::catalog_schema::{self, ColumnId, ColumnSpec, Schema};
 use crate::date::DateValue;

@@ -1,5 +1,17 @@
-//! Flat immutable table/unit index. The catalog anchors the complete file; a
-//! cursor retains derived page CRCs so later reads keep that integrity boundary.
+//! Map a table's row sequence to its immutable column units.
+//!
+//! Each flat index entry records a unit reference and the starting row it adds
+//! to the table. Entries must have increasing object identities and contiguous
+//! row ranges. Writing creates a complete private index; its caller owns the file,
+//! scratch, synchronization and eventual catalog publication.
+//!
+//! `open` validates every entry and the whole-file checksum from the catalog,
+//! retaining one checksum per small page. `Cursor::next` can then reread pages
+//! without keeping the complete index in memory. A page change, read failure or
+//! cancellation makes the cursor terminally failed. Rewind rereads pages against
+//! the retained checksums and is allowed only before failure; it cannot heal a
+//! corrupted index by accepting new bytes.
+
 use crate::catalog::{self, MAX_UNITS, ObjectId, ObjectRef, TableEntry};
 use crate::catalog_schema::Schema;
 use crate::effects::{Effect, Effects, MetadataKind};

@@ -1,3 +1,11 @@
+//! Check table-to-unit indexing, whole-file admission and later page integrity.
+//!
+//! Real indexes span page/capacity boundaries, then rewind or encounter changed
+//! bytes, I/O refusal or cancellation. Cases require terminal failures to remain
+//! failures and invalid constructor input to leave the private file empty.
+//! Literal complete-graph fixtures independently constrain writer and reader
+//! agreement. Run `table_data::tests` in the library suite.
+
 use super::*;
 use crate::catalog_schema::{self, TableId};
 use crate::effects::Faults;

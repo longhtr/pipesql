@@ -1,6 +1,16 @@
-//! Complete flat success history for catalog publication.
-//! Private append preserves the validated old prefix. Lookup reports membership,
-//! never abort: the live resolver must also account for active writer authority.
+//! Retain successful attempt identities so a caller can resolve an uncertain commit.
+//!
+//! The history is an immutable, increasing list of attempt sequences. An entry's
+//! position gives its committed generation. `append` writes a replacement file
+//! containing the validated old history followed by the new success; it does not
+//! modify the old snapshot's file. The publication caller owns the private file,
+//! scratch reservation, synchronization and cleanup.
+//!
+//! `find` validates the complete history before returning a matching generation.
+//! Finding a token near the start cannot bypass corruption later in the file.
+//! An absent token establishes only nonmembership in this snapshot. The live
+//! resolver must also consider an active writer before calling an attempt aborted.
+
 use crate::catalog::{self, ObjectId, ObjectRef};
 use crate::effects::{Effect, Effects, MetadataKind};
 use crate::storage_format::{
