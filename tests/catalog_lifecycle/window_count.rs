@@ -1,3 +1,11 @@
+//! Check full-partition COUNT while retaining one output row per input row.
+//!
+//! Count-only queries need no stored input payload; queries that return input
+//! values must retain them until the total is known. Tight-budget cases distinguish
+//! these paths, and a larger text fixture observes disk use. Literal counts before
+//! and after LIMIT expose the partition boundary; demanded errors, cancellation
+//! and pinned snapshots check that counting does not change ownership or scope.
+
 use super::*;
 
 #[test]

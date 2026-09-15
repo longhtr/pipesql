@@ -1,3 +1,11 @@
+//! Check set intersection, including both inputs' effect on output nullability.
+//!
+//! A standard-library set model derives results from literal integer/NULL rows.
+//! Typed cases separately require original left-side floating bits and pinned
+//! inputs. This module also owns the demanded-error exercise shared by all four
+//! sorted set operations: either input can fail before output, even when the
+//! other is empty; LIMIT 0 may skip the whole operation.
+
 use super::*;
 
 #[test]

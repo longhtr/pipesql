@@ -1,5 +1,28 @@
-//! Public snapshots contract tests.
+//! Check that publication and reclamation preserve every live query's generation.
+//!
+//! Simple scans establish copied append input, durable receipts and pinned slots.
+//! Coordinated readers then cross publication, cancellation and reclamation in
+//! different orders. Composed reports compare literal old/new answers and reopen
+//! their pinned graphs after dropping cursors: an open descriptor alone could hide
+//! a wrongly unlinked file. A deliberate unlink control proves this check detects
+//! the failure. These finite schedules do not qualify arbitrary concurrency.
+
 use super::*;
+
+fn append_one(db: &Database, value: i64) -> pipesql::Commit {
+    let cancel = CancellationToken::new();
+    let mut append = db.begin_append("facts", limits(), &cancel).unwrap();
+    append
+        .write(
+            &[ColumnInput {
+                values: ColumnValues::Int64(&[value]),
+                validity: &[1],
+            }],
+            &cancel,
+        )
+        .unwrap();
+    append.commit(&cancel).unwrap()
+}
 
 #[test]
 fn declared_tables_append_and_snapshot_queries_survive_reopen() {
@@ -132,20 +155,6 @@ fn declared_tables_append_and_snapshot_queries_survive_reopen() {
 
 #[test]
 fn reclamation_preserves_all_pinned_generations_and_receipts() {
-    fn append_one(db: &Database, value: i64) -> pipesql::Commit {
-        let cancel = CancellationToken::new();
-        let mut append = db.begin_append("facts", limits(), &cancel).unwrap();
-        append
-            .write(
-                &[ColumnInput {
-                    values: ColumnValues::Int64(&[value]),
-                    validity: &[1],
-                }],
-                &cancel,
-            )
-            .unwrap();
-        append.commit(&cancel).unwrap()
-    }
     let directory = Directory::new();
     let path = directory.database();
     let db = Database::create_empty(&path, config()).unwrap();
@@ -216,21 +225,6 @@ fn reclamation_preserves_all_pinned_generations_and_receipts() {
 
 #[test]
 fn concurrent_readers_keep_generations_through_reclamation_and_early_drop() {
-    fn append(db: &Database, value: i64) -> pipesql::Commit {
-        let cancel = CancellationToken::new();
-        let mut writer = db.begin_append("facts", limits(), &cancel).unwrap();
-        writer
-            .write(
-                &[ColumnInput {
-                    values: ColumnValues::Int64(&[value]),
-                    validity: &[1],
-                }],
-                &cancel,
-            )
-            .unwrap();
-        writer.commit(&cancel).unwrap()
-    }
-
     let directory = Directory::new();
     let path = directory.database();
     let db = Database::create_empty(&path, config()).unwrap();
@@ -246,9 +240,9 @@ fn concurrent_readers_keep_generations_through_reclamation_and_early_drop() {
     )
     .unwrap();
     let resident = db.reserved_memory_bytes();
-    let first = append(&db, 11);
+    let first = append_one(&db, 11);
     let old = db.prepare("FROM facts |> SELECT v").unwrap();
-    let second = append(&db, 22);
+    let second = append_one(&db, 22);
     let middle = db.prepare("FROM facts |> SELECT v").unwrap();
     let timeout = std::time::Duration::from_secs(30);
     let (old_ready_tx, old_ready_rx) = std::sync::mpsc::sync_channel(1);
@@ -291,7 +285,7 @@ fn concurrent_readers_keep_generations_through_reclamation_and_early_drop() {
         });
         middle_ready_rx.recv_timeout(timeout).unwrap();
         let parked = db.reserved_memory_bytes();
-        let third = append(&db, 33);
+        let third = append_one(&db, 33);
         assert!(db.reclaim(&cancel).unwrap() > 0);
         assert_eq!(db.reserved_memory_bytes(), parked);
         assert_eq!(db.reserved_temp_bytes(), 0);
@@ -314,7 +308,7 @@ fn concurrent_readers_keep_generations_through_reclamation_and_early_drop() {
     assert_eq!(db.reserved_temp_bytes(), 0);
     assert!(db.reclaim(&cancel).unwrap() > 0);
     assert_eq!(db.reclaim(&cancel).unwrap(), 0);
-    let fourth = append(&db, 44);
+    let fourth = append_one(&db, 44);
     let expected = vec![
         vec![Cell::Integer(11)],
         vec![Cell::Integer(22)],

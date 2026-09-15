@@ -1,3 +1,11 @@
+//! Check set operations that retain duplicate counts rather than one row per key.
+//!
+//! A local count map derives EXCEPT ALL by subtraction and INTERSECT ALL by the
+//! smaller count. It uses literal source rows, not engine records or comparisons.
+//! Typed cases distinguish equality classes from payloads: NaNs and signed zeros
+//! may compare equal, but surviving occurrences keep their own left-input bits.
+//! Append checks pin both input counts; composition checks argument order and schema.
+
 use super::*;
 use std::collections::BTreeMap;
 

@@ -1,3 +1,11 @@
+//! Check duplicate removal against an independent set of typed rows.
+//!
+//! The local reference groups NaNs and signed zeros according to SQL equality;
+//! it does not use the engine's row codec or comparison code. Every input field
+//! must participate even when later projection hides it. Wide and long-text cases
+//! challenge that demand boundary, while prepared queries retain their inputs
+//! across append and reclamation. The small-stack case requires a release build.
+
 use super::*;
 
 fn canonical(mut row: Vec<Cell>) -> Vec<Cell> {
@@ -21,28 +29,10 @@ fn unordered(db: &Database, sql: &str, expected: Vec<Vec<Cell>>) {
         .prepare(sql)
         .unwrap_or_else(|error| panic!("{sql}: {error}"));
     let mut result = db.execute(&prepared, &cancel).unwrap();
-    let mut rows = Vec::new();
-    let mut finished = false;
-    for _ in 0..1_000_000 {
-        match result.step() {
-            QueryStep::Rows(batch) => {
-                for row in 0..batch.len() {
-                    rows.push(canonical(
-                        (0..batch.column_count())
-                            .map(|column| owned_cell(batch.value(row, column).unwrap()))
-                            .collect(),
-                    ));
-                }
-            }
-            QueryStep::Finished => {
-                finished = true;
-                break;
-            }
-            QueryStep::Progress => (),
-            QueryStep::Failed(error) => panic!("{sql}: {error}"),
-        }
-    }
-    assert!(finished, "{sql}: bounded fixture did not finish");
+    let mut rows: Vec<_> = collect_rows(&mut result, 1_000_000, sql)
+        .into_iter()
+        .map(canonical)
+        .collect();
     rows.sort();
     let mut expected: Vec<_> = expected.into_iter().map(canonical).collect();
     expected.sort();

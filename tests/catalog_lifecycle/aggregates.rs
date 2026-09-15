@@ -1,4 +1,12 @@
-//! Public aggregates contract tests.
+//! Check aggregate values, presence and error timing through declared tables.
+//!
+//! Literal typed rows distinguish empty inputs, all-NULL groups, special floating
+//! values and exact integers beyond DOUBLE precision. COUNT observes presence but
+//! still evaluates a demanded expression. SUM narrows only when its final value
+//! is needed; AVG can remain valid when an unused SUM would overflow. Extrema
+//! must not let a prior NaN hide a later argument failure. A short-text case also
+//! protects the useful in-memory grouping capacity.
+
 use super::*;
 
 #[test]

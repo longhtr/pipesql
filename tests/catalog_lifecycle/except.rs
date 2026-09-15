@@ -1,3 +1,11 @@
+//! Check set difference over complete positional rows.
+//!
+//! Literal results and a standard-library set model specify which left rows
+//! survive. Separate cases check left-side names/nullability, typed NULLs and
+//! floating equivalence without production comparison helpers. Appending to the
+//! right table must affect fresh queries while prepared queries keep both pinned
+//! inputs. Shared demanded-error cases live in `intersect.rs`.
+
 use super::*;
 
 #[test]

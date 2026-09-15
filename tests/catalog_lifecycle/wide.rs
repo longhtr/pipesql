@@ -1,4 +1,12 @@
-//! Public wide contract tests.
+//! Exercise declared width, visible output width and retained hidden columns.
+//!
+//! A 64-column typed pattern makes late-column loss and identity mix-ups visible.
+//! Exact scan admission and narrow projection under a smaller budget check that
+//! reservations follow required work. Set operations distinguish their combined
+//! source pool from repeated output positions; overflow of either limit refuses.
+//! Normal and observed small-stack runs share the same cases. Use release builds
+//! for the small-stack variants.
+
 use super::*;
 
 #[test]

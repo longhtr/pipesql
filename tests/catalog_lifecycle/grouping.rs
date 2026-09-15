@@ -1,4 +1,11 @@
-//! Public grouping contract tests.
+//! Check grouped results across key distributions, validity patterns and budgets.
+//!
+//! Two input passes make group counts and sums derivable without engine helpers.
+//! Many distinct keys force spill only under the smaller budget; skew changes
+//! counts without changing the expected group set. Presence-only COUNT cases
+//! separate validity from payload and observe cancellation after actual spill.
+//! Admission and temporary-space refusals must release owners before retry.
+
 use super::*;
 
 const GROUPING_QUERY: &str =

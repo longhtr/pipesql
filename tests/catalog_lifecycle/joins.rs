@@ -1,4 +1,11 @@
-//! Public joins contract tests.
+//! Check join identity, duplicate pairs and unmatched left rows through the public API.
+//!
+//! Small literal examples distinguish source occurrences and composed producers.
+//! A separate nested-loop reference covers typed keys and observes actual spill;
+//! a lower budget must refuse admission. Coordinated readers cross publication
+//! to both inputs and retain one snapshot. Small-stack variants reuse the same
+//! flows in release builds; `join_corpus.rs` owns the generated integer/NULL model.
+
 use super::*;
 
 #[test]

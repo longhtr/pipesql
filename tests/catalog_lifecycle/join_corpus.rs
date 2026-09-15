@@ -1,4 +1,12 @@
-//! Contract-authored row model; no engine binding, equality or grouping helpers.
+//! Compare composed joins with an independent nested-loop row model.
+//!
+//! Key distribution, NULL keys, NULL payloads and source direction vary separately.
+//! Direct pair enumeration and standard-library maps derive duplicate counts and
+//! grouped answers without engine binding, comparison, sorting or replay helpers.
+//! Coverage witnesses require empty matches, a full duplicate product and nonempty
+//! all-NULL sums. Separate overflow cases distinguish unused aggregates from values
+//! demanded by hidden order keys, joins or later predicates.
+
 use super::*;
 use std::collections::BTreeMap;
 

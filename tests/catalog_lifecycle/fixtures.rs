@@ -161,7 +161,11 @@ pub(super) fn collect_unordered(result: &mut QueryResult<'_, '_>) -> Vec<Vec<Cel
     rows
 }
 
-fn collect_rows(result: &mut QueryResult<'_, '_>, steps: usize, context: &str) -> Vec<Vec<Cell>> {
+pub(super) fn collect_rows(
+    result: &mut QueryResult<'_, '_>,
+    steps: usize,
+    context: &str,
+) -> Vec<Vec<Cell>> {
     let mut rows = Vec::new();
     for _ in 0..steps {
         match result.step() {

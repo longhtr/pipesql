@@ -1,3 +1,11 @@
+//! Check concatenation and duplicate removal across independently prepared branches.
+//!
+//! UNION ALL may stop before demanding a later branch; UNION DISTINCT must compare
+//! complete rows before returning one representative. Literal values and source
+//! spans expose that difference. Other cases retain one snapshot across branches,
+//! sweep cancellation through every scheduled prefix, and require either observed
+//! disk spill or temporary-space refusal under the chosen budget.
+
 use super::*;
 
 #[test]
