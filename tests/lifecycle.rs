@@ -152,47 +152,76 @@ fn stock_cli_preserves_usage_exit_when_stderr_is_broken() {
 
 #[test]
 fn stock_cli_creates_and_reopens_database() {
-    let temp = TempDir::new();
-    let database = temp.0.join("database");
-    let binary = env!("CARGO_BIN_EXE_pipesql");
-    let common = [
-        "--database",
-        database.to_str().expect("UTF-8 test path"),
-        "--memory-limit-bytes",
-        "1048576",
-        "--temp-limit-bytes",
-        "1048576",
-    ];
-    let create = Command::new(binary)
-        .arg("create")
-        .args(common)
-        .output()
-        .expect("run create CLI");
-    assert!(
-        create.status.success(),
-        "{}",
-        String::from_utf8_lossy(&create.stderr)
-    );
-    assert!(
-        String::from_utf8(create.stdout)
-            .expect("UTF-8 create output")
-            .contains("status=created")
-    );
-    let open = Command::new(binary)
-        .arg("open")
-        .args(common)
-        .output()
-        .expect("run open CLI");
-    assert!(
-        open.status.success(),
-        "{}",
-        String::from_utf8_lossy(&open.stderr)
-    );
-    assert!(
-        String::from_utf8(open.stdout)
-            .expect("UTF-8 open output")
-            .contains("status=opened")
-    );
+    for operation in ["create", "create-declared"] {
+        let temp = TempDir::new();
+        let database = temp.0.join("database");
+        let binary = env!("CARGO_BIN_EXE_pipesql");
+        let common = [
+            "--database",
+            database.to_str().expect("UTF-8 test path"),
+            "--memory-limit-bytes",
+            "1048576",
+            "--temp-limit-bytes",
+            "1048576",
+        ];
+        let create = Command::new(binary)
+            .arg(operation)
+            .args(common)
+            .output()
+            .expect("run create CLI");
+        assert!(
+            create.status.success(),
+            "{}",
+            String::from_utf8_lossy(&create.stderr)
+        );
+        assert!(
+            String::from_utf8(create.stdout)
+                .expect("UTF-8 create output")
+                .contains("status=created")
+        );
+        let open = Command::new(binary)
+            .arg("open")
+            .args(common)
+            .output()
+            .expect("run open CLI");
+        assert!(
+            open.status.success(),
+            "{}",
+            String::from_utf8_lossy(&open.stderr)
+        );
+        assert!(
+            String::from_utf8(open.stdout)
+                .expect("UTF-8 open output")
+                .contains("status=opened")
+        );
+        let duplicate = Command::new(binary)
+            .arg(operation)
+            .args(common)
+            .output()
+            .expect("refuse an existing database");
+        assert_eq!(duplicate.status.code(), Some(1));
+        assert!(duplicate.stdout.is_empty());
+        let db = Database::open(&database, config()).unwrap();
+        assert_eq!(db.generation(), 0);
+        let declaration = db.declare_table(
+            "events",
+            &[pipesql::ColumnDeclaration {
+                name: "id",
+                data_type: pipesql::DataType::Int64,
+                nullable: false,
+            }],
+            &pipesql::CancellationToken::new(),
+        );
+        if operation == "create-declared" {
+            assert_eq!(declaration.unwrap().generation(), 1);
+        } else {
+            assert!(matches!(
+                declaration,
+                Err(Error::Unsupported("catalog database required"))
+            ));
+        }
+        db.close().unwrap();
+    }
 }
 
 // Measure the ordinary library handle, independently of test-only instrumentation.

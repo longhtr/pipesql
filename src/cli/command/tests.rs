@@ -19,7 +19,7 @@ fn args(values: &[&str]) -> impl Iterator<Item = OsString> {
 
 #[test]
 fn parser_accepts_complete_create_and_open() {
-    for operation in ["create", "open"] {
+    for operation in ["create", "create-declared", "open"] {
         let command = parse(args(&[
             "pipesql",
             operation,
@@ -31,6 +31,12 @@ fn parser_accepts_complete_create_and_open() {
             "2097152",
         ]))
         .expect("command");
+        assert!(matches!(
+            (operation, &command.operation),
+            ("create", Operation::Create)
+                | ("create-declared", Operation::CreateDeclared)
+                | ("open", Operation::Open)
+        ));
         assert_eq!(command.database, PathBuf::from("/tmp/example"));
         assert_eq!(command.config.memory_limit_bytes(), 1_048_576);
         assert_eq!(command.config.temp_limit_bytes(), 2_097_152);

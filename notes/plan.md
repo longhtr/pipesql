@@ -28,8 +28,10 @@ for persistence checkpoints. Preserve the
 
 Expose creation, declaration, schema inspection and logical-plan output through
 one CLI path over the existing library. First settle the bounded schema input
-and inspection interface against the event-report tables. Current CLI creation
-is legacy-only; preserve that behavior explicitly while adding declared creation.
+and inspection interface against the event-report tables. `create-declared` now uses
+`Database::create_empty`; `create` retains legacy behavior. Focused parser and
+stock-process checks cover both forms, existing-path refusal and declaration
+compatibility. Declaration input, schema inspection and explain remain unfinished.
 Select focused grammar/output checks during implementation, then the existing
 CLI allocation and publication campaigns plus the integrated checkpoint. Require
 both platforms' affected evidence before synchronizing this capability.

@@ -242,12 +242,16 @@ The public path supports:
 
 Use the binary built by `cargo build --release --offline --locked`. Commands
 below run from the repository root and address it as `target/release/pipesql`.
-The CLI can query declared tables, but declaration and typed append require the
-library. CLI `create` and `load` operate on the legacy `lineitem` schema.
+Use `create-declared` to create an empty database for declared tables. It accepts
+`--database`, `--memory-limit-bytes` and `--temp-limit-bytes`, like `create`, and
+reports `status=created` only after library creation succeeds. An existing path
+is refused. The CLI can query declared tables, but declaration and typed append
+currently require the library. `create` and `load` retain the legacy `lineitem`
+schema.
 
 ### CLI source and path admission
 
-The CLI exposes `create`, `open`, `load`, `query`, and `resolve`. A query source
+The CLI exposes `create`, `create-declared`, `open`, `load`, `query`, and `resolve`. A query source
 must be a regular, non-symlink UTF-8 file of at most 4,096 bytes and remain
 unchanged while read. The CLI compares the opened descriptor with the initial
 pathname's type, identity, extent, and modification/change times. After reading,

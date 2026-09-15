@@ -15,6 +15,7 @@ pub(super) const MAX_ARGUMENT_BYTES: usize = 4_096;
 
 pub(super) enum Operation {
     Create,
+    CreateDeclared,
     Open,
     Load(PathBuf),
     Query(PathBuf),
@@ -28,7 +29,7 @@ pub(super) struct Command {
 }
 
 fn usage() -> &'static str {
-    "usage: pipesql create|open|load|query|resolve --database ABSOLUTE_PATH [--input ABSOLUTE_TBL] [--query-file ABSOLUTE_PATH] [--transaction HEX_TOKEN] --memory-limit-bytes N --temp-limit-bytes N"
+    "usage: pipesql create|create-declared|open|load|query|resolve --database ABSOLUTE_PATH [--input ABSOLUTE_TBL] [--query-file ABSOLUTE_PATH] [--transaction HEX_TOKEN] --memory-limit-bytes N --temp-limit-bytes N"
 }
 
 #[derive(Debug)]
@@ -70,7 +71,7 @@ pub(super) fn parse(arguments: impl Iterator<Item = OsString>) -> Result<Command
         Ok(value)
             if matches!(
                 value.as_str(),
-                "create" | "open" | "load" | "query" | "resolve"
+                "create" | "create-declared" | "open" | "load" | "query" | "resolve"
             ) =>
         {
             value
@@ -145,6 +146,7 @@ pub(super) fn parse(arguments: impl Iterator<Item = OsString>) -> Result<Command
     }
     let operation = match operation.as_str() {
         "create" => Operation::Create,
+        "create-declared" => Operation::CreateDeclared,
         "open" => Operation::Open,
         "load" => Operation::Load(input.ok_or("--input is required for load")?),
         "query" => Operation::Query(query_file.ok_or("--query-file is required for query")?),

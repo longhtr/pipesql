@@ -63,13 +63,15 @@ pub(super) fn main() -> ExitCode {
 }
 
 fn run(command: Command, output: &mut impl Write) -> Result<(), Error> {
-    let mut database = if matches!(command.operation, Operation::Create) {
-        Database::create(&command.database, command.config)?
-    } else {
-        Database::open(&command.database, command.config)?
+    let mut database = match command.operation {
+        Operation::Create => Database::create(&command.database, command.config)?,
+        Operation::CreateDeclared => Database::create_empty(&command.database, command.config)?,
+        _ => Database::open(&command.database, command.config)?,
     };
     let outcome = (|| match command.operation {
-        Operation::Create => write_database_status(output, "created", &database),
+        Operation::Create | Operation::CreateDeclared => {
+            write_database_status(output, "created", &database)
+        }
         Operation::Open => write_database_status(output, "opened", &database),
         Operation::Load(input) => {
             let commit = database.load_lineitem(&input, &CancellationToken::new())?;
