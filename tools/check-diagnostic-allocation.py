@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Supervise public allocation refusal and ownership evidence.
+"""Check that public operations report allocation refusal and release their owners.
 
-Build the caller against one compatible stock library, then run fresh bounded
-processes. Prefix sweeps measure a census, preflight the full healthy prefix and
-refuse every earlier prefix. The Rust caller checks values, live owners and typed
-outcomes; this supervisor checks process status, unchanged authority, required
-phases and complete observation records. Negative controls must fail at their
-intended guard. Shared build/process mechanics live in check_support/check_process.
-Use --help for focused scopes; --controls-only is not prefix-sweep evidence.
-"""
+A prefix of N means the allocator permits N allocations, then refuses later
+requests while the workload, error reporting, and cleanup continue. First count
+a workload's allocations with refusal disabled. Then permit that complete prefix
+to check the fault-enabled caller, followed by every shorter prefix in a fresh
+process. This exposes failure after partially constructing real engine state.
+
+The Rust caller links to one compatible stock library and checks values, live
+owners, and typed outcomes. This supervisor checks process status, unchanged
+persistent authority, required phases, and complete observation records. Negative
+controls must fail at their intended guard. Shared build and process mechanics
+live in check_support and check_process.
+
+Use --help for focused scopes. --controls-only counts allocations and runs its
+selected controls; it does not exercise the allocation-refusal sweep."""
 
 from functools import partial
 from pathlib import Path

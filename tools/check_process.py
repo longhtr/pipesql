@@ -1,10 +1,16 @@
-"""Owned subprocesses for native verification on macOS and Linux.
+"""Run verification commands and clean up the processes they start.
 
-Each launch creates a process group. The caller owns that group until this scope
-ends, including children left behind by a timing wrapper or compiler. Campaigns
-must not detach descendants into another session. Windows needs a job-object
-implementation before these native campaigns can use the same cleanup contract.
-"""
+A compiler or timing wrapper can leave children alive after its own exit. Each
+launch therefore creates a process group: related processes that can be signaled
+together. Leaving owned_process first gives a live leader time to terminate,
+then kills remaining group members, waits for the leader, and closes its pipes.
+The same cleanup runs on failure or interruption.
+
+run adds a deadline and returns captured output and the process status; check=True
+raises on a nonzero status. Callers using owned_process directly must bound their
+own reads and waits. Campaigns must not detach descendants into another session.
+This POSIX implementation supports macOS and Linux; Windows needs a job-object
+owner for the same process-tree lifetime. Cleanup cannot run after SIGKILL."""
 
 from contextlib import contextmanager
 import math
