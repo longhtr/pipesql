@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Exercise command failures and process cleanup with disposable Python children."""
+"""Check subprocess supervision with real disposable Python process trees.
+
+Status and captured output must survive failure, timeout and interrupted cleanup.
+A descendant heartbeat independently reveals a process left alive; disabling
+cleanup must make that control fail. Other cases check nested termination and
+signal-handler restoration. These are supervisor checks, not engine concurrency
+qualification; run directly or through maintenance on POSIX hosts.
+"""
 import os
 from pathlib import Path
 import signal

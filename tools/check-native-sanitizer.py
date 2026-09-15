@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
-"""Qualify AddressSanitizer observations for native mutexes or pathname handling.
+"""Check native mutex or pathname behavior with controlled AddressSanitizer builds.
 
-The nightly toolchain must already be installed. Standard libraries and native
-libraries and the kernel remain uninstrumented; this is not a race-freedom gate.
+Freeze source, then compare the selected tests under the pinned compiler,
+uninstrumented nightly and instrumented nightly. A clean heap-read control
+must pass and an out-of-bounds control must report the intended sanitizer fault
+before engine tests can qualify. Require exact discovery and completion, retain
+compiler/artifact identities and remove owned builds even after failure.
+
+Invoke explicitly with an already installed nightly; this is outside the normal
+gate. Standard and native libraries and the kernel remain uninstrumented, and
+AddressSanitizer does not establish race freedom. See tools/README.md for scope.
 """
 import argparse
 import hashlib
@@ -16,7 +23,7 @@ import subprocess
 import time
 import tomllib
 
-from check import prepare_output, source_manifest
+from check import prepare_output, source_export, source_manifest
 from check_process import run as run_process
 from check_support import require_executable, source_revision
 
@@ -139,6 +146,7 @@ def main(argv=None):
     )
     output = prepare_output(options.output, ROOT)
     work = output / "build"
+    source = work / "source"
     receipt = {
         "status": "failed", "scope": f"native-{options.scope}-address-sanitizer",
         "required_tests": sorted(required),
@@ -155,7 +163,7 @@ def main(argv=None):
         print(f"check: {label}", flush=True)
         started = time.monotonic()
         try:
-            result = run_process(args, cwd=ROOT, env=env, timeout=timeout,
+            result = run_process(args, cwd=source, env=env, timeout=timeout,
                                  capture_output=True, text=True)
             (output / f"{label}.stdout").write_text(result.stdout)
             (output / f"{label}.stderr").write_text(result.stderr)
@@ -177,10 +185,10 @@ def main(argv=None):
     try:
         work.mkdir()
         receipt["revision"] = source_revision(ROOT)
-        before = source_manifest(ROOT)
+        before = source_export(ROOT, source)
         (output / "inputs-before.sha256").write_text(before)
         receipt["source_sha256"] = hashlib.sha256(before.encode()).hexdigest()
-        pinned = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
+        pinned = tomllib.loads((source / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
         selectors = {"stock": pinned, "diagnostic": options.toolchain}
         compilers = {}
         clean_env = environment(work / "metadata", False)
@@ -211,7 +219,7 @@ def main(argv=None):
         asan_env = environment(work / "address", True)
         command("control-build", ["rustc", f"+{options.toolchain}", "--edition=2024", "--target", host,
                 "-Zsanitizer=address", "-Copt-level=1", "-g", "-Dwarnings",
-                str(ROOT / "tools/fixtures/sanitizer-control.rs"), "-o", str(control)], asan_env, 60)
+                str(source / "tools/fixtures/sanitizer-control.rs"), "-o", str(control)], asan_env, 60)
         receipt["artifacts"]["control"] = artifact(require_executable(control))
         for mode in ("clean", "fault"):
             result = command(f"control-{mode}", [str(control), mode], asan_env, 20, 86 if mode == "fault" else 0)
@@ -248,7 +256,7 @@ def main(argv=None):
     finally:
         errors = []
         try:
-            after = source_manifest(ROOT)
+            after = source_manifest(source)
             (output / "inputs-after.sha256").write_text(after)
             receipt["inputs_unchanged"] = before is not None and before == after
             if not receipt["inputs_unchanged"]:

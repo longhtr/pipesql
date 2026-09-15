@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
-"""Run the existing Linux gate on a full-synchronization Apple virtual disk.
+"""Run the ordinary Linux gate and fresh examples on a full-synchronization VM disk.
 
-Docker only prepares an already provisioned toolchain image and reads quiescent
-results. Database operations run inside the separate, offline Linux VM.
+Freeze source, use Docker to prepare the provisioned toolchain's boot image,
+then run an offline Apple VM with one CPU, 2 GiB and uid/gid 1000. Databases live
+on the guest's private ext4 disk. Docker only prepares images and extracts
+quiescent receipts; it does not run the database qualification workload.
+
+The host controller must refuse weaker synchronization. Smoke and deliberate
+failure controls precede the gate; shutdown must report both the child status
+and completed cleanup. Accept only the expected full gate on the frozen source.
+Owned containers and images are removed, leaving logs and receipts. Invoke as
+documented in docs/testing.md; --bootstrap-only qualifies no database campaign.
 """
 import argparse
 import hashlib

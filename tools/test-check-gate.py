@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Verify gate receipts and isolation with disposable commands, without Cargo."""
+"""Check gate evidence and output ownership using disposable Python commands.
+
+Successful commands are insufficient when source or stock artifacts changed,
+cleanup failed, or stages were omitted. Local fixtures challenge each boundary
+and verify failed commands, timeouts and interruption remain failures in the
+receipt. A checkout edit must leave the exported source unchanged. No Cargo
+build or database campaign runs; maintenance owns this fast check.
+"""
 from contextlib import redirect_stderr, redirect_stdout
 import io
 import json

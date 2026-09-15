@@ -1,5 +1,10 @@
-/* Optional Linux VM diagnostic. The host supplies a read-only boot disk and an
- * expendable second disk. Nothing here is part of the database or its gate. */
+/* Measure synchronization cost inside a disposable Linux VM.
+ * Raw mode compares flushes of unchanged data with 4-KiB direct writes followed
+ * by flushes, then checks readback. Catalog mode runs the existing allocation
+ * caller's capacity, healthy and refusal controls on ext4. PID 1 owns mounts
+ * and shutdown; an unprivileged worker owns measurements. Failed workers cannot
+ * emit PROBE_OK. The host selects the disk policy, while this workload stays
+ * fixed. See tools/README.md; timings do not establish power-loss durability. */
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>

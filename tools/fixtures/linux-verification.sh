@@ -1,5 +1,9 @@
 #!/bin/sh
-# The VM's init owns mounts and identity. Keep the actual gate in tools/check.py.
+# Run the existing gate and four fresh examples after checking the VM premise.
+# Init owns mounts and uid/gid; this script verifies private ext4, one CPU and
+# no network device. The deliberate failure mode proves status propagation.
+# A successful full run removes example outputs before printing completion;
+# init and check-linux-vm.py then verify shutdown and the frozen gate receipt.
 set -eu
 . /verification-env.sh
 export CARGO_BUILD_JOBS=1

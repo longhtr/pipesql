@@ -1,3 +1,10 @@
+//! Demonstrate that AddressSanitizer observes an out-of-bounds heap read.
+//!
+//! The clean mode reads the fourth element; fault mode reads one past it through
+//! the same volatile pointer path. check-native-sanitizer.py requires both normal
+//! completion and the specific sanitizer failure before accepting engine tests.
+//! The deliberate unsafe access is confined to this diagnostic executable.
+
 fn main() {
     let mode = std::env::args().nth(1).expect("clean or fault");
     assert!(mode == "clean" || mode == "fault");

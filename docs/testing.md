@@ -332,8 +332,9 @@ python3 -B tools/check-native-sanitizer.py --scope pathname \
   --toolchain nightly-2026-09-06 --output /absolute/new-pathname-sanitizer-results
 ```
 
-Supply a new directory outside the checkout. The command refuses existing outputs
-and requires identical native targets for the stock and diagnostic compilers.
+Supply a new directory outside the checkout. The command freezes source there,
+so later checkout edits do not affect the run. It refuses existing outputs and
+requires identical native targets for the stock and diagnostic compilers.
 macOS uses `otool` to record linked libraries; GNU/Linux uses `ldd`. Run the command
 as an unprivileged user. It does not install dependencies or change toolchains.
 
@@ -350,7 +351,8 @@ directories that are removed even if the subprocess aborts.
 Accept the result only when the command exits zero and `result.json` reports
 `passed`, unchanged inputs, and no finalization errors. The directory retains
 compiler/runtime identities, test-artifact hashes, separate stdout/stderr logs,
-and before/after manifests. Build outputs are removed even after failure. A failed
+and before/after manifests of the export. Build outputs and exported source are
+removed even after failure. A failed
 control invalidates the observation; inspect its logs before interpreting any
 production result. Remove the result directory after retaining necessary evidence.
 

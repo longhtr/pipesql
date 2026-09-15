@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Challenge sanitizer interpretation and failure receipts without a compiler."""
+"""Check sanitizer evidence interpretation without invoking a compiler.
+
+Literal outputs distinguish a clean control from the intended heap-bounds
+violation; wrong faults and missing test discovery must refuse. Fake build
+artifacts and failed commands challenge ownership, partial-output retention
+and cleanup receipts. Maintenance runs these tests; they do not establish
+that instrumentation is active in a real executable.
+"""
 from contextlib import redirect_stdout
 import io
 import json
@@ -107,6 +114,37 @@ class Interpretation(unittest.TestCase):
             self.assertFalse(receipt["finalization_errors"])
             self.assertFalse((output / "build").exists())
             return receipt, (output / "native-compiler.stderr").read_text()
+
+    def test_checkout_edits_do_not_change_the_diagnostic_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            checkout = root / "checkout"
+            checkout.mkdir()
+            for name in ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml",
+                         "README.md", "THIRD_PARTY.md"):
+                (checkout / name).write_text(
+                    '[toolchain]\nchannel="fixture"\n' if name == "rust-toolchain.toml"
+                    else "original\n")
+            output = root / "results"
+            frozen = output / "build/source"
+
+            def fail_after_edit(command, **options):
+                self.assertEqual(options["cwd"], frozen)
+                (checkout / "README.md").write_text("next edit\n")
+                self.assertEqual((frozen / "README.md").read_text(), "original\n")
+                return self.result(7, stderr="compiler failed")
+
+            with patch.dict(CHECK["main"].__globals__, {
+                "ROOT": checkout, "source_revision": lambda root: "fixture",
+                "run_process": fail_after_edit,
+            }), redirect_stdout(io.StringIO()), self.assertRaises(ValueError):
+                CHECK["main"](["--toolchain", "nightly", "--output", str(output)])
+            receipt = json.loads((output / "result.json").read_text())
+            self.assertEqual(receipt["status"], "failed")
+            self.assertTrue(receipt["inputs_unchanged"])
+            self.assertEqual(receipt["finalization_errors"], [])
+            self.assertFalse(frozen.exists())
+            self.assertEqual((checkout / "README.md").read_text(), "next edit\n")
 
     def test_subprocess_failure_is_retained_with_cleanup(self):
         receipt, stderr = self.failed_run(lambda *a, **k: self.result(7, stderr="compiler failed"))

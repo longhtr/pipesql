@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Check campaign discovery and argument handling without running the engine."""
+"""Check that campaign discovery and argument errors cause no campaign effects.
+
+Import and --help run with process/output creation forbidden, including when
+Unix-only modules are unavailable. Invalid scopes, paths and assertion-disabled
+Python must refuse before setup. Negative controls prove the effect guard can
+catch accidental work. These checks run in maintenance and execute no engine.
+"""
 from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
 import builtins
 import importlib.util

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Check build orchestration without compiling or executing the engine."""
+"""Check build identity and artifact ownership without invoking a compiler.
+
+Fake compiler results must leave the required nonempty artifacts. Missing,
+ambiguous, changed or preexisting outputs must refuse; compatible recorded stock
+builds must be reused without building. Explicit assertions check code-generation
+settings, native linking and propagation of subprocess failure. Maintenance runs
+these orchestration checks; real compilation remains a separate gate stage.
+"""
 from pathlib import Path
 import os
 import json

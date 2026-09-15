@@ -1,5 +1,9 @@
-/* Minimal init for an offline verification VM. Mounts and shutdown belong to
- * PID 1; the unchanged gate runs as uid/gid 1000 on the private ext4 disk. */
+/* Own mounts, privilege reduction and shutdown as PID 1 in the verification VM.
+ * The gate runs as uid/gid 1000 from the read-only source image, with /tmp on
+ * the private ext4 data disk. Report its real exit or signal status, reap exited
+ * orphans and refuse a live descendant before unmounting. Only then report
+ * VERIFICATION_STOPPED. check-linux-vm.py requires both records; VM shutdown
+ * alone cannot establish successful verification. */
 #define _GNU_SOURCE
 #include <errno.h>
 #include <stdio.h>

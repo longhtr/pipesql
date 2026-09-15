@@ -1,5 +1,10 @@
-/* macOS controller for isolated Linux diagnostics and full-storage verification.
- * Verification refuses a weaker data-disk policy before starting the VM. */
+/* Configure the Apple VM used by storage diagnostics and Linux verification.
+ * A read-only boot image and a disposable data image are attached without a
+ * network device. Raw/catalog timing profiles may compare fsync and full disk
+ * policies; verification must refuse fsync before VM startup. Keep the machine
+ * and its weakly referenced delegate alive until shutdown or timeout.
+ * A normal VM stop exits zero; the supervising Python command must still check
+ * the guest's work and cleanup records. Invocation belongs to tools/README.md. */
 #import <Foundation/Foundation.h>
 #import <Virtualization/Virtualization.h>
 

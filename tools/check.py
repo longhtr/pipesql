@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Run the sequential regression gate with owned outputs and frozen inputs."""
+"""Run an ordered verification checkpoint against a private source export.
+
+`stages` lists commands and deadlines; `execute` supervises them, stops at the
+first failure and records each outcome. The full scope builds one compatible
+stock artifact for its campaigns after ordinary Cargo tests; core omits those
+campaigns. Neither scope may pass if source or shared artifacts changed, or
+owned build cleanup failed. Receipts and logs remain in the new output directory.
+
+Invoke through check.sh. Source discovery/export belongs to source-manifest.py,
+process lifetime to check_process.py and stock build identity to check_support.py.
+Case meanings and expected answers stay in their individual campaigns.
+"""
 import argparse
 from dataclasses import dataclass
 import hashlib

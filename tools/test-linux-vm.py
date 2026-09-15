@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Challenge VM completion and gate identity independently of the VM controller."""
+"""Reject incomplete VM shutdown and wrong-source gate evidence.
+
+Literal console records distinguish a successful child, a real failure and
+completed cleanup. Mutated receipts challenge source identity and missing,
+reordered or failed stages. These tests call the Python validators without
+starting Docker or a VM; the platform campaign supplies runtime evidence.
+"""
 import copy
 import runpy
 from pathlib import Path
