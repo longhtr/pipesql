@@ -2,6 +2,7 @@
 """Check build orchestration without compiling or executing the engine."""
 from pathlib import Path
 import os
+import json
 import subprocess
 import tempfile
 import unittest
@@ -117,6 +118,34 @@ class BuildCommands(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             support.build_library(self.work)
         run.assert_not_called()
+
+    def test_shared_artifacts_skip_build_and_reject_changed_inputs(self):
+        self.library_fixture()
+        cli = self.release / "pipesql"
+        cli.write_bytes(b"stock executable")
+        cli.chmod(0o700)
+        profile = {"source": "fixture", "compiler": "fixture"}
+        record = {"profile": profile, "artifacts": support.artifact_manifest(self.release)}
+        (self.work / "stock.json").write_text(json.dumps(record))
+        consumer = self.work.parent / "consumer"
+        consumer.mkdir()
+        with patch.dict(os.environ, {"PIPESQL_STOCK_BUILD": str(self.work)}), patch.object(
+            support, "build_profile", return_value=profile
+        ) as current, patch.object(support, "run_process") as run:
+            self.assertEqual(support.build_library(consumer), self.release)
+            self.assertEqual(support.build_cli(consumer), self.release)
+            self.assertEqual(list(consumer.iterdir()), [])
+            current.return_value = {"source": "other source", "compiler": "fixture"}
+            with self.assertRaisesRegex(ValueError, "profile differs"):
+                support.build_library(consumer)
+            current.return_value = profile
+            cli.write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "artifacts changed"):
+                support.build_cli(consumer)
+            cli.unlink()
+            with self.assertRaisesRegex(ValueError, "artifacts changed"):
+                support.build_cli(consumer)
+            run.assert_not_called()
 
     @patch.object(support, "run_process")
     def test_native_warning_and_install_name_contract(self, run):

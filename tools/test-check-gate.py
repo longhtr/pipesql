@@ -105,6 +105,33 @@ print('observed output')
         self.assertEqual(checkout.joinpath("README.md").read_text(), "next edit")
         self.assertFalse(frozen.exists())
 
+    def test_shared_stock_is_isolated_and_mutation_invalidates_the_gate(self):
+        stock = self.output / "stock"
+        build = self.stage("stock-cli", f"""
+from pathlib import Path
+import hashlib, json, os
+stock = Path({str(stock)!r})
+assert 'PIPESQL_STOCK_BUILD' not in os.environ
+assert Path(os.environ['CARGO_TARGET_DIR']) != stock / 'target'
+release = stock / 'target/release'
+release.mkdir(parents=True)
+(release / 'artifact').write_bytes(b'stock')
+record = {{'profile': {{}}, 'artifacts': {{'artifact': hashlib.sha256(b'stock').hexdigest()}}}}
+(stock / 'stock.json').write_text(json.dumps(record))
+""")
+        mutate = self.stage("consumer", """
+import os
+from pathlib import Path
+stock = Path(os.environ['PIPESQL_STOCK_BUILD'])
+assert (stock / 'target/release/artifact').read_bytes() == b'stock'
+(stock / 'target/release/artifact').write_bytes(b'changed')
+""")
+        with self.assertRaisesRegex(RuntimeError, "stock artifacts changed"):
+            self.execute([build, mutate])
+        self.assertEqual(self.receipt()["status"], "failed")
+        self.assertTrue(all(stage["status"] == "passed" for stage in self.receipt()["stages"]))
+        self.assertFalse(stock.exists())
+
     def test_failure_preserves_status_and_stops_before_next_stage(self):
         stages = [
             self.stage(
@@ -251,7 +278,7 @@ print('observed output')
         composition = names.index("aggregate-composition")
         self.assertLess(names.index("doc-tests"), build)
         self.assertEqual((semantic, composition), (build + 1, build + 2))
-        binary = str(self.output / "target/release/pipesql")
+        binary = str(self.output / "stock/target/release/pipesql")
         self.assertEqual(stages[semantic].command[-1], binary)
         self.assertEqual(stages[composition].command[-2:], [binary, str(self.output / "composition")])
 

@@ -74,8 +74,8 @@ def catalog_allocation_limit():
 
 
 def build_driver(work):
-    build_library(work)
-    native = dependency(work / "target/release", "pipesql_filesystem")
+    release = build_library(work)
+    native = dependency(release, "pipesql_filesystem")
     run_process(
         [
             "rustc",
@@ -84,11 +84,11 @@ def build_driver(work):
             "-D",
             "warnings",
             "--extern",
-            f"pipesql={work/'target/release/libpipesql.rlib'}",
+            f"pipesql={release/'libpipesql.rlib'}",
             "--extern",
             f"pipesql_filesystem={native}",
             "-L",
-            f"dependency={work/'target/release/deps'}",
+            f"dependency={release/'deps'}",
             str(ROOT / "tools/fixtures/diagnostic-allocation.rs"),
             "-o",
             str(work / "driver"),
@@ -98,7 +98,7 @@ def build_driver(work):
         timeout=60,
     )
     for label, path in [
-        ("rlib", work / "target/release/libpipesql.rlib"),
+        ("rlib", release / "libpipesql.rlib"),
         ("driver", work / "driver"),
     ]:
         print(

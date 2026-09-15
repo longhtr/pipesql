@@ -167,7 +167,7 @@ def build_driver(work):
         stdout=subprocess.PIPE,
     ).stdout
     (work / "sources.sha256").write_bytes(source)
-    build_library(work, timeout=120)
+    release = build_library(work, timeout=120)
     driver = work / "driver"
     run_process(
         [
@@ -178,9 +178,9 @@ def build_driver(work):
             "warnings",
             str(ROOT / "tools/fixtures/catalog-graph.rs"),
             "--extern",
-            f"pipesql={work/'target/release/libpipesql.rlib'}",
+            f"pipesql={release/'libpipesql.rlib'}",
             "-L",
-            f"dependency={work/'target/release/deps'}",
+            f"dependency={release/'deps'}",
             "-o",
             str(driver),
         ],
@@ -188,7 +188,7 @@ def build_driver(work):
         timeout=60,
         cwd=ROOT,
     )
-    return source, driver
+    return source, driver, release
 
 
 def create_seed(work, driver):
@@ -751,7 +751,7 @@ def check_report_corruption(work, driver):
     return records
 
 
-def write_report(work, source, driver, records):
+def write_report(work, source, driver, release, records):
     assert (
         source
         == run_process(
@@ -774,7 +774,7 @@ def write_report(work, source, driver, records):
         source_manifest_sha256=hashlib.sha256(source).hexdigest(),
         driver_sha256=hashlib.sha256(driver.read_bytes()).hexdigest(),
         library_sha256=hashlib.sha256(
-            (work / "target/release/libpipesql.rlib").read_bytes()
+            (release / "libpipesql.rlib").read_bytes()
         ).hexdigest(),
     )
     (work / "result.json").write_text(json.dumps(record, indent=2) + "\n")
@@ -782,7 +782,7 @@ def write_report(work, source, driver, records):
 
 
 def campaign(work, *, seed_only=False):
-    source, driver = build_driver(work)
+    source, driver, release = build_driver(work)
     seed, baseline = create_seed(work, driver)
     if seed_only:
         print(
@@ -792,7 +792,7 @@ def campaign(work, *, seed_only=False):
                     "source_manifest_sha256": hashlib.sha256(source).hexdigest(),
                     "driver_sha256": hashlib.sha256(driver.read_bytes()).hexdigest(),
                     "library_sha256": hashlib.sha256(
-                        (work / "target/release/libpipesql.rlib").read_bytes()
+                        (release / "libpipesql.rlib").read_bytes()
                     ).hexdigest(),
                     "seed": str(seed),
                 }
@@ -809,7 +809,7 @@ def campaign(work, *, seed_only=False):
     check_cli_limits(seed)
     check_oracle_controls(baseline)
     checks.records.extend(check_report_corruption(work, driver))
-    write_report(work, source, driver, checks.records)
+    write_report(work, source, driver, release, checks.records)
 
 
 def newer_corrupt(mutation):

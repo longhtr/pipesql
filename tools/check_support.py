@@ -1,11 +1,15 @@
 """Stock builds and explicit artifacts shared by verification callers.
 
-Each caller supplies an owned work directory. These helpers never reuse a shared
-target or choose the newest artifact from an ambiguous directory. Campaign cases,
+Standalone callers supply an owned build directory. Frozen gates supply one
+identified stock build; callers verify it before linking or execution. Campaign cases,
 oracles, environment changes, and result interpretation stay with their callers.
 """
 
 from pathlib import Path
+import argparse
+import hashlib
+import json
+import runpy
 import os
 import sys
 
@@ -84,13 +88,13 @@ def _build(work: Path, *, library_only: bool, timeout: float) -> Path:
 
 
 def build_library(work: Path, *, timeout: float = 60) -> Path:
-    """Build the stock library in a fresh target directory."""
-    return _build(work, library_only=True, timeout=timeout)
+    """Use the gate's verified stock library, or build in a fresh target."""
+    return shared_release() or _build(work, library_only=True, timeout=timeout)
 
 
 def build_cli(work: Path, *, timeout: float = 90) -> Path:
-    """Build the stock library and CLI together in a fresh target directory."""
-    return _build(work, library_only=False, timeout=timeout)
+    """Use the gate's verified stock CLI, or build in a fresh target."""
+    return shared_release() or _build(work, library_only=False, timeout=timeout)
 
 
 def dependency(release: Path, name: str) -> Path:
@@ -197,3 +201,71 @@ def rust_driver(
     )
     run_process(command, check=True, timeout=60, cwd=ROOT)
     return require_executable(output)
+
+
+def artifact_manifest(release):
+    """Identify all stock outputs, including dependencies used by rustc callers."""
+    return {
+        str(path.relative_to(release)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(release.rglob("*")) if path.is_file()
+    }
+
+
+def build_profile():
+    source_manifest = runpy.run_path(str(ROOT / "tools/source-manifest.py"))["source_manifest"]
+    compiler = run_process(
+        ["rustc", "-vV"], cwd=ROOT, check=True, capture_output=True, text=True, timeout=30
+    ).stdout
+    return {
+        "source_sha256": hashlib.sha256(source_manifest(ROOT).encode()).hexdigest(),
+        "rustc": compiler,
+        "profile": "release; default features; library and CLI",
+        "environment": {
+            name: value for name, value in sorted(os.environ.items())
+            if (name.startswith("CARGO_") or name in (
+                "RUSTFLAGS", "RUSTUP_TOOLCHAIN", "RUSTC", "RUSTC_WRAPPER",
+                "RUSTC_WORKSPACE_WRAPPER",
+            )) and name not in ("CARGO_TARGET_DIR", "CARGO_BUILD_JOBS")
+        },
+    }
+
+
+def shared_release():
+    """Fail closed on stale, incompatible or changed gate artifacts."""
+    directory = os.environ.get("PIPESQL_STOCK_BUILD")
+    if directory is None:
+        return None
+    work = Path(directory)
+    if not work.is_absolute():
+        raise ValueError("shared stock directory must be absolute")
+    record = json.loads((work / "stock.json").read_text())
+    release = work / "target/release"
+    if record["profile"] != build_profile():
+        raise ValueError("shared stock source or compiler profile differs")
+    if record["artifacts"] != artifact_manifest(release):
+        raise ValueError("shared stock artifacts changed")
+    require_artifact(release / "libpipesql.rlib")
+    require_executable(release / "pipesql")
+    return release
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Build identified stock artifacts for a frozen gate.")
+    parser.add_argument("output", type=Path)
+    options = parser.parse_args(argv)
+    if not options.output.is_absolute():
+        parser.error("stock output must be absolute")
+    options.output.mkdir()
+    before = build_profile()
+    release = _build(options.output, library_only=False, timeout=120)
+    if before != build_profile():
+        raise ValueError("stock source or compiler profile changed during build")
+    record = {"profile": before, "artifacts": artifact_manifest(release)}
+    for path in release.rglob("*"):
+        if path.is_file():
+            path.chmod(path.stat().st_mode & ~0o222)
+    (options.output / "stock.json").write_text(json.dumps(record, indent=2) + "\n")
+
+
+if __name__ == "__main__":
+    main()

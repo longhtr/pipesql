@@ -34,7 +34,7 @@ def main(argv=None):
         rust_driver(
             work, release, "native-initialization.rs", "native_probe", ("libc",)
         )
-        for path in [observer, work / "driver", work / "target/release/libpipesql.rlib"]:
+        for path in [observer, work / "driver", release / "libpipesql.rlib"]:
             print(
                 f"native initialization {path.name} sha256={hashlib.sha256(path.read_bytes()).hexdigest()}",
                 flush=True,

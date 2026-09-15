@@ -43,8 +43,7 @@ def main(argv=None):
         if options.stock_cli is not None:
             binary = options.stock_cli
         else:
-            build_cli(work)
-            binary = work / "target/release/pipesql"
+            binary = build_cli(work) / "pipesql"
         identity = hashlib.sha256(binary.read_bytes()).hexdigest()
         print(f"aggregate artifact sha256={identity}", flush=True)
         failures = []

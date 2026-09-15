@@ -44,7 +44,7 @@ def main(argv=None):
         observer = native_library(work, "native-io.c", "io_probe")
         release = build_library(work)
         rust_driver(work, release, "native-io.rs", "io_probe", ())
-        for path in [observer, work / "driver", work / "target/release/libpipesql.rlib"]:
+        for path in [observer, work / "driver", release / "libpipesql.rlib"]:
             print(
                 f"native I/O {path.name} sha256={hashlib.sha256(path.read_bytes()).hexdigest()}",
                 flush=True,

@@ -37,7 +37,7 @@ def main(argv=None):
         for path in [
             observer,
             work / "driver",
-            work / "target/release/libpipesql.rlib",
+            release / "libpipesql.rlib",
             native,
         ]:
             print(

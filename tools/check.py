@@ -14,7 +14,7 @@ import tempfile
 import time
 
 from check_process import run as run_process
-from check_support import source_revision
+from check_support import artifact_manifest, source_revision
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -112,14 +112,13 @@ def stages(scope, output, root=ROOT):
             ],
         ),
     ]
-    # The two semantic campaigns only read this stock CLI. Build it after all
-    # Cargo test/doc stages, then keep its target unchanged until both finish.
-    binary = str(output / "target/release/pipesql")
+    # Stock features must not inherit the test target's dev-dependency features.
+    binary = str(output / "stock/target/release/pipesql")
     native = [
         Stage(
             "stock-cli",
-            90,
-            ["cargo", "build", "--release", "--offline", "--locked"],
+            180,
+            [*python, "tools/check_support.py", str(output / "stock")],
         ),
         Stage(
             "aggregate-semantics",
@@ -188,7 +187,9 @@ def execute(steps, *, root, output, scope, revision=None):
         "RUSTDOCFLAGS": (os.environ.get("RUSTDOCFLAGS", "") + " -D warnings").strip(),
         "PYTHONDONTWRITEBYTECODE": "1",
     }
+    environment.pop("PIPESQL_STOCK_BUILD", None)
     before = None
+    stock_record = None
     receipt = {
         "scope": scope,
         "platform": sys.platform,
@@ -235,6 +236,10 @@ def execute(steps, *, root, output, scope, revision=None):
                         stdout=log,
                         stderr=subprocess.STDOUT,
                     )
+                if step.name == "stock-cli":
+                    stock_record = json.loads((output / "stock/stock.json").read_text())
+                    receipt["stock_build"] = stock_record
+                    environment["PIPESQL_STOCK_BUILD"] = str(output / "stock")
                 record.update(status="passed", returncode=result.returncode)
             except BaseException as error:
                 record["error"] = str(error)
@@ -261,7 +266,13 @@ def execute(steps, *, root, output, scope, revision=None):
                 finalization_errors.append("build/gate inputs changed during the run")
         except Exception as error:
             finalization_errors.append(f"cannot verify final inputs: {error}")
-        owned_outputs = [target, output / "composition"]
+        if stock_record is not None:
+            try:
+                if artifact_manifest(output / "stock/target/release") != stock_record["artifacts"]:
+                    raise ValueError("shared stock artifacts changed during the gate")
+            except Exception as error:
+                finalization_errors.append(str(error))
+        owned_outputs = [target, output / "stock", output / "composition"]
         if root == output / "source":
             owned_outputs.append(root)
         for owned in owned_outputs:

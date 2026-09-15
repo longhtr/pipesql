@@ -386,11 +386,16 @@ parent revision is recorded when available. Retain the exact checked commit or a
 reconstructing patch for uncommitted inputs; runtime workloads need separate
 input records.
 
-The gate uses an isolated Cargo target. After the Cargo test/doc stages it builds
-one stock CLI for both semantic campaigns, with no intervening build. It removes
-that target, the source export and the composition databases after completion or
-handled failure.
-Native callers own separate temporary targets. Preserve
+The gate uses separate targets for workspace checks and stock artifacts. After
+Cargo test/doc stages, it builds one stock library and CLI for the semantic and
+native campaigns. Each consumer verifies source, compiler settings and artifact
+hashes; the gate rechecks the artifacts before cleanup. Example builds retain
+their separate dev-dependency profile. Standalone campaigns build fresh stock
+artifacts when no gate build is supplied.
+
+The gate removes its targets, source export and composition databases after
+completion or handled failure. Native callers retain their own observer and
+fixture outputs until their campaign finishes. Preserve
 useful receipts and failing cases according to the engineering guide, then
 remove old run directories. Parallel campaign execution still requires
 shared-resource bounds and descendant-cleanup evidence; see the [campaign

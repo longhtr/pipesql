@@ -76,11 +76,11 @@ class CatalogSeed(unittest.TestCase):
             work = Path(directory)
             driver = work / "driver"
             driver.write_bytes(b"caller")
-            library = work / "target/release/libpipesql.rlib"
+            library = work / "shared-stock/libpipesql.rlib"
             library.parent.mkdir(parents=True)
             library.write_bytes(b"library")
             seed = work / "seed"
-            build = Mock(return_value=(b"source", driver))
+            build = Mock(return_value=(b"source", driver, library.parent))
             inspect = Mock(return_value=(seed, {}))
             remainder = Mock(side_effect=AssertionError("unexpected full campaign"))
             output = io.StringIO()
@@ -105,7 +105,7 @@ class CatalogSeed(unittest.TestCase):
         failure = subprocess.CalledProcessError(101, ["driver", "seed", "setup"])
         output = io.StringIO()
         with patch.dict(GRAPH["campaign"].__globals__, {
-            "build_driver": Mock(return_value=(b"source", Path("driver"))),
+            "build_driver": Mock(return_value=(b"source", Path("driver"), Path("release"))),
             "create_seed": Mock(side_effect=failure),
         }), redirect_stdout(output), self.assertRaises(subprocess.CalledProcessError) as raised:
             GRAPH["campaign"](Path("unused"), seed_only=True)

@@ -260,12 +260,8 @@ def campaign(work):
         **facts,
         report=report,
         artifacts={
-            name: hashlib.sha256((work / name).read_bytes()).hexdigest()
-            for name in [
-                "driver",
-                observer.name,
-                "target/release/libpipesql.rlib",
-            ]
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in [work / "driver", observer, release / "libpipesql.rlib"]
         },
     )
     (work / "result.json").write_text(json.dumps(result, indent=2) + "\n")

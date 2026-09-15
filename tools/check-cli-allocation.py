@@ -39,8 +39,8 @@ def options(database):
     ]
 
 
-def run_cli(work, args, mode=None, argv0=None, **kwargs):
-    binary = work / "target/release/pipesql" if mode is None else work / "probe"
+def run_cli(work, stock, args, mode=None, argv0=None, **kwargs):
+    binary = stock if mode is None else work / "probe"
     return run_process(
         [str(binary) if argv0 is None else argv0, *args],
         executable=binary,
@@ -55,9 +55,8 @@ def run_cli(work, args, mode=None, argv0=None, **kwargs):
 
 
 def build_probes(work):
-    target = work / "target"
-    build_cli(work)
-    dependencies = target / "release/deps"
+    release = build_cli(work)
+    dependencies = release / "deps"
     compile = [
         "rustc",
         "--edition=2024",
@@ -65,10 +64,10 @@ def build_probes(work):
         "-D",
         "warnings",
         "--extern",
-        f"pipesql={target/'release/libpipesql.rlib'}",
+        f"pipesql={release/'libpipesql.rlib'}",
     ]
     for name in ["pipesql_filesystem", "libc"]:
-        artifact = dependency(target / "release", name)
+        artifact = dependency(release, name)
         compile += ["--extern", f"{name}={artifact}"]
     compile += [
         "-L",
@@ -78,7 +77,7 @@ def build_probes(work):
         str(work / "probe"),
     ]
     run_process(compile, cwd=ROOT, check=True, timeout=60)
-    stock = target / "release/pipesql"
+    stock = release / "pipesql"
     for artifact in [stock, work / "probe"]:
         print(
             f"CLI {artifact.name} sha256={hashlib.sha256(artifact.read_bytes()).hexdigest()}",
@@ -86,7 +85,7 @@ def build_probes(work):
         )
     print(f"CLI RUSTFLAGS={os.environ.get('RUSTFLAGS', '')!r}", flush=True)
 
-    return compile
+    return compile, stock
 
 
 def parser_cases(work):
@@ -435,8 +434,7 @@ def check_operations(work, run, fixtures, heal_ambiguous):
     return cells
 
 
-def check_output_sinks(work, run, loaded, history):
-    stock = work / "target/release/pipesql"
+def check_output_sinks(work, stock, run, loaded, history):
     token = TRANSACTION_TOKEN
     # Inject closure AFTER runtime sanitization at the narrow caller boundary.
     # The same CLI entry must refuse stdout before mutation and never reuse fd 2
@@ -532,8 +530,8 @@ def main(argv=None):
         parser.error("CLI publication/allocation observers require macOS or Linux")
     with tempfile.TemporaryDirectory(prefix="pipesql-cli-gate-") as directory:
         work = Path(directory).resolve()
-        compile = build_probes(work)
-        run = partial(run_cli, work)
+        compile, stock = build_probes(work)
+        run = partial(run_cli, work, stock)
         check_parser(run, parser_cases(work))
         cells = check_native_capture(run)
         fixtures = create_databases(work, run)
@@ -550,7 +548,7 @@ def main(argv=None):
             flush=True,
         )
 
-        check_output_sinks(work, run, loaded, history)
+        check_output_sinks(work, stock, run, loaded, history)
         print(
             f"CLI: {cells} allocation-prefix cases; Rust owners/descriptors released; stock closed/broken sinks passed",
             flush=True,

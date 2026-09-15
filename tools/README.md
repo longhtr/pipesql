@@ -670,8 +670,11 @@ Allocation and native-I/O focus options are mutually exclusive; `--controls-only
 selects a census and cannot establish a passing refusal sweep. Entry-point tests
 exercise these boundaries with process launches and output creation forbidden.
 
-`check_support.py` owns isolated locked/offline stock builds, exact dependency
-selection, and explicit C/Rust linking. It reserves fresh target/output paths and
+`check_support.py` owns locked/offline stock builds, exact dependency selection
+and explicit C/Rust linking. The gate invokes its build entry point once and
+passes `PIPESQL_STOCK_BUILD` to consumers. `stock.json` binds the release artifacts
+to their source and compiler profile; consumers reject a mismatch before linking.
+Standalone callers build in fresh targets. It reserves fresh target/output paths and
 rejects missing, empty, ambiguous, or unusable artifacts. Existing outputs,
 including dangling symlinks, are never silently overwritten. Callers retain their
 case generation, fault schedules, oracles, cleanup, and claim boundaries.
