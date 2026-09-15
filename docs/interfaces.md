@@ -138,6 +138,8 @@ objects](#reclaim-obsolete-catalog-objects).
 `load_lineitem`; it does not admit table declarations or named appends.
 `Database::open` identifies either supported format through the shared validated
 recovery path.
+The [creation protocol](transactions.md#creation) validates fresh state without
+repairing it and retains the lease through failed construction cleanup.
 
 `declare_table(name, columns, cancel)` accepts column names, types and
 NULLability as `ColumnDeclaration` values and returns a durable `Commit`. The

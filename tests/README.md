@@ -96,6 +96,8 @@ Internal invariant and effect-cut tests remain beside the relevant implementatio
 or in its `tests.rs` child. The internal
 [database lifecycle tests](../src/database/tests.rs) cover creation, held leases,
 namespace corruption, repair, and cleanup through the injectable effect boundary.
+Their [creation checks](../src/database/tests/creation.rs) distinguish exact
+genesis validation from recovery and retain literal barrier and corruption cases.
 The [catalog fixture owner](../src/catalog_snapshot/tests.rs) provides shared
 on-disk setup and typed value readers. Its contract tests have explicit imports
 and retain their own expectations:

@@ -86,7 +86,9 @@ def main(argv=None):
             assert run("standard", kind, 1, 3, errno.EINTR) == (4, 3, 0)
         partial_mask = 0
         expected_kinds = {
-            "create": 7,
+            # Creation only reads and writes initial files. Recovery's positioned
+            # fence readback remains covered by load/recover, not fresh creation.
+            "create": 3,
             "load": 15,
             "recover": 7,
             "q6": 5,

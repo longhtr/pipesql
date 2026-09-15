@@ -124,7 +124,7 @@ pub(crate) struct Namespace {
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum NamespaceAccess {
-    Recover {
+    Exclusive {
         lock: EntryIdentity,
         database: Option<DatabaseId>,
     },
@@ -144,12 +144,43 @@ pub(crate) fn validate_namespace(
     check_namespace(
         root,
         effects,
-        NamespaceAccess::Recover {
+        NamespaceAccess::Exclusive {
             lock: lease.identity(),
             database: expected_database,
         },
         memory,
     )
+}
+
+/// Check newly written genesis bytes without granting recovery permission.
+/// Creation owns the file and child-directory barriers; its caller still must
+/// synchronize the database directory and parent before returning a handle.
+pub(crate) fn validate_created_namespace(
+    root: &Path,
+    lease: &DatabaseLease,
+    expected: &storage_format::WalRecord,
+    memory: &MemoryAuthority,
+    effects: &mut Effects,
+) -> Result<(), Error> {
+    assert!(
+        expected.issued == 0
+            && matches!(
+                expected.state,
+                storage_format::RootState::Empty | storage_format::RootState::Catalog(None)
+            )
+    );
+    let access = NamespaceAccess::Exclusive {
+        lock: lease.identity(),
+        database: Some(expected.database),
+    };
+    let authority = read_namespace_authority(root, access, effects)?;
+    if authority.selected != *expected {
+        return Err(Error::Corrupt(
+            "created namespace differs from initial state",
+        ));
+    }
+    let contents = validate_namespace_contents(root, &authority, access, memory, effects)?;
+    require_settled_namespace(&authority, &contents)
 }
 
 pub(crate) fn inspect_namespace(
@@ -339,7 +370,7 @@ fn check_namespace(
 ) -> Result<Namespace, Error> {
     let authority = read_namespace_authority(root, access, effects)?;
     let contents = validate_namespace_contents(root, &authority, access, memory, effects)?;
-    if !matches!(access, NamespaceAccess::Recover { .. }) {
+    if !matches!(access, NamespaceAccess::Exclusive { .. }) {
         require_settled_namespace(&authority, &contents)?;
     } else {
         recover_namespace(root, &authority, &contents, effects).map_err(|source| {
@@ -377,7 +408,7 @@ fn read_namespace_authority(
     } = inspect_namespace_entries(root, effects)?;
     // A descriptor can outlive the name from which it was opened. Validate the
     // current namespace against held authority before any repairing transition.
-    if let NamespaceAccess::Recover { lock: expected, .. } = access
+    if let NamespaceAccess::Exclusive { lock: expected, .. } = access
         && lock != Some(expected)
     {
         return Err(Error::Corrupt("namespace lease identity changed"));
@@ -391,7 +422,7 @@ fn read_namespace_authority(
     )?;
     let database_id = storage_format::decode_control(&control_bytes)
         .map_err(|error| map_format_error(error, &control_bytes))?;
-    if let NamespaceAccess::Recover {
+    if let NamespaceAccess::Exclusive {
         database: Some(expected),
         ..
     } = access
@@ -488,7 +519,7 @@ fn validate_namespace_contents(
                 MAX_CATALOG_OBJECTS,
                 effects,
             )?;
-            let cleanup = if matches!(access, NamespaceAccess::Recover { .. }) {
+            let cleanup = if matches!(access, NamespaceAccess::Exclusive { .. }) {
                 scratch_cleanup(root, private, effects)?
             } else {
                 NamespaceCleanup::None

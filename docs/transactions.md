@@ -231,6 +231,26 @@ required recovery, and a possibly committed transaction. A bounded call count
 does not bound the time spent inside a kernel call or establish durable cleanup
 after a failed flush.
 
+## Creation
+
+Fresh creation and repairing reopen have different authority. After writing and
+synchronizing LOCK, the empty child directories, CONTROL, both roots and WAL,
+[`finish_create`](../src/database.rs) calls
+[`validate_created_namespace`](../src/namespace.rs). The validator uses the normal
+independent readers to check the held lease, database identity and exact initial
+state. Both roots and the fence must agree, the issued prefix must be zero, and
+no pending roots or construction debris may remain. Unexpected state causes
+failure and creation cleanup runs while the lease is still held. Before deleting
+files, cleanup checks that the pathname still names the held LOCK identity. If
+that check fails, creation returns `CleanupRequired` and leaves the files alone;
+an open descriptor does not authorize deleting a replacement database.
+
+The validator performs no recovery writes or synchronization. Creation still
+synchronizes the database directory and its parent before returning a handle.
+Those barriers make the already synchronized children reachable. Recovery's
+additional barriers below remain necessary when reopening existing state, where
+an earlier synchronization may have failed despite apparently settled bytes.
+
 ## Recovery
 
 The namespace validator, [`check_namespace`](../src/namespace.rs), coordinates

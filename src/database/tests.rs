@@ -740,7 +740,9 @@ fn every_create_effect_refuses_without_silent_debt() {
         .expect("baseline")
         .close()
         .unwrap();
-    assert_eq!(baseline.count(), 78);
+    // Fresh creation omits recovery's 15 effects: directory rechecks/barriers
+    // and the matching fence's open, inspection, rewrite, readback and sync.
+    assert_eq!(baseline.count(), 63);
 
     for index in 0..baseline.count() {
         let temp = TempDir::new();
@@ -922,7 +924,8 @@ fn bounded_short_control_io_fails_and_cleans_or_releases() {
             assert!(!path.exists());
         }
     }
-    assert_eq!(create_short_count, 11);
+    // Initial reads/writes remain; recovery's fence rewrite/readback are absent.
+    assert_eq!(create_short_count, 9);
 
     let temp = TempDir::new();
     let path = temp.database();
@@ -1024,3 +1027,5 @@ fn pathname_scratch_case() {
         assert_eq!(fs::read(canonical.join(name)).unwrap(), expected);
     }
 }
+
+mod creation;

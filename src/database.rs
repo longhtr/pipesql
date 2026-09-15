@@ -7,8 +7,8 @@ use crate::effects::{DirectoryKind, Effect, Effects, MetadataKind};
 use crate::error::{io_error, map_not_found};
 use crate::namespace::{
     CONTROL_NAME, LOCK_NAME, PRIVATE_NAME, PRIVATE_RECOVERY_NAMES, ROOT_A_NAME, ROOT_B_NAME,
-    UNIT_NAME, UNITS_NAME, WAL_NAME, create_synced_file, sync_directory, validate_lock_entry,
-    validate_namespace,
+    UNIT_NAME, UNITS_NAME, WAL_NAME, create_synced_file, sync_directory,
+    validate_created_namespace, validate_lock_entry, validate_namespace,
 };
 use crate::path::{
     MAX_PATH_BYTES, joined_path, native_path_work_limit, try_join_path, validate_requested_path,
@@ -351,14 +351,11 @@ impl Database {
                     },
                 })
             }
-            Err(primary) => match cleanup_created_namespace(&root, effects) {
+            Err(primary) => match cleanup_failed_creation(&root, lease.as_ref(), effects) {
                 Ok(()) => Err(primary),
                 Err(cleanup) => Err(Error::CleanupRequired {
                     primary: ErrorCause::from_error(primary),
-                    cleanup: ErrorCause::from_error(Error::Io {
-                        operation: "cleanup created namespace",
-                        source: cleanup,
-                    }),
+                    cleanup: ErrorCause::from_error(cleanup),
                 }),
             },
         }
@@ -548,10 +545,26 @@ fn finish_create(
         MetadataKind::RootB,
     )?;
 
-    validate_namespace(root, lease, Some(database_id), memory, effects)?;
+    validate_created_namespace(root, lease, &initial, memory, effects)?;
     sync_directory(root, effects, DirectoryKind::Database)?;
     sync_directory(parent, effects, DirectoryKind::Parent)?;
     Ok(())
+}
+
+fn cleanup_failed_creation(
+    root: &Path,
+    lease: Option<&DatabaseLease>,
+    effects: &mut Effects,
+) -> Result<(), Error> {
+    // A failed validation may have found a replacement namespace. The held
+    // descriptor remains locked, but that alone does not authorize path deletion.
+    if let Some(lease) = lease
+        && validate_lock_entry(root, effects)? != lease.identity()
+    {
+        return Err(Error::Corrupt("creation cleanup lease identity changed"));
+    }
+    cleanup_created_namespace(root, effects)
+        .map_err(|source| io_error("cleanup created namespace", source))
 }
 
 fn cleanup_created_namespace(root: &Path, effects: &mut Effects) -> Result<(), io::Error> {
