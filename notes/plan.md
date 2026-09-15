@@ -12,9 +12,8 @@ outcomes are verified; no checkpoint goal remains. The final tested source is
 `081b1f8`. Its [complete verification record](evidence.md#final-internal-analytical-checkpoint)
 covers matching 24-stage macOS/GNU arm64 Linux gates, 687 ordinary Rust tests per
 platform, 103 tooling tests, 44 codec fixtures, 24 semantic cases, 350 composition
-records and 18 fresh scenarios per platform. Engine sources remain at that
-checkpoint; subsequent work adds timing diagnostics and full-synchronization
-Linux verification.
+records and 18 fresh scenarios per platform. Subsequent work adds timing diagnostics and full-synchronization Linux
+verification. The strict-creation change below is undergoing platform verification.
 
 The [event-report lesson](../docs/event-report.md) is the entry point: build typed
 events and dimensions, append, reopen, report, retain an older snapshot, compare
@@ -64,9 +63,9 @@ closed.
 
 Separate validation of a fresh namespace from recovery of an existing database.
 Creation already writes and synchronizes its initial files and child directories,
-but its final validation currently enters recovery and performs four additional
-synchronization calls. Require the exact initial state, database identity and held
-lease without repairing unexpected bytes. Keep the final database/parent barriers
+and now validates the exact initial state, database identity and held lease
+without entering recovery or making its four additional synchronization calls.
+The implementation is committed as `0f1e47b`. Keep the final database/parent barriers
 and every repairing-reopen rule until independent evidence justifies otherwise.
 
 Trace the creation and namespace owners, then challenge initial roots, fence,
@@ -76,10 +75,11 @@ creation before and after; reassess the design after 45 minutes of implementatio
 and focused verification. A local timing improvement cannot justify weaker
 validation or durability.
 
-A focused replacement-directory test exposed a cleanup authority defect:
-validation refuses the replacement, but failure cleanup could delete its files.
-Recheck the held lease identity before cleanup and return explicit cleanup debt
-when the pathname belongs to another lease. Preserve the replacement's bytes.
+A focused replacement-directory test exposed and now guards a cleanup defect.
+Cleanup rechecks the held lease identity before deleting files. An identity
+mismatch or inspection failure returns cleanup debt and preserves the files.
+macOS verification covers all 24 stages across the initial run and a corrected
+native-I/O continuation. Linux verification is running; fresh examples remain pending.
 
 Use focused regressions and reusable build outputs during implementation. Keep
 measurements small and tied to the proposed benefit. Run the required sequential
@@ -110,10 +110,10 @@ not tasks to activate together. Scope each goal from the actual preceding result
 
 | Order | Outcome | Estimated goals | Completion evidence |
 | --- | --- | --- | --- |
-| 1 | Expose declared database creation, table declaration and schema inspection through the stock CLI. | 1 | A fresh event-report schema can be created and inspected through existing library owners; invalid declarations retain typed failures and cause no publication. Choose one explicit schema input format, with no parallel SQL frontend. |
-| 2 | Import a documented CSV profile into a declared table with bounded streaming buffers. | 2 | One goal owns decoding, types, NULLs, quoting, limits and byte-offset errors; one integrates append, cancellation, transaction tokens, reopen and ambiguous-outcome resolution. Malformed input cannot become reported success. Independent fixtures and refusal cuts cover both layers. |
-| 3 | Export typed query results in a documented machine-readable form. | 1 | A fresh report round-trips supported values, preserves NULL distinctions and requires successful query completion. File output has explicit completion/publication rules; stdout and sink failures cannot imply a complete file. Reuse the query cursor. |
-| 4 | Explain the actual prepared query and its resource choices. | 1 | Readable output connects the source query to existing logical/physical owners, projected columns and blocking/spill choices without executing it. Admission errors remain truthful; no cost optimizer or duplicate planner is introduced. |
+| 1 | Consolidate campaign build ownership and shorten test navigation. | 1 | The sequential gate builds one dedicated stock CLI/library set for compatible campaigns, while standalone runs retain fresh isolated builds. Keep observer builds, case expectations and failure interpretation local. Prove artifact/source checks, failure propagation and cleanup; compare coverage and total runtime. Reduce the test map to navigation and remove repeated contract prose. |
+| 2 | Expose declared database creation, table declaration, schema inspection and logical plans through the stock CLI. | 1 | A fresh event-report schema can be created and inspected through existing library owners; invalid declarations retain typed failures and cause no publication. Reuse `PreparedQuery::logical_plan`; it reports logical structure, not runtime costs. Choose one explicit schema input format, with no parallel SQL frontend. |
+| 3 | Import a documented CSV profile into a declared table with bounded streaming buffers. | 2 | One goal owns decoding, types, NULLs, quoting, limits and byte-offset errors; one integrates append, cancellation, transaction tokens, reopen and ambiguous-outcome resolution. Malformed input cannot become reported success. Independent fixtures and refusal cuts cover both layers. |
+| 4 | Export typed query results in a documented machine-readable form. | 1 | A fresh report round-trips supported values, preserves NULL distinctions and requires successful query completion. File output has explicit completion/publication rules; stdout and sink failures cannot imply a complete file. Reuse the query cursor. |
 | 5 | Add conditional report expressions required by the event workflow. | 1 | A bounded searched CASE profile classifies events with independently checked NULL, type and demanded-error semantics. Reuse the expression demand machinery and show skipped failing branches. Defer unrelated scalar functions. |
 | 6 | Support a bounded partitioned, ordered reporting window. | 2 | First specify and implement partition/order/frame ownership over the shared sorting path; then complete the selected running-total use case with forced spill, peers, NULLs, numeric errors, cancellation and independent results. Do not claim the full window language. |
 | 7 | Exercise the complete import/report/export workflow above memory limits with concurrent snapshot ownership. | 1 | Fresh small literal and scaled model results agree; append/reopen/reclaim and interrupted import remain coherent. Measure end-to-end work and repair only demonstrated bottlenecks or contract violations. |
@@ -126,9 +126,12 @@ milestones. Reassess after import integration and after the first window prototy
 split a goal when ownership or failure boundaries warrant it. Remove a proposed
 feature if the workflow no longer needs it, and explain the changed target.
 
-The first decision after creation is the smallest explicit declared-schema CLI
-interface. Its worked example should establish the schema that the importer will
-consume. Do not start with another general architecture audit or gate rewrite.
+The first goal after creation removes a concrete recurring cost: several native
+campaigns rebuild the same stock library through `check_support.build_library`.
+Use one dedicated immutable stock build within the sequential gate; keep test
+binaries with different feature sets separate. Keep the existing gate and campaigns. Also run long checks from a frozen source
+export so ordinary edits do not invalidate their inputs. Then design the smallest declared-schema CLI
+interface around the event-report schema.
 No buffer manager, parallel executor, format migration, distributed component or
 general optimizer is scheduled without a measured need in this workflow.
 
@@ -137,8 +140,18 @@ focused checks and warm targets during each goal; broad runs at integrated
 capability boundaries. Import publication and any changed native/resource owner
 still require both platforms' relevant full campaigns. Batch the portable report
 features into one integration checkpoint when their dependencies permit it.
-Each goal includes code, its explanation beside the owner and a working example;
-the last goal checks their coherence rather than postponing documentation.
+Each goal includes code, its explanation beside the owner and a working example.
+Consolidate the affected area before adding another layer: one clear owner per
+invariant, shared setup where it removes repetition, and independent expectations
+where agreement matters. Remove dead branches, forwarding-only helpers and stale
+instructions. A lower file count is useful only if readers can follow the flow.
+
+Documentation must help a reader act, understand a design decision or find its
+owner. Delete repeated claims and obvious code narration. Prefer one worked
+example to a long list of assurances; keep exact contracts in their owning guide.
+Test maps identify where to change a case instead of restating every test. The
+final checkpoint reviews these properties across the completed workflow; cleanup
+is part of each goal, not work deferred until the end.
 
 ## Internal analytical learning checkpoint
 

@@ -93,6 +93,20 @@ and [test map](../tests/README.md) locate maintained checks. The complete gate
 retains known regressions and runs sequentially; a filtered or interrupted run
 cannot establish a passing full gate.
 
+The local gate checks the following boundaries through production code and
+independent models or fixtures. Native and persistence campaigns are described
+in their dedicated sections below:
+
+| Boundary | Required checks |
+| --- | --- |
+| Build inputs | Formatting, warning-denied release workspace Clippy, all Rust test targets, native SDK agreement, and source-manifest inclusion checks. Literal Rust code/data includes and explicit module paths must be recorded; generated or nonliteral inputs need an explicit generator contract. |
+| Persistent fixtures | Independent byte-for-byte reproduction of rejected formats 1/2/3, current legacy format 4, retired format 5, and namespace-7/catalog-object-6 vectors. Fixture agreement establishes provenance consistency, not recovery or stable compatibility. |
+| Numeric semantics | Rational rounding vectors, the full admitted aggregate row-count bound, exceptional values, exact integers, scalar errors, final SUM overflow, later cancellation/nonfinite values, and finite AVG after intermediate sum overflow. Floating accumulation need not be exact or order independent. |
+| Composition | Projections, aliases, source and post-aggregate filters, grouping/order, demand, dates, numeric boundaries, empty input, and rejected forms through the ordinary public parser and executor. |
+| Results | Progress, Rows, Finished, Failed, borrowed lifetimes, cancellation, drop, and sink failures. Successful execute or partial rows cannot establish completion. |
+| Admission | Exact and one-byte-short minima, typed array/scratch capacities, omitted-charge negative controls, refusal before effects, and complete ownership reconciliation. Account equality is not a whole-process memory bound. |
+| Construction | Legacy staging row/byte allowances at empty, exact, and next-row boundaries; next append batch/encoded-extent refusal before file effects; abort-only state after failed writes. Final source validation remains required. |
+
 ### Verification checkpoints
 
 During implementation, run focused checks for the affected semantics, ownership,
@@ -117,20 +131,6 @@ only after comparing its inputs and affected contracts. A failure requires the
 relevant rerun; it does not automatically invalidate unrelated passing checks.
 Do not reduce fault coverage, weaken storage guarantees or increase concurrency
 to make a gate appear faster.
-
-The local gate checks the following boundaries through production code and
-independent models or fixtures. Native and persistence campaigns are described
-in their dedicated sections below:
-
-| Boundary | Required checks |
-| --- | --- |
-| Build inputs | Formatting, warning-denied release workspace Clippy, all Rust test targets, native SDK agreement, and source-manifest inclusion checks. Literal Rust code/data includes and explicit module paths must be recorded; generated or nonliteral inputs need an explicit generator contract. |
-| Persistent fixtures | Independent byte-for-byte reproduction of rejected formats 1/2/3, current legacy format 4, retired format 5, and namespace-7/catalog-object-6 vectors. Fixture agreement establishes provenance consistency, not recovery or stable compatibility. |
-| Numeric semantics | Rational rounding vectors, the full admitted aggregate row-count bound, exceptional values, exact integers, scalar errors, final SUM overflow, later cancellation/nonfinite values, and finite AVG after intermediate sum overflow. Floating accumulation need not be exact or order independent. |
-| Composition | Projections, aliases, source and post-aggregate filters, grouping/order, demand, dates, numeric boundaries, empty input, and rejected forms through the ordinary public parser and executor. |
-| Results | Progress, Rows, Finished, Failed, borrowed lifetimes, cancellation, drop, and sink failures. Successful execute or partial rows cannot establish completion. |
-| Admission | Exact and one-byte-short minima, typed array/scratch capacities, omitted-charge negative controls, refusal before effects, and complete ownership reconciliation. Account equality is not a whole-process memory bound. |
-| Construction | Legacy staging row/byte allowances at empty, exact, and next-row boundaries; next append batch/encoded-extent refusal before file effects; abort-only state after failed writes. Final source validation remains required. |
 
 ## Language and semantic evidence
 
