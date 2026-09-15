@@ -13,7 +13,7 @@ outcomes are verified; no checkpoint goal remains. The final tested source is
 covers matching 24-stage macOS/GNU arm64 Linux gates, 687 ordinary Rust tests per
 platform, 103 tooling tests, 44 codec fixtures, 24 semantic cases, 350 composition
 records and 18 fresh scenarios per platform. Subsequent work adds timing diagnostics and full-synchronization Linux
-verification. Strict creation validation is now verified as described below.
+verification. [Strict creation validation](evidence.md#strict-creation-validation) is verified.
 
 The [event-report lesson](../docs/event-report.md) is the entry point: build typed
 events and dimensions, append, reopen, report, retain an older snapshot, compare
@@ -59,62 +59,30 @@ and qualification contract now make that distinction explicit. That investigatio
 changed no engine or gate behavior; the completed analytical checkpoint stays
 closed.
 
-## Verified strict creation validation
-
-The creation-path change is committed as `0f1e47b`. Fresh namespaces now undergo
-exact read-only validation instead of recovery, retaining nine creation barriers
-and removing four redundant recovery synchronizations. Cleanup checks the held
-lease identity before deleting files. Reopen still owns repair.
-
-The [verification record](evidence.md#strict-creation-validation) covers the
-required macOS stages, a complete full-synchronization GNU arm64 Linux gate and
-four fresh workflows per platform. Paired stock creation medians fell from
-28.236 to 24.674 ms on macOS and from 70.212 to 59.562 ms on Linux. These are
-scoped creation observations, not general OS or whole-gate performance claims.
-
 ## Active repository consolidation
 
-Strict creation validation is complete. Consolidate the repository before adding
-features. Begin with fresh source and contract inspection, tracing the current
-production flows and test/tool entry points. The earlier build-sharing proposal
-is a candidate, not the scope of this goal.
+The source, test and tooling inventory is complete outside the repository.
+Implemented changes consolidate source freezing, compatible stock builds and
+catalog fixtures; tighten completion/artifact checks; and remove repeated parser
+setup and documentation. Independent expected results remain with their owners.
 
-Create a temporary inventory outside the repository for every test suite,
-campaign, fixture, model, helper and verification wrapper. Record its protected
-contract or failure, production execution, oracle independence, overlapping
-checks, built artifact, approximate runtime, required run boundary and proposed
-disposition. Use source and measurements to decide what remains, merges,
-simplifies or disappears. Delete the inventory when the work is complete.
+Remaining work:
 
-Implement the resulting consolidation in verified local increments. Share common
-mechanics while keeping case meaning and expected results local. Within a frozen
-gate, build each compatible stock artifact once and share it immutably; separate
-feature sets, compiler options and instrumentation. Preserve source/artifact
-identity, subprocess failures and owned cleanup. Long checks consume an immutable
-source export so the working tree remains available for development.
+1. Run the final macOS and qualified GNU arm64 Linux full gates sequentially on
+   matching frozen inputs, then affected fresh examples. These include the
+   integrated workspace, formatting and warnings-denied checks; do not duplicate
+   that checkpoint separately.
+2. Compare complete coverage and normalized semantic results. Record measured
+   build/gate costs against the prior checkpoint, retained independent evidence,
+   removed/merged checks and the concrete reading path.
+3. Review the final changes, remove the temporary inventory and owned outputs,
+   commit the verified result and synchronize by fast-forward. Preserve the
+   [qualification limits](#qualifications-that-remain-outside-this-internal-claim).
 
-Remove tests that repeat the same path and premise; merge repeated setup where
-case failures remain clear. Preserve distinct invariant, public-behavior,
-independent-oracle, native-observation and platform evidence. Review production
-ownership alongside difficult tests and repair unclear boundaries rather than
-adding harness machinery. Do not introduce a framework, registry, generator or
-DSL to rearrange files.
-
-Consolidate documentation under its existing owners. Keep one runnable analytical
-example traceable through parsing, binding, validated plans, execution, storage,
-publication and recovery. Delete duplicate facts, obsolete instructions and
-obvious narration; explain concepts where they first matter.
-
-The final checkpoint is sequential macOS and qualified GNU arm64 Linux full
-gates on matching frozen inputs, followed by affected fresh examples. Gate
-mechanics, shared artifacts and failure propagation change in this goal, so both
-platforms need qualification. Use focused tooling and capability checks for
-increments; run the full checkpoint once the integrated change is ready.
-Demonstrate the resulting structure, justified removals/merges,
-preserved independent evidence, commands at each level, measured build/gate time
-before and after, complete required coverage, a short code reading path and any
-remaining complexity that earns its cost. Finish cleanup, authoritative guides
-and coherent local commits; do not stop at the inventory or proposal.
+The [verification ladder](../docs/testing.md#focused-verification) governs
+increments. Production ownership remains unchanged where inspection found no
+unclear boundary; file count is not a target. The final report must explain any
+remaining complexity that earns its cost.
 
 ## Path to the internal 0.1.0 checkpoint
 

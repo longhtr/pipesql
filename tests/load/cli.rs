@@ -88,11 +88,11 @@ fn stock_cli_resolves_independent_history_and_refuses_unsettled_state() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/current-single-table-format");
     for name in ["CONTROL", "ROOT.A", "ROOT.B", "WAL"] {
-        fs::copy(fixture.join(name), database.join(name)).unwrap();
+        fs::write(database.join(name), fs::read(fixture.join(name)).unwrap()).unwrap();
     }
-    fs::copy(
-        fixture.join("UNIT"),
+    fs::write(
         database.join("units/0000000000000001.unit"),
+        fs::read(fixture.join("UNIT")).unwrap(),
     )
     .unwrap();
     let resolve = |token: &str| {
