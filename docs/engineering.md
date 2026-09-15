@@ -174,6 +174,21 @@ need factual accuracy, contract preservation, links and affected examples checke
 Execute changed commands or examples. Compare exact build/gate inputs before
 reusing runtime evidence; editorial changes alone need no artificial runtime tests.
 
+Keep the development loop short. Reuse an owned Cargo target between edits and
+start with the smallest test that can expose the changed behavior. Add adjacent
+composition and failure checks when that behavior works. Review one normal flow
+and one failure flow before broad verification. Do not run a full gate after each
+edit or local commit. Combine related implementation, tests and documentation
+into a coherent capability, then apply the
+[checkpoint policy](verification.md#verification-checkpoints). A failing focused
+test is a reason to fix the design before paying for a broad run.
+
+Keep unrelated work out of that capability. Prefer an existing test entry point,
+literal fixture or short experiment to new tooling. Reassess work that spends
+more time repeating setup, collecting logs or expanding test machinery than
+resolving its original question. Remove the recurring cost or narrow the optional
+investigation; retain the checks needed to establish the changed contract.
+
 Use the [ordinary build and gate](../README.md#build-test-and-use) before adding a
 runner. Freeze build/gate inputs during a complete run and compare source
 manifests before and after. Do not rebuild a shared target while a runner can

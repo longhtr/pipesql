@@ -93,6 +93,31 @@ and [test map](../tests/README.md) locate maintained checks. The complete gate
 retains known regressions and runs sequentially; a filtered or interrupted run
 cannot establish a passing full gate.
 
+### Verification checkpoints
+
+During implementation, run focused checks for the affected semantics, ownership,
+failure and cleanup boundaries. An integrated engine capability also needs the
+ordinary workspace tests, formatting and warnings-denied compilation. Local
+commits may record those verified increments; they do not imply a passing full
+platform gate.
+
+Run the full sequential gate at a completed capability checkpoint before claiming
+broad regression coverage or synchronizing that engine checkpoint. Persistence,
+native effects, allocation ownership, concurrency, toolchain and gate changes
+require the relevant complete macOS and GNU/Linux campaigns. Persistence claims
+use the qualified full-synchronization Linux path. Purely portable language or
+execution work uses the complete macOS gate and affected GNU/Linux tests during
+development, followed by both full platform gates at the integrated milestone.
+Documentation-only changes need the checks described in the engineering guide.
+
+Choose the checkpoint boundary before expensive verification. Several dependent
+implementation goals may form one capability checkpoint; keep their narrower
+verification status explicit until integration passes. Reuse unchanged evidence
+only after comparing its inputs and affected contracts. A failure requires the
+relevant rerun; it does not automatically invalidate unrelated passing checks.
+Do not reduce fault coverage, weaken storage guarantees or increase concurrency
+to make a gate appear faster.
+
 The local gate checks the following boundaries through production code and
 independent models or fixtures. Native and persistence campaigns are described
 in their dedicated sections below:
