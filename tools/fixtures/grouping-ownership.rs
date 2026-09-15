@@ -1,5 +1,11 @@
-//! Sequential public hash layouts retain allocator reuse between queries.
-//! Expected rows follow the four literal input rows, independently of hash sizing.
+//! Check allocator reuse across successive small in-memory grouping layouts.
+//!
+//! Four literal rows determine results for homogeneous and mixed aggregate states.
+//! Varying aggregate width retains allocator history between queries and must not
+//! spill. Requested and usable heap deltas are compared with admitted charges;
+//! every query must finish with three groups and release all query owners. This
+//! complements isolated allocation-shape probes with real sequential execution.
+
 use super::workload::live;
 use pipesql::{
     AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,

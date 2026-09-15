@@ -1,4 +1,12 @@
-//! Public-library allocator probes and a direct production allocation-helper check.
+//! Run public-library workloads under a caller-owned System allocator observer.
+//!
+//! This is the driver built by check-diagnostic-allocation.py. It counts requested
+//! and allocator-usable bytes, can refuse allocations after a chosen prefix, and
+//! dispatches workload-specific checks. Observation excludes foreign allocations,
+//! stack residency and whole-process RSS. The linked engine remains a stock build;
+//! allocation-capacity.rs separately includes the private production helper.
+//! Inputs and reporting storage are prepared before each armed interval.
+
 use pipesql::{CancellationToken, Config, Database, Error, TransactionId};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::fmt::{self, Write};

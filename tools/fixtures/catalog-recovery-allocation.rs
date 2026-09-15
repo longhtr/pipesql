@@ -1,4 +1,12 @@
-//! Public recovery crossed with allocation refusal and real namespace faults.
+//! Cross recovery allocation refusal with missing roots and real namespace faults.
+//!
+//! The caller first creates valid storage, removes one root and optionally damages
+//! the other or denies repair rename with a Darwin ACL. While refusal is armed,
+//! open must return its precise recovery outcome and release heap/file owners.
+//! Byte checks ensure an unpublished replacement never becomes authority; healed
+//! reopen must recover the original generation, literal rows and durable receipt.
+//! The permission case is Darwin-specific and is excluded on other platforms.
+
 use super::super::workload::{allocation_cause, arm, finish, format_error};
 use pipesql::{
     AppendLimits, CancellationToken, CauseKind, ColumnDeclaration, ColumnInput, ColumnValues,

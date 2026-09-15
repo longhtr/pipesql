@@ -1,4 +1,11 @@
-//! Caller scaffolding around the unchanged CLI source, not a CLI reimplementation.
+//! Exercise the production CLI under caller-controlled allocation refusal.
+//!
+//! The CLI source is included verbatim behind a narrow visibility shim. Parsing
+//! can consume preallocated arguments; complete entry uses real process argv.
+//! Live-byte and descriptor counts must return to baseline before exit. Separate
+//! cells close stdout or stderr to check failure propagation. The supervisor owns
+//! process deadlines, the descriptor ceiling and the full allocation-prefix sweep.
+
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 

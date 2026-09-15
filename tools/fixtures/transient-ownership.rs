@@ -1,4 +1,12 @@
-//! Allocation-event observations within one public call on the current thread.
+//! Sample live allocation ownership inside one synchronous public call.
+//!
+//! A thread-local borrowed observer reads reservations after allocation and before
+//! physical free; return-time samples alone would miss a temporarily uncharged
+//! owner. A guard clears the pointer on return or unwind. Calibration deliberately
+//! allocates uncharged bytes and separately observes a free, proving both edges.
+//! Attribution assumes fixed caller storage on this thread and excludes foreign
+//! malloc calls; it does not establish an RSS bound.
+
 use super::{LIVE_REQUESTED, LIVE_USABLE};
 use pipesql::Database;
 use std::cell::Cell;

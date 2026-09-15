@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Fresh public-library allocation refusal, bounded and supervised outside Cargo.
+"""Supervise public allocation refusal and ownership evidence.
 
-The same observer checks a directly included private production capacity helper.
-The allocator is unsafe caller scaffolding; engine unsafe_code=forbid remains.
-Allocation-prefix cells first measure their expected-outcome census, then deny
-after EVERY permitted prefix, including zero and a full-prefix control. Workload cells
-cross refusal with real construction permission failure and demanded corruption;
-healed public reopen/retry checks follow the continuing-fault safety phase.
+Build the caller against one compatible stock library, then run fresh bounded
+processes. Prefix sweeps measure a census, preflight the full healthy prefix and
+refuse every earlier prefix. The Rust caller checks values, live owners and typed
+outcomes; this supervisor checks process status, unchanged authority, required
+phases and complete observation records. Negative controls must fail at their
+intended guard. Shared build/process mechanics live in check_support/check_process.
+Use --help for focused scopes; --controls-only is not prefix-sweep evidence.
 """
 from functools import partial
 from pathlib import Path

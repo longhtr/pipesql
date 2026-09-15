@@ -1,4 +1,12 @@
-//! Public catalog lifecycle under the shared caller-owned allocator observer.
+//! Sweep allocation refusal through a complete public catalog lifecycle.
+//!
+//! Creation, declaration, two writes, publication, reopen and composed queries
+//! share one measured allocation history. Caller text capacity is fixed before
+//! arming. Each phase checks its own literal rows and typed failure outcome;
+//! cleanup and diagnostics remain under refusal. Healing then checks the retained
+//! handle or reopens storage as required, resolves receipts and retries a writer.
+//! The Python supervisor verifies every prefix and the required reached phases.
+
 #[path = "catalog-recovery-allocation.rs"]
 pub(super) mod recovery;
 

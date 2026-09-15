@@ -1,4 +1,12 @@
-//! Allocation events around complete and failed public result prefixes.
+//! Observe ownership when a public result finishes or fails after lending rows.
+//!
+//! An ordered 257-row input yields a literal 256-row prefix before overflow;
+//! cancellation and healthy completion exercise the other terminal paths.
+//! Allocation events cover preparation, construction, steps and teardown. Wrong
+//! prefix and missing-terminal-observation controls must fail distinct checks.
+//! Logical-plan formatting also uses a fixed caller buffer, including sink failure,
+//! so successful preparation acts as a positive control for the same observer.
+
 use super::Live;
 use crate::transient_ownership::{Observer, Samples};
 use pipesql::{

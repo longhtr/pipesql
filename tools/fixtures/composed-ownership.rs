@@ -1,4 +1,17 @@
-//! Stock public owners sampled at lifecycle checkpoints and parked-thread barriers.
+//! Reconcile public reservations with observed heap owners during composed work.
+//!
+//! Shape cases vary row width, payload size, grouping layout and allocator reuse.
+//! Independent equations separate heap requests from inline/path allowances;
+//! literal rows and counts ensure that resource checks accompany real execution.
+//! Event-level observers catch ownership gaps inside calls, and named barriers
+//! isolate changes by concurrent readers and a writer. Negative controls perturb
+//! attribution, expected rows or observation to prove the checks can fail.
+//!
+//! This file owns workload meaning; diagnostic-allocation.rs owns the allocator
+//! and the Python supervisor owns process deadlines and coverage validation.
+//! Requested/usable allocation evidence does not qualify arbitrary concurrency,
+//! foreign allocations or whole-process memory.
+
 use super::{DENY, LIVE_REQUESTED, LIVE_USABLE};
 use pipesql::{
     Append, AppendLimits, CancellationToken, ColumnDeclaration, ColumnInput, ColumnValues, Config,
@@ -2243,6 +2256,29 @@ pub(super) fn run(
     negative: bool,
     wrong_allowance: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Phase {
+        Baseline,
+        Writer,
+        OrderedReader,
+        DistinctReader,
+        Cancelled,
+        Published,
+        Finished,
+        Released,
+    }
+    // Both workers and the coordinator traverse this one rendezvous schedule.
+    // Descriptor deltas are literal expectations while the workers are parked.
+    const PHASES: [(Phase, &str, usize); 8] = [
+        (Phase::Baseline, "baseline", 0),
+        (Phase::Writer, "writer", 0),
+        (Phase::OrderedReader, "reader-order", 4),
+        (Phase::DistinctReader, "reader-distinct", 8),
+        (Phase::Cancelled, "cancelled", 4),
+        (Phase::Published, "published", 4),
+        (Phase::Finished, "finished", 0),
+        (Phase::Released, "released", 0),
+    ];
     std::fs::create_dir(root)?;
     let path = root.join("database");
     let cancel = CancellationToken::new();
@@ -2296,9 +2332,9 @@ pub(super) fn run(
                 let mut heap = Heap::default();
                 ready.wait();
                 resume.wait();
-                for phase in 0..8 {
-                    match phase {
-                        2 | 3 if phase == id + 2 => {
+                for (phase, _, _) in PHASES {
+                    match (phase, id) {
+                        (Phase::OrderedReader, 0) | (Phase::DistinctReader, 1) => {
                             let before = Heap::now();
                             let prior = db.reserved_temp_bytes();
                             let mut rows = db.execute(query, token).unwrap();
@@ -2314,20 +2350,20 @@ pub(super) fn run(
                             result = Some(rows);
                             heap = Heap::now().increase_from(before);
                         }
-                        4 if id == 0 => {
+                        (Phase::Cancelled, 0) => {
                             let before = Heap::now();
                             let rows = result.as_mut().unwrap();
                             assert!(matches!(rows.step(), QueryStep::Failed(Error::Cancelled)));
                             assert_eq!(before.increase_from(Heap::now()), heap);
                             heap = Heap::default();
                         }
-                        6 if id == 1 => {
+                        (Phase::Finished, 1) => {
                             let before = Heap::now();
                             consume(result.as_mut().unwrap(), true, false, false);
                             assert_eq!(before.increase_from(Heap::now()), heap);
                             heap = Heap::default();
                         }
-                        7 => {
+                        (Phase::Released, _) => {
                             result = None;
                         }
                         _ => (),
@@ -2350,17 +2386,17 @@ pub(super) fn run(
         // initialize lazily, and belongs to the caller throughout this interval.
         ready.wait();
         resume.wait();
-        for phase in 0..8 {
+        for (phase, label, descriptors) in PHASES {
             ready.wait();
             // Reader threads have published their owners and cannot allocate or
             // mutate them until the matching resume barrier.
             let readers = observations.each_ref().map(|owner| *owner.lock().unwrap());
             let reader_charge: u64 = readers.iter().map(|owner| owner.charge).sum();
-            if phase == 0 {
+            if phase == Phase::Baseline {
                 baseline = Some(Live::now());
             }
             let base = baseline.unwrap();
-            if phase == 1 {
+            if phase == Phase::Writer {
                 let before_heap = Heap::now();
                 let before = db.reserved_memory_bytes();
                 let mut append = db.begin_append("facts", limits, &cancel).unwrap();
@@ -2379,7 +2415,7 @@ pub(super) fn run(
                 };
                 writer = Some(append);
             }
-            if phase == 3 {
+            if phase == Phase::DistinctReader {
                 refuse_competing_readers(&db, &distinct, &cancel);
                 let before = Live::now();
                 let memory = db.reserved_memory_bytes();
@@ -2394,7 +2430,7 @@ pub(super) fn run(
                 assert_eq!(db.reserved_temp_bytes(), temporary);
                 cancelled.cancel();
             }
-            if phase == 5 {
+            if phase == Phase::Published {
                 let before_heap = Heap::now();
                 writer.take().unwrap().commit(&cancel).unwrap();
                 assert_eq!(before_heap.increase_from(Heap::now()), writer_owner.heap);
@@ -2423,23 +2459,11 @@ pub(super) fn run(
             }
             let observed = checkpoint(
                 &db,
-                [
-                    "baseline",
-                    "writer",
-                    "reader-order",
-                    "reader-distinct",
-                    "cancelled",
-                    "published",
-                    "finished",
-                    "released",
-                ][phase],
+                label,
                 prepared + writer_owner.charge + reader_charge,
                 base,
             );
-            assert_eq!(
-                observed.descriptors,
-                base.descriptors + [0, 0, 4, 8, 4, 4, 0, 0][phase]
-            );
+            assert_eq!(observed.descriptors, base.descriptors + descriptors);
             let requested = observed.requested.checked_sub(base.requested).unwrap();
             let expected_requested = writer_owner.heap.requested
                 + readers
@@ -2492,7 +2516,7 @@ pub(super) fn run(
                 reader_excess =
                     reader_excess.max((reader.heap.usable as u64).saturating_sub(reader.charge));
             }
-            if phase == 7 {
+            if phase == Phase::Released {
                 assert_eq!(db.reserved_temp_bytes(), 0);
                 assert_eq!(Live::now(), base);
             }

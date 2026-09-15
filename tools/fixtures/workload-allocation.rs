@@ -1,5 +1,12 @@
-//! Public workload extension of the caller-owned allocator fault harness.
-//! No engine test constructors/effects; every child uses ordinary create/load/API.
+//! Observe legacy load and query ownership under allocation refusal.
+//!
+//! One literal lineitem row supplies independent Q1/Q6 answers. Load cases cross
+//! refusal with read-only construction; query cases cross it with damaged demanded
+//! payload. Definite failure, cleanup debt and ambiguous publication have different
+//! allowed outcomes, checked locally before healing and retry. This module also
+//! owns allocator arming, suspension and reconciliation used by catalog callers;
+//! these counters measure Rust System owners, not whole-process memory.
+
 use super::{
     ALLOW, CALLS, DENY, LIVE_REQUESTED, LIVE_USABLE, PEAK_REQUESTED, PEAK_USABLE, REFUSED, TRACK,
 };

@@ -1,3 +1,17 @@
+//! Check when computed values are required and which source expression owns failure.
+//!
+//! Stage cases come first: projection, extension, replacement and naming must
+//! preserve column identity across filters, groups and joins. Numeric cases then
+//! pair useful results with unused, conditionally skipped and demanded failures.
+//! SAFE_DIVIDE handles its own division failure, not errors in its arguments.
+//!
+//! Shared cases own cancellation and stored DOUBLE bit checks across producers
+//! and reopen. Function-specific cases keep their literal answers nearby; logarithm,
+//! exponential and power comparisons state their independent reference and ULP
+//! tolerance. Owned-error cases drop the SQL before execution and retain the error
+//! after query teardown. These are public integration checks; scalar unit tests
+//! own individual evaluation rules.
+
 use super::*;
 
 fn failure(db: &Database, sql: &str, operation: &'static str, expression: &str) {
