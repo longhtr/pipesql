@@ -1,3 +1,11 @@
+//! Check grouping replay through computed, sorted, joined and aggregated producers.
+//!
+//! Memory pressure forces hash fallback after work has begun. Literal expected rows
+//! and controller observations establish both the answer and the replayed producer.
+//! A producer may have emitted a prefix or finished before replay is requested.
+//! Retained disk bytes are damaged after consumption to require fresh validation;
+//! cancellation and text-capacity cases check that replay preserves ownership.
+
 use super::*;
 
 #[test]
@@ -124,136 +132,228 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
         ],
     );
     let cancel = CancellationToken::new();
-    for variant in 0..42 {
-        let joined = matches!(variant, 0 | 2 | 6 | 16 | 17);
-        let sql = if joined {
-            "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> AGGREGATE SUM(l.n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY l.k"
-        } else {
-            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-        };
-        let sql = match variant {
-            2 => {
-                "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> LIMIT 5 |> LIMIT 5 |> AGGREGATE SUM(l.n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY l.k"
-            }
-            3 => {
-                "FROM facts |> ORDER BY n DESC |> LIMIT 3 |> LIMIT 2 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            4 => {
-                "FROM facts |> LIMIT 3 |> LIMIT 3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            5 => {
-                "FROM facts |> SELECT k, n+1 AS shifted |> SELECT k, shifted-1 AS n |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k, total+0 AS total, nrows"
-            }
-            6 => {
-                "FROM facts |> SELECT k, n+0 AS n |> AS l |> JOIN facts AS r ON l.k=r.k |> SELECT l.k AS k, l.n+0 AS n |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k, total+0 AS total, nrows"
-            }
-            7 => {
-                "FROM facts |> SELECT k, n+1 AS n |> LIMIT 3 |> SELECT k, n-1 AS n |> LIMIT 3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k, total+0 AS total, nrows"
-            }
-            8 => {
-                "FROM facts |> DISTINCT |> LIMIT 3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            9 => {
-                "FROM facts |> SELECT k |> DISTINCT |> LIMIT 2 |> AGGREGATE SUM(k) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            10 => {
-                "FROM facts |> UNION DISTINCT (FROM facts) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            11 => {
-                "FROM facts |> EXTEND COUNT(*) OVER () AS partition_rows |> WHERE partition_rows=3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            12 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(SAFE_DIVIDE(n, k-1)) AS nrows GROUP AND ORDER BY k"
-            }
-            13 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(ABS(n-5)) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            14 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(MOD(n, 3)) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            15 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(DIV(n, 3)) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            16 => {
-                "FROM facts AS l |> LEFT JOIN (FROM facts |> WHERE k=2) AS r ON l.k=r.k |> AGGREGATE SUM(l.n) AS total, COUNT(r.n) AS nrows GROUP AND ORDER BY l.k"
-            }
-            17 => {
-                "FROM facts AS l |> LEFT JOIN (FROM facts |> WHERE k=2) AS r ON l.k=r.k |> AGGREGATE SUM(COALESCE(r.n, 5)) AS total, COUNT(COALESCE(r.n, 0)) AS nrows GROUP AND ORDER BY l.k"
-            }
-            18 => {
-                "FROM facts |> EXCEPT DISTINCT (FROM facts |> WHERE n=3) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            19 => {
-                "FROM facts |> INTERSECT DISTINCT (FROM facts |> WHERE n>3) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            20 => {
-                "FROM facts |> UNION ALL (FROM facts) |> EXCEPT ALL (FROM facts |> WHERE n=3) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            21 => {
-                "FROM facts |> UNION ALL (FROM facts) |> INTERSECT ALL (FROM facts |> UNION ALL (FROM facts)) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            22 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(NULLIF(n, 3)) AS total, COUNT(NULLIF(n, 3)) AS nrows GROUP AND ORDER BY k"
-            }
-            23 => {
-                "FROM facts |> ORDER BY n DESC |> EXTEND NULLIF(n, 3) AS normalized |> WHERE normalized IS DISTINCT FROM 3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            24 => {
-                "FROM facts |> ORDER BY n DESC |> WHERE n NOT IN (3) AND n NOT BETWEEN 0 AND 2 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            25 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(SIGN(n-5)) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            26 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(FLOOR(n/3), 1)) AS nrows GROUP AND ORDER BY k"
-            }
-            27 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(CEILING(n/3), 1)) AS nrows GROUP AND ORDER BY k"
-            }
-            28 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(ROUND(n/2), 2)) AS nrows GROUP AND ORDER BY k"
-            }
-            29 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(SQRT(n-3), 1)) AS nrows GROUP AND ORDER BY k"
-            }
-            30 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(LN(n-2), 0)) AS nrows GROUP AND ORDER BY k"
-            }
-            31 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(EXP(n-3), 1)) AS nrows GROUP AND ORDER BY k"
-            }
-            32 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(LOG10(n-2), 0)) AS nrows GROUP AND ORDER BY k"
-            }
-            33 => {
-                "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(POWER(n-2, 2), 1)) AS nrows GROUP AND ORDER BY k"
-            }
-            34 => {
-                "FROM facts |> EXTEND '雪' AS text |> ORDER BY n DESC |> EXTEND BYTE_LENGTH(text) AS width |> AGGREGATE SUM(width+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            35 => {
-                "FROM facts |> ORDER BY n DESC |> EXTEND '雪' AS text |> EXTEND BYTE_LENGTH(text) AS width |> AGGREGATE SUM(width+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            36 => {
-                "FROM facts |> EXTEND '雪' AS text |> ORDER BY n DESC |> EXTEND CHAR_LENGTH(text) AS width |> AGGREGATE SUM(width+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            37 => {
-                "FROM facts |> ORDER BY n DESC |> EXTEND '雪' AS text |> EXTEND CHAR_LENGTH(text) AS width |> AGGREGATE SUM(width+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            38 => {
-                "FROM facts |> EXTEND CAST(n AS DOUBLE) AS converted |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(converted, 3)) AS nrows GROUP AND ORDER BY k"
-            }
-            39 => {
-                "FROM facts |> ORDER BY n DESC |> EXTEND CAST(n AS FLOAT64) AS converted |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(converted, 3)) AS nrows GROUP AND ORDER BY k"
-            }
-            40 => {
-                "FROM facts |> EXTEND DATE '2000-02-29' AS calendar_date |> ORDER BY n DESC |> EXTEND EXTRACT(YEAR FROM calendar_date) AS y |> AGGREGATE SUM(y+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            41 => {
-                "FROM facts |> ORDER BY n DESC |> EXTEND DATE '2000-02-29' AS calendar_date |> EXTEND EXTRACT(YEAR FROM calendar_date) AS y |> AGGREGATE SUM(y+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k"
-            }
-            _ => sql,
-        };
+    #[derive(Debug)]
+    enum Producer {
+        Join,
+        SortedSet,
+        Order,
+        Scan,
+    }
+    use Producer::*;
+
+    // Keep the producer to observe, input program and literal answer together.
+    for (producer, sql, expected) in [
+        (
+            Join,
+            "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> AGGREGATE SUM(l.n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY l.k",
+            [[1, 14, 4], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 2], [2, 7, 1]],
+        ),
+        (
+            Join,
+            "FROM facts AS l |> JOIN facts AS r ON l.k = r.k |> LIMIT 5 |> LIMIT 5 |> AGGREGATE SUM(l.n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY l.k",
+            [[1, 14, 4], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> LIMIT 3 |> LIMIT 2 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 4, 1], [2, 7, 1]],
+        ),
+        (
+            Scan,
+            "FROM facts |> LIMIT 3 |> LIMIT 3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 2], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> SELECT k, n+1 AS shifted |> SELECT k, shifted-1 AS n |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k, total+0 AS total, nrows",
+            [[1, 7, 2], [2, 7, 1]],
+        ),
+        (
+            Join,
+            "FROM facts |> SELECT k, n+0 AS n |> AS l |> JOIN facts AS r ON l.k=r.k |> SELECT l.k AS k, l.n+0 AS n |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k, total+0 AS total, nrows",
+            [[1, 14, 4], [2, 7, 1]],
+        ),
+        (
+            Scan,
+            "FROM facts |> SELECT k, n+1 AS n |> LIMIT 3 |> SELECT k, n-1 AS n |> LIMIT 3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k |> SELECT k, total+0 AS total, nrows",
+            [[1, 7, 2], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> DISTINCT |> LIMIT 3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 2], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> SELECT k |> DISTINCT |> LIMIT 2 |> AGGREGATE SUM(k) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 1, 1], [2, 2, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> UNION DISTINCT (FROM facts) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 2], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> EXTEND COUNT(*) OVER () AS partition_rows |> WHERE partition_rows=3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 2], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(SAFE_DIVIDE(n, k-1)) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 0], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(ABS(n-5)) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 3, 2], [2, 2, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(MOD(n, 3)) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 1, 2], [2, 1, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(DIV(n, 3)) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 2, 2], [2, 2, 1]],
+        ),
+        (
+            Join,
+            "FROM facts AS l |> LEFT JOIN (FROM facts |> WHERE k=2) AS r ON l.k=r.k |> AGGREGATE SUM(l.n) AS total, COUNT(r.n) AS nrows GROUP AND ORDER BY l.k",
+            [[1, 7, 0], [2, 7, 1]],
+        ),
+        (
+            Join,
+            "FROM facts AS l |> LEFT JOIN (FROM facts |> WHERE k=2) AS r ON l.k=r.k |> AGGREGATE SUM(COALESCE(r.n, 5)) AS total, COUNT(COALESCE(r.n, 0)) AS nrows GROUP AND ORDER BY l.k",
+            [[1, 10, 2], [2, 7, 1]],
+        ),
+        (
+            SortedSet,
+            "FROM facts |> EXCEPT DISTINCT (FROM facts |> WHERE n=3) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 4, 1], [2, 7, 1]],
+        ),
+        (
+            SortedSet,
+            "FROM facts |> INTERSECT DISTINCT (FROM facts |> WHERE n>3) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 4, 1], [2, 7, 1]],
+        ),
+        (
+            SortedSet,
+            "FROM facts |> UNION ALL (FROM facts) |> EXCEPT ALL (FROM facts |> WHERE n=3) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 11, 3], [2, 14, 2]],
+        ),
+        (
+            SortedSet,
+            "FROM facts |> UNION ALL (FROM facts) |> INTERSECT ALL (FROM facts |> UNION ALL (FROM facts)) |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 14, 4], [2, 14, 2]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(NULLIF(n, 3)) AS total, COUNT(NULLIF(n, 3)) AS nrows GROUP AND ORDER BY k",
+            [[1, 4, 1], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> EXTEND NULLIF(n, 3) AS normalized |> WHERE normalized IS DISTINCT FROM 3 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 2], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> WHERE n NOT IN (3) AND n NOT BETWEEN 0 AND 2 |> AGGREGATE SUM(n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 4, 1], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(SIGN(n-5)) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, -2, 2], [2, 1, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(FLOOR(n/3), 1)) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 0], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(CEILING(n/3), 1)) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 1], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(ROUND(n/2), 2)) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 0], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(SQRT(n-3), 1)) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 1], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(LN(n-2), 0)) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 1], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(EXP(n-3), 1)) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 1], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(LOG10(n-2), 0)) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 1], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(POWER(n-2, 2), 1)) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 1], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> EXTEND '雪' AS text |> ORDER BY n DESC |> EXTEND BYTE_LENGTH(text) AS width |> AGGREGATE SUM(width+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 13, 2], [2, 10, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> EXTEND '雪' AS text |> EXTEND BYTE_LENGTH(text) AS width |> AGGREGATE SUM(width+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 13, 2], [2, 10, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> EXTEND '雪' AS text |> ORDER BY n DESC |> EXTEND CHAR_LENGTH(text) AS width |> AGGREGATE SUM(width+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 9, 2], [2, 8, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> EXTEND '雪' AS text |> EXTEND CHAR_LENGTH(text) AS width |> AGGREGATE SUM(width+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 9, 2], [2, 8, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> EXTEND CAST(n AS DOUBLE) AS converted |> ORDER BY n DESC |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(converted, 3)) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 1], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> EXTEND CAST(n AS FLOAT64) AS converted |> AGGREGATE SUM(n) AS total, COUNT(NULLIF(converted, 3)) AS nrows GROUP AND ORDER BY k",
+            [[1, 7, 1], [2, 7, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> EXTEND DATE '2000-02-29' AS calendar_date |> ORDER BY n DESC |> EXTEND EXTRACT(YEAR FROM calendar_date) AS y |> AGGREGATE SUM(y+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 4007, 2], [2, 2007, 1]],
+        ),
+        (
+            Order,
+            "FROM facts |> ORDER BY n DESC |> EXTEND DATE '2000-02-29' AS calendar_date |> EXTEND EXTRACT(YEAR FROM calendar_date) AS y |> AGGREGATE SUM(y+n) AS total, COUNT(*) AS nrows GROUP AND ORDER BY k",
+            [[1, 4007, 2], [2, 2007, 1]],
+        ),
+    ] {
         let query = database.prepare(sql).unwrap();
         let baseline = database.reserved_memory_bytes();
         let result = database.execute(&query, &cancel).unwrap();
@@ -291,14 +391,11 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
                 disk |= matches!(owner[0].files, Files::Open(_));
             }
             if let State::Running(runtime) = &mut result.state {
-                replay |= if joined {
-                    runtime.first_join_mut().was_replayed()
-                } else if matches!(variant, 18..=21) {
-                    runtime.first_sorted_set_mut().was_replayed()
-                } else if !matches!(variant, 4 | 7) {
-                    runtime.first_order_mut().was_replayed()
-                } else {
-                    disk
+                replay |= match producer {
+                    Join => runtime.first_join_mut().was_replayed(),
+                    SortedSet => runtime.first_sorted_set_mut().was_replayed(),
+                    Order => runtime.first_order_mut().was_replayed(),
+                    Scan => disk,
                 };
             }
             match result.step() {
@@ -318,32 +415,11 @@ fn grouping_fallback_replays_sorted_producers_without_reopening_sources() {
                     done = true;
                     break;
                 }
-                QueryStep::Failed(error) => panic!("join replay: {error}"),
+                QueryStep::Failed(error) => panic!("{producer:?}: {sql}: {error}"),
             }
         }
-        assert!(done && disk && replay);
-        assert_eq!(
-            rows,
-            match variant {
-                0 | 2 | 6 => [[1, 14, 4], [2, 7, 1]],
-                1 | 4 | 5 | 7 | 8 | 10 | 11 | 23 => [[1, 7, 2], [2, 7, 1]],
-                3 | 18 | 19 | 22 | 24 => [[1, 4, 1], [2, 7, 1]],
-                9 => [[1, 1, 1], [2, 2, 1]],
-                12 | 16 | 26 | 28 => [[1, 7, 0], [2, 7, 1]],
-                27 | 29 | 30 | 31 | 32 | 33 | 38 | 39 => [[1, 7, 1], [2, 7, 1]],
-                13 => [[1, 3, 2], [2, 2, 1]],
-                25 => [[1, -2, 2], [2, 1, 1]],
-                14 => [[1, 1, 2], [2, 1, 1]],
-                15 => [[1, 2, 2], [2, 2, 1]],
-                17 => [[1, 10, 2], [2, 7, 1]],
-                20 => [[1, 11, 3], [2, 14, 2]],
-                21 => [[1, 14, 4], [2, 14, 2]],
-                34 | 35 => [[1, 13, 2], [2, 10, 1]],
-                36 | 37 => [[1, 9, 2], [2, 8, 1]],
-                40 | 41 => [[1, 4007, 2], [2, 2007, 1]],
-                _ => unreachable!(),
-            }
-        );
+        assert!(done && disk && replay, "{producer:?}: {sql}");
+        assert_eq!(rows, expected, "{producer:?}: {sql}");
         drop(result);
         drop(pressure);
         assert_eq!(database.reserved_memory_bytes(), baseline);

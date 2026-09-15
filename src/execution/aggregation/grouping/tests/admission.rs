@@ -1,3 +1,10 @@
+//! Check that a composed query reserves every mandatory owner before source I/O.
+//!
+//! Exact-budget runs include joins, repeated grouping and derived inputs; one-byte
+//! shortfalls must refuse without effects. Compare live charges with concrete
+//! retained owners and literal results. Competing memory pressure must leave the
+//! disk fallback usable after optional hash growth has been admitted.
+
 use super::*;
 
 #[test]

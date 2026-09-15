@@ -1,3 +1,10 @@
+//! Check complete grouped output through memory, disk and nested query producers.
+//!
+//! Tiny hash/argument limits force replay and reduction over literal nullable rows.
+//! Literal answers anchor comparisons between storage paths and batch widths;
+//! phase observations prove the intended path ran. Other cases retain empty-input
+//! behavior, maximum text, zero-field cardinality and bounded nested-plan stacks.
+
 use super::*;
 use crate::frontend::MAX_COLUMNS;
 

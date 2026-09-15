@@ -1,3 +1,11 @@
+//! Check that grouping failures cannot publish unchecked groups or revive work.
+//!
+//! A later SUM overflow must suppress earlier groups unless filters remove the
+//! demand. Healthy runs reveal controller phases and effects; cancellation and
+//! injected failures then challenge those exact boundaries. Damaged result spools
+//! must fail on consumption. Each path checks terminal state, restored ownership
+//! and the ability to run a fresh healthy query.
+
 use super::*;
 
 #[test]

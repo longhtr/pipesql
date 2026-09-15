@@ -1,3 +1,12 @@
+//! Check optional hash grouping against direct accumulation and sorted reduction.
+//!
+//! Literal key classes cover NULL, NaN and signed zero while path comparisons
+//! check retained values and arithmetic order. These paths share the accumulator;
+//! independent numerical expectations remain in the separate vector tests.
+//! Forced collisions, byte limits and cancellation challenge bounded lookup and
+//! text growth. Pinned source restart and pending scratch creation must preserve
+//! the disk fallback's owners without reviving failed work.
+
 use super::*;
 use crate::effects::Faults;
 use crate::execution::aggregation::grouping::reduction::Reduction;

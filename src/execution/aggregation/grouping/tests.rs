@@ -1,3 +1,11 @@
+//! Connect grouping components to real sources and the execution scheduler.
+//!
+//! The shared fixture writes several small units so completion and replay cross
+//! descriptor boundaries. `connect` installs a controller with deliberately tiny
+//! buffers; its test-only transfer preserves the charged owner while runtime steps
+//! execute. This bypasses normal grouping admission to reach internal transitions.
+//! Child suites own literal answers, phase/fault schedules and public-path checks.
+
 use super::*;
 use crate::effects::Faults;
 use crate::execution::blocking::MAX_ARGUMENT_RECORD_BYTES;
