@@ -135,13 +135,25 @@ impl Count {
 mod tests {
     use super::*;
     use crate::execution::planning::lower;
-    use crate::execution::test_support::loaded;
     use crate::storage_format::RootState;
-    use crate::{DataType, Value};
+    use crate::test_support::Directory;
+    use crate::{Config, DataType, Database, Value};
+
+    // Controller cases supply their own batches; only the legacy schema is needed
+    // to prepare the pipeline. Importing stored rows would add unrelated effects.
+    fn database() -> (Directory, Database) {
+        let directory = Directory::new();
+        let database = Database::create(
+            &directory.0.join("database"),
+            Config::new(2_000_000, 20_000_000).unwrap(),
+        )
+        .unwrap();
+        (directory, database)
+    }
 
     #[test]
     fn counter_preserves_cardinality_and_replays_without_reading_input() {
-        let (_fixture, db) = loaded(1);
+        let (_fixture, db) = database();
         let query = db
             .prepare("FROM lineitem |> SELECT COUNT(*) OVER () AS n")
             .unwrap();
@@ -253,7 +265,7 @@ mod tests {
 
     #[test]
     fn counter_rejects_values_invalid_batches_and_the_first_row_over_its_bound() {
-        let (_fixture, db) = loaded(1);
+        let (_fixture, db) = database();
         let query = db
             .prepare("FROM lineitem |> SELECT COUNT(*) OVER () AS n")
             .unwrap();
@@ -308,7 +320,7 @@ mod tests {
 
     #[test]
     fn every_live_counter_phase_cancels_without_publishing_or_replaying() {
-        let (_fixture, db) = loaded(1);
+        let (_fixture, db) = database();
         let query = db
             .prepare("FROM lineitem |> SELECT COUNT(*) OVER () AS n")
             .unwrap();
@@ -353,11 +365,10 @@ mod tests {
     }
     #[test]
     fn counter_minimum_is_admitted_before_io_and_released_on_completion() {
+        use crate::ColumnDeclaration;
         use crate::effects::Effects;
         use crate::execution::QueryStep;
-        use crate::{ColumnDeclaration, Config, Database};
-        let (fixture, legacy) = loaded(1);
-        legacy.close().unwrap();
+        let fixture = Directory::new();
         let db = Database::create_empty(
             &fixture.0.join("native"),
             Config::new(4_000_000, 2_000_000).unwrap(),

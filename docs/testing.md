@@ -16,10 +16,8 @@ checks. Python helpers use the standard library.
 
 The toolchain must be provisioned before offline verification. Cargo
 dependencies are locked and libc is vendored; do not replace them with network
-resolution. The reviewed macOS path has the broadest runtime coverage. A native
-Linux subset also passes; it does not qualify the missing integration and
-durability checks. Other Unix targets are rejected. Read the platform exclusions
-below before interpreting a successful test run.
+resolution. Other Unix targets are rejected. Read the platform exclusions below
+before interpreting a successful test run.
 
 Run commands below from the repository root unless a command says otherwise.
 
@@ -86,10 +84,9 @@ Platform-specific helpers compile with their actual consumers, without warning
 suppression. Extending coverage requires executing the target contracts and
 checking discovered, ignored, and failed tests.
 
-The portability work still needs Windows path/handle/directory/locking/flush and
-CLI implementations, native Linux/Windows CI, platform-specific failure
-injection, and verified synchronization premises. The current macOS observations
-do not transfer to another filesystem or operating system automatically.
+The portability work still needs Windows native/CLI implementations, native
+Linux/Windows CI and broader filesystem/device qualification. Current platform
+observations do not transfer to another filesystem or operating system automatically.
 
 Record the database filesystem as well as the OS. On the tested Docker
 host-shared `fuseblk` mount, catalog creation intermittently observed different
@@ -272,8 +269,18 @@ so a checker that silently ignores failures cannot pass its own tests.
 
 ## Focused verification
 
-Keep a Cargo target between edits; a fresh build costs more than a warm test.
-Select the smallest check that exposes the changed contract. For example:
+Keep a Cargo target between edits. For parser, value and local state-machine
+changes, start with a debug test: incremental compilation avoids rebuilding the
+optimized test binary on each edit. For example:
+
+```sh
+cargo test --offline --locked --lib \
+  frontend::parser::tests::coalesce_preserves_nested_argument_order_and_expression_span -- --exact
+```
+
+Use release mode for tests whose premise depends on optimized stack use,
+allocation geometry, timing or stock artifacts. Select the smallest relevant
+public contract before broadening to a capability:
 
 ```sh
 cargo test --release --offline --locked --test catalog_lifecycle \
@@ -290,7 +297,7 @@ Use this ladder:
 
 | Boundary | Commands and evidence |
 | --- | --- |
-| Edit | One exact test or tooling suite. Reuse the build target; ordinarily seconds. |
+| Edit | One exact debug test or tooling suite; use release when the test requires it. Reuse the build target. |
 | Focused capability | Affected test modules and stock campaign selections, including refusal and cleanup. A selection proves only the paths it runs. |
 | Integrated checkpoint | `cargo fmt --all --check`, `cargo clippy --release --offline --locked --workspace --all-targets -- -D warnings`, and `cargo test --release --offline --locked --workspace --all-targets -- --test-threads=1`. |
 | Full platform checkpoint | [`sh tools/check.sh`](#complete-local-gate), then the [qualified Linux runner](#linux-verification-with-full-synchronization) when both platforms need evidence. |
