@@ -1,3 +1,11 @@
+//! Distinguish Unicode scalar counts from UTF-8 byte counts in public queries.
+//!
+//! Literal pairs make the distinction concrete: a flag is eight bytes and two
+//! scalars; a joined emoji is eleven bytes and three scalars. These expectations
+//! do not call Rust's character counter. Scan, materialized and reopened results
+//! must agree, including NULLs and source-owned literals. Shared failure and
+//! cancellation cases live in `byte_length`.
+
 use super::*;
 
 #[test]

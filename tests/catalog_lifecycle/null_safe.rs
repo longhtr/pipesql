@@ -1,3 +1,11 @@
+//! Check the two-valued comparison IS [NOT] DISTINCT FROM.
+//!
+//! Literal row IDs distinguish NULL, NaN, signed zero and ordinary values across
+//! types and producers. Integer values around 2^53 expose the difference between
+//! integer comparison and conversion to DOUBLE. Short-circuit cases avoid a
+//! failing expression only when it is not demanded; a prepared empty snapshot
+//! must remain empty after append, while fresh and reopened queries see new rows.
+
 use super::*;
 
 #[test]

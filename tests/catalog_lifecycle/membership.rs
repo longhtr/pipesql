@@ -1,3 +1,11 @@
+//! Check literal IN/NOT IN lists against nullable set membership.
+//!
+//! The independent model asks whether a value occurs in a list, then accounts for
+//! unknown comparisons caused by NULL. Literal typed cases cover duplicates,
+//! negation and producer composition. Invalid lists must fail preparation even
+//! in a skipped Boolean branch; cancellation and demanded overflow must remain
+//! terminal and release query reservations.
+
 use super::*;
 
 #[test]

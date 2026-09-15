@@ -1,3 +1,11 @@
+//! Check UTF-8 byte counts and the shared string-length failure boundaries.
+//!
+//! Literal counts cover empty, escaped, multibyte and maximum-length strings
+//! through scans, sorting and reopen. Composition checks preserve original range
+//! values across SET and carry lengths through joins, grouping and set operations.
+//! This module also owns rejection, source-span, cancellation and abandonment
+//! cases shared with CHAR_LENGTH; scalar-count answers live in `char_length`.
+
 use super::*;
 
 #[test]

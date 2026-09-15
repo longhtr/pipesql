@@ -1,3 +1,11 @@
+//! Check three-valued Boolean filters and the work that short-circuiting demands.
+//!
+//! A local truth table evaluates combinations of false, true and unknown over
+//! 27 input rows; only true rows survive WHERE. Literal cases separately cover
+//! NaN, precedence and composed producers. Overflow cases distinguish skipped
+//! from demanded branches. The scratch tests measure optional storage and include
+//! an observed small-stack thread, which requires the release test profile.
+
 use super::*;
 
 #[test]

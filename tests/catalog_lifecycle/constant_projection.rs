@@ -1,3 +1,11 @@
+//! Check owned STRING and DATE constants in SELECT, EXTEND and SET.
+//!
+//! Literal rows verify decoded text, calendar offsets and original qualified
+//! values after SET. Constants must survive destruction of the SQL source and
+//! release their reservations when a result is abandoned. Invalid constants fail
+//! preparation even behind LIMIT 0; maximum literal and output widths challenge
+//! the materialization boundary.
+
 use super::*;
 
 #[test]

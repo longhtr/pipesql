@@ -1,3 +1,11 @@
+//! Check NULLIF's equality result, argument demand and retained numeric bits.
+//!
+//! Literal results cover sentinel removal and composition with COALESCE,
+//! aggregates, joins and sets. NULLIF still evaluates its second argument when
+//! the first is NULL; failure cases check that order and the owned source span.
+//! Outer query demand may skip the whole expression. Separate bit expectations
+//! cover NaN and signed zero, with pinned and reopened snapshot checks.
+
 use super::*;
 
 #[test]
