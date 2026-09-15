@@ -6,6 +6,7 @@ refuse every observed synchronization position. The caller checks propagated
 errors, cleanup and healed receipt resolution; counters reject weaker fallbacks.
 A standard-library retry control proves interception, and a read-only query must
 make no sync calls. This observes software behavior, not survival of power loss."""
+
 from pathlib import Path
 import argparse
 import errno

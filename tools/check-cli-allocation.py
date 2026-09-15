@@ -11,6 +11,7 @@ Run directly on macOS or Linux. The supervisor bounds each child, preserves its
 exit status and owns temporary databases and builds. This is CLI boundary evidence;
 the library allocation campaign checks the public API's ownership contracts.
 """
+
 from functools import partial
 from typing import NamedTuple
 from pathlib import Path

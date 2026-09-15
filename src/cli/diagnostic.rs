@@ -4,6 +4,7 @@
 //! truncates only between UTF-8 characters. `print_error` uses the previously
 //! captured stderr owner. Missing or broken stderr leaves the command's exit
 //! status intact; reporting an error must not allocate a fallback or reopen fd 2.
+
 use std::io::{self, Write};
 
 const MAX_DIAGNOSTIC_BYTES: usize = 4_096;

@@ -1,11 +1,15 @@
-//! Expose append ownership and distinguish issued attempts from durable commits.
+//! Own an append until its private data is committed or discarded.
 //!
-//! `Append` owns one in-progress write and delegates construction to the catalog
-//! implementation. `Commit` records completed publication. A transaction token
-//! identifies an attempt, including one that aborted; its sequence is therefore
-//! different from a generation, which advances only on a successful publication.
-//! `resolve_commit` inspects retained history without repair. Unknown identities,
-//! an active writer and required recovery stay distinct from a settled abort.
+//! `Append::write` builds data that readers cannot yet see. `Append::commit`
+//! publishes it as a new database snapshot and returns a durable `Commit` receipt.
+//! `Append::abort` removes the private data. The catalog implementation performs
+//! these operations; this module exposes their public ownership and outcomes.
+//!
+//! A transaction token identifies a write attempt, including one that aborts.
+//! A generation counts successful publications, so the two numbers can differ.
+//! Retain the token before committing: if the result is uncertain, reopen the
+//! database and use `resolve_commit` to find whether the attempt committed.
+//! Resolution reads retained history; reopening performs any required recovery.
 
 use crate::effects::Effects;
 use crate::namespace::inspect_namespace;

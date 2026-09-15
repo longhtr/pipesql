@@ -6,6 +6,7 @@
 //! or an existing option string, so reporting bad input needs no new allocation.
 //! A well-shaped transaction token is only an identity; `resolve_commit` must
 //! still establish whether the database issued and committed it.
+
 use pipesql::{Config, Error, TransactionId};
 use std::ffi::OsString;
 use std::path::PathBuf;

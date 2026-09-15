@@ -6,6 +6,7 @@
 //! Consume borrowed batches immediately and distinguish Progress, Rows, Finished
 //! and Failed. Only Finished permits the final row count and success marker;
 //! execution or sink failure can leave a visible prefix, never a complete result.
+
 use super::output::{output_error, write_query_header, write_value};
 use pipesql::{CancellationToken, Database, Error, QueryStep};
 use pipesql_filesystem as filesystem;

@@ -61,17 +61,23 @@ closed.
 
 ## Active repository consolidation
 
-The implementation and module review are integrated. Finish the checkpoint before
-new features:
+The first module review missed introductions that name a responsibility without
+explaining its concepts or operation. Finish the documentation repair and
+checkpoint before new features:
 
-1. Run the final macOS and qualified GNU arm64 Linux gates sequentially on matching
+1. Recheck module introductions from a learner's starting point. Explain what the
+   module does, why its main concepts are needed, and how its code uses them.
+   API reference comments do not replace that introduction. Remove unexplained
+   internal terminology and verify concrete examples against the implementation.
+   Separate top-level documentation from code with a blank line.
+2. Run the final macOS and qualified GNU arm64 Linux gates sequentially on matching
    frozen inputs, followed by fresh examples. Keep source and build ownership
    separate so later development cannot change what a running campaign tests.
-2. Reconcile the temporary inventory with the final diff and results. Record
+3. Reconcile the temporary inventory with the final diff and results. Record
    removed duplication, retained independent evidence, contract coverage and
    measured build/gate costs in the evidence notes. Distinguish measurements from
    controlled performance comparisons.
-3. Remove owned temporary material, review and commit the completed checkpoint,
+4. Remove owned temporary material, review and commit the completed checkpoint,
    then synchronize by fast-forward. Preserve the
    [qualification limits](#qualifications-that-remain-outside-this-internal-claim).
 

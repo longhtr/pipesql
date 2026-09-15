@@ -7,6 +7,7 @@ artifacts and failed commands challenge ownership, partial-output retention
 and cleanup receipts. Maintenance runs these tests; they do not establish
 that instrumentation is active in a real executable.
 """
+
 from contextlib import redirect_stdout
 import io
 import json

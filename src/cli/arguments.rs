@@ -6,6 +6,7 @@
 //! oversized, unterminated or unreadable input returns an error without fallback.
 //! No native pointer or borrowed argument escapes. This executable-only boundary
 //! runs before engine entry and assumes no concurrent foreign mutation of argv.
+
 use super::command::{ArgumentError, MAX_ARGUMENT_BYTES};
 use pipesql::Error;
 use std::ffi::{OsStr, OsString};

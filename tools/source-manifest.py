@@ -11,6 +11,7 @@ Run directly from any directory to print the manifest. It identifies source, not
 a passing build or a reproducible binary; receipts still need artifact identities
 and any runtime inputs outside the exported tree.
 """
+
 import hashlib
 from pathlib import Path
 import re

@@ -7,6 +7,7 @@ builds must be reused without building. Explicit assertions check code-generatio
 settings, native linking and propagation of subprocess failure. Maintenance runs
 these orchestration checks; real compilation remains a separate gate stage.
 """
+
 from pathlib import Path
 import os
 import json

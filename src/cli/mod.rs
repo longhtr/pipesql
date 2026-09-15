@@ -5,6 +5,7 @@
 // database. A command failure takes precedence over a later close failure.
 // Successful commands must also flush output. Usage failures exit 2; database
 // and output failures exit 1, even when the diagnostic itself cannot be written.
+
 use command::{Command, Operation};
 use diagnostic::print_error;
 use output::{output_error, write_database_status};

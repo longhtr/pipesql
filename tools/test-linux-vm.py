@@ -6,6 +6,7 @@ completed cleanup. Mutated receipts challenge source identity and missing,
 reordered or failed stages. These tests call the Python validators without
 starting Docker or a VM; the platform campaign supplies runtime evidence.
 """
+
 import copy
 import runpy
 from pathlib import Path

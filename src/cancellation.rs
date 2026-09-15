@@ -1,8 +1,12 @@
-//! Record a stop request that an operation observes at its own safe boundaries.
+//! Let a caller ask an operation to stop without interrupting its thread.
 //!
-//! The token does not interrupt a running thread or system call, or undo publication.
-//! It only stores the request; each operation decides when returning Cancelled
-//! is legal and how to release its work.
+//! Cancellation is cooperative: `cancel` sets a shared flag, and the operation
+//! checks it where stopping is safe. A check returns `Cancelled` once the flag
+//! is set; it never resets. Use a fresh token for an independent operation.
+//!
+//! The operation owns cleanup and decides when it can still stop. In particular,
+//! a request cannot undo a commit or interrupt a system call already in progress.
+//! The returned operation outcome tells the caller what actually happened.
 
 use crate::Error;
 use std::sync::atomic::{AtomicBool, Ordering};

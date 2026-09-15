@@ -1,4 +1,22 @@
-//! Validated resource limits for one database handle.
+//! Choose the memory and temporary-storage budgets for a database handle.
+//!
+//! Pass a `Config` when creating or opening a database. The memory budget is shared
+//! by the handle, prepared queries, running queries, and writers. Each operation
+//! reserves part of that budget before allocating its buffers. Two queries share
+//! one limit; neither receives a separate budget of its own.
+//!
+//! The temporary-storage budget covers working files. For example, a sort can
+//! write intermediate rows to disk when they do not all fit in memory. This
+//! budget does not limit the size of the committed database. Space remains
+//! charged while cleanup is unresolved, even if the operation that created the
+//! files has returned an error.
+//!
+//! `Config::new` checks that both limits are nonzero. It does not allocate memory
+//! or promise that an operation will fit: even opening a database needs space for
+//! its resident state. The `resources` module maintains the live accounts and
+//! refuses reservations that would exceed a limit. The limits measure PipeSQL's
+//! reservations, not the surrounding process's total physical memory.
+
 use crate::Error;
 
 /// Resource limits shared by operations on one database handle.

@@ -10,6 +10,7 @@ Run directly, optionally supplying an identified stock CLI path; otherwise build
 one in owned temporary storage. Print each observation as JSON and fail on any
 mismatch. The composition campaign covers combinations beyond these boundaries.
 """
+
 import argparse
 import hashlib
 import json

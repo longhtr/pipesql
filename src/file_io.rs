@@ -1,6 +1,18 @@
-//! Exact concrete-file I/O without std's hidden Interrupted retry loops.
-//! Every successful native call consumes bytes; zero progress and every error
-//! terminate. Callers own effect placement, buffer bounds and publication state.
+//! Transfer a complete byte slice using a caller-owned file and buffer.
+//!
+//! An OS read or write can transfer fewer bytes than requested without failing.
+//! These loops advance through the slice until every byte has been transferred.
+//! The ordinary variants advance the file cursor; the `_at` variants use an
+//! explicit offset and leave that cursor unchanged. Positional transfers check
+//! the entire range against the native signed-64-bit limit before doing I/O.
+//!
+//! A zero-byte transfer cannot finish a nonempty request: reads return
+//! `UnexpectedEof`, and writes return `WriteZero`. Other errors, including
+//! `Interrupted`, return immediately. Unlike the standard exact-I/O helpers,
+//! these functions leave retry decisions to the caller. This keeps native-call
+//! counts and injected failures observable. An error can follow a partial
+//! transfer; these helpers neither undo written bytes nor make them durable.
+
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::FileExt;

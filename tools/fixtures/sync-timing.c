@@ -4,6 +4,7 @@
 // Concurrent calls contribute summed time, which may exceed process wall time.
 // Only known fcntl signatures are forwarded; unexpected commands fail closed.
 // tools/README.md owns the command and stock-versus-observed result comparison.
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>

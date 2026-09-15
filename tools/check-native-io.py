@@ -7,6 +7,7 @@ become memory-only. Fresh processes then refuse observed positions, shorten real
 transfers and fail their continuations; the caller checks outcomes and reuse.
 Focused modes cover their named workloads only. --controls-only reports a census,
 not the failure campaign. Subprocess supervision and builds use shared helpers."""
+
 from pathlib import Path
 import argparse
 import errno

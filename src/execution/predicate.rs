@@ -6,6 +6,7 @@
 //! Scan and computed-row consumers use this same leaf rule, then follow the
 //! decision offsets to preserve short-circuiting. `BranchScratch` reserves row
 //! cursors and selection storage only when the scan needs branching.
+
 use crate::execution::planning::Pipeline;
 use crate::execution::{BATCH_ROWS, COMPUTE_ROWS};
 use crate::frontend::{Comparison, FilterControl, FilterLiteral, Predicate};

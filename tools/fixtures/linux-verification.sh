@@ -4,6 +4,7 @@
 # no network device. The deliberate failure mode proves status propagation.
 # A successful full run removes example outputs before printing completion;
 # init and check-linux-vm.py then verify shutdown and the frozen gate receipt.
+
 set -eu
 . /verification-env.sh
 export CARGO_BUILD_JOBS=1

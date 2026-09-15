@@ -10,6 +10,7 @@ exercise cancellation, signed zero, subnormals, infinities and NaNs.
 Run with --check to compare the retained rounding.txt byte for byte. Running
 without arguments replaces that fixture; neither mode executes production code.
 """
+
 from fractions import Fraction
 import math
 from pathlib import Path

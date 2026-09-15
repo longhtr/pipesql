@@ -4,6 +4,7 @@
  * and then refuse its continuation. Diagnostic pipes are excluded. The Rust caller
  * owns semantic/outcome checks; the Python campaign owns position coverage.
  * Control state is single-threaded and never installed in a shipped artifact. */
+
 #include <errno.h>
 #include <stdint.h>
 #include <sys/stat.h>

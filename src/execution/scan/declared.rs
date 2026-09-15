@@ -11,6 +11,7 @@
 //! it resets unit state and rechecks the table index rather than trusting old bytes.
 //! The inline tests check actual capacities, refusal before I/O, read/truncation
 //! faults and released ownership against literal rows and observed effect cuts.
+
 use super::{AdmittedScan, ScanCursor, ScanPhase, Source};
 use crate::Database;
 use crate::batch::{Batch, OwnedBatch};

@@ -1,9 +1,14 @@
-//! Represent the legacy lineitem keys as one validated printable ASCII byte.
+//! Represent each legacy `lineitem` grouping key as one printable ASCII byte.
 //!
-//! The delimiter `|` is excluded; space is a value. A dense index maps the 94
-//! accepted bytes into grouping slots without allocating strings. Constructors
-//! validate either representation; the private byte keeps conversion safe.
-//! General UTF-8 table strings use the separate representation in `value`.
+//! The input format reserves `|` as its delimiter, leaving 94 possible key values;
+//! space is a value too. This small domain lets aggregation use fixed array slots
+//! instead of allocating a string for each key. `index` numbers the accepted bytes
+//! consecutively from zero in byte order; `from_index` reverses that mapping.
+//!
+//! Constructors reject bytes and indexes outside the domain. Keeping the byte
+//! private makes later conversion to a string safe. General UTF-8 table strings
+//! use the separate representation in `value`.
+
 pub(crate) const KEY_DOMAIN: usize = 94;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

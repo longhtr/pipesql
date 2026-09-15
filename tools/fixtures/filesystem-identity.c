@@ -4,6 +4,7 @@
 // failed or truncated diagnostics exit unsuccessfully. Extra metadata calls can
 // affect timing, so this is not a concurrency oracle. The stable/replacement
 // control and invocation live beside the diagnostic in tools/README.md.
+
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>

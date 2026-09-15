@@ -13,6 +13,7 @@
 //! and STRING/DATE inputs retain their own representations. Arithmetic failures
 //! acquire the defining source span here. The enclosing scan/result owns the
 //! scratch reservation and terminates execution if evaluation fails.
+
 use super::{Error, Pipeline, Value};
 use crate::frontend::{
     Computation, DataType, MAX_COLUMNS, MAX_COMPUTED, MAX_ROW_VALUES, SemanticColumn,

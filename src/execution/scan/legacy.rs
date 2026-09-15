@@ -7,6 +7,7 @@
 //! DATE blocks cover two numeric/key blocks, so their loaded position is tracked
 //! separately. `StoredColumn` borrows checked bytes for typed access or bulk decode.
 //! This source has no replay transition; errors propagate to the enclosing result.
+
 use super::{AdmittedScan, ScanCursor, ScanPhase, Source};
 use crate::batch::{Batch, ColumnMut, OwnedBatch};
 use crate::effects::{Effect, Effects, QueryEffect};

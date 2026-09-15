@@ -5,6 +5,7 @@
  * that seed; both modes report requested/usable bytes only after freeing owners.
  * tools/README.md owns the comparison command. This is an allocator diagnostic,
  * not an engine admission or whole-process memory bound. */
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>

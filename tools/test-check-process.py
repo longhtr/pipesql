@@ -7,6 +7,7 @@ cleanup must make that control fail. Other cases check nested termination and
 signal-handler restoration. These are supervisor checks, not engine concurrency
 qualification; run directly or through maintenance on POSIX hosts.
 """
+
 import os
 from pathlib import Path
 import signal

@@ -11,6 +11,7 @@ Invoke through check.sh. Source discovery/export belongs to source-manifest.py,
 process lifetime to check_process.py and stock build identity to check_support.py.
 Case meanings and expected answers stay in their individual campaigns.
 """
+
 import argparse
 from dataclasses import dataclass
 import hashlib

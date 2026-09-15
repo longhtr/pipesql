@@ -12,6 +12,7 @@ and completed cleanup. Accept only the expected full gate on the frozen source.
 Owned containers and images are removed, leaving logs and receipts. Invoke as
 documented in docs/testing.md; --bootstrap-only qualifies no database campaign.
 """
+
 import argparse
 import hashlib
 import json

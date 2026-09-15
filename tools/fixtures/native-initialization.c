@@ -4,6 +4,7 @@
  * observes root stat; Linux observes root/component lstat and symlink readlink.
  * Calls otherwise reach the real implementation. The observer neither resolves
  * paths nor changes files; the caller checks names, errors and later reuse. */
+
 #include <errno.h>
 #include <stdatomic.h>
 #include <stdint.h>

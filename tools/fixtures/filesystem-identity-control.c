@@ -2,6 +2,7 @@
 // Both files contain the same bytes, so pathname lstat and opened-descriptor statx
 // must distinguish identity rather than content. This standalone GNU/Linux caller
 // runs no engine code. tools/README.md owns compilation and observer comparison.
+
 #define _GNU_SOURCE
 #include <assert.h>
 #include <fcntl.h>

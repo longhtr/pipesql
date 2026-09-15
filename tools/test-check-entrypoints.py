@@ -6,6 +6,7 @@ Unix-only modules are unavailable. Invalid scopes, paths and assertion-disabled
 Python must refuse before setup. Negative controls prove the effect guard can
 catch accidental work. These checks run in maintenance and execute no engine.
 """
+
 from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
 import builtins
 import importlib.util

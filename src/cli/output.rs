@@ -4,6 +4,7 @@
 //! STRING bytes use hex so delimiters and newlines cannot split a value. Encoding
 //! writes directly to the caller's sink and returns the first write failure.
 //! `query` owns row framing and emits completion only after the result finishes.
+
 use pipesql::{DataType, Database, Error, PreparedQuery, Value};
 use std::io::{self, Write};
 

@@ -4,6 +4,7 @@
 //! cleanup/reopen. This owner creates and appends the small facts table, then
 //! collects complete query results; expected rows, object sets and effect cuts
 //! remain in each case. The shared Directory guard owns their disposable parent.
+
 use crate::catalog::ObjectId;
 pub(super) use crate::test_support::Directory;
 use crate::{

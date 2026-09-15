@@ -11,6 +11,7 @@
 //! later cancellation or removal fails; a failed barrier makes the handle require
 //! reopen. Disposable inventory scratch is dropped before that barrier. Success
 //! reports durably removed names; an error may still leave partial safe cleanup.
+
 use super::{Active, Maintenance, SLOTS};
 use crate::catalog::{self, ObjectId};
 use crate::effects::{DirectoryKind, Effect, Effects};

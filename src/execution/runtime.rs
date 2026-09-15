@@ -12,6 +12,7 @@
 //! step performs bounded controller work and can return Progress without rows.
 //! `step` installs Failed before advancing: any error leaves a terminal runtime,
 //! whose buffers and controllers the enclosing QueryResult then releases.
+
 use crate::batch::{Batch, OwnedBatch};
 use crate::effects::Effects;
 use crate::execution::aggregation::Aggregation;

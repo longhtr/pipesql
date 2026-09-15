@@ -4,6 +4,7 @@
  * orphans and refuse a live descendant before unmounting. Only then report
  * VERIFICATION_STOPPED. check-linux-vm.py requires both records; VM shutdown
  * alone cannot establish successful verification. */
+
 #define _GNU_SOURCE
 #include <errno.h>
 #include <stdio.h>

@@ -6,6 +6,7 @@
 //! completion. Short writes advance the remaining slice; interruption, zero
 //! progress and other errors terminate writing. Drop closes without retrying or
 //! flushing, so the caller must observe an explicit flush before reporting success.
+
 use std::fs::File;
 use std::io::{self, Write};
 use std::os::fd::FromRawFd;

@@ -4,6 +4,7 @@
  * the real OS primitive. Only known fcntl signatures are forwarded: an unexpected
  * command exits rather than interpreting incompatible variable arguments.
  * The Rust caller owns outcome checks; this observer makes no durability claim. */
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>

@@ -9,6 +9,7 @@ phases and complete observation records. Negative controls must fail at their
 intended guard. Shared build/process mechanics live in check_support/check_process.
 Use --help for focused scopes; --controls-only is not prefix-sweep evidence.
 """
+
 from functools import partial
 from pathlib import Path
 import os

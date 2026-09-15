@@ -11,6 +11,7 @@
 //! and computation scratch; the runtime owns output lifetime and terminal failure.
 //! If text fills a batch, publish only complete rows and retry the next row in a
 //! cleared batch. Declared-source replay resets selection and computed readiness.
+
 use crate::batch::{Batch, OwnedBatch};
 use crate::effects::Effects;
 use crate::execution::computed::BatchScratch;

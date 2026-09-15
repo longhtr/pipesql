@@ -4,6 +4,7 @@
 // At the chosen event, _exit(86) bypasses engine teardown while retaining visible
 // writes. check-catalog-interruption.py checks exact trace prefixes and reopened
 // outcomes. This models process termination, not power loss or torn writes.
+
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdint.h>

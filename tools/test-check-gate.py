@@ -7,6 +7,7 @@ and verify failed commands, timeouts and interruption remain failures in the
 receipt. A checkout edit must leave the exported source unchanged. No Cargo
 build or database campaign runs; maintenance owns this fast check.
 """
+
 from contextlib import redirect_stderr, redirect_stdout
 import io
 import json

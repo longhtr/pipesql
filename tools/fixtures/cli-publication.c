@@ -2,6 +2,7 @@
 // All other calls forward unchanged; the observer does not edit the namespace.
 // cli-publication.rs arms the selected position and preserves the CLI exit status.
 // check-cli-allocation.py interprets tokens and persisted outcomes afterward.
+
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>

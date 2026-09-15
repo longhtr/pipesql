@@ -1,4 +1,15 @@
-//! Borrowed logical relationships; formatting has no execution or catalog authority.
+//! Print how a prepared query connects its sources and transformations.
+//!
+//! A logical plan describes what a query does: read a source, filter rows, compute
+//! values, group them, and select outputs. It precedes decisions about execution
+//! buffers, sorting runs, and other physical work. This module formats that plan
+//! so a reader can follow which stage consumes which earlier result.
+//!
+//! `LogicalPlan` borrows the validated plan held by a `PreparedQuery`. Its `Display`
+//! implementation walks the stored nodes and formats their expressions and column
+//! mappings. Formatting does not execute the query or inspect database files.
+//! A failed output write stops formatting and can leave a partial explanation.
+
 use super::{
     AggregateArgument, AggregateKind, ColumnId, Comparison, Computation, Constant, DataType,
     Direction, FilterLiteral, Node, NullPlacement, Plan, Predicate, RelationId, SetKind, Stage,

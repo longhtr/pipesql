@@ -6,6 +6,7 @@
 //! requests input or consumes one bounded batch; the scheduler owns the child
 //! cursor and output storage. Replay resets these counters and requires the
 //! scheduler to rewind the child too. Cancellation or failure forbids replay.
+
 use crate::batch::Batch;
 use crate::execution::computed::RowValues;
 use crate::execution::planning::Pipeline;

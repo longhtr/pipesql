@@ -1,10 +1,17 @@
+// Route selected OS calls through an observer while the DBMS runs unchanged.
+// The observer can count or alter a call, then use NATIVE_REAL to invoke its
+// original implementation. These macros supply that routing; each observer
+// defines its own measurements, injected failures, and thread synchronization.
+//
+// macOS uses a loader table of replacement/original function pairs. Linux exports
+// a replacement symbol and resolves the next implementation before main, while
+// fault injection is disarmed. Resolving early keeps loader work outside the
+// measured operation. A missing symbol exits with status 98 rather than allowing
+// a campaign to pass without observing the call.
+
 #ifndef PIPESQL_NATIVE_INTERPOSE_H
 #define PIPESQL_NATIVE_INTERPOSE_H
 
-// Disposable observers. Resolve immutable forwarding targets before main, while
-// fault injection is disarmed. Each caller synchronizes its own mutable fault
-// state if it uses multiple threads. Missing symbols terminate the caller;
-// they cannot turn an unobserved operation into a successful campaign cell.
 #if defined(__APPLE__)
 #define NATIVE_BIND(name)
 #define NATIVE_REAL(name) name

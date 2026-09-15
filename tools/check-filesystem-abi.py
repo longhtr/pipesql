@@ -6,6 +6,7 @@ literal layout assertions and oversized-thread control are independent of Rust
 bindings; no engine code runs. Invoke directly or through check.py. A compiler
 error, failed assertion or timeout fails the check and releases its owned output.
 """
+
 from pathlib import Path
 import argparse
 import tempfile

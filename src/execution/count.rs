@@ -6,6 +6,7 @@
 //! one candidate per step so a later LIMIT can stop ordinary computations.
 //! Replay reuses the completed count once, without rereading input. Demanding a
 //! raw field here is a plan defect; exceeding the row limit is resource refusal.
+
 use crate::batch::Batch;
 use crate::execution::computed::RowValues;
 use crate::execution::planning::Pipeline;

@@ -1,9 +1,13 @@
-//! Embedded analytical queries over immutable, locally stored table generations.
+//! An embedded database for analytical queries over locally stored tables.
+//!
+//! The library runs inside its caller's process. Each committed database version
+//! is an immutable snapshot, identified by a generation number. Preparing a query
+//! retains that snapshot, so a later append cannot change the query's input.
 //!
 //! Use [`Database::create_empty`] for declared tables, then
 //! [`Database::declare_table`] and [`Database::begin_append`] to add data.
-//! [`Database::prepare`] pins a generation; [`Database::execute`] borrows that
-//! plan and returns a streaming [`QueryResult`]. Consume every step through
+//! [`Database::prepare`] produces a plan; [`Database::execute`] borrows it and
+//! returns a streaming [`QueryResult`]. Consume every step through
 //! [`QueryStep::Finished`] or handle [`QueryStep::Failed`]; rows alone do not
 //! establish successful completion. Result values may borrow the current batch.
 //!

@@ -5,6 +5,7 @@
  * and shutdown; an unprivileged worker owns measurements. Failed workers cannot
  * emit PROBE_OK. The host selects the disk policy, while this workload stays
  * fixed. See tools/README.md; timings do not establish power-loss durability. */
+
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>

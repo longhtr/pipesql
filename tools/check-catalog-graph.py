@@ -12,6 +12,7 @@ Run directly for the full campaign; --seed-only omits corruption cases. --output
 retains artifacts in a new directory, otherwise temporary ownership removes them.
 Neither mode simulates power loss; interruption has its own campaign.
 """
+
 import argparse
 from dataclasses import replace
 import hashlib

@@ -12,6 +12,7 @@
 //! Construction, merge and output failures leave the inventory unusable.
 //! The caller owns maintenance authority and supplies admitted unlinked scratch;
 //! this module writes scratch, but never deletes database objects or publishes roots.
+
 use super::{Maintenance, Reachable};
 use crate::catalog::{self, ObjectId};
 use crate::catalog_snapshot::SLOTS;

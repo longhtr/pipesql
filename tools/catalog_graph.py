@@ -15,6 +15,7 @@ Run with a database path and optional limits to emit JSON preserving DOUBLE bits
 Exit 3 means a diagnostic limit; exit 2 means invalid or unavailable input. The
 check-catalog-graph.py campaign challenges this inspector with corrupt copies.
 """
+
 import argparse
 from dataclasses import dataclass
 import json

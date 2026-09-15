@@ -7,6 +7,7 @@ and dangling links must be refused. These controls check the tooling's treatment
 of evidence, while independent encoders own the expected bytes. Run directly or
 through check-maintenance.py.
 """
+
 from contextlib import redirect_stdout
 import io
 from pathlib import Path

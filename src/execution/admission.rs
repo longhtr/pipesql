@@ -10,6 +10,7 @@
 //! constructs newer data. Legacy queries inspect the single published namespace
 //! after memory admission and refuse retained publication debt. A successful
 //! return establishes a runnable result, not successful query completion.
+
 use super::{QueryResult, RESULT_BYTES, State, computed};
 use crate::effects::Effects;
 use crate::execution::computed::BatchLayout;

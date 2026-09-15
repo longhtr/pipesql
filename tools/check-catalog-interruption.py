@@ -13,6 +13,7 @@ disposable outputs unless --output requests a new retained replay directory.
 Visible writes survive termination: this does not model power loss, torn writes,
 kernel failure or arbitrary concurrent mutation. See tools/README.md for scope.
 """
+
 from pathlib import Path
 import argparse
 import hashlib
