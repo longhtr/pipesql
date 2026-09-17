@@ -1,0 +1,16 @@
+[package]
+name = "pipesql-native"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+libc = "=0.2.186"
+
+[lints.clippy]
+correctness = "deny"

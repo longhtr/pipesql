@@ -1,0 +1,136 @@
+//! Write database status, schemas and typed values in the CLI's text format.
+//!
+//! Values carry type tags. DOUBLE includes its raw bits because decimal display
+//! cannot preserve a NaN payload or distinguish every representation. STRING uses
+//! hexadecimal bytes so embedded delimiters, newlines and NULs remain one value.
+//!
+//! Writers send directly to the supplied sink and return its first failure.
+//! They do not roll back a partially written record. `query` frames result rows
+//! and writes the completion marker. The CLI entry point requires successful
+//! close and flush operations before returning exit status 0.
+
+use pipesql::{DataType, Database, Error, PreparedQuery, TableSchema, Value};
+use std::io::{self, Write};
+
+pub(super) fn output_error(operation: &'static str, source: io::Error) -> Error {
+    Error::Io { operation, source }
+}
+
+pub(super) fn write_database_status(
+    output: &mut impl Write,
+    status: &str,
+    database: &Database,
+) -> Result<(), Error> {
+    writeln!(output, "status={status}")
+        .and_then(|()| writeln!(output, "database={}", database.path().display()))
+        .and_then(|()| {
+            writeln!(
+                output,
+                "memory_limit_bytes={}",
+                database.config().memory_limit_bytes()
+            )
+        })
+        .and_then(|()| {
+            writeln!(
+                output,
+                "temp_limit_bytes={}",
+                database.config().temp_limit_bytes()
+            )
+        })
+        .map_err(|source| output_error("write command status", source))
+}
+
+pub(super) fn write_query_header(
+    output: &mut impl Write,
+    database: &Database,
+    prepared: &PreparedQuery<'_>,
+) -> Result<(), Error> {
+    write_database_status(output, "querying", database)?;
+    writeln!(output, "column_count={}", prepared.result_column_count())
+        .map_err(|source| output_error("write query schema", source))?;
+    output
+        .write_all(b"columns=")
+        .map_err(|source| output_error("write query schema", source))?;
+    for index in 0..prepared.result_column_count() {
+        if index != 0 {
+            output
+                .write_all(b"|")
+                .map_err(|source| output_error("write query schema", source))?;
+        }
+        let column = prepared
+            .result_column(index)
+            .ok_or(Error::Corrupt("result column is missing"))?;
+        let data_type = type_name(column.data_type);
+        write!(
+            output,
+            "{}:{data_type}:{}",
+            column.name.unwrap_or(""),
+            if column.nullable {
+                "nullable"
+            } else {
+                "required"
+            }
+        )
+        .map_err(|source| output_error("write query schema", source))?;
+    }
+    output
+        .write_all(b"\n")
+        .map_err(|source| output_error("write query schema", source))
+}
+
+pub(super) fn write_table_schema(
+    output: &mut impl Write,
+    database: &Database,
+    schema: &TableSchema<'_>,
+) -> Result<(), Error> {
+    write_database_status(output, "inspecting", database)?;
+    let result = (|| -> io::Result<()> {
+        writeln!(output, "table={}", schema.name())?;
+        writeln!(output, "generation={}", schema.generation())?;
+        writeln!(output, "column_count={}", schema.column_count())?;
+        for index in 0..schema.column_count() {
+            let column = schema.column(index).expect("validated schema position");
+            writeln!(
+                output,
+                "column[{index}]={}:{}:{}",
+                column.name,
+                type_name(column.data_type),
+                if column.nullable {
+                    "nullable"
+                } else {
+                    "required"
+                }
+            )?;
+        }
+        writeln!(output, "status=inspected")
+    })();
+    result.map_err(|source| output_error("write table schema", source))
+}
+
+fn type_name(data_type: DataType) -> &'static str {
+    match data_type {
+        DataType::Double => "double",
+        DataType::Int64 => "int64",
+        DataType::Date => "date",
+        DataType::String => "string",
+    }
+}
+
+pub(super) fn write_value(output: &mut impl Write, value: &Value<'_>) -> Result<(), Error> {
+    let result = (|| -> io::Result<()> {
+        match value {
+            Value::Null => output.write_all(b"null"),
+            Value::Int64(value) => write!(output, "int64:{value}"),
+            Value::Double(value) => write!(output, "double:{value}:{:016x}", value.to_bits()),
+            Value::Date(value) => write!(output, "date:{value}"),
+            Value::String(value) => {
+                output.write_all(b"string:")?;
+                for byte in value.as_str().as_bytes() {
+                    write!(output, "{byte:02x}")?;
+                }
+                Ok(())
+            }
+        }
+    })();
+    result.map_err(|source| output_error("write query value", source))
+}

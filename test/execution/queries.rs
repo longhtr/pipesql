@@ -1,0 +1,447 @@
+//! Check composed queries over loaded and empty legacy tables.
+//!
+//! Cases cross batch boundaries, reorder columns and combine aggregation with
+//! limits, text constants and nullable arithmetic. Expected rows are specified
+//! here. The key-pair case derives its inputs from the text-input contract,
+//! independently of the engine's internal key numbering.
+//!
+//! Window-count cases also observe temporary reservations: counting alone needs
+//! no saved payload, while retaining source columns requires temporary storage.
+//! Every case drains execution to completion and checks reservation release.
+
+use super::{Q1, ROW, TempDir, config};
+use pipesql::{CancellationToken, Database, QueryStep, Value};
+use std::{fs, io::Write};
+
+#[test]
+fn every_admitted_key_pair_survives_public_load_reopen_scan_and_grouping() {
+    // Each key is one printable ASCII byte, including space but excluding the
+    // input delimiter. Enumerate every pair without using the engine's key map.
+    let keys: Vec<u8> = (b' '..=b'~').filter(|byte| *byte != b'|').collect();
+    assert_eq!(keys.len(), 94);
+    let temp = TempDir::new();
+    let path = temp.0.join("database");
+    let input = temp.0.join("keys.tbl");
+    let mut file = std::io::BufWriter::new(fs::File::create(&input).unwrap());
+    let mut expected = Vec::new();
+    for &flag in &keys {
+        for &status in &keys {
+            writeln!(
+                file,
+                "1|2|3|4|1|100|0.08|8|{}|{}|1994-01-01|12|13|14|15|16|",
+                char::from(flag),
+                char::from(status)
+            )
+            .unwrap();
+            expected.push((flag, status));
+        }
+    }
+    file.flush().unwrap();
+    drop(file);
+    let mut database = Database::create(&path, config()).unwrap();
+    database
+        .load_lineitem(&input, &CancellationToken::new())
+        .unwrap();
+    database.close().unwrap();
+    let database = Database::open(&path, config()).unwrap();
+    let resident = database.reserved_memory_bytes();
+    for (sql, ordered) in [
+        ("FROM lineitem |> SELECT l_returnflag, l_linestatus", false),
+        (
+            "FROM lineitem |> SELECT l_returnflag, l_linestatus, BYTE_LENGTH(l_returnflag) AS bytes, CHAR_LENGTH(l_returnflag) AS characters",
+            false,
+        ),
+        (Q1, true),
+    ] {
+        let query = database.prepare(sql).unwrap();
+        let cancellation = CancellationToken::new();
+        let mut result = database.execute(&query, &cancellation).unwrap();
+        let mut actual = Vec::new();
+        let mut finished = false;
+        for _ in 0..100_000 {
+            match result.step() {
+                QueryStep::Rows(batch) => {
+                    for row in 0..batch.len() {
+                        let (Some(Value::String(flag)), Some(Value::String(status))) =
+                            (batch.value(row, 0), batch.value(row, 1))
+                        else {
+                            panic!("STRING keys");
+                        };
+                        actual.push((flag.as_str().as_bytes()[0], status.as_str().as_bytes()[0]));
+                        if batch.column_count() == 4 {
+                            assert_eq!(batch.value(row, 2), Some(Value::Int64(1)));
+                            assert_eq!(batch.value(row, 3), Some(Value::Int64(1)));
+                        }
+                        if ordered {
+                            assert_eq!(batch.value(row, 9), Some(Value::Int64(1)));
+                        }
+                    }
+                }
+                QueryStep::Progress => (),
+                QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("loaded key failed to query: {error:?}"),
+            }
+        }
+        assert!(finished);
+        if !ordered {
+            actual.sort_unstable();
+        }
+        assert_eq!(actual, expected);
+    }
+    assert_eq!(database.reserved_memory_bytes(), resident);
+}
+
+#[test]
+fn legacy_limit_composes_across_batches_and_empty_aggregation() {
+    let temp = TempDir::new();
+    let path = temp.0.join("database");
+    let input = temp.0.join("lineitem.tbl");
+    fs::write(&input, ROW.repeat(600)).unwrap();
+    let mut database = Database::create(&path, config()).unwrap();
+    let cancel = CancellationToken::new();
+    // The first pass uses a valid empty database; the second loads 600 rows.
+    for loaded in [false, true] {
+        if loaded {
+            database.load_lineitem(&input, &cancel).unwrap();
+        }
+        let baseline = database.reserved_memory_bytes();
+        for (sql, expected) in [
+            (
+                "FROM lineitem |> LIMIT 257 OFFSET 255 |> AGGREGATE COUNT(*) AS n",
+                Some(if loaded { 257 } else { 0 }),
+            ),
+            (
+                "FROM lineitem |> LIMIT 599 |> LIMIT 4 OFFSET 597 |> AGGREGATE COUNT(*) AS n",
+                Some(if loaded { 2 } else { 0 }),
+            ),
+            (
+                "FROM lineitem |> LIMIT 0 OFFSET 9223372036854775807 |> AGGREGATE COUNT(*) AS n",
+                Some(0),
+            ),
+            ("FROM lineitem |> AGGREGATE COUNT(*) AS n |> LIMIT 0", None),
+            (
+                "FROM lineitem |> AGGREGATE COUNT(*) AS n |> LIMIT 1",
+                Some(if loaded { 600 } else { 0 }),
+            ),
+            (
+                "FROM lineitem |> AGGREGATE COUNT(*) AS n |> LIMIT 1 OFFSET 1",
+                None,
+            ),
+            (
+                "FROM lineitem |> LIMIT 0 |> AGGREGATE COUNT(*) AS n GROUP BY l_returnflag |> LIMIT 1",
+                None,
+            ),
+            (
+                "FROM lineitem |> SELECT l_returnflag, l_quantity |> LIMIT 3 |> SELECT l_quantity, l_returnflag |> AGGREGATE COUNT(*) AS n GROUP BY l_returnflag |> LIMIT 1 |> SELECT n",
+                if loaded { Some(3) } else { None },
+            ),
+        ] {
+            let query = database.prepare(sql).unwrap();
+            let mut result = database.execute(&query, &cancel).unwrap();
+            let mut values = vec![];
+            let mut finished = false;
+            for _ in 0..2000 {
+                match result.step() {
+                    QueryStep::Progress => (),
+                    QueryStep::Rows(batch) => {
+                        for row in 0..batch.len() {
+                            let Some(Value::Int64(value)) = batch.value(row, 0) else {
+                                panic!("{sql}");
+                            };
+                            values.push(value);
+                        }
+                    }
+                    QueryStep::Finished => {
+                        finished = true;
+                        break;
+                    }
+                    QueryStep::Failed(error) => panic!("{sql}: {error}"),
+                }
+            }
+            assert!(finished, "{sql}");
+            assert_eq!(values, expected.into_iter().collect::<Vec<_>>(), "{sql}");
+            drop(result);
+            drop(query);
+            assert_eq!(database.reserved_memory_bytes(), baseline, "{sql}");
+            assert_eq!(database.reserved_temp_bytes(), 0, "{sql}");
+        }
+        // Reversing the columns twice makes stale positional mappings visible:
+        // quantity and price have different sums, and output reverses them again.
+        let sql = "FROM lineitem |> SELECT l_extendedprice, l_quantity |> LIMIT 3 |> SELECT l_quantity, l_extendedprice |> AGGREGATE SUM(l_quantity) AS total, SUM(l_extendedprice) AS total_price |> LIMIT 1 |> SELECT total_price, total";
+        let query = database.prepare(sql).unwrap();
+        let mut result = database.execute(&query, &cancel).unwrap();
+        let mut rows = 0;
+        let mut finished = false;
+        for _ in 0..2000 {
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Rows(batch) => {
+                    assert_eq!(batch.len(), 1);
+                    assert_eq!(batch.column_count(), 2);
+                    for (column, value) in [300.0, 3.0].into_iter().enumerate() {
+                        assert_eq!(
+                            batch.value(0, column),
+                            Some(if loaded {
+                                Value::Double(value)
+                            } else {
+                                Value::Null
+                            })
+                        );
+                    }
+                    rows += batch.len();
+                }
+                QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("reordered legacy SUM: {error}"),
+            }
+        }
+        assert!(finished);
+        assert_eq!(rows, 1);
+        drop(result);
+        drop(query);
+        assert_eq!(database.reserved_memory_bytes(), baseline);
+        assert_eq!(database.reserved_temp_bytes(), 0);
+    }
+    database.close().unwrap();
+}
+
+#[test]
+fn legacy_text_constants_survive_batches_grouping_and_extrema() {
+    let temp = TempDir::new();
+    let input = temp.0.join("lineitem.tbl");
+    fs::write(&input, ROW.repeat(600)).unwrap();
+    let mut database = Database::create(
+        &temp.0.join("database"),
+        pipesql::Config::new(16_000_000, 8_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    database.load_lineitem(&input, &cancel).unwrap();
+    let baseline = database.reserved_memory_bytes();
+    for (sql, expected) in [
+        (
+            "FROM lineitem |> SELECT '雪' AS label, DATE '1970-01-02' AS day",
+            vec![("雪".to_owned(), 1); 600],
+        ),
+        (
+            "FROM lineitem |> EXTEND '雪' AS label |> AGGREGATE COUNT(*) AS n GROUP BY label",
+            vec![("雪".to_owned(), 600)],
+        ),
+        (
+            "FROM lineitem |> EXTEND '雪' AS label |> AGGREGATE MIN(label) AS label, COUNT(*) AS n",
+            vec![("雪".to_owned(), 600)],
+        ),
+        (
+            "FROM lineitem |> AGGREGATE COUNT(*) AS n |> EXTEND '雪' AS label |> SELECT label, n",
+            vec![("雪".to_owned(), 600)],
+        ),
+        (
+            "FROM lineitem |> SELECT '雪' AS label, DATE '1970-01-02' AS day |> LIMIT 2",
+            vec![("雪".to_owned(), 1); 2],
+        ),
+    ] {
+        let prepared = database.prepare(sql).unwrap();
+        let mut result = database.execute(&prepared, &cancel).unwrap();
+        let mut actual = Vec::new();
+        let mut finished = false;
+        for _ in 0..100_000 {
+            match result.step() {
+                QueryStep::Progress => (),
+                QueryStep::Rows(batch) => {
+                    for row in 0..batch.len() {
+                        let Some(Value::String(text)) = batch.value(row, 0) else {
+                            panic!("{sql}: text");
+                        };
+                        let number = match batch.value(row, 1) {
+                            Some(Value::Date(day)) => i64::from(day.days_since_unix_epoch()),
+                            Some(Value::Int64(value)) => value,
+                            value => panic!("{sql}: {value:?}"),
+                        };
+                        actual.push((text.as_str().to_owned(), number));
+                    }
+                }
+                QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                QueryStep::Failed(error) => panic!("{sql}: {error}"),
+            }
+        }
+        assert!(finished, "{sql}");
+        assert_eq!(actual, expected, "{sql}");
+        drop(result);
+        drop(prepared);
+        assert_eq!(database.reserved_memory_bytes(), baseline, "{sql}");
+        assert_eq!(database.reserved_temp_bytes(), 0, "{sql}");
+    }
+}
+
+#[test]
+fn legacy_window_count_selects_storage_and_preserves_empty_cardinality() {
+    let temp = TempDir::new();
+    let input = temp.0.join("lineitem.tbl");
+    fs::write(&input, ROW.repeat(600)).unwrap();
+    let mut db = Database::create(&temp.0.join("database"), config()).unwrap();
+    let cancel = CancellationToken::new();
+    for loaded in [false, true] {
+        if loaded {
+            db.load_lineitem(&input, &cancel).unwrap();
+        }
+        let resident = db.reserved_memory_bytes();
+        for (sql, aggregate, width, spills) in [
+            (
+                "FROM lineitem |> SELECT COUNT(*) OVER () AS n",
+                false,
+                1,
+                false,
+            ),
+            (
+                "FROM lineitem |> EXTEND COUNT(*) OVER () AS n |> SELECT n, l_returnflag, DATE '1970-01-01' AS day, 'label' AS label",
+                false,
+                4,
+                true,
+            ),
+            (
+                "FROM lineitem |> SELECT COUNT(*) OVER () AS n |> AGGREGATE SUM(n) AS total",
+                true,
+                1,
+                false,
+            ),
+            (
+                "FROM lineitem |> LIMIT 600 |> SELECT 600 AS n, l_returnflag, DATE '1970-01-01' AS day, 'label' AS label",
+                false,
+                4,
+                false,
+            ),
+        ] {
+            let query = db.prepare(sql).unwrap();
+            let mut result = db.execute(&query, &cancel).unwrap();
+            let mut rows = 0;
+            let mut done = false;
+            let mut disk = false;
+            for _ in 0..100_000 {
+                disk |= db.reserved_temp_bytes() > 0;
+                match result.step() {
+                    QueryStep::Progress => (),
+                    QueryStep::Rows(batch) => {
+                        assert_eq!(batch.column_count(), width);
+                        for row in 0..batch.len() {
+                            assert_eq!(
+                                batch.value(row, 0),
+                                Some(if aggregate && !loaded {
+                                    Value::Null
+                                } else {
+                                    Value::Int64(if aggregate { 360_000 } else { 600 })
+                                })
+                            );
+                            if width == 4 {
+                                assert!(
+                                    matches!(batch.value(row, 1), Some(Value::String(v)) if v.as_str()=="R")
+                                );
+                                assert_eq!(
+                                    batch.value(row, 2),
+                                    Some(Value::Date(
+                                        pipesql::DateValue::from_days_since_unix_epoch(0).unwrap()
+                                    ))
+                                );
+                                assert!(
+                                    matches!(batch.value(row, 3), Some(Value::String(v)) if v.as_str()=="label")
+                                );
+                            }
+                            rows += 1;
+                        }
+                    }
+                    QueryStep::Finished => {
+                        done = true;
+                        break;
+                    }
+                    QueryStep::Failed(error) => panic!("{sql}: {error}"),
+                }
+            }
+            assert!(done, "{sql}");
+            assert_eq!(
+                rows,
+                if aggregate {
+                    1
+                } else if loaded {
+                    600
+                } else {
+                    0
+                }
+            );
+            assert_eq!(disk, loaded && spills, "{sql}");
+        }
+        assert_eq!(db.reserved_memory_bytes(), resident);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+    }
+}
+
+#[test]
+fn legacy_safe_divide_preserves_typed_null_predicates_and_counts() {
+    let temp = TempDir::new();
+    let path = temp.0.join("database");
+    let input = temp.0.join("lineitem.tbl");
+    fs::write(&input, ROW.repeat(257)).unwrap();
+    let mut database = Database::create(&path, config()).unwrap();
+    let cancel = CancellationToken::new();
+    for loaded in [false, true] {
+        if loaded {
+            database.load_lineitem(&input, &cancel).unwrap();
+        }
+        let baseline = database.reserved_memory_bytes();
+        for (sql, expected) in [
+            (
+                "FROM lineitem |> WHERE l_quantity>SAFE_DIVIDE(1, 0) |> AGGREGATE COUNT(*) AS n",
+                0,
+            ),
+            (
+                "FROM lineitem |> WHERE NOT(l_quantity=SAFE_DIVIDE(1, 0)) |> AGGREGATE COUNT(*) AS n",
+                0,
+            ),
+            (
+                "FROM lineitem |> WHERE l_quantity=SAFE_DIVIDE(1, 0) OR l_quantity>0 |> AGGREGATE COUNT(*) AS n",
+                if loaded { 257 } else { 0 },
+            ),
+            (
+                "FROM lineitem |> SELECT SAFE_DIVIDE(l_quantity, 0) AS ratio |> AGGREGATE COUNT(ratio) AS n",
+                0,
+            ),
+            (
+                "FROM lineitem |> WHERE l_quantity=SAFE_DIVIDE(1, 1) |> AGGREGATE COUNT(*) AS n",
+                if loaded { 257 } else { 0 },
+            ),
+        ] {
+            let prepared = database.prepare(sql).unwrap();
+            let mut result = database.execute(&prepared, &cancel).unwrap();
+            let mut seen = false;
+            let mut done = false;
+            for _ in 0..100_000 {
+                match result.step() {
+                    QueryStep::Progress => (),
+                    QueryStep::Rows(batch) => {
+                        assert!(!seen);
+                        assert_eq!(batch.len(), 1);
+                        assert_eq!(batch.column_count(), 1);
+                        assert_eq!(batch.value(0, 0), Some(Value::Int64(expected)));
+                        seen = true;
+                    }
+                    QueryStep::Finished => {
+                        done = true;
+                        break;
+                    }
+                    QueryStep::Failed(error) => panic!("{sql}: {error}"),
+                }
+            }
+            assert!(seen && done);
+            drop(result);
+            drop(prepared);
+            assert_eq!(database.reserved_memory_bytes(), baseline);
+            assert_eq!(database.reserved_temp_bytes(), 0);
+        }
+    }
+}

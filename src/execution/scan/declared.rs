@@ -1,0 +1,771 @@
+//! Read declared tables from the snapshot retained by a prepared query.
+//!
+//! `admit` reserves memory and allocates the scan, its batches and buffers for
+//! every column the plan might need. It performs no file I/O. The runtime admits
+//! all operators before calling `Admission::open`, which reads the pinned catalog
+//! and checks the stored schema against the columns bound during preparation.
+//!
+//! `next_unit` opens one batch of stored rows and validates its column metadata.
+//! `load` reads a requested column once per unit; `value` lends a checked row
+//! value to the scan controller. Persistent column IDs locate payloads even when
+//! their file order differs from the schema. Buffers are reused across units.
+//!
+//! A failed unit or column read prevents further reads from this source. One
+//! restart is allowed for a second execution pass: it drops the current unit and
+//! rewinds the table index, retaining the checksums needed to validate rereads.
+
+use super::{AdmittedScan, ScanCursor, ScanPhase, Source};
+use crate::Database;
+use crate::batch::{Batch, OwnedBatch};
+use crate::effects::Effects;
+
+#[cfg(test)]
+use crate::execution::Aggregation;
+use crate::execution::COMPUTE_ROWS;
+use crate::execution::computed::{BatchLayout, BatchScratch};
+use crate::execution::planning::{PhysicalPlan, Pipeline};
+use crate::execution::predicate::BranchScratch;
+use crate::query::{MAX_COLUMNS, MAX_ROW_VALUES, PreparedQuery};
+use crate::resources::allocate;
+use crate::storage::catalog;
+use crate::storage::format;
+use crate::storage::recovery::UNITS_NAME;
+use crate::storage::schema;
+use crate::storage::table;
+use crate::storage::unit;
+use crate::value::DataType;
+use crate::{CancellationToken, DatabaseId, Error, StringValue, Value};
+
+use std::mem::size_of;
+use std::path::PathBuf;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScanState {
+    Ready,
+    Replayed,
+    Failed,
+}
+
+const _: () = assert!(MAX_COLUMNS <= u64::BITS as usize);
+// Count the heap-owned Scan, retained directory path, temporary object path and
+// selected row numbers here. Runtime nodes account for their inline controller
+// and batch handles; column payload and batch allocations are added below.
+const FIXED_BYTES: usize =
+    size_of::<Scan>() + 2 * crate::path::MAX_PATH_BYTES + COMPUTE_ROWS * size_of::<u32>();
+
+// Reserve allocator padding as well as encoded bytes. Padding must not raise
+// the storage format's per-column limit.
+fn payload_allocation_bytes(kind: DataType) -> usize {
+    crate::resources::buffer_capacity(unit::column_capacity(kind)).expect("bounded native payload")
+}
+
+// The temporary catalog read buffer coexists with the retained scan at opening,
+// so the maximum must cover both even though that buffer is later released.
+pub(in crate::execution) const MAX_WORKSPACE_BYTES: u64 = FIXED_BYTES as u64
+    + (MAX_COLUMNS * unit::MAX_COLUMN_ALLOCATION_BYTES) as u64
+    + 2 * crate::batch::MAX_BYTES_WITH_TEXT
+    + catalog::MAX_BYTES as u64
+    + BranchScratch::MAX_BYTES;
+
+pub(in crate::execution) struct Scan {
+    state: ScanState,
+    unit: Option<unit::Unit>,
+    cursor: Option<table::Cursor>,
+    payloads: [Option<unit::ColumnBuffer>; MAX_COLUMNS],
+    identities: [Option<schema::ColumnId>; MAX_COLUMNS],
+    kinds: [DataType; MAX_COLUMNS],
+    schema: [u8; schema::MAX_BYTES],
+    schema_len: usize,
+    schema_crc: u32,
+    table: schema::TableId,
+    objects: PathBuf,
+    loaded: u64,
+    rows: usize,
+    database_id: DatabaseId,
+}
+
+impl Scan {
+    pub(in crate::execution) fn rows(&self) -> usize {
+        self.rows
+    }
+
+    pub(in crate::execution) fn has_unit(&self) -> bool {
+        self.unit.is_some()
+    }
+
+    pub(in crate::execution) fn finish_unit(&mut self) {
+        self.unit = None;
+        self.loaded = 0;
+        self.rows = 0;
+    }
+
+    pub(in crate::execution) fn restart_once(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> Result<(), Error> {
+        // Leave Failed on every early return; restore a usable state only after
+        // the operation has completed. Cancellation must not enable a retry.
+        let state = std::mem::replace(&mut self.state, ScanState::Failed);
+        cancel.check()?;
+        match state {
+            ScanState::Failed => return Err(Error::Corrupt("failed native scan cannot restart")),
+            ScanState::Replayed => {
+                return Err(Error::Resource {
+                    owner: "query source restarts",
+                    required: 2,
+                    limit: 1,
+                });
+            }
+            ScanState::Ready => {}
+        }
+        if let Some(cursor) = &mut self.cursor {
+            cursor.rewind()?;
+        }
+        self.finish_unit();
+        self.state = ScanState::Replayed;
+        Ok(())
+    }
+
+    pub(in crate::execution) fn next_unit(
+        &mut self,
+        cancel: &CancellationToken,
+        effects: &mut Effects,
+    ) -> Result<bool, Error> {
+        let state = std::mem::replace(&mut self.state, ScanState::Failed);
+        if state == ScanState::Failed {
+            return Err(Error::Corrupt("native scan has failed"));
+        }
+        assert!(
+            self.unit.is_none(),
+            "finish the current native unit before advancing"
+        );
+        let Some(cursor) = &mut self.cursor else {
+            self.state = state;
+            return Ok(false);
+        };
+        let Some(reference) = cursor.next(cancel, effects)? else {
+            self.state = state;
+            return Ok(false);
+        };
+        let bytes = &self.schema[..self.schema_len];
+        let schema = schema::decode(bytes, self.database_id, self.table, self.schema_crc)
+            .map_err(|_| Error::Corrupt("retained scan schema differs"))?;
+        let unit = unit::read(
+            &self.objects,
+            self.database_id,
+            reference,
+            &schema,
+            cancel,
+            effects,
+        )?;
+        self.rows = reference.rows() as usize;
+        self.unit = Some(unit);
+        self.state = state;
+        Ok(true)
+    }
+
+    pub(in crate::execution) fn load(
+        &mut self,
+        column: u8,
+        cancel: &CancellationToken,
+        effects: &mut Effects,
+    ) -> Result<bool, Error> {
+        let state = std::mem::replace(&mut self.state, ScanState::Failed);
+        if state == ScanState::Failed {
+            return Err(Error::Corrupt("native scan has failed"));
+        }
+        let index = usize::from(column);
+        let id = self
+            .identities
+            .get(index)
+            .copied()
+            .flatten()
+            .ok_or(Error::Corrupt("native source identity absent"))?;
+        let mask = 1_u64 << index;
+        if self.loaded & mask != 0 {
+            self.state = state;
+            return Ok(false);
+        }
+        self.payloads[index]
+            .as_mut()
+            .ok_or(Error::Corrupt("native column not admitted"))?
+            .read(
+                self.unit
+                    .as_ref()
+                    .ok_or(Error::Corrupt("native unit absent"))?,
+                id,
+                cancel,
+                effects,
+            )?;
+        self.loaded |= mask;
+        self.state = state;
+        Ok(true)
+    }
+
+    pub(in crate::execution) fn value(&self, column: u8, row: usize) -> Result<Value<'_>, Error> {
+        let index = usize::from(column);
+        if self.state == ScanState::Failed
+            || index >= MAX_COLUMNS
+            || self.loaded & (1 << index) == 0
+        {
+            return Err(Error::Corrupt("native column not loaded"));
+        }
+        let column = self.payloads[index]
+            .as_ref()
+            .and_then(|buffer| buffer.column())
+            .ok_or(Error::Corrupt("native column invalidated"))?;
+        let result = match self.kinds[index] {
+            DataType::Int64 => column
+                .int64(row)
+                .map(|v| v.map_or(Value::Null, Value::Int64)),
+            DataType::Double => column
+                .double(row)
+                .map(|v| v.map_or(Value::Null, Value::Double)),
+            DataType::Date => column.date(row).map(|v| v.map_or(Value::Null, Value::Date)),
+            DataType::String => column
+                .string(row)
+                .map(|v| v.map_or(Value::Null, |s| Value::String(StringValue::new(s)))),
+        };
+        result.map_err(|_| Error::Corrupt("native value disagrees with physical plan"))
+    }
+}
+
+// Hold allocated storage privately until open validates the pinned source.
+// This split lets the runtime reject an insufficient workspace budget before
+// starting source I/O. File-opening failures still require ordinary cleanup.
+pub(in crate::execution) struct Admission<'db> {
+    workspace: AdmittedScan<'db>,
+    query: &'db PreparedQuery<'db>,
+    occurrence: u8,
+}
+
+pub(in crate::execution) fn admit<'db>(
+    database: &'db Database,
+    query: &'db PreparedQuery<'_>,
+    plan: &PhysicalPlan<'_>,
+    source: &Pipeline,
+    output: Option<&Pipeline>,
+) -> Result<Admission<'db>, Error> {
+    let snapshot = query
+        .snapshot
+        .as_ref()
+        .ok_or(Error::Corrupt("catalog query pin absent"))?;
+    if !snapshot.belongs_to(database)
+        || snapshot.generation() != plan.generation
+        || snapshot.state() != plan.root
+    {
+        return Err(Error::Corrupt("catalog query snapshot differs"));
+    }
+    let occurrence = source.source()?;
+    let table = query
+        .plan
+        .occurrence(occurrence)?
+        .table
+        .ok_or(Error::Corrupt("catalog query table absent"))?;
+    let demand = source.raw_demand()?;
+    let mut types = [DataType::Double; MAX_ROW_VALUES];
+    let mut text = [None; MAX_ROW_VALUES];
+    for (index, column) in source.output_columns(&query.plan).enumerate() {
+        types[index] = column.data_type();
+        if types[index] == DataType::String {
+            text[index] = Some(crate::batch::MAX_TEXT_BYTES);
+        }
+    }
+    let count = source.column_count;
+    let mut output_types = [DataType::Double; MAX_ROW_VALUES];
+    let mut output_text = [None; MAX_ROW_VALUES];
+    let mut output_count = 0;
+    if let Some(output) = output {
+        for column in output.output_columns(&query.plan) {
+            output_types[output_count] = column.data_type();
+            if column.data_type() == DataType::String {
+                output_text[output_count] = Some(crate::batch::MAX_TEXT_BYTES);
+            }
+            output_count += 1;
+        }
+    }
+    let batch_bytes = Batch::required_bytes_with_text(&types[..count], &text[..count])?
+        .checked_add(Batch::required_bytes_with_text(
+            &output_types[..output_count],
+            &output_text[..output_count],
+        )?)
+        .ok_or(Error::Corrupt("native batch bytes"))?;
+    // Allocate only potentially needed columns, once for the whole scan. Their
+    // buffers cover any unit of that type and are reused for subsequent units.
+    let mut capacities = [0; MAX_COLUMNS];
+    for column in query.plan.occurrence_columns(occurrence)?.iter().copied() {
+        let index = usize::from(column.storage_slot());
+        if index >= MAX_COLUMNS {
+            return Err(Error::Corrupt("native source slot bound"));
+        }
+        if demand & (1 << index) != 0 {
+            capacities[index] = payload_allocation_bytes(column.data_type());
+        }
+    }
+    let payload_bytes = capacities
+        .iter()
+        .try_fold(0_usize, |total, &capacity| total.checked_add(capacity))
+        .ok_or(Error::Corrupt("native payload geometry"))?;
+    let computation = BatchLayout::new(source)?;
+    let branch_rows = BranchScratch::rows(source);
+    let bytes = (FIXED_BYTES as u64)
+        .checked_add(payload_bytes as u64)
+        .and_then(|n| n.checked_add(batch_bytes))
+        .and_then(|n| n.checked_add(computation.bytes()))
+        .and_then(|n| n.checked_add(BranchScratch::bytes(branch_rows)))
+        .ok_or(Error::Corrupt("native scan reservation overflow"))?;
+    let mut reservation = database.reserve_memory(bytes, "native query workspace")?;
+    let mut owner = allocate(1, 1, "native scan owner", bytes)?;
+    let objects = crate::path::joined_path(database.path(), UNITS_NAME)?;
+    owner.push(Scan {
+        state: ScanState::Ready,
+        unit: None,
+        cursor: None,
+        payloads: std::array::from_fn(|_| None),
+        identities: [None; MAX_COLUMNS],
+        kinds: [DataType::Double; MAX_COLUMNS],
+        schema: [0; schema::MAX_BYTES],
+        schema_len: 0,
+        schema_crc: 0,
+        table,
+        objects,
+        loaded: 0,
+        rows: 0,
+        database_id: database.database_identity(),
+    });
+    let scan = &mut owner[0];
+    for (index, capacity) in capacities.iter().enumerate() {
+        if demand & (1 << index) != 0 {
+            let mut payload = allocate(*capacity, *capacity, "native query payload", bytes)?;
+            payload.resize(*capacity, 0);
+            scan.payloads[index] = Some(unit::ColumnBuffer::new(payload)?);
+        }
+    }
+    Ok(Admission {
+        query,
+        workspace: AdmittedScan {
+            input: OwnedBatch::new_with_text(&types[..count], &text[..count], &mut reservation)?,
+            output: OwnedBatch::new_with_text(
+                &output_types[..output_count],
+                &output_text[..output_count],
+                &mut reservation,
+            )?,
+            scan: ScanCursor {
+                computation: BatchScratch::new(computation)?,
+                source: Source::Declared(owner),
+                selection: allocate(COMPUTE_ROWS, COMPUTE_ROWS, "native query selection", bytes)?,
+                branches: BranchScratch::new(branch_rows, bytes)?,
+                start: 0,
+                end: 0,
+                phase: ScanPhase::Begin,
+                reservation,
+            },
+        },
+        occurrence,
+    })
+}
+
+impl<'db> Admission<'db> {
+    pub(in crate::execution) fn open(
+        mut self,
+        scratch: &mut catalog::Scratch<'_>,
+        cancel: &CancellationToken,
+        effects: &mut Effects,
+    ) -> Result<AdmittedScan<'db>, Error> {
+        let query = self.query;
+        let occurrence = self.occurrence;
+        let Source::Declared(owner) = &mut self.workspace.scan.source else {
+            return Err(Error::Corrupt("native admission source kind"));
+        };
+        let scan = &mut owner[0];
+        let table = scan.table;
+        let snapshot = query
+            .snapshot
+            .as_ref()
+            .ok_or(Error::Corrupt("catalog query pin absent"))?;
+        let catalog = snapshot
+            .read_catalog(scratch.bytes(), cancel, effects)?
+            .ok_or(Error::Corrupt("pinned query catalog absent"))?;
+        let ordinal = (0..catalog.len())
+            .find(|&index| {
+                catalog
+                    .table(index)
+                    .is_some_and(|entry| entry.id() == table)
+            })
+            .ok_or(Error::Corrupt("pinned query table absent"))?;
+        let schema =
+            catalog.read_schema(&scan.objects, ordinal, &mut scan.schema, cancel, effects)?;
+        // Check every prepared source column, including those this query does
+        // not read. IDs, types, nullability and positions must agree before
+        // storage slots can be used to select payloads.
+        let mut sources = query.plan.occurrence_columns(occurrence)?.iter().copied();
+        for index in 0..schema.len() {
+            let declaration = schema.column(index).expect("validated schema ordinal");
+            if index >= MAX_COLUMNS
+                || !sources.next().is_some_and(|column| {
+                    crate::query::sources::matches_source_declaration(
+                        &query.plan,
+                        occurrence,
+                        column,
+                        declaration,
+                        index,
+                    )
+                })
+            {
+                return Err(Error::Corrupt("bound source differs from pinned schema"));
+            }
+            scan.identities[index] = Some(declaration.id());
+            scan.kinds[index] = declaration.data_type();
+        }
+        if sources.next().is_some() {
+            return Err(Error::Corrupt("bound source has extra columns"));
+        }
+        scan.schema_len = schema.encoded_bytes().len();
+        scan.schema_crc = format::crc32c(&scan.schema[..scan.schema_len]);
+        scan.cursor = catalog.open_data(&scan.objects, ordinal, cancel, effects)?;
+        Ok(self.workspace)
+    }
+}
+
+#[cfg(test)]
+pub(in crate::execution) fn open<'db>(
+    database: &'db Database,
+    query: &'db PreparedQuery<'_>,
+    plan: &PhysicalPlan,
+    cancel: &CancellationToken,
+    effects: &mut Effects,
+) -> Result<(AdmittedScan<'db>, Option<Aggregation<'db>>), Error> {
+    let admitted = admit(
+        database,
+        query,
+        plan,
+        plan.scan(),
+        plan.aggregate_columns().map(|_| plan.output()),
+    )?;
+    let mut scratch = catalog::Scratch::sized(
+        &database.memory,
+        catalog::MAX_BYTES,
+        "native scan catalog admission",
+    )?;
+    let groups = query
+        .plan
+        .aggregates
+        .first()
+        .map(|aggregate| {
+            Aggregation::open(
+                database,
+                true,
+                aggregate,
+                query.plan.aggregate_demand(0),
+                plan.scan().output_columns(&query.plan),
+                plan.output().output_columns(&query.plan),
+            )
+        })
+        .transpose()?;
+    Ok((admitted.open(&mut scratch, cancel, effects)?, groups))
+}
+
+#[cfg(test)]
+mod tests {
+    //! Inspect actual buffer capacities and run public queries. Exact and
+    //! one-byte-short budgets check admission before I/O; faults at each observed
+    //! read check terminal errors and release of all query reservations.
+
+    use crate::effects::{Effect, Effects, Faults};
+    use crate::execution::{QueryResult, QueryStep};
+    use crate::query::{self};
+    use crate::storage::catalog;
+    use crate::storage::schema;
+    use crate::storage::unit;
+    use crate::test_support::Directory;
+    use crate::value::DataType;
+    use crate::{CancellationToken, Database, Error, Value};
+
+    #[test]
+    fn native_payload_capacity_is_owned_and_admitted_before_io() {
+        use crate::execution::planning;
+        let fixture = Directory::new();
+        let db = Database::create_empty(
+            &fixture.0.join("db"),
+            crate::Config::new(4_000_000, 1_000_000).unwrap(),
+        )
+        .unwrap();
+        let cancel = CancellationToken::new();
+        for (name, kind, capacity, projection, computed_bytes) in [
+            ("ints", DataType::Int64, 278_496, "n", 0),
+            ("doubles", DataType::Double, 278_496, "n", 0),
+            ("dates", DataType::Date, 147_424, "n", 0),
+            (
+                "years",
+                DataType::Date,
+                147_424,
+                "EXTRACT(YEAR FROM n)",
+                6_176,
+            ),
+            ("strings", DataType::String, 540_640, "n", 0),
+            (
+                "lengths",
+                DataType::String,
+                540_640,
+                "BYTE_LENGTH(n)",
+                6_176,
+            ),
+            (
+                "characters",
+                DataType::String,
+                540_640,
+                "CHAR_LENGTH(n)",
+                6_176,
+            ),
+            (
+                "int_cast",
+                DataType::Int64,
+                278_496,
+                "CAST(n AS FLOAT64)",
+                10_304,
+            ),
+            (
+                "double_cast",
+                DataType::Double,
+                278_496,
+                "CAST(n AS DOUBLE)",
+                10_304,
+            ),
+        ] {
+            db.declare_table(
+                name,
+                &[crate::ColumnDeclaration {
+                    name: "n",
+                    data_type: kind,
+                    nullable: true,
+                }],
+                &cancel,
+            )
+            .unwrap();
+            let sql = format!("FROM {name} |> SELECT {projection}");
+            let query = db.prepare(&sql).unwrap();
+            let plan =
+                planning::lower(&db, &query, query.snapshot.as_ref().unwrap().state(), 0).unwrap();
+            let admitted = super::admit(&db, &query, &plan, plan.scan(), None).unwrap();
+            let super::Source::Declared(scans) = &admitted.workspace.scan.source else {
+                panic!("native source");
+            };
+            assert_eq!(
+                scans[0].payloads[0].as_ref().unwrap().allocated_bytes(),
+                capacity
+            );
+            assert!(scans[0].payloads[1..].iter().all(Option::is_none));
+            drop(admitted);
+            if computed_bytes != 0 {
+                // A simple length/year result needs 256 values and four validity
+                // words. CAST also needs another result buffer and an evaluation
+                // stack. The literal totals include the existing 4-KiB allowance.
+                assert_eq!(
+                    crate::execution::computed::BatchLayout::new(plan.scan())
+                        .unwrap()
+                        .bytes(),
+                    computed_bytes
+                );
+            }
+            drop(plan);
+            let before = db.reserved_memory_bytes();
+            let rows = db.execute(&query, &cancel).unwrap();
+            // execute has already freed its temporary catalog buffer. Add it
+            // back to measure the peak that admission must be able to cover.
+            let admission = db.reserved_memory_bytes() - before + catalog::MAX_BYTES as u64;
+            drop(rows);
+            for short in [0, 1] {
+                let pressure = db
+                    .reserve_memory(
+                        db.config().memory_limit_bytes() - before - admission + short,
+                        "native payload exact admission",
+                    )
+                    .unwrap();
+                let mut effects = Effects::default();
+                let result = db.execute_with_effects(&query, &cancel, &mut effects);
+                if short == 0 {
+                    let mut rows = result.unwrap();
+                    finish_empty(&mut rows);
+                } else {
+                    assert!(matches!(result, Err(Error::Resource { .. })));
+                    assert_eq!(effects.count(), 0, "short admission precedes native I/O");
+                }
+                drop(pressure);
+                assert_eq!(db.reserved_memory_bytes(), before);
+            }
+        }
+
+        fn finish_empty(rows: &mut QueryResult<'_, '_>) {
+            for _ in 0..64 {
+                match rows.step() {
+                    QueryStep::Progress => (),
+                    QueryStep::Finished => return,
+                    QueryStep::Rows(_) => panic!("empty declared table returned rows"),
+                    QueryStep::Failed(error) => panic!("empty declared table: {error:?}"),
+                }
+            }
+            panic!("empty source completion");
+        }
+    }
+
+    #[test]
+    fn native_query_read_faults_and_truncation_release_workspace() {
+        fn drain(result: &mut QueryResult<'_, '_>, effects: &mut Effects) -> Result<Vec<i64>, ()> {
+            let mut rows = Vec::new();
+            for _ in 0..64 {
+                match result.step_with_effects(effects) {
+                    QueryStep::Progress => {}
+                    QueryStep::Rows(batch) => {
+                        for row in 0..batch.len() {
+                            let Some(Value::Int64(value)) = batch.value(row, 0) else {
+                                panic!("INT64");
+                            };
+                            rows.push(value);
+                        }
+                    }
+                    QueryStep::Finished => {
+                        rows.sort();
+                        return Ok(rows);
+                    }
+                    QueryStep::Failed(_) => return Err(()),
+                }
+            }
+            panic!("native query exceeded finite step budget");
+        }
+        let fixture = Directory::new();
+        let db = Database::create_catalog_with_effects(
+            &fixture.0.join("db"),
+            crate::Config::new(2_000_000, 1_000_000).unwrap(),
+            &mut Effects::default(),
+        )
+        .unwrap();
+        let table = schema::TableId::new(19).unwrap();
+        let id = schema::ColumnId::new(71).unwrap();
+        let cancel = CancellationToken::new();
+        let columns = [schema::ColumnSpec::new(id, "n", DataType::Int64, true).unwrap()];
+        db.catalog_writer()
+            .unwrap()
+            .create_table("facts", table, &columns, &cancel, &mut Effects::default())
+            .unwrap();
+        db.catalog_writer()
+            .unwrap()
+            .append(
+                table,
+                &[unit::InputColumn {
+                    id,
+                    values: crate::ColumnValues::Int64(&[1, 2, 3]),
+                    validity: &[7],
+                }],
+                &cancel,
+                &mut Effects::default(),
+            )
+            .unwrap();
+        for (sql, expected) in [
+            ("FROM facts |> WHERE n > 1", &[2, 3][..]),
+            ("FROM facts |> AGGREGATE SUM(n) AS total", &[6][..]),
+        ] {
+            let query = query::prepare_catalog(&db, sql).unwrap();
+            let before = db.reserved_memory_bytes();
+            let trace = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let captured = trace.clone();
+            let mut baseline = Effects::with_faults(Faults {
+                action: Some(Box::new(move |_, effect| {
+                    captured.lock().unwrap().push(effect)
+                })),
+                ..Faults::default()
+            });
+            let mut result = db
+                .execute_with_effects(&query, &cancel, &mut baseline)
+                .unwrap();
+            let minimum_peak = result.first_aggregate().map(|storage| {
+                let groups = storage.dense();
+                db.reserved_memory_bytes() - before + catalog::MAX_BYTES as u64
+                    - groups.extra_expression_bytes()
+            });
+            assert_eq!(drain(&mut result, &mut baseline).unwrap(), expected);
+            drop(result);
+            assert_eq!(db.reserved_memory_bytes(), before);
+            if let Some(minimum_peak) = minimum_peak {
+                for extra in [0, 1] {
+                    let pressure = db
+                        .reserve_memory(
+                            db.config().memory_limit_bytes() - before - minimum_peak + extra,
+                            "test pressure",
+                        )
+                        .unwrap();
+                    let mut effects = Effects::default();
+                    let outcome = db.execute_with_effects(&query, &cancel, &mut effects);
+                    if extra == 0 {
+                        let mut result = outcome.unwrap();
+                        assert_eq!(
+                            result.first_aggregate().unwrap().dense().expression_lanes(),
+                            1
+                        );
+                        assert_eq!(drain(&mut result, &mut effects).unwrap(), expected);
+                    } else {
+                        assert!(matches!(outcome, Err(Error::Resource { .. })));
+                        assert_eq!(effects.count(), 0, "admission refusal precedes query I/O");
+                    }
+                    drop(pressure);
+                    assert_eq!(db.reserved_memory_bytes(), before);
+                }
+            }
+            assert!(baseline.count() > 0 && baseline.count() < 32);
+            for cut in 0..baseline.count() {
+                let mut effects = Effects::with_faults(Faults {
+                    fail_at: Some(cut),
+                    ..Faults::default()
+                });
+                match db.execute_with_effects(&query, &cancel, &mut effects) {
+                    Ok(mut result) => {
+                        assert!(drain(&mut result, &mut effects).is_err(), "fault cut {cut}");
+                        let after = effects.count();
+                        assert!(matches!(
+                            result.step_with_effects(&mut effects),
+                            QueryStep::Failed(Error::Io { .. })
+                        ));
+                        assert_eq!(effects.count(), after, "failed query is terminal");
+                    }
+                    Err(error) => assert!(
+                        matches!(error, Error::Io { .. }),
+                        "fault cut {cut}: {error:?}"
+                    ),
+                }
+                assert!(effects.count() > cut, "injected fault was reached: {cut}");
+                assert_eq!(db.reserved_memory_bytes(), before, "fault cut {cut}");
+                if trace.lock().unwrap()[cut as usize]
+                    == Effect::ReadMetadata(crate::effects::MetadataKind::CatalogObject)
+                {
+                    let mut effects = Effects::with_faults(Faults {
+                        short_at: Some(cut),
+                        ..Faults::default()
+                    });
+                    match db.execute_with_effects(&query, &cancel, &mut effects) {
+                        Ok(mut result) => {
+                            assert!(
+                                drain(&mut result, &mut effects).is_err(),
+                                "truncated read {cut}"
+                            );
+                            assert!(matches!(result.into_error(), Some(Error::Io { .. })));
+                        }
+                        Err(error) => assert!(
+                            matches!(error, Error::Io { .. }),
+                            "truncated read {cut}: {error:?}"
+                        ),
+                    }
+                    assert!(effects.count() > cut);
+                    assert_eq!(db.reserved_memory_bytes(), before, "truncated read {cut}");
+                }
+                // A fresh query must still work: injected read failures must
+                // neither damage the database nor retain workspace reservations.
+                let mut result = db.execute(&query, &cancel).unwrap();
+                assert_eq!(
+                    drain(&mut result, &mut Effects::default()).unwrap(),
+                    expected
+                );
+                drop(result);
+                assert_eq!(db.reserved_memory_bytes(), before, "healed read {cut}");
+            }
+        }
+    }
+}

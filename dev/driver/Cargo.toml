@@ -1,0 +1,68 @@
+[package]
+name = "pipesql-driver"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+pipesql = { path = "../.." }
+libc = "=0.2.186"
+pipesql-filesystem = { path = "../../filesystem" }
+
+[[bin]]
+name = "recovery"
+path = "src/recovery.rs"
+test = false
+
+[[bin]]
+name = "catalog"
+path = "src/catalog.rs"
+test = false
+
+[[bin]]
+name = "platform"
+path = "src/platform.rs"
+test = false
+
+[[bin]]
+name = "allocation"
+path = "src/allocation.rs"
+test = false
+
+[[bin]]
+name = "cli-allocation"
+path = "src/cli.rs"
+test = false
+
+[lints.clippy]
+correctness = "deny"
+
+[[bin]]
+name = "initialization"
+path = "src/initialization.rs"
+test = false
+
+[[bin]]
+name = "io"
+path = "src/io.rs"
+test = false
+
+[[bin]]
+name = "sync"
+path = "src/sync.rs"
+test = false
+
+[[bin]]
+name = "address-control"
+path = "src/address_control.rs"
+test = false
+
+[[bin]]
+name = "thread-control"
+path = "src/thread_control.rs"
+test = false
+
+[[bin]]
+name = "identity"
+path = "src/identity.rs"
+test = false

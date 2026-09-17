@@ -1,0 +1,2839 @@
+//! Represent, type-check and evaluate numeric expressions.
+//!
+//! An expression is a small program in postfix order: `qty 1 Add` means
+//! `qty + 1`. Operands go on a stack; each operation replaces its operands with
+//! a result. Binding infers the result type, and plan validation checks the
+//! program before execution relies on its stack shape and column identities.
+//!
+//! The batch evaluator applies each operation to up to 256 rows using borrowed
+//! input arrays and caller-owned scratch. A separate validity bitmap marks NULLs,
+//! whose stored bits must not participate in arithmetic. Conditional expressions
+//! use `evaluation::Evaluation` to visit one row at a time: COALESCE can skip its
+//! fallback, and CASE evaluates only the selected arm. Unchosen branches cannot
+//! raise arithmetic errors.
+//!
+//! Both evaluators use the arithmetic helpers here. They return the operation
+//! that failed; the caller attaches the expression's source span. Neither
+//! evaluator allocates on the heap or reads database files. Execution owns
+//! those resources and decides which source columns to load.
+
+#[cfg(test)]
+use crate::query::SourceColumn;
+use crate::query::{Comparison, MAX_ROW_VALUES, SemanticColumn};
+use crate::value::DataType;
+use crate::{Error, SourceSpan};
+use std::ops::Range;
+
+mod evaluation;
+pub(crate) use evaluation::Evaluation;
+
+// Arithmetic helpers do not know SQL locations. Keep the failure kind here;
+// the expression owner supplies its span when constructing the public error.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ArithmeticFailure {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    DivideByZero,
+    Negate,
+    Abs,
+    SqrtDomain,
+    LnDomain,
+    Log10Domain,
+    PowerDomain,
+    Power,
+    Exp,
+}
+
+impl ArithmeticFailure {
+    pub(crate) fn into_error(self, span: SourceSpan) -> Error {
+        let operation = match self {
+            Self::Add => "addition",
+            Self::Subtract => "subtraction",
+            Self::Multiply => "multiplication",
+            Self::Divide => "division",
+            Self::Negate => "negation",
+            Self::Abs => "absolute value",
+            Self::Exp => "exponentiation",
+            Self::Power => "power",
+            Self::DivideByZero => return Error::DivisionByZero { span },
+            Self::PowerDomain => {
+                return Error::ArithmeticDomain {
+                    operation: "power",
+                    span,
+                };
+            }
+            Self::Log10Domain => {
+                return Error::ArithmeticDomain {
+                    operation: "base-ten logarithm",
+                    span,
+                };
+            }
+            Self::LnDomain => {
+                return Error::ArithmeticDomain {
+                    operation: "natural logarithm",
+                    span,
+                };
+            }
+            Self::SqrtDomain => {
+                return Error::ArithmeticDomain {
+                    operation: "square root",
+                    span,
+                };
+            }
+        };
+        Error::ArithmeticOverflow { operation, span }
+    }
+}
+
+// Binding turns Arguments into a user-facing error at the expression's span.
+// Program means malformed internal state; plan validation treats both as corrupt.
+#[derive(Debug)]
+pub(crate) enum InferenceFailure {
+    Program(&'static str),
+    Arguments(&'static str),
+}
+
+// One bit in each validity word describes one row of this bounded batch.
+pub(crate) const MAX_ROWS: usize = crate::batch::ROWS;
+const VALID_WORDS: usize = MAX_ROWS / 64;
+
+pub(crate) use crate::batch::NumericValues;
+
+// Identify inputs by semantic column, not slice position or on-disk column order.
+// None for valid means every row is non-NULL.
+#[derive(Clone, Copy)]
+pub(crate) struct NumericInput<'a> {
+    column: SemanticColumn,
+    values: NumericValues<'a>,
+    valid: Option<&'a [u64]>,
+}
+
+impl<'a> NumericInput<'a> {
+    /// Attach a validated query identity to the batch's borrowed numeric storage.
+    pub(crate) fn from_batch(
+        batch: &'a crate::batch::Batch,
+        index: usize,
+        column: SemanticColumn,
+    ) -> Result<Self, Error> {
+        let (values, valid) = batch.numeric(index)?;
+        Self::new(column, values, Some(valid))
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        match self.values {
+            NumericValues::Int64(values) => values.len(),
+            NumericValues::Double(values) => values.len(),
+            NumericValues::Bits { values, .. } => values.len(),
+        }
+    }
+
+    pub(crate) fn new(
+        column: SemanticColumn,
+        values: NumericValues<'a>,
+        valid: Option<&'a [u64]>,
+    ) -> Result<Self, Error> {
+        let (kind, rows) = match values {
+            NumericValues::Int64(values) => (DataType::Int64, values.len()),
+            NumericValues::Double(values) => (DataType::Double, values.len()),
+            NumericValues::Bits { values, kind } => (kind, values.len()),
+        };
+        if !matches!(kind, DataType::Int64 | DataType::Double)
+            || column.data_type() != kind
+            || rows > MAX_ROWS
+        {
+            return Err(Error::Corrupt("scalar input type or row extent"));
+        }
+        let mut all_valid = true;
+        if let Some(valid) = valid {
+            if valid.len() != rows.div_ceil(64) {
+                return Err(Error::Corrupt("scalar validity extent"));
+            }
+            for (index, word) in valid.iter().enumerate() {
+                let used = (rows - index * 64).min(64);
+                let mask = u64::MAX >> (64 - used);
+                all_valid &= word & mask == mask;
+            }
+        }
+        if !column.nullable() && !all_valid {
+            return Err(Error::Corrupt("nonnull scalar input contains NULL"));
+        }
+        Ok(Self {
+            column,
+            values,
+            valid: if all_valid { None } else { valid },
+        })
+    }
+}
+
+// A borrowed result vector with one validity bit per row. For a NULL row, the
+// payload has no meaning; value() checks validity before exposing its bits.
+pub(crate) struct NumericOutput<'a> {
+    values: &'a [u64],
+    valid: [u64; VALID_WORDS],
+}
+
+impl NumericOutput<'_> {
+    // Wrap previously evaluated arguments for replay through an accumulator.
+    // The caller supplies their validity; this checks only the row bound.
+    pub(crate) fn from_bits(
+        values: &[u64],
+        valid: [u64; VALID_WORDS],
+    ) -> Result<NumericOutput<'_>, Error> {
+        if values.len() > MAX_ROWS {
+            return Err(Error::Corrupt("numeric output row bound"));
+        }
+        Ok(NumericOutput { values, valid })
+    }
+
+    pub(crate) fn value(&self, row: usize) -> Option<u64> {
+        assert!(row < self.values.len());
+        (self.valid[row / 64] & (1 << (row % 64)) != 0).then_some(self.values[row])
+    }
+}
+
+pub(crate) const MAX_OPS: usize = 32;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Op {
+    // Unused tail entries must be Empty; this is not an executable operation.
+    Empty,
+    Column(SemanticColumn),
+    Integer(i64),
+    Double(u64),
+    Null,
+    // Four postfix operands: comparison left/right, selected result, fallback.
+    Case(Comparison),
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    SafeDivide,
+    Power,
+    Coalesce,
+    NullIf,
+    Mod,
+    IntegerDivide,
+    Negate,
+    Abs,
+    Sign,
+    ToDouble,
+    Floor,
+    Ceil,
+    Round,
+    Sqrt,
+    Ln,
+    Log10,
+    Exp,
+}
+
+// SIGN maps either signed zero to +0. A NaN keeps its bits: its sign bit is not
+// evidence that the value is a positive or negative number.
+fn sign_double(value: f64) -> f64 {
+    if value == 0.0 {
+        0.0
+    } else if value.is_nan() {
+        value
+    } else {
+        value.signum()
+    }
+}
+
+// Handle exceptional values explicitly where PipeSQL specifies their bits. EXP and
+// logarithms handle zero before the shared zero-preserving return below.
+fn double_unary(op: Op, value: f64) -> Result<f64, ArithmeticFailure> {
+    // Callers have already converted INT64 to DOUBLE. CAST now has nothing to
+    // compute and must preserve existing DOUBLE bits, including NaN payloads.
+    if op == Op::ToDouble {
+        return Ok(value);
+    }
+    if value.is_nan() {
+        return Ok(value);
+    }
+    if op == Op::Exp {
+        if value == 0.0 {
+            return Ok(1.0);
+        }
+        if value == f64::NEG_INFINITY {
+            return Ok(0.0);
+        }
+        if value == f64::INFINITY {
+            return Ok(value);
+        }
+        // Finite input may underflow to a subnormal value or zero. Overflow to
+        // infinity is an error, distinct from the infinite inputs handled above.
+        let result = value.exp();
+        return if result.is_finite() {
+            Ok(result)
+        } else {
+            Err(ArithmeticFailure::Exp)
+        };
+    }
+    if matches!(op, Op::Ln | Op::Log10) {
+        // LN and LOG10 define -infinity as this quiet NaN. Finite nonpositive
+        // arguments instead fail, so check infinity before the domain test.
+        if value == f64::NEG_INFINITY {
+            return Ok(f64::from_bits(0x7ff8_0000_0000_0000));
+        }
+        if value <= 0.0 {
+            return Err(if op == Op::Ln {
+                ArithmeticFailure::LnDomain
+            } else {
+                ArithmeticFailure::Log10Domain
+            });
+        }
+        return Ok(if op == Op::Ln {
+            value.ln()
+        } else {
+            value.log10()
+        });
+    }
+    if value == 0.0 {
+        return Ok(value);
+    }
+    Ok(match op {
+        Op::Floor => value.floor(),
+        Op::Ceil => value.ceil(),
+        Op::Round => value.round(),
+        Op::Sqrt => {
+            if value < 0.0 {
+                return Err(ArithmeticFailure::SqrtDomain);
+            }
+            value.sqrt()
+        }
+        _ => unreachable!("DOUBLE unary operation"),
+    })
+}
+
+/// A fixed-capacity program and its claimed result type. Only the first len
+/// operations execute. infer() derives the type; validate() also compares it
+/// with data_type before the evaluators may trust the program.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Expression {
+    pub(crate) ops: [Op; MAX_OPS],
+    pub(crate) len: u8,
+    pub(crate) data_type: DataType,
+}
+
+impl Expression {
+    pub(crate) const EMPTY: Self = Self {
+        ops: [Op::Empty; MAX_OPS],
+        len: 0,
+        data_type: DataType::Double,
+    };
+
+    pub(crate) fn nullable(&self) -> bool {
+        // A validator may ask for nullability before validating the program.
+        // Stack-shape errors return true; infer() will report the defect.
+        if self.len == 0 || usize::from(self.len) > MAX_OPS {
+            return true;
+        }
+        let mut nullable = [false; MAX_OPS];
+        let mut depth = 0;
+        for op in &self.ops[..usize::from(self.len)] {
+            match *op {
+                Op::Column(column) => {
+                    nullable[depth] = column.nullable();
+                    depth += 1;
+                }
+                Op::Integer(_) | Op::Double(_) | Op::Null => {
+                    nullable[depth] = *op == Op::Null;
+                    depth += 1;
+                }
+                Op::Negate
+                | Op::Abs
+                | Op::Sign
+                | Op::ToDouble
+                | Op::Floor
+                | Op::Ceil
+                | Op::Round
+                | Op::Sqrt
+                | Op::Log10
+                | Op::Ln
+                | Op::Exp => {
+                    if depth == 0 {
+                        return true;
+                    }
+                }
+                Op::Case(_) => {
+                    if depth < 4 {
+                        return true;
+                    }
+                    nullable[depth - 4] = nullable[depth - 2] || nullable[depth - 1];
+                    depth -= 3;
+                }
+                Op::Empty => return true,
+                _ => {
+                    if depth < 2 {
+                        return true;
+                    }
+                    depth -= 1;
+                    nullable[depth - 1] = match op {
+                        Op::Coalesce => nullable[depth - 1] && nullable[depth],
+                        Op::SafeDivide | Op::NullIf => true,
+                        _ => nullable[depth - 1] || nullable[depth],
+                    };
+                }
+            }
+        }
+        depth != 1 || nullable[0]
+    }
+
+    pub(crate) fn requires_ordered_evaluation(&self) -> bool {
+        self.ops[..usize::from(self.len)]
+            .iter()
+            .any(|op| matches!(op, Op::Coalesce | Op::NullIf | Op::Case(_)))
+    }
+
+    pub(crate) fn infer(&self, visible: &[SemanticColumn]) -> Result<DataType, InferenceFailure> {
+        if self.len == 0
+            || usize::from(self.len) > MAX_OPS
+            || self.ops[usize::from(self.len)..]
+                .iter()
+                .any(|op| *op != Op::Empty)
+        {
+            return Err(InferenceFailure::Program("invalid scalar program extent"));
+        }
+        let mut types = [DataType::Int64; MAX_OPS];
+        let mut depth = 0;
+        for op in &self.ops[..usize::from(self.len)] {
+            let ty = match *op {
+                Op::Column(column) => {
+                    if !matches!(column.data_type(), DataType::Int64 | DataType::Double)
+                        || !visible.contains(&column)
+                    {
+                        return Err(InferenceFailure::Program(
+                            "invalid scalar input identity or type",
+                        ));
+                    }
+                    column.data_type()
+                }
+                Op::Integer(_) | Op::Null => DataType::Int64,
+                Op::Double(bits) => {
+                    if !f64::from_bits(bits).is_finite() {
+                        return Err(InferenceFailure::Program("nonfinite scalar literal"));
+                    }
+                    DataType::Double
+                }
+                Op::Negate
+                | Op::Abs
+                | Op::Sign
+                | Op::ToDouble
+                | Op::Floor
+                | Op::Ceil
+                | Op::Round
+                | Op::Sqrt
+                | Op::Log10
+                | Op::Ln
+                | Op::Exp => {
+                    if depth == 0 {
+                        return Err(InferenceFailure::Program("scalar unary stack underflow"));
+                    }
+                    if matches!(
+                        op,
+                        Op::ToDouble
+                            | Op::Floor
+                            | Op::Ceil
+                            | Op::Round
+                            | Op::Sqrt
+                            | Op::Log10
+                            | Op::Ln
+                            | Op::Exp
+                    ) {
+                        types[depth - 1] = DataType::Double;
+                    }
+                    continue;
+                }
+                Op::Add
+                | Op::Subtract
+                | Op::Multiply
+                | Op::Divide
+                | Op::SafeDivide
+                | Op::Power
+                | Op::Coalesce
+                | Op::NullIf
+                | Op::Mod
+                | Op::IntegerDivide => {
+                    if depth < 2 {
+                        return Err(InferenceFailure::Program("scalar binary stack underflow"));
+                    }
+                    depth -= 1;
+                    if matches!(op, Op::Mod | Op::IntegerDivide)
+                        && (types[depth - 1] != DataType::Int64 || types[depth] != DataType::Int64)
+                    {
+                        return Err(InferenceFailure::Arguments(if *op == Op::Mod {
+                            "MOD requires INT64 arguments"
+                        } else {
+                            "DIV requires INT64 arguments"
+                        }));
+                    }
+                    types[depth - 1] = if matches!(op, Op::Divide | Op::SafeDivide | Op::Power)
+                        || types[depth - 1] == DataType::Double
+                        || types[depth] == DataType::Double
+                    {
+                        DataType::Double
+                    } else {
+                        DataType::Int64
+                    };
+                    continue;
+                }
+                Op::Case(_) => {
+                    if depth < 4 {
+                        return Err(InferenceFailure::Program("scalar CASE stack underflow"));
+                    }
+                    types[depth - 4] = if types[depth - 2] == DataType::Double
+                        || types[depth - 1] == DataType::Double
+                    {
+                        DataType::Double
+                    } else {
+                        DataType::Int64
+                    };
+                    depth -= 3;
+                    continue;
+                }
+                Op::Empty => return Err(InferenceFailure::Program("empty scalar operation")),
+            };
+            types[depth] = ty;
+            depth += 1;
+        }
+        if depth != 1 {
+            return Err(InferenceFailure::Program(
+                "scalar program does not produce one value",
+            ));
+        }
+        Ok(types[0])
+    }
+
+    pub(crate) fn validate(&self, visible: &[SemanticColumn]) -> Result<(), Error> {
+        let inferred = self.infer(visible).map_err(|failure| match failure {
+            InferenceFailure::Program(message) | InferenceFailure::Arguments(message) => {
+                Error::Corrupt(message)
+            }
+        })?;
+        if inferred != self.data_type {
+            return Err(Error::Corrupt("scalar result type disagrees"));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn stack_depth(&self) -> usize {
+        // Requires a validated program: each binary operation consumes two
+        // entries and leaves one, so its net effect on depth is minus one.
+        let mut depth = 0_usize;
+        let mut peak = 0;
+        for op in &self.ops[..usize::from(self.len)] {
+            match op {
+                Op::Column(_) | Op::Integer(_) | Op::Double(_) | Op::Null => depth += 1,
+                Op::Add
+                | Op::Subtract
+                | Op::Multiply
+                | Op::Divide
+                | Op::SafeDivide
+                | Op::Power
+                | Op::Coalesce
+                | Op::NullIf
+                | Op::Mod
+                | Op::IntegerDivide => {
+                    depth = depth.checked_sub(1).expect("validated binary inputs")
+                }
+                Op::Negate
+                | Op::Abs
+                | Op::Sign
+                | Op::ToDouble
+                | Op::Floor
+                | Op::Ceil
+                | Op::Round
+                | Op::Sqrt
+                | Op::Log10
+                | Op::Ln
+                | Op::Exp => (),
+                Op::Case(_) => depth -= 3,
+                Op::Empty => unreachable!("validated scalar program"),
+            }
+            peak = peak.max(depth);
+        }
+        peak
+    }
+
+    /// Evaluate a validated expression with no column references using one row
+    /// of stack scratch. Conditional demand follows the same rules as runtime.
+    pub(crate) fn evaluate_constant(&self) -> Result<Number, ArithmeticFailure> {
+        let mut scratch = [0; MAX_OPS];
+        self.evaluate_batch(&[], 0..1, &mut scratch)
+            .map(|output| match output.value(0) {
+                None => Number::Null,
+                Some(bits) => match self.data_type {
+                    DataType::Int64 => Number::Integer(integer(bits)),
+                    DataType::Double => Number::Double(f64::from_bits(bits)),
+                    _ => unreachable!("validated numeric result"),
+                },
+            })
+    }
+
+    /// Evaluate a nonempty input range from a validated program. Scratch needs
+    /// stack_depth() words per row; inputs must have unique column identities
+    /// and cover the range. The returned vector borrows scratch and numbers its
+    /// rows from zero, regardless of the input range's starting position.
+    /// On error, scratch may be partially overwritten and no result is returned.
+    pub(crate) fn evaluate_batch<'scratch>(
+        &self,
+        columns: &[Option<NumericInput<'_>>],
+        range: Range<usize>,
+        scratch: &'scratch mut [u64],
+    ) -> Result<NumericOutput<'scratch>, ArithmeticFailure> {
+        assert!(range.start < range.end && range.end <= MAX_ROWS);
+        let rows = range.end - range.start;
+        assert!(columns.len() <= MAX_ROW_VALUES && scratch.len() / rows >= self.stack_depth());
+        for (index, input) in columns.iter().enumerate() {
+            if let Some(input) = input {
+                assert!(range.end <= input.len(), "scalar input extent");
+                assert!(
+                    !columns[..index]
+                        .iter()
+                        .flatten()
+                        .any(|prior| prior.column == input.column),
+                    "scalar inputs have unique identities"
+                );
+            }
+        }
+        if self.requires_ordered_evaluation() {
+            return self.evaluate_conditional(columns, range, scratch);
+        }
+        let mut valid = [[u64::MAX; VALID_WORDS]; MAX_OPS];
+        let mut types = [DataType::Int64; MAX_OPS];
+        let mut depth = 0;
+        for op in &self.ops[..usize::from(self.len)] {
+            match *op {
+                Op::Column(column) => {
+                    let input = columns
+                        .iter()
+                        .flatten()
+                        .find(|input| input.column == column)
+                        .expect("validated numeric input identity");
+                    let output = &mut scratch[depth * rows..(depth + 1) * rows];
+                    valid[depth] = [u64::MAX; VALID_WORDS];
+                    match input.values {
+                        NumericValues::Bits { values, .. } => {
+                            output.copy_from_slice(&values[range.clone()])
+                        }
+                        NumericValues::Double(values) => {
+                            for (out, value) in output.iter_mut().zip(&values[range.clone()]) {
+                                *out = value.to_bits();
+                            }
+                        }
+                        NumericValues::Int64(values) => {
+                            for (out, value) in output.iter_mut().zip(&values[range.clone()]) {
+                                *out = integer_bits(*value);
+                            }
+                        }
+                    }
+                    if let Some(input_valid) = input.valid {
+                        for (row, source) in range.clone().enumerate() {
+                            if input_valid[source / 64] & (1 << (source % 64)) == 0 {
+                                valid[depth][row / 64] &= !(1 << (row % 64));
+                                output[row] = 0;
+                            }
+                        }
+                    }
+                    types[depth] = column.data_type();
+                    depth += 1;
+                }
+                Op::Integer(value) => {
+                    scratch[depth * rows..(depth + 1) * rows].fill(integer_bits(value));
+                    types[depth] = DataType::Int64;
+                    valid[depth] = [u64::MAX; VALID_WORDS];
+                    depth += 1;
+                }
+                Op::Null => {
+                    scratch[depth * rows..(depth + 1) * rows].fill(0);
+                    types[depth] = DataType::Int64;
+                    valid[depth] = [0; VALID_WORDS];
+                    depth += 1;
+                }
+                Op::Double(bits) => {
+                    scratch[depth * rows..(depth + 1) * rows].fill(bits);
+                    types[depth] = DataType::Double;
+                    valid[depth] = [u64::MAX; VALID_WORDS];
+                    depth += 1;
+                }
+                Op::ToDouble
+                | Op::Floor
+                | Op::Ceil
+                | Op::Round
+                | Op::Sqrt
+                | Op::Log10
+                | Op::Ln
+                | Op::Exp => {
+                    let values = &mut scratch[(depth - 1) * rows..depth * rows];
+                    for (row, value) in values.iter_mut().enumerate() {
+                        if valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
+                            continue;
+                        }
+                        let input = if types[depth - 1] == DataType::Int64 {
+                            integer(*value) as f64
+                        } else {
+                            f64::from_bits(*value)
+                        };
+                        *value = double_unary(*op, input)?.to_bits();
+                    }
+                    types[depth - 1] = DataType::Double;
+                }
+                Op::Negate | Op::Abs | Op::Sign => {
+                    let values = &mut scratch[(depth - 1) * rows..depth * rows];
+                    match types[depth - 1] {
+                        DataType::Int64 => {
+                            for (row, value) in values.iter_mut().enumerate() {
+                                if valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
+                                    continue;
+                                }
+                                let input = integer(*value);
+                                let output = match *op {
+                                    Op::Abs => input.checked_abs().ok_or(ArithmeticFailure::Abs)?,
+                                    Op::Negate => {
+                                        input.checked_neg().ok_or(ArithmeticFailure::Negate)?
+                                    }
+                                    Op::Sign => input.signum(),
+                                    _ => unreachable!("unary numeric operation"),
+                                };
+                                *value = integer_bits(output);
+                            }
+                        }
+                        DataType::Double => {
+                            for (row, value) in values.iter_mut().enumerate() {
+                                if valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
+                                    continue;
+                                }
+                                let input = f64::from_bits(*value);
+                                *value = match *op {
+                                    Op::Abs => input.abs(),
+                                    Op::Negate => -input,
+                                    Op::Sign => sign_double(input),
+                                    _ => unreachable!("unary numeric operation"),
+                                }
+                                .to_bits();
+                            }
+                        }
+                        _ => unreachable!("validated numeric operand"),
+                    }
+                }
+                Op::Add
+                | Op::Subtract
+                | Op::Multiply
+                | Op::Divide
+                | Op::SafeDivide
+                | Op::Power
+                | Op::Mod
+                | Op::IntegerDivide => {
+                    depth -= 1;
+                    let (left, right) = scratch.split_at_mut(depth * rows);
+                    let left = &mut left[(depth - 1) * rows..];
+                    let right = &right[..rows];
+                    let left_type = types[depth - 1];
+                    let right_type = types[depth];
+                    let right_valid = valid[depth];
+                    for (left, right) in valid[depth - 1].iter_mut().zip(right_valid) {
+                        *left &= right;
+                    }
+                    let integer_result = !matches!(op, Op::Divide | Op::SafeDivide | Op::Power)
+                        && left_type == DataType::Int64
+                        && right_type == DataType::Int64;
+                    let all_valid = valid[depth - 1] == [u64::MAX; VALID_WORDS];
+                    for (row, (left, right)) in left.iter_mut().zip(right).enumerate() {
+                        if !all_valid && valid[depth - 1][row / 64] & (1 << (row % 64)) == 0 {
+                            *left = 0;
+                            continue;
+                        }
+                        if integer_result {
+                            *left =
+                                integer_bits(integer_binary(*op, integer(*left), integer(*right))?);
+                        } else {
+                            // Convert only at this operation. An earlier INT64
+                            // operation must still report overflow before conversion.
+                            let a = if left_type == DataType::Int64 {
+                                integer(*left) as f64
+                            } else {
+                                f64::from_bits(*left)
+                            };
+                            let b = if right_type == DataType::Int64 {
+                                integer(*right) as f64
+                            } else {
+                                f64::from_bits(*right)
+                            };
+                            match double_binary(*op, a, b) {
+                                Ok(value) => *left = value.to_bits(),
+                                Err(
+                                    ArithmeticFailure::Divide | ArithmeticFailure::DivideByZero,
+                                ) if *op == Op::SafeDivide => {
+                                    // Only this division's zero-divisor or overflow
+                                    // error becomes NULL. Argument failures have
+                                    // already returned before reaching this operation.
+                                    valid[depth - 1][row / 64] &= !(1 << (row % 64));
+                                    *left = 0;
+                                }
+                                Err(failure) => return Err(failure),
+                            }
+                        }
+                    }
+                    if !integer_result {
+                        types[depth - 1] = DataType::Double;
+                    }
+                }
+                Op::Coalesce | Op::NullIf | Op::Case(_) => {
+                    unreachable!("ordered program uses demand evaluation")
+                }
+                Op::Empty => unreachable!("validated scalar program"),
+            }
+        }
+        assert_eq!(types[0], self.data_type, "validated scalar result type");
+        Ok(NumericOutput {
+            values: &scratch[..rows],
+            valid: valid[0],
+        })
+    }
+}
+
+// Reinterpret the same 64 bits; these conversions do not round numeric values.
+fn integer(bits: u64) -> i64 {
+    i64::from_ne_bytes(bits.to_ne_bytes())
+}
+
+fn integer_bits(value: i64) -> u64 {
+    u64::from_ne_bytes(value.to_ne_bytes())
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Number {
+    Null,
+    Integer(i64),
+    Double(f64),
+}
+
+fn integer_binary(op: Op, left: i64, right: i64) -> Result<i64, ArithmeticFailure> {
+    match op {
+        Op::Add => left.checked_add(right).ok_or(ArithmeticFailure::Add),
+        Op::Subtract => left.checked_sub(right).ok_or(ArithmeticFailure::Subtract),
+        Op::Multiply => left.checked_mul(right).ok_or(ArithmeticFailure::Multiply),
+        Op::IntegerDivide => {
+            if right == 0 {
+                return Err(ArithmeticFailure::DivideByZero);
+            }
+            // MIN / -1 exceeds INT64. checked_div reports that overflow without
+            // a native trap or a lossy detour through DOUBLE.
+            left.checked_div(right).ok_or(ArithmeticFailure::Divide)
+        }
+        Op::Mod => {
+            if right == 0 {
+                return Err(ArithmeticFailure::DivideByZero);
+            }
+            // MIN % -1 would trap even though its mathematical remainder is zero.
+            // Every integer has remainder zero with divisor -1.
+            Ok(if right == -1 { 0 } else { left % right })
+        }
+        _ => unreachable!("binary operation"),
+    }
+}
+
+// Callers handle NULL before entering. The order matters: x^0 and 1^y return 1
+// even for NaN operands, and infinite operands have rules separate from the
+// finite-domain checks. Keep those cases ahead of the native powf call.
+fn double_power(base: f64, exponent: f64) -> Result<f64, ArithmeticFailure> {
+    if exponent == 0.0 || base == 1.0 {
+        return Ok(1.0);
+    }
+    if base.is_nan() {
+        return Ok(base);
+    }
+    if exponent.is_nan() {
+        return Ok(exponent);
+    }
+    if exponent.is_infinite() {
+        let magnitude = base.abs();
+        return Ok(if magnitude == 1.0 {
+            1.0
+        } else if (magnitude > 1.0) == exponent.is_sign_positive() {
+            f64::INFINITY
+        } else {
+            0.0
+        });
+    }
+    // Determine oddness after conversion to DOUBLE. Above 2^53, adjacent
+    // representable exponents differ by at least two, so none can be odd.
+    let negative = base.is_sign_negative() && exponent % 2.0 != 0.0 && exponent.fract() == 0.0;
+    if base.is_infinite() {
+        let magnitude = if exponent < 0.0 { 0.0 } else { f64::INFINITY };
+        return Ok(if negative { -magnitude } else { magnitude });
+    }
+    if base == 0.0 {
+        return if exponent < 0.0 {
+            Err(ArithmeticFailure::PowerDomain)
+        } else {
+            Ok(if negative { -0.0 } else { 0.0 })
+        };
+    }
+    if base < 0.0 && exponent.fract() != 0.0 {
+        return Err(ArithmeticFailure::PowerDomain);
+    }
+    // Both operands are now finite and valid. Accept subnormal or zero results
+    // from underflow, but report overflow instead of returning a new infinity.
+    let result = base.powf(exponent);
+    if result.is_finite() {
+        Ok(result)
+    } else {
+        Err(ArithmeticFailure::Power)
+    }
+}
+
+fn double_binary(op: Op, left: f64, right: f64) -> Result<f64, ArithmeticFailure> {
+    if op == Op::Power {
+        return double_power(left, right);
+    }
+    let (value, failure) = match op {
+        Op::Add => (left + right, ArithmeticFailure::Add),
+        Op::Subtract => (left - right, ArithmeticFailure::Subtract),
+        Op::Multiply => (left * right, ArithmeticFailure::Multiply),
+        Op::Divide | Op::SafeDivide => {
+            // Callers have handled NULL. Either signed zero is an invalid divisor,
+            // including when the numerator is infinity or NaN.
+            if right == 0.0 {
+                return Err(ArithmeticFailure::DivideByZero);
+            }
+            (left / right, ArithmeticFailure::Divide)
+        }
+        _ => unreachable!("binary operation"),
+    };
+    if left.is_finite() && right.is_finite() && !value.is_finite() {
+        return Err(failure);
+    }
+    Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    // Literal numeric references and i128 arithmetic provide expected results.
+    // Running both evaluators checks their agreement with those answers; their
+    // agreement alone would not be an independent arithmetic oracle.
+
+    #[test]
+    fn power_checks_exceptional_values_and_finite_domains() {
+        let nan = f64::from_bits(0x7ff0_0000_0000_0042);
+        let other_nan = f64::from_bits(0xfff8_0000_0000_0081);
+        let inf = f64::INFINITY;
+        // Literal results fix the exceptional-value rules independently of powf.
+        // Compare bits so a wrong zero sign or changed NaN payload cannot pass.
+        for (base, exponent, expected) in [
+            (0.0, 0.0, 1.0),
+            (-0.0, -0.0, 1.0),
+            (nan, 0.0, 1.0),
+            (nan, -0.0, 1.0),
+            (1.0, nan, 1.0),
+            (1.0, inf, 1.0),
+            (inf, 0.0, 1.0),
+            (-inf, -0.0, 1.0),
+            (nan, 2.0, nan),
+            (2.0, other_nan, other_nan),
+            (nan, other_nan, nan),
+            (-1.0, inf, 1.0),
+            (-1.0, -inf, 1.0),
+            (0.5, inf, 0.0),
+            (-0.5, inf, 0.0),
+            (0.5, -inf, inf),
+            (-0.5, -inf, inf),
+            (2.0, inf, inf),
+            (-2.0, inf, inf),
+            (2.0, -inf, 0.0),
+            (-2.0, -inf, 0.0),
+            (0.0, -inf, inf),
+            (-0.0, -inf, inf),
+            (inf, 0.5, inf),
+            (-inf, 0.5, inf),
+            (-inf, 3.0, -inf),
+            (-inf, 2.0, inf),
+            (inf, -0.5, 0.0),
+            (-inf, -0.5, 0.0),
+            (-inf, -3.0, -0.0),
+            (-inf, -2.0, 0.0),
+            (-inf, inf, inf),
+            (-inf, -inf, 0.0),
+            (-0.0, 3.0, -0.0),
+            (-0.0, 2.0, 0.0),
+            (-0.0, 0.5, 0.0),
+            (-2.0, 3.0, -8.0),
+            (-2.0, -3.0, -0.125),
+            (-1.0, 9_007_199_254_740_991.0, -1.0),
+            (-1.0, 9_007_199_254_740_992.0, 1.0),
+            (2.0, 1023.0, f64::from_bits(0x7fe0_0000_0000_0000)),
+            (2.0, -1022.0, f64::MIN_POSITIVE),
+            (2.0, -1074.0, f64::from_bits(1)),
+            (2.0, -1075.0, 0.0),
+            (-2.0, -1075.0, -0.0),
+        ] {
+            check_power_answer(base, exponent, expected.to_bits(), 0);
+        }
+        for (base, exponent, domain) in [
+            (-1.0, 0.5, true),
+            (-2.0, -0.5, true),
+            (0.0, -1.0, true),
+            (-0.0, -0.5, true),
+            (-f64::MAX, f64::from_bits(1), true),
+            (2.0, 1024.0, false),
+            (-2.0, 1025.0, false),
+            (f64::MAX, 2.0, false),
+            (f64::from_bits(1), -1.0, false),
+        ] {
+            let expression = power_expression(base, exponent);
+            let mut cursor = Evaluation::new(&expression);
+            for result in [
+                expression.evaluate_constant().map(|_| ()),
+                cursor.next_column().map(|_| ()),
+            ] {
+                assert!(matches!(
+                    (domain, result),
+                    (true, Err(ArithmeticFailure::PowerDomain))
+                        | (false, Err(ArithmeticFailure::Power))
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn power_matches_independent_finite_references() {
+        // References use Decimal.from_float(base) ** Decimal.from_float(exponent)
+        // at precision 100, then rounding to binary64. Allow two representable
+        // steps (ULPs) of error for these cases; this is not a universal accuracy
+        // bound or a guarantee of identical results on different platforms.
+        for (base, exponent, expected) in [
+            (
+                0x4000_0000_0000_0000,
+                0x3fe0_0000_0000_0000,
+                0x3ff6_a09e_667f_3bcd,
+            ),
+            (
+                0x403b_0000_0000_0000,
+                0x3fd5_5555_5555_5555,
+                0x4008_0000_0000_0000,
+            ),
+            (
+                0x4024_0000_0000_0000,
+                0xbfe0_0000_0000_0000,
+                0x3fd4_3d13_6248_490f,
+            ),
+            (
+                0x3ff0_28f5_c28f_5c29,
+                0x4028_0000_0000_0000,
+                0x3ff2_0779_aecb_b247,
+            ),
+            (
+                0x3ff0_cccc_cccc_cccd,
+                0x403e_0000_0000_0000,
+                0x4011_49ab_4311_dfee,
+            ),
+            (
+                0x3fe0_0000_0000_0000,
+                0xc012_0000_0000_0000,
+                0x4036_a09e_667f_3bcd,
+            ),
+            (
+                0x7fef_ffff_ffff_ffff,
+                0x3fe0_0000_0000_0000,
+                0x5fef_ffff_ffff_ffff,
+            ),
+            (
+                0x0010_0000_0000_0000,
+                0x3fe0_0000_0000_0000,
+                0x2000_0000_0000_0000,
+            ),
+            (
+                0x0000_0000_0000_0001,
+                0x3fe0_0000_0000_0000,
+                0x1e60_0000_0000_0000,
+            ),
+            (
+                0x3fef_ffff_ffff_ffff,
+                0x412e_8480_0000_0000,
+                0x3fef_ffff_fff0_bdc0,
+            ),
+            (
+                0x3ff0_0000_0000_0001,
+                0x412e_8480_0000_0000,
+                0x3ff0_0000_000f_4240,
+            ),
+        ] {
+            check_power_answer(f64::from_bits(base), f64::from_bits(exponent), expected, 2);
+        }
+    }
+
+    fn power_expression(base: f64, exponent: f64) -> Expression {
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[
+            Op::Double(base.to_bits()),
+            Op::Double(exponent.to_bits()),
+            Op::Power,
+        ]);
+        expression.len = 3;
+        expression.data_type = DataType::Double;
+        expression.validate(&[]).unwrap();
+        expression
+    }
+
+    fn check_power_answer(base: f64, exponent: f64, expected: u64, tolerance: u64) {
+        // Supply infinity and NaN through columns: expression literals must be finite.
+        let left = SemanticColumn::new(42, DataType::Double, false);
+        let right = SemanticColumn::new(43, DataType::Double, false);
+        let mut expression = power_expression(0.0, 0.0);
+        expression.ops[..2].copy_from_slice(&[Op::Column(left), Op::Column(right)]);
+        expression.validate(&[left, right]).unwrap();
+        let bases = [base];
+        let exponents = [exponent];
+        let inputs = [
+            Some(NumericInput::new(left, NumericValues::Double(&bases), None).unwrap()),
+            Some(NumericInput::new(right, NumericValues::Double(&exponents), None).unwrap()),
+        ];
+        let mut scratch = [0; MAX_OPS];
+        let output = expression
+            .evaluate_batch(&inputs, 0..1, &mut scratch)
+            .unwrap();
+        let mut cursor = Evaluation::new(&expression);
+        assert_eq!(cursor.next_column().unwrap(), Some(left));
+        cursor.supply(Number::Double(base)).unwrap();
+        assert_eq!(cursor.next_column().unwrap(), Some(right));
+        cursor.supply(Number::Double(exponent)).unwrap();
+        assert_eq!(cursor.next_column().unwrap(), None);
+        for number in [
+            Number::Double(f64::from_bits(output.value(0).unwrap())),
+            cursor.value(),
+        ] {
+            let Number::Double(actual) = number else {
+                panic!("power result type");
+            };
+            assert!(
+                actual.to_bits().abs_diff(expected) <= tolerance,
+                "POW({base:?}, {exponent:?}): {:016x}; expected {expected:016x}",
+                actual.to_bits()
+            );
+        }
+    }
+
+    #[test]
+    fn power_promotes_inputs_preserves_nulls_and_validates_programs() {
+        let base = SemanticColumn::new(42, DataType::Int64, true);
+        let exponent = SemanticColumn::new(43, DataType::Int64, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[Op::Column(base), Op::Column(exponent), Op::Power]);
+        expression.len = 3;
+        expression.data_type = DataType::Double;
+        expression.validate(&[base, exponent]).unwrap();
+        assert!(expression.nullable());
+        assert_eq!(expression.stack_depth(), 2);
+        let bases = [-1, -1, -1, 0, 1, 0];
+        let exponents = [
+            9_007_199_254_740_991,
+            9_007_199_254_740_993,
+            i64::MAX,
+            -1,
+            0,
+            -1,
+        ];
+        let base_valid = [0b010111];
+        let exponent_valid = [0b001111];
+        let inputs = [
+            Some(NumericInput::new(base, NumericValues::Int64(&bases), Some(&base_valid)).unwrap()),
+            Some(
+                NumericInput::new(
+                    exponent,
+                    NumericValues::Int64(&exponents),
+                    Some(&exponent_valid),
+                )
+                .unwrap(),
+            ),
+        ];
+        let mut scratch = [0; MAX_OPS * 6];
+        let output = expression
+            .evaluate_batch(&inputs, 0..6, &mut scratch)
+            .unwrap();
+        for (row, expected) in [Some(-1.0_f64), Some(1.0), Some(1.0), None, None, None]
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(output.value(row), expected.map(f64::to_bits));
+            let mut cursor = Evaluation::new(&expression);
+            for (column, values, valid) in [
+                (base, &bases, base_valid[0]),
+                (exponent, &exponents, exponent_valid[0]),
+            ] {
+                assert_eq!(cursor.next_column().unwrap(), Some(column));
+                cursor
+                    .supply(if valid & (1 << row) == 0 {
+                        Number::Null
+                    } else {
+                        Number::Integer(values[row])
+                    })
+                    .unwrap();
+            }
+            assert_eq!(cursor.next_column().unwrap(), None);
+            match (cursor.value(), expected) {
+                (Number::Double(actual), Some(expected)) => {
+                    assert_eq!(actual.to_bits(), expected.to_bits())
+                }
+                (Number::Null, None) => (),
+                _ => panic!("nullable DOUBLE power"),
+            }
+        }
+        expression.data_type = DataType::Int64;
+        assert!(expression.validate(&[base, exponent]).is_err());
+        expression.data_type = DataType::Double;
+        expression.ops[0] = Op::Column(SemanticColumn::new(42, DataType::String, true));
+        assert!(expression.infer(&[base, exponent]).is_err());
+        expression.ops[..2].copy_from_slice(&[Op::Integer(1), Op::Power]);
+        expression.len = 2;
+        assert!(expression.infer(&[]).is_err());
+    }
+
+    #[test]
+    fn sign_preserves_numeric_types_nulls_and_exceptional_values() {
+        let integers = [
+            i64::MIN,
+            -9_007_199_254_740_993,
+            -1,
+            0,
+            1,
+            i64::MAX,
+            i64::MIN,
+        ];
+        let doubles = [
+            f64::NEG_INFINITY,
+            -f64::MAX,
+            -f64::from_bits(1),
+            -0.0,
+            0.0,
+            f64::from_bits(1),
+            f64::MAX,
+            f64::INFINITY,
+            f64::from_bits(0xfff8_0000_0000_0042),
+            1.0,
+        ];
+        let integer_expected = [
+            Some(-1_i64),
+            Some(-1),
+            Some(-1),
+            Some(0),
+            Some(1),
+            Some(1),
+            None,
+        ]
+        .map(|v| v.map(integer_bits));
+        let double_expected = [
+            Some(-1.0_f64),
+            Some(-1.0),
+            Some(-1.0),
+            Some(0.0),
+            Some(0.0),
+            Some(1.0),
+            Some(1.0),
+            Some(1.0),
+            Some(f64::from_bits(0xfff8_0000_0000_0042)),
+            None,
+        ]
+        .map(|v| v.map(f64::to_bits));
+        for (kind, values, validity, expected) in [
+            (
+                DataType::Int64,
+                NumericValues::Int64(&integers),
+                63_u64,
+                integer_expected.as_slice(),
+            ),
+            (
+                DataType::Double,
+                NumericValues::Double(&doubles),
+                511_u64,
+                double_expected.as_slice(),
+            ),
+        ] {
+            let column = SemanticColumn::new(42, kind, true);
+            let mut expression = Expression::EMPTY;
+            expression.ops[..2].copy_from_slice(&[Op::Column(column), Op::Sign]);
+            expression.len = 2;
+            expression.data_type = kind;
+            expression.validate(&[column]).unwrap();
+            assert!(expression.nullable());
+            let validity = [validity];
+            let inputs = [Some(
+                NumericInput::new(column, values, Some(&validity)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 10];
+            for range in [0..expected.len(), 3..expected.len(), 0..expected.len()] {
+                let output = expression
+                    .evaluate_batch(&inputs, range.clone(), &mut scratch)
+                    .unwrap();
+                for (lane, row) in range.enumerate() {
+                    assert_eq!(output.value(lane), expected[row]);
+                }
+            }
+            for (row, expected) in expected.iter().enumerate() {
+                let mut cursor = Evaluation::new(&expression);
+                assert_eq!(cursor.next_column().unwrap(), Some(column));
+                let input = if validity[0] & (1 << row) == 0 {
+                    Number::Null
+                } else if kind == DataType::Int64 {
+                    Number::Integer(integers[row])
+                } else {
+                    Number::Double(doubles[row])
+                };
+                cursor.supply(input).unwrap();
+                assert_eq!(cursor.next_column().unwrap(), None);
+                let actual = match cursor.value() {
+                    Number::Null => None,
+                    Number::Integer(value) => Some(integer_bits(value)),
+                    Number::Double(value) => Some(value.to_bits()),
+                };
+                assert_eq!(actual, *expected);
+            }
+            expression.ops[0] = Op::Sign;
+            expression.ops[1] = Op::Empty;
+            expression.len = 1;
+            assert!(expression.validate(&[]).is_err());
+        }
+    }
+    use super::*;
+
+    impl Expression {
+        fn evaluate(&self, columns: &[f64; 4]) -> Result<Number, ArithmeticFailure> {
+            let mut scratch = [0; MAX_OPS];
+            self.evaluate_doubles(
+                &std::array::from_fn(|i| &columns[i..i + 1]),
+                1,
+                &mut scratch,
+            )
+            .map(|values| match self.data_type {
+                DataType::Int64 => Number::Integer(integer(values[0])),
+                DataType::Double => Number::Double(f64::from_bits(values[0])),
+                _ => unreachable!(),
+            })
+        }
+
+        fn evaluate_doubles<'a>(
+            &self,
+            columns: &[&[f64]; 4],
+            rows: usize,
+            scratch: &'a mut [u64],
+        ) -> Result<&'a [u64], ArithmeticFailure> {
+            let ids = [
+                SourceColumn::QUANTITY.semantic(),
+                SourceColumn::PRICE.semantic(),
+                SourceColumn::DISCOUNT.semantic(),
+                SourceColumn::TAX.semantic(),
+            ];
+            let inputs: [Option<NumericInput<'_>>; 4] = std::array::from_fn(|i| {
+                (!columns[i].is_empty()).then(|| {
+                    NumericInput::new(ids[i], NumericValues::Double(columns[i]), None).unwrap()
+                })
+            });
+            let output = self.evaluate_batch(&inputs, 0..rows, scratch)?;
+            assert_eq!(output.valid, [u64::MAX; VALID_WORDS]);
+            Ok(output.values)
+        }
+    }
+
+    #[test]
+    fn exp_checks_overflow_underflow_and_independent_boundary_values() {
+        let column = SemanticColumn::new(42, DataType::Double, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(column), Op::Exp]);
+        expression.len = 2;
+        expression.data_type = DataType::Double;
+        expression.validate(&[column]).unwrap();
+        // References use Decimal.from_float(x).exp() at precision 100, rounded
+        // to binary64. Tolerance is a count of adjacent representable values,
+        // limited to these cases. Zero tolerance requires exact bits at the
+        // underflow boundary and for exceptional inputs.
+        for (input, expected, tolerance) in [
+            (0x3ff0_0000_0000_0000, 0x4005_bf0a_8b14_5769, 2),
+            (0xbff0_0000_0000_0000, 0x3fd7_8b56_362c_ef38, 2),
+            (0x4000_0000_0000_0000, 0x401d_8e64_b8d4_ddae, 2),
+            (0x3fe0_0000_0000_0000, 0x3ffa_6129_8e1e_069c, 2),
+            (0xbfe0_0000_0000_0000, 0x3fe3_68b2_fc6f_960a, 2),
+            (0x3ca0_0000_0000_0000, 0x3ff0_0000_0000_0001, 2),
+            (0xbca0_0000_0000_0000, 0x3fef_ffff_ffff_ffff, 2),
+            (0x4034_0000_0000_0000, 0x41bc_eb08_8b68_e804, 2),
+            (0xc034_0000_0000_0000, 0x3e21_b486_55f3_7267, 2),
+            (0x4085_e000_0000_0000, 0x7f0d_945d_f4f8_ec8e, 2),
+            (0xc085_e000_0000_0000, 0x00d1_4f2b_0fb9_307f, 2),
+            (0xc086_2000_0000_0000, 0x0017_c8ab_2288_c9ab, 2),
+            (0xc086_2800_0000_0000, 0x0008_bfe5_5de0_2338, 2),
+            (0x4086_2e42_fefa_39ef, 0x7fef_ffff_ffff_ff2a, 2),
+            (0xc087_4800_0000_0000, 0x0000_0000_0000_0001, 0),
+            (0xc087_5000_0000_0000, 0x0000_0000_0000_0000, 0),
+            (0xc087_4910_d52d_3051, 0x0000_0000_0000_0001, 0),
+            (0xc087_4910_d52d_3052, 0x0000_0000_0000_0000, 0),
+            (0xffef_ffff_ffff_ffff, 0x0000_0000_0000_0000, 0),
+            (0x0000_0000_0000_0000, 0x3ff0_0000_0000_0000, 0),
+            (0x8000_0000_0000_0000, 0x3ff0_0000_0000_0000, 0),
+            (0x7ff0_0000_0000_0000, 0x7ff0_0000_0000_0000, 0),
+            (0xfff0_0000_0000_0000, 0x0000_0000_0000_0000, 0),
+            (0x7ff0_0000_0000_0042, 0x7ff0_0000_0000_0042, 0),
+            (0xfff8_0000_0000_0042, 0xfff8_0000_0000_0042, 0),
+        ] {
+            let value = f64::from_bits(input);
+            let values = [value, 1000.0];
+            let valid = [1];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), Some(&valid)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 2];
+            let output = expression
+                .evaluate_batch(&inputs, 0..2, &mut scratch)
+                .unwrap();
+            assert_eq!(output.value(1), None, "NULL must skip exponential overflow");
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(value)).unwrap();
+            assert_eq!(cursor.next_column().unwrap(), None);
+            let Number::Double(actual) = cursor.value() else {
+                panic!("EXP result type");
+            };
+            for actual in [output.value(0).unwrap(), actual.to_bits()] {
+                assert!(
+                    actual.abs_diff(expected) <= tolerance,
+                    "EXP({value:?}): {actual:016x}"
+                );
+            }
+            let mut null = Evaluation::new(&expression);
+            assert_eq!(null.next_column().unwrap(), Some(column));
+            null.supply(Number::Null).unwrap();
+            assert_eq!(null.next_column().unwrap(), None);
+            assert!(matches!(null.value(), Number::Null));
+        }
+        for value in [
+            710.0,
+            1000.0,
+            f64::MAX,
+            f64::from_bits(0x4086_2e42_fefa_39f0),
+        ] {
+            let values = [value];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), None).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS];
+            assert!(matches!(
+                expression.evaluate_batch(&inputs, 0..1, &mut scratch),
+                Err(ArithmeticFailure::Exp)
+            ));
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(value)).unwrap();
+            assert!(matches!(cursor.next_column(), Err(ArithmeticFailure::Exp)));
+        }
+    }
+
+    #[test]
+    fn ln_checks_finite_domains_and_independent_boundary_values() {
+        // Reference bits come from Python Decimal.from_float(x).ln(), computed
+        // at precision 100 and rounded to binary64, without the native ln helper.
+        check_logarithm_boundaries(
+            Op::Ln,
+            &[
+                (0x0000_0000_0000_0001, 0xc087_4385_446d_71c3),
+                (0x0010_0000_0000_0000, 0xc086_232b_dd7a_bcd2),
+                (0x3fef_ffff_ffff_ffff, 0xbca0_0000_0000_0000),
+                (0x3ff0_0000_0000_0001, 0x3caf_ffff_ffff_ffff),
+                (0x3fe0_0000_0000_0000, 0xbfe6_2e42_fefa_39ef),
+                (0x4000_0000_0000_0000, 0x3fe6_2e42_fefa_39ef),
+                (0x4024_0000_0000_0000, 0x4002_6bb1_bbb5_5516),
+                (0x7fef_ffff_ffff_ffff, 0x4086_2e42_fefa_39ef),
+                (0x4340_0000_0000_0000, 0x4042_5e4f_7b27_37fa),
+                (0x43e0_0000_0000_0000, 0x4045_d589_f2fe_5107),
+            ],
+        );
+    }
+
+    #[test]
+    fn log10_checks_finite_domains_and_independent_boundary_values() {
+        // Reference bits come from Python Decimal.from_float(x).log10(), computed
+        // at precision 100 and rounded to binary64, without the native log10 helper.
+        check_logarithm_boundaries(
+            Op::Log10,
+            &[
+                (0x0000_0000_0000_0001, 0xc074_34e6_420f_4374),
+                (0x0010_0000_0000_0000, 0xc073_3a71_46f7_2a42),
+                (0x3fef_ffff_ffff_ffff, 0xbc8b_cb7b_1526_e50f),
+                (0x3ff0_0000_0000_0001, 0x3c9b_cb7b_1526_e50d),
+                (0x3fe0_0000_0000_0000, 0xbfd3_4413_509f_79ff),
+                (0x4000_0000_0000_0000, 0x3fd3_4413_509f_79ff),
+                (0x4024_0000_0000_0000, 0x3ff0_0000_0000_0000),
+                (0x4059_0000_0000_0000, 0x4000_0000_0000_0000),
+                (0x7fef_ffff_ffff_ffff, 0x4073_4413_509f_79ff),
+                (0x4340_0000_0000_0000, 0x402f_e8bf_fd88_220e),
+                (0x43e0_0000_0000_0000, 0x4032_f703_035c_fc17),
+            ],
+        );
+    }
+
+    fn check_logarithm_boundaries(op: Op, finite: &[(u64, u64)]) {
+        let column = SemanticColumn::new(42, DataType::Double, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(column), op]);
+        expression.len = 2;
+        expression.data_type = DataType::Double;
+        expression.validate(&[column]).unwrap();
+        // Allow two adjacent representable steps for the supplied finite cases.
+        // The values below instead require exact bits, including log(1) = +0.
+        // Neither check establishes an error bound for all native logarithms.
+        let exact = [
+            (0x3ff0_0000_0000_0000, 0x0000_0000_0000_0000),
+            (0x7ff0_0000_0000_0000, 0x7ff0_0000_0000_0000),
+            (0xfff0_0000_0000_0000, 0x7ff8_0000_0000_0000),
+            (0x7ff0_0000_0000_0042, 0x7ff0_0000_0000_0042),
+            (0xfff8_0000_0000_0042, 0xfff8_0000_0000_0042),
+        ];
+        for &(input, expected) in finite.iter().chain(&exact) {
+            let value = f64::from_bits(input);
+            let values = [value, -1.0];
+            let valid = [1];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), Some(&valid)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 2];
+            let output = expression
+                .evaluate_batch(&inputs, 0..2, &mut scratch)
+                .unwrap();
+            assert_eq!(output.value(1), None, "NULL payload must not fail");
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(value)).unwrap();
+            assert_eq!(cursor.next_column().unwrap(), None);
+            let Number::Double(actual) = cursor.value() else {
+                panic!("logarithm result type");
+            };
+            for actual in [output.value(0).unwrap(), actual.to_bits()] {
+                if value.is_finite() && value != 1.0 {
+                    assert!(
+                        actual.abs_diff(expected) <= 2,
+                        "{op:?}({value:?}): {actual:016x}"
+                    );
+                } else {
+                    assert_eq!(actual, expected);
+                }
+            }
+        }
+        for value in [0.0, -0.0, -1.0, -f64::from_bits(1), -f64::MAX] {
+            let values = [value];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), None).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS];
+            assert!(matches!(
+                (op, expression.evaluate_batch(&inputs, 0..1, &mut scratch)),
+                (Op::Ln, Err(ArithmeticFailure::LnDomain))
+                    | (Op::Log10, Err(ArithmeticFailure::Log10Domain))
+            ));
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(value)).unwrap();
+            assert!(matches!(
+                (op, cursor.next_column()),
+                (Op::Ln, Err(ArithmeticFailure::LnDomain))
+                    | (Op::Log10, Err(ArithmeticFailure::Log10Domain))
+            ));
+        }
+    }
+
+    #[test]
+    fn to_double_converts_integer_boundaries_with_literal_bit_oracles() {
+        let column = SemanticColumn::new(42, DataType::Int64, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(column), Op::ToDouble]);
+        expression.len = 2;
+        expression.data_type = DataType::Double;
+        expression.validate(&[column]).unwrap();
+        for (value, expected) in [
+            (0, 0x0000_0000_0000_0000),
+            (1, 0x3ff0_0000_0000_0000),
+            (-1, 0xbff0_0000_0000_0000),
+            (9_007_199_254_740_991, 0x433f_ffff_ffff_ffff),
+            (9_007_199_254_740_992, 0x4340_0000_0000_0000),
+            (9_007_199_254_740_993, 0x4340_0000_0000_0000),
+            (9_007_199_254_740_994, 0x4340_0000_0000_0001),
+            (9_007_199_254_740_995, 0x4340_0000_0000_0002),
+            (-9_007_199_254_740_993, 0xc340_0000_0000_0000),
+            (-9_007_199_254_740_995, 0xc340_0000_0000_0002),
+            (i64::MIN, 0xc3e0_0000_0000_0000),
+            (i64::MAX, 0x43e0_0000_0000_0000),
+        ] {
+            let values = [value, i64::MAX];
+            let validity = [1];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Int64(&values), Some(&validity)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 2];
+            let output = expression
+                .evaluate_batch(&inputs, 0..2, &mut scratch)
+                .unwrap();
+            assert_eq!(output.value(0), Some(expected));
+            assert_eq!(output.value(1), None);
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Integer(value)).unwrap();
+            assert_eq!(cursor.next_column().unwrap(), None);
+            let Number::Double(actual) = cursor.value() else {
+                panic!("DOUBLE conversion");
+            };
+            assert_eq!(actual.to_bits(), expected);
+        }
+        expression.data_type = DataType::Int64;
+        assert!(expression.validate(&[column]).is_err());
+        expression.ops[0] = Op::ToDouble;
+        expression.ops[1] = Op::Empty;
+        expression.len = 1;
+        expression.data_type = DataType::Double;
+        assert!(expression.validate(&[]).is_err(), "missing CAST operand");
+    }
+
+    #[test]
+    fn to_double_preserves_double_bits_and_nulls_in_both_evaluators() {
+        let column = SemanticColumn::new(42, DataType::Double, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(column), Op::ToDouble]);
+        expression.len = 2;
+        expression.data_type = DataType::Double;
+        expression.validate(&[column]).unwrap();
+        for bits in [
+            0x0000_0000_0000_0000,
+            0x8000_0000_0000_0000,
+            0x0000_0000_0000_0001,
+            0x8000_0000_0000_0001,
+            0x3ff0_0000_0000_0000,
+            0xbff0_0000_0000_0000,
+            0x7fef_ffff_ffff_ffff,
+            0xffef_ffff_ffff_ffff,
+            0x7ff0_0000_0000_0000,
+            0xfff0_0000_0000_0000,
+            0x7ff0_0000_0000_0042,
+            0xfff8_0000_0000_0042,
+        ] {
+            let value = f64::from_bits(bits);
+            let values = [value, value];
+            let validity = [1];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), Some(&validity)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 2];
+            let output = expression
+                .evaluate_batch(&inputs, 0..2, &mut scratch)
+                .unwrap();
+            assert_eq!(output.value(0), Some(bits));
+            assert_eq!(output.value(1), None);
+            for input in [Number::Double(value), Number::Null] {
+                let mut cursor = Evaluation::new(&expression);
+                assert_eq!(cursor.next_column().unwrap(), Some(column));
+                cursor.supply(input).unwrap();
+                assert_eq!(cursor.next_column().unwrap(), None);
+                match (input, cursor.value()) {
+                    (Number::Null, Number::Null) => (),
+                    (Number::Double(_), Number::Double(actual)) => {
+                        assert_eq!(actual.to_bits(), bits)
+                    }
+                    _ => panic!("conversion changed value type or NULL"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sqrt_preserves_bits_nulls_and_reports_negative_domains() {
+        let column = SemanticColumn::new(42, DataType::Double, true);
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(column), Op::Sqrt]);
+        expression.len = 2;
+        expression.data_type = DataType::Double;
+        expression.validate(&[column]).unwrap();
+        // Compare with literal binary64 answers, including sqrt(2) rounded to
+        // its nearest representable value and exact roots of powers of two.
+        for (input, expected) in [
+            (0.0, 0x0000_0000_0000_0000),
+            (-0.0, 0x8000_0000_0000_0000),
+            (4.0, 0x4000_0000_0000_0000),
+            (2.0, 0x3ff6_a09e_667f_3bcd),
+            (f64::from_bits(1), 0x1e60_0000_0000_0000),
+            (f64::MIN_POSITIVE, 0x2000_0000_0000_0000),
+            (f64::MAX, 0x5fef_ffff_ffff_ffff),
+            (f64::INFINITY, 0x7ff0_0000_0000_0000),
+            (f64::from_bits(0xfff8_0000_0000_0042), 0xfff8_0000_0000_0042),
+        ] {
+            let values = [input, -1.0];
+            let valid = [1];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), Some(&valid)).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS * 2];
+            let output = expression
+                .evaluate_batch(&inputs, 0..2, &mut scratch)
+                .unwrap();
+            assert_eq!(output.value(0), Some(expected));
+            assert_eq!(output.value(1), None);
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(input)).unwrap();
+            assert_eq!(cursor.next_column().unwrap(), None);
+            let Number::Double(actual) = cursor.value() else {
+                panic!("SQRT result type");
+            };
+            assert_eq!(actual.to_bits(), expected);
+        }
+        for input in [-1.0, -f64::from_bits(1), f64::NEG_INFINITY] {
+            let values = [input];
+            let inputs = [Some(
+                NumericInput::new(column, NumericValues::Double(&values), None).unwrap(),
+            )];
+            let mut scratch = [0; MAX_OPS];
+            assert!(matches!(
+                expression.evaluate_batch(&inputs, 0..1, &mut scratch),
+                Err(ArithmeticFailure::SqrtDomain)
+            ));
+            let mut cursor = Evaluation::new(&expression);
+            assert_eq!(cursor.next_column().unwrap(), Some(column));
+            cursor.supply(Number::Double(input)).unwrap();
+            assert!(matches!(
+                cursor.next_column(),
+                Err(ArithmeticFailure::SqrtDomain)
+            ));
+        }
+    }
+
+    #[test]
+    fn nearest_integral_rounding_uses_half_away_from_zero() {
+        // Values on either side of 0.5 expose rounding by adding 0.5 first.
+        // Exact ties distinguish the required rule from truncation and ties-to-even.
+        for (input, expected) in [
+            (f64::from_bits(0x3fdf_ffff_ffff_ffff), 0.0_f64),
+            (0.5, 1.0),
+            (f64::from_bits(0x3fe0_0000_0000_0001), 1.0),
+            (-f64::from_bits(0x3fdf_ffff_ffff_ffff), -0.0),
+            (-0.5, -1.0),
+            (-f64::from_bits(0x3fe0_0000_0000_0001), -1.0),
+            (2.5, 3.0),
+            (-2.5, -3.0),
+            (4_503_599_627_370_495.5, 4_503_599_627_370_496.0),
+            (-4_503_599_627_370_495.5, -4_503_599_627_370_496.0),
+            (f64::MAX, f64::MAX),
+            (-f64::MAX, -f64::MAX),
+        ] {
+            assert_eq!(
+                double_unary(Op::Round, input).unwrap().to_bits(),
+                expected.to_bits()
+            );
+        }
+    }
+
+    #[test]
+    fn integral_rounding_promotes_types_and_preserves_exceptional_bits() {
+        let integers = [
+            i64::MIN,
+            -9_007_199_254_740_993,
+            0,
+            9_007_199_254_740_993,
+            9_007_199_254_740_995,
+            i64::MAX,
+            99,
+        ];
+        let integer_expected = [
+            -9_223_372_036_854_775_808.0_f64,
+            -9_007_199_254_740_992.0,
+            0.0,
+            9_007_199_254_740_992.0,
+            9_007_199_254_740_996.0,
+            9_223_372_036_854_775_808.0,
+            0.0,
+        ];
+        let doubles = [
+            -2.75_f64,
+            -0.25,
+            -f64::from_bits(1),
+            -0.0,
+            0.0,
+            f64::from_bits(1),
+            0.25,
+            2.75,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::from_bits(0xfff8_0000_0000_0042),
+            99.0,
+        ];
+        let floor_expected = [
+            -3.0_f64,
+            -1.0,
+            -1.0,
+            -0.0,
+            0.0,
+            0.0,
+            0.0,
+            2.0,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::from_bits(0xfff8_0000_0000_0042),
+            0.0,
+        ];
+        let ceil_expected = [
+            -2.0_f64,
+            -0.0,
+            -0.0,
+            -0.0,
+            0.0,
+            1.0,
+            1.0,
+            3.0,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::from_bits(0xfff8_0000_0000_0042),
+            0.0,
+        ];
+        let round_expected = [
+            -3.0_f64,
+            -0.0,
+            -0.0,
+            -0.0,
+            0.0,
+            0.0,
+            0.0,
+            3.0,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::from_bits(0xfff8_0000_0000_0042),
+            0.0,
+        ];
+        for (op, double_expected) in [
+            (Op::Floor, &floor_expected),
+            (Op::Ceil, &ceil_expected),
+            (Op::Round, &round_expected),
+        ] {
+            for (kind, values, validity, expected) in [
+                (
+                    DataType::Int64,
+                    NumericValues::Int64(&integers),
+                    63_u64,
+                    integer_expected.as_slice(),
+                ),
+                (
+                    DataType::Double,
+                    NumericValues::Double(&doubles),
+                    2047_u64,
+                    double_expected.as_slice(),
+                ),
+            ] {
+                let column = SemanticColumn::new(42, kind, true);
+                let mut expression = Expression::EMPTY;
+                expression.ops[..2].copy_from_slice(&[Op::Column(column), op]);
+                expression.len = 2;
+                expression.data_type = DataType::Double;
+                expression.validate(&[column]).unwrap();
+                assert!(expression.nullable());
+                let validity = [validity];
+                let inputs = [Some(
+                    NumericInput::new(column, values, Some(&validity)).unwrap(),
+                )];
+                let mut scratch = [0; MAX_OPS * 12];
+                for range in [0..expected.len(), 2..expected.len(), 0..expected.len()] {
+                    let output = expression
+                        .evaluate_batch(&inputs, range.clone(), &mut scratch)
+                        .unwrap();
+                    for (lane, row) in range.enumerate() {
+                        let expected = if row + 1 == expected.len() {
+                            None
+                        } else {
+                            Some(expected[row].to_bits())
+                        };
+                        assert_eq!(output.value(lane), expected);
+                    }
+                }
+                for (row, expected) in expected.iter().enumerate() {
+                    let mut cursor = Evaluation::new(&expression);
+                    assert_eq!(cursor.next_column().unwrap(), Some(column));
+                    let null = validity[0] & (1 << row) == 0;
+                    cursor
+                        .supply(if null {
+                            Number::Null
+                        } else if kind == DataType::Int64 {
+                            Number::Integer(integers[row])
+                        } else {
+                            Number::Double(doubles[row])
+                        })
+                        .unwrap();
+                    assert_eq!(cursor.next_column().unwrap(), None);
+                    if null {
+                        assert!(matches!(cursor.value(), Number::Null));
+                    } else {
+                        let Number::Double(actual) = cursor.value() else {
+                            panic!("rounding result type");
+                        };
+                        assert_eq!(actual.to_bits(), expected.to_bits());
+                    }
+                }
+                expression.data_type = DataType::Int64;
+                assert!(expression.validate(&[column]).is_err());
+                expression.data_type = DataType::Double;
+                expression.ops[0] = op;
+                expression.len = 1;
+                assert!(expression.validate(&[]).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn div_preserves_exact_signed_quotients_and_error_boundaries() {
+        let mut expression = Expression::EMPTY;
+        expression.len = 3;
+        expression.data_type = DataType::Int64;
+        for (left, right, expected) in [
+            (5, 3, 1),
+            (-5, 3, -1),
+            (5, -3, -1),
+            (-5, -3, 1),
+            (2, -3, 0),
+            (-2, 3, 0),
+            (9_007_199_254_740_995, 3, 3_002_399_751_580_331),
+            (i64::MIN, 1, i64::MIN),
+            (i64::MIN, 3, -3_074_457_345_618_258_602),
+            (i64::MAX, 3, 3_074_457_345_618_258_602),
+            (i64::MIN, i64::MIN, 1),
+            (i64::MAX, i64::MIN, 0),
+        ] {
+            expression.ops[..3].copy_from_slice(&[
+                Op::Integer(left),
+                Op::Integer(right),
+                Op::IntegerDivide,
+            ]);
+            expression.validate(&[]).unwrap();
+            assert!(
+                matches!(expression.evaluate_constant(), Ok(Number::Integer(value)) if value == expected)
+            );
+            expression.ops[1] = Op::Integer(0);
+            assert!(matches!(
+                expression.evaluate_constant(),
+                Err(ArithmeticFailure::DivideByZero)
+            ));
+        }
+        expression.ops[0] = Op::Integer(i64::MIN);
+        expression.ops[1] = Op::Integer(-1);
+        assert!(matches!(
+            expression.evaluate_constant(),
+            Err(ArithmeticFailure::Divide)
+        ));
+        expression.ops[1] = Op::Double(3.0_f64.to_bits());
+        assert!(matches!(expression.validate(&[]), Err(Error::Corrupt(_))));
+        expression.ops[1] = Op::IntegerDivide;
+        expression.ops[2] = Op::Empty;
+        expression.len = 2;
+        assert!(expression.validate(&[]).is_err());
+    }
+
+    #[test]
+    fn mod_preserves_signed_extremes_and_rejects_invalid_types() {
+        for (left, right, expected) in [
+            (5, 3, 2),
+            (-5, 3, -2),
+            (5, -3, 2),
+            (-5, -3, -2),
+            (i64::MIN, -1, 0),
+            (i64::MIN, 3, -2),
+            (i64::MAX, 3, 1),
+            (i64::MIN, i64::MIN, 0),
+            (i64::MAX, i64::MIN, i64::MAX),
+        ] {
+            let mut expression = Expression::EMPTY;
+            expression.ops[..3].copy_from_slice(&[Op::Integer(left), Op::Integer(right), Op::Mod]);
+            expression.len = 3;
+            expression.data_type = DataType::Int64;
+            expression.validate(&[]).unwrap();
+            assert!(
+                matches!(expression.evaluate_constant(), Ok(Number::Integer(value)) if value == expected)
+            );
+            expression.ops[1] = Op::Integer(0);
+            assert!(matches!(
+                expression.evaluate_constant(),
+                Err(ArithmeticFailure::DivideByZero)
+            ));
+            expression.ops[1] = Op::Double(3.0_f64.to_bits());
+            assert!(matches!(expression.validate(&[]), Err(Error::Corrupt(_))));
+            expression.ops[1] = Op::Mod;
+            expression.ops[2] = Op::Empty;
+            expression.len = 2;
+            assert!(expression.validate(&[]).is_err());
+        }
+    }
+
+    #[test]
+    fn integer_calls_skip_null_zero_divisors_across_words_and_reuse() {
+        let left = SemanticColumn::new(51, DataType::Int64, true);
+        let right = SemanticColumn::new(52, DataType::Int64, false);
+        let values = [-5; 130];
+        let mut divisors = [0; 130];
+        divisors[65] = 3;
+        divisors[129] = -3;
+        let valid = [0, 2, 2];
+        let inputs = [
+            Some(NumericInput::new(left, NumericValues::Int64(&values), Some(&valid)).unwrap()),
+            Some(NumericInput::new(right, NumericValues::Int64(&divisors), None).unwrap()),
+        ];
+        for operation in [Op::Mod, Op::IntegerDivide] {
+            let mut expression = Expression::EMPTY;
+            expression.ops[..3].copy_from_slice(&[Op::Column(left), Op::Column(right), operation]);
+            expression.len = 3;
+            expression.data_type = DataType::Int64;
+            expression.validate(&[left, right]).unwrap();
+            let mut scratch = [0; MAX_OPS * 130];
+            for range in [0..130, 63..130, 64..66, 129..130, 0..130] {
+                let output = expression
+                    .evaluate_batch(&inputs, range.clone(), &mut scratch)
+                    .unwrap();
+                for (lane, row) in range.enumerate() {
+                    assert_eq!(
+                        output.value(lane).map(integer),
+                        if row == 65 || row == 129 {
+                            Some(match operation {
+                                Op::Mod => -2,
+                                Op::IntegerDivide if row == 65 => -1,
+                                Op::IntegerDivide => 1,
+                                _ => unreachable!(),
+                            })
+                        } else {
+                            None
+                        }
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn abs_preserves_nullable_lanes_and_nonfinite_values() {
+        let id = SemanticColumn::new(41, DataType::Int64, true);
+        let mut values = [i64::MIN; 130];
+        values[65] = -7;
+        values[129] = 9;
+        let valid = [0, 2, 2];
+        let inputs = [Some(
+            NumericInput::new(id, NumericValues::Int64(&values), Some(&valid)).unwrap(),
+        )];
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(id), Op::Abs]);
+        expression.len = 2;
+        expression.data_type = DataType::Int64;
+        expression.validate(&[id]).unwrap();
+        let mut scratch = [0; MAX_OPS * 130];
+        for range in [0..130, 63..130, 64..66, 129..130, 0..130] {
+            let output = expression
+                .evaluate_batch(&inputs, range.clone(), &mut scratch)
+                .unwrap();
+            for (lane, row) in range.enumerate() {
+                assert_eq!(
+                    output.value(lane).map(integer),
+                    match row {
+                        65 => Some(7),
+                        129 => Some(9),
+                        _ => None,
+                    }
+                );
+            }
+        }
+        expression.data_type = DataType::Double;
+        assert!(expression.validate(&[id]).is_err());
+        let id = SemanticColumn::new(42, DataType::Double, false);
+        expression.ops[0] = Op::Column(id);
+        expression.validate(&[id]).unwrap();
+        let values = [
+            -0.0,
+            0.0,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            -f64::MAX,
+            -f64::from_bits(1),
+            f64::NAN,
+        ];
+        let inputs = [Some(
+            NumericInput::new(id, NumericValues::Double(&values), None).unwrap(),
+        )];
+        let output = expression
+            .evaluate_batch(&inputs, 0..7, &mut scratch)
+            .unwrap();
+        for (row, expected) in [
+            0.0,
+            0.0,
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::MAX,
+            f64::from_bits(1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(output.value(row), Some(expected.to_bits()));
+        }
+        assert!(f64::from_bits(output.value(6).unwrap()).is_nan());
+        expression.ops[0] = Op::Abs;
+        expression.ops[1] = Op::Empty;
+        expression.len = 1;
+        assert!(expression.validate(&[]).is_err());
+    }
+
+    #[test]
+    fn safe_divide_keeps_validity_across_words_reuse_and_nonfinite_inputs() {
+        let x = SemanticColumn::new(41, DataType::Double, false);
+        let y = SemanticColumn::new(42, DataType::Int64, false);
+        let numerators = [9.0; 130];
+        let mut denominators = [0; 130];
+        denominators[65] = 2;
+        denominators[129] = 2;
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[Op::Column(x), Op::Column(y), Op::SafeDivide]);
+        expression.len = 3;
+        expression.validate(&[x, y]).unwrap();
+        assert!(expression.nullable());
+        let mut scratch = [0; MAX_OPS * 130];
+        for all_present in [false, true] {
+            if all_present {
+                denominators.fill(2);
+            }
+            let inputs = [
+                Some(NumericInput::new(x, NumericValues::Double(&numerators), None).unwrap()),
+                Some(NumericInput::new(y, NumericValues::Int64(&denominators), None).unwrap()),
+            ];
+            let output = expression
+                .evaluate_batch(&inputs, 0..130, &mut scratch)
+                .unwrap();
+            for row in 0..130 {
+                let expected =
+                    (all_present || row == 65 || row == 129).then_some(4.5_f64.to_bits());
+                assert_eq!(output.value(row), expected, "row {row}");
+            }
+        }
+        expression.data_type = DataType::Int64;
+        assert!(expression.validate(&[x, y]).is_err());
+        expression.data_type = DataType::Double;
+        expression.ops[..3].copy_from_slice(&[Op::Column(x), Op::Column(x), Op::SafeDivide]);
+        let nonfinite = [f64::INFINITY, f64::NAN, 0.0, 2.0];
+        let inputs = [Some(
+            NumericInput::new(x, NumericValues::Double(&nonfinite), None).unwrap(),
+        )];
+        let output = expression
+            .evaluate_batch(&inputs, 0..4, &mut scratch)
+            .unwrap();
+        assert!(f64::from_bits(output.value(0).unwrap()).is_nan());
+        assert!(f64::from_bits(output.value(1).unwrap()).is_nan());
+        assert_eq!(output.value(2), None);
+        assert_eq!(output.value(3), Some(1.0_f64.to_bits()));
+        expression.ops[1] = Op::Integer(0);
+        let output = expression
+            .evaluate_batch(&inputs, 0..4, &mut scratch)
+            .unwrap();
+        for row in 0..4 {
+            assert_eq!(output.value(row), None);
+        }
+    }
+
+    #[test]
+    fn safe_divide_constants_preserve_argument_failures_and_nullable_results() {
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[Op::Integer(1), Op::Integer(0), Op::SafeDivide]);
+        expression.len = 3;
+        expression.validate(&[]).unwrap();
+        assert!(matches!(expression.evaluate_constant(), Ok(Number::Null)));
+        expression.ops[..5].copy_from_slice(&[
+            Op::Integer(1),
+            Op::Integer(0),
+            Op::Divide,
+            Op::Integer(0),
+            Op::SafeDivide,
+        ]);
+        expression.len = 5;
+        expression.validate(&[]).unwrap();
+        assert!(matches!(
+            expression.evaluate_constant(),
+            Err(ArithmeticFailure::DivideByZero)
+        ));
+        expression.ops[..3].copy_from_slice(&[Op::Double(1), Op::Integer(2), Op::SafeDivide]);
+        expression.ops[3..].fill(Op::Empty);
+        expression.len = 3;
+        assert!(matches!(
+            expression.evaluate_constant(),
+            Ok(Number::Double(0.0))
+        ));
+        expression.ops[..2].copy_from_slice(&[Op::Integer(1), Op::SafeDivide]);
+        expression.ops[2] = Op::Empty;
+        expression.len = 2;
+        assert!(expression.validate(&[]).is_err());
+    }
+
+    #[test]
+    fn division_coerces_at_the_operation_and_validates_its_result_type() {
+        for (left, right, expected) in [
+            (Op::Integer(3), Op::Integer(2), 1.5),
+            (Op::Integer(3), Op::Double(2.0_f64.to_bits()), 1.5),
+            (Op::Double(3.0_f64.to_bits()), Op::Integer(2), 1.5),
+            (
+                Op::Integer(i64::MIN),
+                Op::Integer(-1),
+                9223372036854775808.0,
+            ),
+        ] {
+            let mut expression = Expression::EMPTY;
+            expression.ops[..3].copy_from_slice(&[left, right, Op::Divide]);
+            expression.len = 3;
+            expression.validate(&[]).unwrap();
+            assert_eq!(expression.stack_depth(), 2);
+            let Number::Double(actual) = expression.evaluate_constant().unwrap() else {
+                panic!("division must return DOUBLE");
+            };
+            assert_eq!(actual, expected);
+            expression.data_type = DataType::Int64;
+            assert!(expression.validate(&[]).is_err());
+        }
+        let mut expression = Expression::EMPTY;
+        expression.ops[..5].copy_from_slice(&[
+            Op::Integer(i64::MAX),
+            Op::Integer(1),
+            Op::Add,
+            Op::Integer(2),
+            Op::Divide,
+        ]);
+        expression.len = 5;
+        expression.validate(&[]).unwrap();
+        assert!(matches!(
+            expression.evaluate_constant(),
+            Err(ArithmeticFailure::Add)
+        ));
+    }
+
+    #[test]
+    fn division_preserves_null_zero_and_nonfinite_boundaries() {
+        for numerator in [0.0, 1.0, f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            for denominator in [0.0, -0.0] {
+                assert!(matches!(
+                    double_binary(Op::Divide, numerator, denominator),
+                    Err(ArithmeticFailure::DivideByZero)
+                ));
+            }
+        }
+        assert!(matches!(
+            double_binary(Op::Divide, f64::MAX, 0.5),
+            Err(ArithmeticFailure::Divide)
+        ));
+        assert!(
+            double_binary(Op::Divide, f64::INFINITY, f64::INFINITY)
+                .unwrap()
+                .is_nan()
+        );
+        assert_eq!(
+            double_binary(Op::Divide, f64::INFINITY, -1.0).unwrap(),
+            f64::NEG_INFINITY
+        );
+        assert_eq!(
+            double_binary(Op::Divide, 1.0, f64::NEG_INFINITY)
+                .unwrap()
+                .to_bits(),
+            (-0.0_f64).to_bits()
+        );
+        assert_eq!(
+            double_binary(Op::Divide, f64::from_bits(1), 2.0).unwrap(),
+            0.0
+        );
+
+        let column = SemanticColumn::new(41, DataType::Int64, true);
+        let values = [99, 3];
+        let inputs = [Some(
+            NumericInput::new(column, NumericValues::Int64(&values), Some(&[2])).unwrap(),
+        )];
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[Op::Column(column), Op::Integer(0), Op::Divide]);
+        expression.len = 3;
+        expression.validate(&[column]).unwrap();
+        let mut scratch = [0; MAX_OPS];
+        assert_eq!(
+            expression
+                .evaluate_batch(&inputs, 0..1, &mut scratch)
+                .unwrap()
+                .value(0),
+            None
+        );
+        assert!(matches!(
+            expression.evaluate_batch(&inputs, 1..2, &mut scratch),
+            Err(ArithmeticFailure::DivideByZero)
+        ));
+        expression.ops[..3].copy_from_slice(&[Op::Integer(0), Op::Column(column), Op::Divide]);
+        assert_eq!(
+            expression
+                .evaluate_batch(&inputs, 0..1, &mut scratch)
+                .unwrap()
+                .value(0),
+            None
+        );
+    }
+
+    #[test]
+    fn semantic_integer_inputs_preserve_exact_arithmetic_and_identity() {
+        let x = SemanticColumn::new(91, DataType::Int64, false);
+        let y = SemanticColumn::new(17, DataType::Int64, false);
+        let values = [
+            i64::MIN,
+            -(1_i64 << 53) - 1,
+            -1,
+            0,
+            1,
+            (1_i64 << 53) + 1,
+            i64::MAX,
+        ];
+        let mut scratch = [0; MAX_OPS];
+        for left in values {
+            for right in values {
+                for op in [Op::Add, Op::Subtract, Op::Multiply] {
+                    let a = [left];
+                    let b = [right];
+                    let inputs = [
+                        Some(NumericInput::new(y, NumericValues::Int64(&b), None).unwrap()),
+                        None,
+                        Some(NumericInput::new(x, NumericValues::Int64(&a), None).unwrap()),
+                    ];
+                    let mut expression = Expression::EMPTY;
+                    expression.ops[..3].copy_from_slice(&[Op::Column(x), Op::Column(y), op]);
+                    expression.len = 3;
+                    expression.data_type = DataType::Int64;
+                    expression.validate(&[y, x]).unwrap();
+                    let expected = match op {
+                        Op::Add => i128::from(left) + i128::from(right),
+                        Op::Subtract => i128::from(left) - i128::from(right),
+                        Op::Multiply => i128::from(left) * i128::from(right),
+                        _ => unreachable!(),
+                    };
+                    let output = expression.evaluate_batch(&inputs, 0..1, &mut scratch);
+                    match i64::try_from(expected) {
+                        Ok(value) => assert_eq!(integer(output.unwrap().value(0).unwrap()), value),
+                        Err(_) => assert!(output.is_err()),
+                    }
+                    // Appending a DOUBLE operation must not change the earlier
+                    // integer operation's result or suppress its overflow.
+                    expression.ops[3..5]
+                        .copy_from_slice(&[Op::Double(0.5_f64.to_bits()), Op::Multiply]);
+                    expression.len = 5;
+                    expression.data_type = DataType::Double;
+                    expression.validate(&[x, y]).unwrap();
+                    let output = expression.evaluate_batch(&inputs, 0..1, &mut scratch);
+                    match i64::try_from(expected) {
+                        Ok(value) => assert_eq!(
+                            output.unwrap().value(0).unwrap(),
+                            ((value as f64) * 0.5).to_bits()
+                        ),
+                        Err(_) => assert!(output.is_err()),
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nullable_batch_inputs_preserve_word_boundaries_and_reused_stack_lanes() {
+        use crate::batch::Batch;
+        use crate::value::Value;
+        let x = SemanticColumn::new(91, DataType::Int64, true);
+        let y = SemanticColumn::new(17, DataType::Int64, true);
+        let mut batch = Batch::new(&[DataType::Int64, DataType::Int64], 100_000).unwrap();
+        for row in 0..MAX_ROWS {
+            batch
+                .set(
+                    row,
+                    0,
+                    if row % 3 == 0 {
+                        Value::Null
+                    } else {
+                        Value::Int64((1_i64 << 53) + row as i64)
+                    },
+                )
+                .unwrap();
+            batch
+                .set(
+                    row,
+                    1,
+                    if row % 5 == 0 {
+                        Value::Null
+                    } else {
+                        Value::Int64(row as i64)
+                    },
+                )
+                .unwrap();
+        }
+        batch.publish_rows(MAX_ROWS);
+        let inputs = [
+            Some(NumericInput::from_batch(&batch, 1, y).unwrap()),
+            Some(NumericInput::from_batch(&batch, 0, x).unwrap()),
+        ];
+        let mut expression = Expression::EMPTY;
+        expression.ops[..5].copy_from_slice(&[
+            Op::Column(x),
+            Op::Column(y),
+            Op::Subtract,
+            Op::Integer(1),
+            Op::Add,
+        ]);
+        expression.len = 5;
+        expression.data_type = DataType::Int64;
+        expression.validate(&[x, y]).unwrap();
+        let mut scratch = [u64::MAX; MAX_OPS * MAX_ROWS];
+        for range in [0..256, 63..129, 64..65, 255..256, 1..2, 0..256] {
+            let output = expression
+                .evaluate_batch(&inputs, range.clone(), &mut scratch)
+                .unwrap();
+            for (lane, row) in range.enumerate() {
+                assert_eq!(
+                    output.value(lane).map(integer),
+                    if row % 3 == 0 || row % 5 == 0 {
+                        None
+                    } else {
+                        Some((1_i64 << 53) + 1)
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn null_arithmetic_ignores_payload_and_preserves_demanded_child_errors() {
+        let id = SemanticColumn::new(11, DataType::Int64, true);
+        let values = [i64::MIN, i64::MAX];
+        let valid = [0];
+        let inputs = [Some(
+            NumericInput::new(id, NumericValues::Int64(&values), Some(&valid)).unwrap(),
+        )];
+        let mut expression = Expression::EMPTY;
+        expression.ops[..2].copy_from_slice(&[Op::Column(id), Op::Negate]);
+        expression.len = 2;
+        expression.data_type = DataType::Int64;
+        expression.validate(&[id]).unwrap();
+        let mut scratch = [0; MAX_OPS * 2];
+        let output = expression
+            .evaluate_batch(&inputs, 0..2, &mut scratch)
+            .unwrap();
+        assert_eq!(output.value(0), None);
+        assert_eq!(output.value(1), None);
+        expression.ops[..5].copy_from_slice(&[
+            Op::Column(id),
+            Op::Integer(i64::MAX),
+            Op::Integer(1),
+            Op::Add,
+            Op::Add,
+        ]);
+        expression.len = 5;
+        expression.validate(&[id]).unwrap();
+        assert!(matches!(
+            expression.evaluate_batch(&inputs, 0..2, &mut scratch),
+            Err(ArithmeticFailure::Add)
+        ));
+        // NULL + 1 skips arithmetic on its hidden MAX payload. This differs
+        // from NULL + (MAX + 1), whose non-NULL right operand must fail above.
+        expression.ops[..3].copy_from_slice(&[Op::Column(id), Op::Integer(1), Op::Add]);
+        expression.ops[3..].fill(Op::Empty);
+        expression.len = 3;
+        expression.validate(&[id]).unwrap();
+        let output = expression
+            .evaluate_batch(&inputs, 0..2, &mut scratch)
+            .unwrap();
+        assert_eq!(output.value(0), None);
+        assert_eq!(output.value(1), None);
+    }
+
+    #[test]
+    fn nullable_double_and_integer_operands_preserve_nonfinite_and_mixed_rules() {
+        let x = SemanticColumn::new(41, DataType::Double, true);
+        let y = SemanticColumn::new(19, DataType::Int64, true);
+        let a = [f64::MAX, f64::NAN, f64::INFINITY, -0.0, 0.5];
+        let b = [2, 1, 2, 1, (1_i64 << 53) + 1];
+        // Hide MAX * 2 behind NULL but keep NaN and infinity valid. The control
+        // below removes this mask and must report the finite multiplication overflow.
+        let valid = [0b11110];
+        let inputs = [
+            Some(NumericInput::new(y, NumericValues::Int64(&b), None).unwrap()),
+            Some(NumericInput::new(x, NumericValues::Double(&a), Some(&valid)).unwrap()),
+        ];
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[Op::Column(x), Op::Column(y), Op::Multiply]);
+        expression.len = 3;
+        expression.validate(&[x, y]).unwrap();
+        let mut scratch = [0; MAX_OPS * 5];
+        let output = expression
+            .evaluate_batch(&inputs, 0..5, &mut scratch)
+            .unwrap();
+        assert_eq!(output.value(0), None);
+        assert!(f64::from_bits(output.value(1).unwrap()).is_nan());
+        assert_eq!(output.value(2), Some(f64::INFINITY.to_bits()));
+        assert_eq!(output.value(3), Some((-0.0_f64).to_bits()));
+        assert_eq!(output.value(4), Some((0.5 * (b[4] as f64)).to_bits()));
+        let inputs = [
+            Some(NumericInput::new(y, NumericValues::Int64(&b), None).unwrap()),
+            Some(NumericInput::new(x, NumericValues::Double(&a), None).unwrap()),
+        ];
+        assert!(matches!(
+            expression.evaluate_batch(&inputs, 0..5, &mut scratch),
+            Err(ArithmeticFailure::Multiply)
+        ));
+    }
+
+    #[test]
+    fn numeric_input_admission_checks_type_extent_and_nullability() {
+        let id = SemanticColumn::new(11, DataType::Int64, false);
+        assert!(NumericInput::new(id, NumericValues::Double(&[1.0]), None).is_err());
+        assert!(NumericInput::new(id, NumericValues::Int64(&[1]), Some(&[])).is_err());
+        assert!(NumericInput::new(id, NumericValues::Int64(&[1]), Some(&[0])).is_err());
+        assert!(NumericInput::new(id, NumericValues::Int64(&[1; MAX_ROWS + 1]), None).is_err());
+        assert!(NumericInput::new(id, NumericValues::Int64(&[1]), Some(&[1])).is_ok());
+    }
+
+    fn binary_result(op: Op, left: f64, right: f64) -> Result<f64, ArithmeticFailure> {
+        let mut expression = Expression::EMPTY;
+        expression.ops[..3].copy_from_slice(&[
+            Op::Column(SourceColumn::QUANTITY.semantic()),
+            Op::Column(SourceColumn::PRICE.semantic()),
+            op,
+        ]);
+        expression.len = 3;
+        expression
+            .validate(&[
+                SourceColumn::QUANTITY.semantic(),
+                SourceColumn::PRICE.semantic(),
+            ])
+            .unwrap();
+        match expression.evaluate(&[left, right, 0.0, 0.0])? {
+            Number::Double(value) => Ok(value),
+            Number::Integer(_) | Number::Null => panic!("nonnull DOUBLE expression"),
+        }
+    }
+
+    #[test]
+    fn checked_double_matches_bit_classification_across_exceptional_operands() {
+        let values = [
+            0,
+            1,
+            0x0010_0000_0000_0000,
+            0x3ff0_0000_0000_0000,
+            0x4000_0000_0000_0000,
+            0x7fef_ffff_ffff_ffff,
+            0x7ff0_0000_0000_0000,
+            0x7ff8_0000_0000_0001,
+            0x7ff0_0000_0000_0001,
+        ];
+        let finite = |value: f64| value.to_bits() & 0x7ff0_0000_0000_0000 != 0x7ff0_0000_0000_0000;
+        for sign_left in [0, 1_u64 << 63] {
+            for sign_right in [0, 1_u64 << 63] {
+                for left in values.map(|bits| f64::from_bits(bits | sign_left)) {
+                    for right in values.map(|bits| f64::from_bits(bits | sign_right)) {
+                        for (expected, actual) in [
+                            (left + right, binary_result(Op::Add, left, right)),
+                            (left - right, binary_result(Op::Subtract, left, right)),
+                            (left * right, binary_result(Op::Multiply, left, right)),
+                        ] {
+                            let overflow = finite(left) && finite(right) && !finite(expected);
+                            if overflow {
+                                assert!(matches!(
+                                    actual,
+                                    Err(ArithmeticFailure::Add
+                                        | ArithmeticFailure::Subtract
+                                        | ArithmeticFailure::Multiply)
+                                ));
+                            } else {
+                                let actual = actual.unwrap();
+                                if expected.is_nan() {
+                                    assert!(actual.is_nan());
+                                } else {
+                                    assert_eq!(actual.to_bits(), expected.to_bits());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn batch_scratch_reuse_preserves_lane_values_and_errors() {
+        let mut expression = Expression::EMPTY;
+        expression.ops[..7].copy_from_slice(&[
+            Op::Column(SourceColumn::PRICE.semantic()),
+            Op::Integer(1),
+            Op::Column(SourceColumn::DISCOUNT.semantic()),
+            Op::Subtract,
+            Op::Multiply,
+            Op::Column(SourceColumn::QUANTITY.semantic()),
+            Op::Add,
+        ]);
+        expression.len = 7;
+        expression
+            .validate(&[
+                SourceColumn::PRICE.semantic(),
+                SourceColumn::DISCOUNT.semantic(),
+                SourceColumn::QUANTITY.semantic(),
+            ])
+            .unwrap();
+        assert_eq!(expression.stack_depth(), 3);
+        let mut scratch = vec![0; expression.stack_depth() * 256];
+        for count in [256, 3, 1, 17, 256] {
+            let inputs: Vec<_> = (0..count)
+                .map(|i| [i as f64, (i + 1) as f64, (i % 17) as f64 / 128.0, 0.0])
+                .collect();
+            let columns: [Vec<f64>; 4] =
+                std::array::from_fn(|column| inputs.iter().map(|row| row[column]).collect());
+            let result = expression
+                .evaluate_doubles(
+                    &std::array::from_fn(|column| columns[column].as_slice()),
+                    count,
+                    &mut scratch,
+                )
+                .unwrap();
+            assert_eq!(result.len(), count);
+            for (actual, input) in result.iter().zip(&inputs) {
+                let actual = f64::from_bits(*actual);
+                let expected = input[1] * (1.0 - input[2]) + input[0];
+                assert_eq!(actual.to_bits(), expected.to_bits());
+            }
+        }
+        let mut inputs = [[0.0; 4]; 256];
+        inputs[255] = [0.0, f64::MAX, -1.0, 0.0];
+        let columns: [Vec<f64>; 4] =
+            std::array::from_fn(|column| inputs.iter().map(|row| row[column]).collect());
+        assert!(matches!(
+            expression.evaluate_doubles(
+                &std::array::from_fn(|column| columns[column].as_slice()),
+                inputs.len(),
+                &mut scratch
+            ),
+            Err(ArithmeticFailure::Multiply)
+        ));
+    }
+
+    #[test]
+    fn integer_batches_match_wide_arithmetic_before_mixed_coercion() {
+        let values = [
+            i64::MIN,
+            i64::MIN + 1,
+            -(1 << 53) - 1,
+            -1,
+            0,
+            1,
+            (1 << 53) + 1,
+            i64::MAX - 1,
+            i64::MAX,
+        ];
+        let mut scratch = [0; MAX_OPS * 17];
+        for left in values {
+            for right in values {
+                for op in [Op::Add, Op::Subtract, Op::Multiply] {
+                    let wide = match op {
+                        Op::Add => i128::from(left) + i128::from(right),
+                        Op::Subtract => i128::from(left) - i128::from(right),
+                        Op::Multiply => i128::from(left) * i128::from(right),
+                        _ => unreachable!(),
+                    };
+                    let expected = i64::try_from(wide);
+                    let mut expression = Expression::EMPTY;
+                    expression.ops[..5].copy_from_slice(&[
+                        Op::Integer(left),
+                        Op::Integer(right),
+                        op,
+                        Op::Double(0.5_f64.to_bits()),
+                        Op::Multiply,
+                    ]);
+                    expression.len = 5;
+                    expression.validate(&[]).unwrap();
+                    for rows in [17, 1, 3] {
+                        let actual = expression.evaluate_doubles(&[&[]; 4], rows, &mut scratch);
+                        match expected {
+                            Ok(expected) => {
+                                let expected = ((expected as f64) * 0.5).to_bits();
+                                assert!(actual.unwrap().iter().all(|bits| *bits == expected));
+                            }
+                            Err(_) => {
+                                assert!(actual.is_err(), "integer overflow precedes coercion")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for value in values {
+            let mut expression = Expression::EMPTY;
+            expression.ops[..2].copy_from_slice(&[Op::Integer(value), Op::Negate]);
+            expression.len = 2;
+            expression.data_type = DataType::Int64;
+            expression.validate(&[]).unwrap();
+            let result = expression.evaluate_doubles(&[&[]; 4], 17, &mut scratch);
+            match i64::try_from(-i128::from(value)) {
+                Ok(expected) => assert!(
+                    result
+                        .unwrap()
+                        .iter()
+                        .all(|bits| integer(*bits) == expected)
+                ),
+                Err(_) => assert!(matches!(result, Err(ArithmeticFailure::Negate))),
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_operand_directions_and_reused_stack_types_preserve_bits() {
+        let inputs = [
+            0.0,
+            -0.0,
+            f64::MIN_POSITIVE,
+            -1.5,
+            f64::MAX,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::from_bits(0x7ff0_0000_0000_0001),
+        ];
+        let columns = [&inputs[..], &[][..], &[][..], &[][..]];
+        let mut scratch = [0; MAX_OPS * 8];
+        for literal in [i64::MIN, -1, 0, 1, (1 << 53) + 1, i64::MAX] {
+            for reversed in [false, true] {
+                for op in [Op::Add, Op::Subtract, Op::Multiply] {
+                    let mut operands = [
+                        Op::Integer(literal),
+                        Op::Column(SourceColumn::QUANTITY.semantic()),
+                    ];
+                    if reversed {
+                        operands.reverse();
+                    }
+                    let mut expression = Expression::EMPTY;
+                    expression.ops[..5].copy_from_slice(&[
+                        operands[0],
+                        operands[1],
+                        op,
+                        Op::Negate,
+                        Op::Negate,
+                    ]);
+                    expression.len = 5;
+                    expression
+                        .validate(&[SourceColumn::QUANTITY.semantic()])
+                        .unwrap();
+                    for row in 0..inputs.len() {
+                        let input = inputs[row];
+                        let (left, right) = if reversed {
+                            (input, literal as f64)
+                        } else {
+                            (literal as f64, input)
+                        };
+                        let expected = match op {
+                            Op::Add => left + right,
+                            Op::Subtract => left - right,
+                            Op::Multiply => left * right,
+                            _ => unreachable!(),
+                        };
+                        let actual = expression.evaluate_doubles(
+                            &[&columns[0][row..row + 1], &[], &[], &[]],
+                            1,
+                            &mut scratch,
+                        );
+                        if left.is_finite() && right.is_finite() && !expected.is_finite() {
+                            assert!(actual.is_err());
+                        } else {
+                            let actual = f64::from_bits(actual.unwrap()[0]);
+                            if expected.is_nan() {
+                                assert!(actual.is_nan());
+                            } else {
+                                assert_eq!(actual.to_bits(), expected.to_bits());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn independent_validation_rejects_invalid_programs() {
+        let visible = [SourceColumn::QUANTITY.semantic()];
+        for operator in [Op::Add, Op::NullIf] {
+            let mut valid = Expression::EMPTY;
+            valid.ops[..3].copy_from_slice(&[
+                Op::Column(SourceColumn::QUANTITY.semantic()),
+                Op::Integer(1),
+                operator,
+            ]);
+            valid.len = 3;
+            valid.validate(&visible).unwrap();
+            for mutation in 0..10 {
+                let mut invalid = valid;
+                match mutation {
+                    0 => invalid.len = 0,
+                    1 => invalid.len = u8::MAX,
+                    2 => invalid.ops[3] = Op::Integer(0),
+                    3 => invalid.ops[0] = Op::Column(SourceColumn::SHIP_DATE.semantic()),
+                    4 => invalid.ops[0] = Op::Column(SourceColumn::TAX.semantic()),
+                    5 => invalid.ops[1] = Op::Double(f64::INFINITY.to_bits()),
+                    6 => invalid.ops[0] = Op::Negate,
+                    7 => invalid.ops[2] = Op::Integer(2),
+                    8 => invalid.data_type = DataType::Int64,
+                    9 => invalid.ops[0] = Op::NullIf,
+                    _ => unreachable!(),
+                }
+                assert!(invalid.validate(&visible).is_err(), "mutation {mutation}");
+            }
+        }
+    }
+
+    #[test]
+    fn scalar_bit_inputs_preserve_payloads_nulls_and_type_checks() {
+        for kind in [DataType::Int64, DataType::Double] {
+            let column = SemanticColumn::new(1, kind, true);
+            let mut expression = Expression::EMPTY;
+            expression.ops[0] = Op::Column(column);
+            expression.len = 1;
+            expression.data_type = kind;
+            expression.validate(&[column]).unwrap();
+            let bits = [
+                0,
+                1_u64 << 63,
+                i64::MAX as u64,
+                f64::INFINITY.to_bits(),
+                0x7ff8_0000_0000_0042,
+                u64::MAX,
+            ];
+            let valid = [0b01_1111];
+            let input = NumericInput::new(
+                column,
+                NumericValues::Bits {
+                    values: &bits,
+                    kind,
+                },
+                Some(&valid),
+            )
+            .unwrap();
+            let mut scratch = [0; 6];
+            let result = expression
+                .evaluate_batch(&[Some(input)], 0..6, &mut scratch)
+                .unwrap();
+            for (row, expected) in bits[..5].iter().enumerate() {
+                assert_eq!(result.value(row), Some(*expected));
+            }
+            assert_eq!(result.value(5), None);
+            let nonnull = SemanticColumn::new(1, kind, false);
+            assert!(
+                NumericInput::new(
+                    nonnull,
+                    NumericValues::Bits {
+                        values: &bits,
+                        kind
+                    },
+                    Some(&valid)
+                )
+                .is_err()
+            );
+        }
+        let date = SemanticColumn::new(1, DataType::Date, false);
+        assert!(
+            NumericInput::new(
+                date,
+                NumericValues::Bits {
+                    values: &[0],
+                    kind: DataType::Date
+                },
+                None
+            )
+            .is_err()
+        );
+    }
+}

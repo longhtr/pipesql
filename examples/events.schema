@@ -1,0 +1,6 @@
+table events
+id int64 required
+dimension_id int64 nullable
+happened date nullable
+amount int64 nullable
+measurement double nullable

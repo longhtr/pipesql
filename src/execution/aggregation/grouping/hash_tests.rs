@@ -1,0 +1,951 @@
+//! Check hash grouping's results, capacity limits and handoff to disk processing.
+//!
+//! Synthetic batches run through direct accumulation, hash grouping and sorted
+//! reduction. Literal key classes check NULL, NaN and signed-zero grouping; the
+//! three paths must agree on values, floating bits and error spans. They share
+//! the accumulator, so independent arithmetic expectations belong to the separate
+//! numerical-vector tests.
+//!
+//! Small group and key limits force fallback. The test then reserves every free
+//! byte and finishes sorting and reduction with the already reserved workspace.
+//! Other cases force collisions at the private lookup boundary, observe actual
+//! allocation capacities, cancel copying while both text buffers are reserved,
+//! and refuse growth one byte short of its budget. Dropping the owners must
+//! restore the resource accounts.
+//!
+//! The source-restart case uses real appended data: replay must retain the old
+//! snapshot despite a later append and reclamation. Failed scans cannot restart.
+//! Scratch-creation cases check abandonment, cancellation and creation failure.
+
+use super::*;
+use crate::effects::Faults;
+use crate::execution::aggregation::grouping::reduction::Reduction;
+use crate::execution::blocking::test_support::{Directory, schema};
+use crate::execution::blocking::{
+    Io, MAX_KEYS, RECORD_HEADER, RowSort, SortPhase, SortRecord, append_value,
+};
+use crate::execution::scan::{Source, declared};
+use crate::execution::*;
+use crate::value::DataType;
+
+fn database(directory: &Directory) -> Database {
+    let database = Database::create_empty(
+        &directory.0.join("db"),
+        crate::Config::new(16_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    database
+        .declare_table(
+            "facts",
+            &[
+                crate::ColumnDeclaration {
+                    name: "n",
+                    data_type: DataType::Int64,
+                    nullable: true,
+                },
+                crate::ColumnDeclaration {
+                    name: "d",
+                    data_type: DataType::Double,
+                    nullable: false,
+                },
+            ],
+            &CancellationToken::new(),
+        )
+        .unwrap();
+    database
+}
+
+fn append(database: &Database, values: &[i64]) {
+    assert!(!values.is_empty() && values.len() <= 2);
+    let cancel = CancellationToken::new();
+    let doubles: Vec<_> = values.iter().map(|value| *value as f64).collect();
+    let valid = [(1 << values.len()) - 1];
+    let mut writer = database
+        .begin_append(
+            "facts",
+            crate::AppendLimits {
+                batches: 1,
+                encoded_bytes: 10_000,
+            },
+            &cancel,
+        )
+        .unwrap();
+    writer
+        .write(
+            &[
+                crate::ColumnInput {
+                    values: crate::ColumnValues::Int64(values),
+                    validity: &valid,
+                },
+                crate::ColumnInput {
+                    values: crate::ColumnValues::Double(&doubles),
+                    validity: &valid,
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    writer.commit(&cancel).unwrap();
+}
+
+fn scan<'a>(running: &'a mut QueryResult<'_, '_>) -> &'a mut declared::Scan {
+    let State::Running(workspace) = &mut running.state else {
+        panic!("live query workspace");
+    };
+    let Source::Declared(owner) = workspace.scan_mut().source_mut() else {
+        panic!("declared-table source");
+    };
+    &mut owner[0]
+}
+
+#[test]
+fn native_restart_keeps_the_pinned_input_and_cannot_revive_failed_work() {
+    let directory = Directory::new();
+    let database = database(&directory);
+    append(&database, &[1, 2]);
+    append(&database, &[3, 4]);
+    let cancel = CancellationToken::new();
+    let query = database.prepare("FROM facts |> SELECT n").unwrap();
+    let mut running = database.execute(&query, &cancel).unwrap();
+    let mut effects = Effects::default();
+    assert!(scan(&mut running).next_unit(&cancel, &mut effects).unwrap());
+    scan(&mut running).load(0, &cancel, &mut effects).unwrap();
+    assert_eq!(scan(&mut running).value(0, 0).unwrap(), Value::Int64(1));
+    append(&database, &[5, 6]);
+    database.reclaim(&cancel).unwrap();
+    let at = effects.count();
+    scan(&mut running).restart_once(&cancel).unwrap();
+    assert_eq!(
+        effects.count(),
+        at,
+        "restart moves cursors without reopening the catalog"
+    );
+    assert!(!scan(&mut running).has_unit());
+    assert_eq!(scan(&mut running).rows(), 0);
+    assert!(scan(&mut running).value(0, 0).is_err());
+    let mut observed = Vec::new();
+    for _ in 0..3 {
+        let scan = scan(&mut running);
+        if !scan.next_unit(&cancel, &mut effects).unwrap() {
+            break;
+        }
+        scan.load(0, &cancel, &mut effects).unwrap();
+        for row in 0..scan.rows() {
+            let Value::Int64(value) = scan.value(0, row).unwrap() else {
+                panic!("typed fixture");
+            };
+            observed.push(value);
+        }
+        scan.finish_unit();
+    }
+    assert_eq!(
+        observed,
+        [1, 2, 3, 4],
+        "replay must exclude the later committed unit"
+    );
+    assert!(matches!(
+        scan(&mut running).restart_once(&cancel),
+        Err(Error::Resource {
+            required: 2,
+            limit: 1,
+            ..
+        })
+    ));
+    let at = effects.count();
+    assert!(scan(&mut running).next_unit(&cancel, &mut effects).is_err());
+    assert_eq!(effects.count(), at);
+    drop(running);
+    let current = database.prepare("FROM facts |> SELECT n").unwrap();
+    let mut running = database.execute(&current, &cancel).unwrap();
+    let mut observed = Vec::new();
+    for _ in 0..100 {
+        match running.step() {
+            QueryStep::Rows(rows) => {
+                for row in 0..rows.len() {
+                    let Some(Value::Int64(value)) = rows.value(row, 0) else {
+                        panic!("typed fixture");
+                    };
+                    observed.push(value);
+                }
+            }
+            QueryStep::Finished => break,
+            QueryStep::Failed(error) => panic!("public query failed: {error:?}"),
+            QueryStep::Progress => {}
+        }
+    }
+    assert_eq!(observed, [1, 2, 3, 4, 5, 6]);
+    drop(running);
+    // Fail once while reading the index and once while opening its unit. Both
+    // failures must disable the scan, regardless of the inner cursor's state.
+    for fail_at in [0, 1] {
+        let mut running = database.execute(&query, &cancel).unwrap();
+        let mut failed = Effects::with_faults(Faults {
+            fail_at: Some(fail_at),
+            ..Faults::default()
+        });
+        assert!(scan(&mut running).next_unit(&cancel, &mut failed).is_err());
+        assert!(scan(&mut running).restart_once(&cancel).is_err());
+        let at = effects.count();
+        assert!(scan(&mut running).next_unit(&cancel, &mut effects).is_err());
+        assert_eq!(effects.count(), at);
+    }
+    let all = database.prepare("FROM facts").unwrap();
+    let mut running = database.execute(&all, &cancel).unwrap();
+    scan(&mut running).next_unit(&cancel, &mut effects).unwrap();
+    scan(&mut running).load(0, &cancel, &mut effects).unwrap();
+    let mut failed = Effects::with_faults(Faults {
+        fail_at: Some(0),
+        ..Faults::default()
+    });
+    assert!(scan(&mut running).load(1, &cancel, &mut failed).is_err());
+    assert!(
+        scan(&mut running).value(0, 0).is_err(),
+        "failure closes access to prior payloads"
+    );
+    assert!(scan(&mut running).restart_once(&cancel).is_err());
+}
+
+#[test]
+fn memory_groups_match_sorted_reduction_without_owning_its_reservation() {
+    let directory = Directory::new();
+    let database = database(&directory);
+    let cancel = CancellationToken::new();
+    let query = database.prepare("FROM facts |> AGGREGATE COUNT(*) AS nrows, SUM(n) AS ns, AVG(n) AS na, SUM(d) AS ds, AVG(d) AS da, SUM(2) AS twos").unwrap();
+    let semantic = query.plan.aggregates.first().unwrap();
+    let mut keys = schema(&[(DataType::Double, true)]);
+    keys.columns[0].input = 2;
+    let nan = f64::from_bits(0x7ff8_0000_0000_0123);
+    let rows = [
+        (Value::Double(-0.0), Some(i64::MAX), f64::MAX),
+        (Value::Double(nan), None, -0.0),
+        (Value::Double(0.0), Some(i64::MAX), f64::MAX),
+        (Value::Null, Some(10), 10.0),
+        (
+            Value::Double(f64::from_bits(0xfff8_0000_0000_0456)),
+            None,
+            -0.0,
+        ),
+        (Value::Double(0.0), Some(-i64::MAX), -f64::MAX),
+        (Value::Null, Some(14), 14.0),
+        (Value::Double(f64::INFINITY), Some(1), nan),
+        (Value::Double(-1.0), Some(i64::MAX), f64::MAX),
+        (Value::Double(-1.0), Some(i64::MAX), f64::MAX),
+        (Value::Double(f64::INFINITY), Some(2), f64::INFINITY),
+    ];
+    let input_charge = database
+        .reserve_memory(crate::batch::MAX_BYTES, "test input batch")
+        .unwrap();
+    let mut input = Batch::new(
+        &[DataType::Int64, DataType::Double, DataType::Double],
+        input_charge.bytes(),
+    )
+    .unwrap();
+    for (row, (key, integer, double)) in rows.iter().copied().enumerate() {
+        input
+            .set(row, 0, integer.map_or(Value::Null, Value::Int64))
+            .unwrap();
+        input.set(row, 1, Value::Double(double)).unwrap();
+        input.set(row, 2, key).unwrap();
+    }
+    input.publish_rows(rows.len());
+    let mut direct = AggregateState::new(
+        &database.memory,
+        semantic,
+        query.plan.aggregate_demand(0),
+        5,
+        query.plan.input_columns(),
+    )
+    .unwrap();
+    let mut positions = [(0, 0); BATCH_ROWS];
+    for (row, (key, _, _)) in rows.iter().enumerate() {
+        let group = class(*key);
+        positions[row] = (group, direct.cells.count_row(group).unwrap());
+    }
+    direct.consume(&input, &positions[..rows.len()]).unwrap();
+    let before = database.reserved_memory_bytes();
+    for capacity in [1, 3, BATCH_ROWS] {
+        for (group_limit, key_limit, expected_limit) in [
+            (5, 45, None),
+            (4, 45, Some(HashLimit::Groups)),
+            (5, 0, Some(HashLimit::KeyBytes)),
+        ] {
+            let mut aggregate = AggregateState::new(
+                &database.memory,
+                semantic,
+                query.plan.aggregate_demand(0),
+                1,
+                query.plan.input_columns(),
+            )
+            .unwrap();
+            let shape = ArgumentShape::from_aggregate(&aggregate);
+            let mut arguments = ArgumentBatch::new(&database, shape, capacity).unwrap();
+            let record_bytes = RECORD_HEADER + keys.max_bytes + 8 * shape.count;
+            let charge = database
+                .reserve_memory(
+                    crate::execution::blocking::buffer_capacity(record_bytes).unwrap() as u64,
+                    "test record",
+                )
+                .unwrap();
+            let mut record = SortRecord::new(record_bytes, charge.bytes()).unwrap();
+            // Reserve the disk workspace before trying hash grouping. The
+            // pending creation owns its path memory but has created no files.
+            let mut sort = RowSort::new(&database, &keys, shape, 2 * record_bytes, 2).unwrap();
+            let mut effects = Effects::default();
+            let creation = crate::storage::scratch::Creation::reserve(&database).unwrap();
+            let fallback_bytes = database.reserved_memory_bytes();
+            let mut memory =
+                MemoryGroups::new(&database, &aggregate, &keys, group_limit, key_limit).unwrap();
+            assert_eq!(
+                database.reserved_memory_bytes(),
+                fallback_bytes + memory.reservation.bytes()
+            );
+            let mut limit = None;
+            'input: for start in (0..rows.len()).step_by(capacity) {
+                let end = (start + capacity).min(rows.len());
+                arguments
+                    .evaluate(&mut aggregate, &input, start..end, &cancel)
+                    .unwrap();
+                memory.begin(&arguments).unwrap();
+                for _ in 0..=end - start {
+                    let cursor = memory.cursor;
+                    match memory.step(&input, &arguments, &keys, &cancel).unwrap() {
+                        HashStep::Progress => {}
+                        HashStep::Complete => break,
+                        HashStep::Fallback(reason) => {
+                            assert_eq!(memory.cursor, cursor, "refused row remains unconsumed");
+                            assert_eq!(memory.input_rows, (start + cursor) as u64);
+                            assert_eq!(
+                                memory.step(&input, &arguments, &keys, &cancel).unwrap(),
+                                HashStep::Fallback(reason)
+                            );
+                            limit = Some(reason);
+                            break 'input;
+                        }
+                    }
+                }
+            }
+            assert_eq!(limit, expected_limit);
+            assert_eq!(
+                aggregate.cells.counts[0], 0,
+                "optional grouping cannot mutate fallback cells"
+            );
+            if limit.is_none() {
+                assert_eq!(memory.len(), 5);
+                memory.begin_order().unwrap();
+                let mut ordered = false;
+                for _ in 0..100 {
+                    if memory.order_step(&keys, &cancel).unwrap() {
+                        ordered = true;
+                        break;
+                    }
+                }
+                assert!(ordered);
+                for index in 0..5 {
+                    let group = memory.ordered_group(index).unwrap();
+                    assert_eq!(class(memory.key_value(group, 0, &keys).unwrap()), index);
+                }
+                for group in 0..memory.len() {
+                    let key = memory.key_value(group, 0, &keys).unwrap();
+                    let logical = class(key);
+                    if logical == 1 {
+                        assert!(
+                            matches!(key, Value::Double(value) if value.to_bits() == nan.to_bits())
+                        );
+                    }
+                    if logical == 3 {
+                        assert!(
+                            matches!(key, Value::Double(value) if value.to_bits() == (-0.0_f64).to_bits())
+                        );
+                    }
+                    memory.load_group(group, &mut aggregate).unwrap();
+                    compare_values(&direct, logical, &aggregate, semantic.entries.len());
+                }
+            }
+            drop(memory);
+            assert_eq!(database.reserved_memory_bytes(), fallback_bytes);
+            // Occupy every free byte: disk sorting and reduction must use their
+            // existing owners, even after another query takes the freed budget.
+            let pressure = database
+                .reserve_memory(
+                    database.config().memory_limit_bytes() - fallback_bytes,
+                    "fallback competition",
+                )
+                .unwrap();
+            let attempted_at = effects.count();
+            assert!(
+                matches!(
+                    crate::storage::scratch::Scratch::new(&database, &cancel, &mut effects),
+                    Err(Error::Resource { .. })
+                ),
+                "fresh admission cannot consume another owner's reserved minimum"
+            );
+            assert_eq!(
+                effects.count(),
+                attempted_at,
+                "missing path admission precedes filesystem effects"
+            );
+            let mut scratch = creation.create(&cancel, &mut effects).unwrap();
+            let path_pressure = database
+                .reserve_memory(
+                    database.config().memory_limit_bytes() - database.reserved_memory_bytes(),
+                    "released creation memory",
+                )
+                .unwrap();
+            for start in (0..rows.len()).step_by(capacity) {
+                let end = (start + capacity).min(rows.len());
+                arguments
+                    .evaluate(&mut aggregate, &input, start..end, &cancel)
+                    .unwrap();
+                for row in 0..end - start {
+                    arguments
+                        .encode_record(&mut record, &keys, &input, row, (start + row) as u64)
+                        .unwrap();
+                    if !sort.push(&record).unwrap() {
+                        for _ in 0..20 {
+                            if sort
+                                .step(&keys, &mut Io::new(&mut scratch, &cancel, &mut effects))
+                                .unwrap()
+                                == SortPhase::Collect
+                            {
+                                break;
+                            }
+                        }
+                        assert!(sort.push(&record).unwrap());
+                    }
+                }
+            }
+            sort.finish().unwrap();
+            let mut arena_pressure = None;
+            for _ in 0..1000 {
+                let phase = sort
+                    .step(&keys, &mut Io::new(&mut scratch, &cancel, &mut effects))
+                    .unwrap();
+                if phase == SortPhase::Merge && arena_pressure.is_none() {
+                    arena_pressure = Some(
+                        database
+                            .reserve_memory(
+                                database.config().memory_limit_bytes()
+                                    - database.reserved_memory_bytes(),
+                                "released run memory",
+                            )
+                            .unwrap(),
+                    );
+                }
+                if phase == SortPhase::Done {
+                    break;
+                }
+            }
+            let mut reduction = Reduction::Start;
+            let mut groups = 0;
+            for _ in 0..100 {
+                match reduction
+                    .step(
+                        &mut sort,
+                        &mut arguments,
+                        &mut aggregate,
+                        &keys,
+                        &mut Io::new(&mut scratch, &cancel, &mut effects),
+                    )
+                    .unwrap()
+                {
+                    Reduction::Group => {
+                        let key = reduction.value(&sort, &aggregate, &keys, 0).unwrap();
+                        assert_eq!(class(key), groups);
+                        compare_values(&direct, groups, &aggregate, semantic.entries.len());
+                        groups += 1;
+                    }
+                    Reduction::Done => break,
+                    _ => {}
+                }
+            }
+            assert_eq!(reduction, Reduction::Done);
+            assert_eq!(groups, 5);
+            drop(arena_pressure);
+            drop(path_pressure);
+            drop(pressure);
+            drop(scratch);
+            drop(sort);
+            drop(record);
+            drop(charge);
+            drop(arguments);
+            drop(aggregate);
+            assert_eq!(database.reserved_memory_bytes(), before);
+            assert_eq!(database.reserved_temp_bytes(), 0);
+        }
+    }
+}
+
+fn class(value: Value<'_>) -> usize {
+    match value {
+        Value::Null => 0,
+        Value::Double(value) if value.is_nan() => 1,
+        Value::Double(-1.0) => 2,
+        Value::Double(0.0) => 3,
+        Value::Double(value) if value == f64::INFINITY => 4,
+        _ => panic!("fixture key class"),
+    }
+}
+
+// Compare paths, including exact floating bits and demanded error spans. Both
+// sides use AggregateState::value, so this does not validate that arithmetic
+// independently; it detects differences introduced by grouping and replay.
+fn compare_values(
+    direct: &AggregateState<'_>,
+    group: usize,
+    actual: &AggregateState<'_>,
+    entries: usize,
+) {
+    for entry in 0..entries {
+        match (direct.value(group, entry), actual.value(0, entry)) {
+            (Ok(Value::Double(left)), Ok(Value::Double(right))) => {
+                assert_eq!(left.to_bits(), right.to_bits())
+            }
+            (Ok(left), Ok(right)) => assert_eq!(left, right),
+            (
+                Err(Error::ArithmeticOverflow {
+                    operation: left,
+                    span: left_span,
+                }),
+                Err(Error::ArithmeticOverflow {
+                    operation: right,
+                    span: right_span,
+                }),
+            ) => {
+                assert_eq!(left, right);
+                assert_eq!(left_span, right_span);
+            }
+            mismatch => panic!("hash/sorted aggregate mismatch: {mismatch:?}"),
+        }
+    }
+}
+
+#[test]
+fn lookup_limits_bound_collisions_and_wide_key_comparisons() {
+    let directory = Directory::new();
+    let database = database(&directory);
+    let query = database
+        .prepare("FROM facts |> AGGREGATE COUNT(*) AS nrows")
+        .unwrap();
+    let aggregate = AggregateState::new(
+        &database.memory,
+        query.plan.aggregates.first().unwrap(),
+        query.plan.aggregate_demand(0),
+        1,
+        query.plan.input_columns(),
+    )
+    .unwrap();
+    let keys = schema(&[(DataType::Int64, false)]);
+    let mut groups = MemoryGroups::new(&database, &aggregate, &keys, 128, 128 * 9).unwrap();
+    for value in 0..MAX_HASH_PROBES {
+        groups.key.clear();
+        append_value(
+            &mut groups.key,
+            Value::Int64(value as i64),
+            DataType::Int64,
+            false,
+        )
+        .unwrap();
+        // Supply identical hashes directly to force collisions. Ordinary step()
+        // computes each hash from its key, so this tests lookup's work limit
+        // without depending on collisions in the production hash function.
+        assert_eq!(groups.lookup(&keys, 0).unwrap(), Ok(value));
+    }
+    groups.key.clear();
+    append_value(
+        &mut groups.key,
+        Value::Int64(MAX_HASH_PROBES as i64),
+        DataType::Int64,
+        false,
+    )
+    .unwrap();
+    assert_eq!(groups.lookup(&keys, 0).unwrap(), Err(HashLimit::ProbeWork));
+    assert_eq!(groups.len(), MAX_HASH_PROBES);
+    let keys = schema(&[(DataType::String, false); MAX_KEYS]);
+    let mut groups = MemoryGroups::new(&database, &aggregate, &keys, 4, 3 * MAX_KEY_BYTES).unwrap();
+    for (index, byte) in ['a', 'b', 'c'].iter().copied().enumerate() {
+        let text: String = std::iter::repeat_n(byte, crate::batch::MAX_TEXT_BYTES).collect();
+        groups.key.clear();
+        for _ in 0..MAX_KEYS {
+            append_value(
+                &mut groups.key,
+                Value::String(StringValue::new(&text)),
+                DataType::String,
+                false,
+            )
+            .unwrap();
+        }
+        assert_eq!(groups.key.len(), MAX_KEY_BYTES);
+        let expected = if index < 2 {
+            Ok(index)
+        } else {
+            Err(HashLimit::ProbeWork)
+        };
+        assert_eq!(groups.lookup(&keys, 0).unwrap(), expected);
+    }
+    assert_eq!(
+        groups.len(),
+        2,
+        "byte-work refusal precedes a third insertion"
+    );
+}
+
+#[test]
+fn hash_admission_and_cancellation_preserve_the_base_accumulator() {
+    let directory = Directory::new();
+    let database = database(&directory);
+    let query = database
+        .prepare("FROM facts |> AGGREGATE COUNT(*) AS nrows")
+        .unwrap();
+    let mut aggregate = AggregateState::new(
+        &database.memory,
+        query.plan.aggregates.first().unwrap(),
+        query.plan.aggregate_demand(0),
+        1,
+        query.plan.input_columns(),
+    )
+    .unwrap();
+    let shape = ArgumentShape::from_aggregate(&aggregate);
+    let keys = schema(&[(DataType::Int64, false)]);
+    let groups = MemoryGroups::new(&database, &aggregate, &keys, 3, 27).unwrap();
+    let required = groups.reservation.bytes();
+    drop(groups);
+    let before = database.reserved_memory_bytes();
+    for extra in [0, 1] {
+        let pressure = database
+            .reserve_memory(
+                database.config().memory_limit_bytes() - before - required + extra,
+                "hash admission boundary",
+            )
+            .unwrap();
+        let admitted = MemoryGroups::new(&database, &aggregate, &keys, 3, 27);
+        if extra == 0 {
+            drop(admitted.unwrap());
+        } else {
+            assert!(matches!(admitted, Err(Error::Resource { .. })));
+        }
+        drop(pressure);
+        assert_eq!(database.reserved_memory_bytes(), before);
+        assert_eq!(aggregate.cells.counts[0], 0);
+    }
+    let charge = database
+        .reserve_memory(crate::batch::MAX_BYTES, "test input")
+        .unwrap();
+    let mut input = Batch::new(&[DataType::Int64], charge.bytes()).unwrap();
+    input.set(0, 0, Value::Int64(7)).unwrap();
+    input.publish_rows(1);
+    let mut arguments = ArgumentBatch::new(&database, shape, 1).unwrap();
+    let cancel = CancellationToken::new();
+    arguments
+        .evaluate(&mut aggregate, &input, 0..1, &cancel)
+        .unwrap();
+    let mut groups = MemoryGroups::new(&database, &aggregate, &keys, 3, 27).unwrap();
+    groups.begin(&arguments).unwrap();
+    cancel.cancel();
+    assert!(matches!(
+        groups.step(&input, &arguments, &keys, &cancel),
+        Err(Error::Cancelled)
+    ));
+    assert_eq!(groups.phase, Phase::Failed);
+    assert_eq!(groups.len(), 0);
+    assert!(
+        groups
+            .step(&input, &arguments, &keys, &CancellationToken::new())
+            .is_err()
+    );
+    assert_eq!(aggregate.cells.counts[0], 0);
+}
+
+#[test]
+fn reserved_creation_releases_its_memory_on_abandonment_and_failure() {
+    let directory = Directory::new();
+    let database = database(&directory);
+    let before = database.reserved_memory_bytes();
+    let creation = crate::storage::scratch::Creation::reserve(&database).unwrap();
+    assert_eq!(
+        database.reserved_memory_bytes(),
+        before + (2 * crate::path::MAX_PATH_BYTES) as u64
+    );
+    // Reserving path memory must not take the scratch-construction lock.
+    drop(
+        crate::storage::scratch::Scratch::new(
+            &database,
+            &CancellationToken::new(),
+            &mut Effects::default(),
+        )
+        .unwrap(),
+    );
+    drop(creation);
+    assert_eq!(database.reserved_memory_bytes(), before);
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let creation = crate::storage::scratch::Creation::reserve(&database).unwrap();
+    let mut effects = Effects::default();
+    assert!(matches!(
+        creation.create(&cancel, &mut effects),
+        Err(Error::Cancelled)
+    ));
+    assert_eq!(effects.count(), 0);
+    assert_eq!(database.reserved_memory_bytes(), before);
+    let creation = crate::storage::scratch::Creation::reserve(&database).unwrap();
+    let mut effects = Effects::with_faults(Faults {
+        fail_at: Some(0),
+        ..Faults::default()
+    });
+    assert!(matches!(
+        creation.create(&CancellationToken::new(), &mut effects),
+        Err(Error::Io { .. })
+    ));
+    assert_eq!(database.reserved_memory_bytes(), before);
+    assert_eq!(database.reserved_temp_bytes(), 0);
+}
+
+#[test]
+fn compact_text_growth_preserves_values_and_releases_both_buffers_on_cancellation() {
+    let directory = Directory::new();
+    let database = Database::create_empty(
+        &directory.0.join("text"),
+        crate::Config::new(16_000_000, 4_000_000).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    database
+        .declare_table(
+            "words",
+            &[
+                crate::ColumnDeclaration {
+                    name: "k",
+                    data_type: DataType::Int64,
+                    nullable: false,
+                },
+                crate::ColumnDeclaration {
+                    name: "word",
+                    data_type: DataType::String,
+                    nullable: true,
+                },
+            ],
+            &cancel,
+        )
+        .unwrap();
+    let query = database
+        .prepare(
+            "FROM words |> AGGREGATE MIN(word) AS lo, MAX(word) AS hi, COUNT(*) AS n GROUP BY k",
+        )
+        .unwrap();
+    let mut aggregate = AggregateState::new(
+        &database.memory,
+        &query.plan.aggregates[0],
+        query.plan.aggregate_demand(0),
+        1,
+        query.plan.input_columns(),
+    )
+    .unwrap();
+    let keys = schema(&[(DataType::Int64, false)]);
+    let input_charge = database
+        .reserve_memory(crate::batch::MAX_BYTES, "text growth input")
+        .unwrap();
+    let mut input = Batch::new_with_text(
+        &[DataType::Int64, DataType::String],
+        &[None, Some(65_536)],
+        input_charge.bytes(),
+    )
+    .unwrap();
+    let mut arguments =
+        ArgumentBatch::new(&database, ArgumentShape::from_aggregate(&aggregate), 1).unwrap();
+    let medium = "m".repeat(32_768);
+    let wide = "z".repeat(65_536);
+    let full_medium = "m".repeat(65_536);
+    let before = database.reserved_memory_bytes();
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Scenario {
+        Complete,
+        ExactGrowth,
+        CancelGrowth,
+        RefuseGrowth,
+    }
+    for scenario in [
+        Scenario::Complete,
+        Scenario::ExactGrowth,
+        Scenario::CancelGrowth,
+        Scenario::RefuseGrowth,
+    ] {
+        let mut groups = MemoryGroups::new(&database, &aggregate, &keys, 4, 36).unwrap();
+        let mut pressure = None;
+        let first = if scenario == Scenario::CancelGrowth {
+            &full_medium
+        } else {
+            &medium
+        };
+        for (index, value) in [first.as_str(), wide.as_str(), "a"].into_iter().enumerate() {
+            input.clear();
+            input
+                .set(
+                    0,
+                    0,
+                    Value::Int64(i64::from(scenario == Scenario::CancelGrowth && index == 1)),
+                )
+                .unwrap();
+            input
+                .set(0, 1, Value::String(StringValue::new(value)))
+                .unwrap();
+            input.publish_rows(1);
+            arguments
+                .evaluate(&mut aggregate, &input, 0..1, &cancel)
+                .unwrap();
+            groups.begin(&arguments).unwrap();
+            if matches!(scenario, Scenario::ExactGrowth | Scenario::RefuseGrowth) && index == 1 {
+                // The old buffer contains two 32-KiB extrema. Admission allows
+                // both to need new 64-KiB regions, even though only MAX changes.
+                // Round that 192-KiB bound to a 256-KiB replacement and keep the
+                // old buffer reserved until copying finishes.
+                let available = 262_144 - u64::from(scenario == Scenario::RefuseGrowth);
+                pressure = Some(
+                    database
+                        .reserve_memory(
+                            database.config().memory_limit_bytes()
+                                - database.reserved_memory_bytes()
+                                - available,
+                            "competing text growth",
+                        )
+                        .unwrap(),
+                );
+            }
+            let mut complete = false;
+            for _ in 0..20 {
+                if scenario == Scenario::CancelGrowth
+                    && index == 1
+                    && groups.phase == Phase::GrowText
+                {
+                    assert_eq!(
+                        groups.step(&input, &arguments, &keys, &cancel).unwrap(),
+                        HashStep::Progress
+                    );
+                    assert_eq!(
+                        groups.phase,
+                        Phase::GrowText,
+                        "one step cannot copy the entire old arena"
+                    );
+                    let growth = groups.text_growth.as_ref().unwrap();
+                    assert_eq!(growth.bytes.len(), 65_536);
+                    assert!(groups.cells.text.capacity() > 0);
+                    assert!(growth.bytes.capacity() > groups.cells.text.capacity());
+                    assert_eq!(
+                        database.reserved_memory_bytes() - before,
+                        groups.reservation.bytes()
+                            + groups.text_reservation.as_ref().unwrap().bytes()
+                            + growth.reservation.bytes()
+                    );
+                    assert_eq!(
+                        database.reserved_memory_bytes() - before,
+                        groups.memory_bytes()
+                    );
+                    let stopped = CancellationToken::new();
+                    stopped.cancel();
+                    assert!(matches!(
+                        groups.step(&input, &arguments, &keys, &stopped),
+                        Err(Error::Cancelled)
+                    ));
+                    assert_eq!(groups.phase, Phase::Failed);
+                    break;
+                }
+                let step = groups.step(&input, &arguments, &keys, &cancel).unwrap();
+                assert_eq!(
+                    database.reserved_memory_bytes() - before,
+                    groups.memory_bytes() + pressure.as_ref().map_or(0, Reservation::bytes),
+                    "reported ownership includes both text buffers during growth"
+                );
+                match step {
+                    HashStep::Progress => {}
+                    HashStep::Complete => {
+                        complete = true;
+                        break;
+                    }
+                    HashStep::Fallback(reason) => {
+                        assert_eq!(scenario, Scenario::RefuseGrowth);
+                        assert_eq!(index, 1);
+                        assert_eq!(reason, HashLimit::TextBytes);
+                        break;
+                    }
+                }
+            }
+            if index == 1 && matches!(scenario, Scenario::CancelGrowth | Scenario::RefuseGrowth) {
+                break;
+            }
+            assert!(
+                complete,
+                "the captured row must finish within the growth bound"
+            );
+        }
+        if matches!(scenario, Scenario::Complete | Scenario::ExactGrowth) {
+            groups.load_group(0, &mut aggregate).unwrap();
+            assert_eq!(
+                aggregate.value(0, 0).unwrap(),
+                Value::String(StringValue::new("a"))
+            );
+            assert_eq!(
+                aggregate.value(0, 1).unwrap(),
+                Value::String(StringValue::new(&wide))
+            );
+            assert_eq!(aggregate.value(0, 2).unwrap(), Value::Int64(3));
+            aggregate.cells.clear_group(0);
+        } else {
+            assert_eq!(aggregate.cells.counts[0], 0, "fallback remains untouched");
+        }
+        drop(groups);
+        drop(pressure);
+        assert_eq!(database.reserved_memory_bytes(), before);
+        assert_eq!(database.reserved_temp_bytes(), 0);
+    }
+}
+
+#[test]
+fn hash_state_padding_is_allocated_without_extending_logical_lanes() {
+    let directory = Directory::new();
+    let database = database(&directory);
+    let query = database
+        .prepare("FROM facts |> AGGREGATE SUM(n) AS a, SUM(n+1) AS b, SUM(n+2) AS c")
+        .unwrap();
+    let aggregate = AggregateState::new(
+        &database.memory,
+        query.plan.aggregates.first().unwrap(),
+        query.plan.aggregate_demand(0),
+        1,
+        query.plan.input_columns(),
+    )
+    .unwrap();
+    let keys = schema(&[(DataType::Double, true)]);
+    let before = database.reserved_memory_bytes();
+    let groups = MemoryGroups::new(&database, &aggregate, &keys, 1_024, 65_536).unwrap();
+    assert_eq!(groups.cells.integers.len(), 3_072);
+    assert_eq!(groups.cells.integers.capacity(), 4_096);
+    assert!(groups.cells.integers.iter().all(|value| *value == 0));
+    // Read capacities from the live vectors rather than the admission formula.
+    // Charging for padding without allocating it must fail this comparison.
+    fn bytes<T>(values: &Vec<T>) -> usize {
+        values.capacity() * size_of::<T>()
+    }
+    let allocated = bytes(&groups.cells.values)
+        + bytes(&groups.cells.integers)
+        + bytes(&groups.cells.nonnull_counts)
+        + bytes(&groups.cells.counts)
+        + bytes(&groups.cells.flags)
+        + bytes(&groups.cells.extrema)
+        + bytes(&groups.cells.text_spans)
+        + bytes(&groups.key)
+        + bytes(&groups.arena)
+        + bytes(&groups.entries)
+        + bytes(&groups.buckets)
+        + bytes(&groups.positions);
+    assert_eq!(
+        groups.memory_bytes(),
+        (size_of::<MemoryGroups<'_>>() + allocated) as u64
+    );
+    assert_eq!(
+        database.reserved_memory_bytes(),
+        before + groups.memory_bytes()
+    );
+    drop(groups);
+    assert_eq!(database.reserved_memory_bytes(), before);
+    drop(aggregate);
+    drop(query);
+    database.close().unwrap();
+}
