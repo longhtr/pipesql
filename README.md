@@ -88,3 +88,7 @@ The development guide tracks [remaining work](DEVELOPMENT.md#remaining-work).
 The Rust API reference lives beside the public types and methods and can be built with
 `cargo dev test documentation`. Third-party sources and retained test inputs are
 attributed in [THIRD_PARTY.md](THIRD_PARTY.md).
+
+## License
+
+PipeSQL is released into the public domain under the [Unlicense](LICENSE).
