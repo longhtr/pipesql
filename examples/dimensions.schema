@@ -1,0 +1,3 @@
+table dimensions
+id int64 required
+label string required

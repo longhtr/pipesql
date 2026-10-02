@@ -1,0 +1,2083 @@
+//! Recognize SQL structure without reading a database or resolving column names.
+//!
+//! `parse_query` turns lexer tokens into stages and expression programs. Names
+//! and literals remain source spans: byte ranges that the binder will read from
+//! the original SQL. Arithmetic is stored in postfix order, with operands before
+//! their operator: `qty + 1` becomes `qty`, `1`, `Add`.
+//!
+//! One query owns fixed arrays for its stages and arguments. Expressions occupy
+//! slices of a shared operation array. Nested queries and scalar expressions use
+//! explicit stacks, so user nesting cannot grow the Rust call stack. Exceeding a
+//! syntax limit returns an error instead of allocating larger parser storage.
+//!
+//! The result is normalized syntax, not an executable plan. UNION DISTINCT,
+//! for example, becomes UNION ALL followed by DISTINCT. The `boolean` child turns
+//! WHERE logic into forward branches. These expanded stages count toward the
+//! same query limit, and parsing succeeds only after consuming the entire input.
+
+use crate::query::scalar::MAX_OPS;
+use crate::query::string_length::Unit as StringLengthUnit;
+
+mod boolean;
+mod conditional;
+mod window;
+use super::lexer::{Kind, Tokens, ZERO_SPAN, lex};
+use super::{
+    AggregateKind, Comparison, Direction, Error, FilterControl, JoinKind, MAX_AGGREGATE_COLUMNS,
+    MAX_COLUMNS, MAX_ORDER_ITEMS, MAX_PROJECTIONS, MAX_STAGES, MAX_TOKENS, NullPlacement,
+    SourceSpan, bind_error, parse, span, text,
+};
+use conditional::CaseStep;
+
+#[derive(Clone, Copy)]
+pub(super) enum ParsedStage {
+    Empty,
+    Distinct(SourceSpan),
+    Limit {
+        count: ParsedRange,
+        offset: Option<ParsedRange>,
+        span: SourceSpan,
+    },
+    Source(u8),
+    Alias(SourceSpan),
+    Derived(SourceSpan),
+    UnionAll(SourceSpan),
+    ExceptDistinct(SourceSpan),
+    ExceptAll(SourceSpan),
+    IntersectDistinct(SourceSpan),
+    IntersectAll(SourceSpan),
+    Join {
+        kind: JoinKind,
+        left: SourceSpan,
+        right: SourceSpan,
+    },
+    Aggregate(ParsedAggregateRange),
+    Order {
+        start: u8,
+        len: u8,
+    },
+    Select {
+        start: u8,
+        len: u8,
+    },
+    Drop {
+        start: u8,
+        len: u8,
+        span: SourceSpan,
+    },
+    Set {
+        start: u8,
+        len: u8,
+    },
+    Rename {
+        start: u8,
+        len: u8,
+    },
+    Extend {
+        start: u8,
+        len: u8,
+        span: SourceSpan,
+    },
+    Where {
+        column: SourceSpan,
+        comparison: Comparison,
+        literal: ParsedLiteral,
+    },
+    WhereNull {
+        column: SourceSpan,
+        negated: bool,
+    },
+}
+const MAX_DATE_SHIFTS: usize = 8;
+
+#[derive(Clone, Copy)]
+pub(super) struct ParsedDateShift {
+    pub(super) subtract: bool,
+    pub(super) negative: bool,
+    pub(super) amount: SourceSpan,
+    pub(super) part: SourceSpan,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ParsedLiteral {
+    Null,
+    String(SourceSpan),
+    Numeric(ParsedRange),
+    Date {
+        span: SourceSpan,
+        shifts: [ParsedDateShift; MAX_DATE_SHIFTS],
+        count: u8,
+    },
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ParsedOp {
+    Empty,
+    Column(SourceSpan),
+    String(SourceSpan),
+    Date(SourceSpan),
+    WindowCount,
+    WindowSum(SourceSpan),
+    // The following Column supplies the key span. Combining the span with both
+    // policies would enlarge every slot in the shared operation array.
+    WindowOrder {
+        direction: Direction,
+        nulls: NullPlacement,
+    },
+    StringLength(StringLengthUnit),
+    DateYear,
+    // Store the interval and its unit in two operations. A combined variant
+    // would enlarge every slot in the shared operation array.
+    DateInterval {
+        amount: SourceSpan,
+        negative: bool,
+        subtract: bool,
+    },
+    DatePart(SourceSpan),
+    Number(SourceSpan),
+    NegativeNumber(SourceSpan),
+    Null,
+    Case(Comparison),
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    SafeDivide,
+    Power,
+    Coalesce,
+    NullIf,
+    Mod,
+    IntegerDivide,
+    Negate,
+    Abs,
+    Sign,
+    ToDouble,
+    Floor,
+    Ceil,
+    Round,
+    Sqrt,
+    Ln,
+    Log10,
+    Exp,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct ParsedExpression {
+    pub(super) span: SourceSpan,
+    pub(super) ops: [ParsedOp; MAX_OPS],
+    pub(super) len: u8,
+}
+
+impl ParsedExpression {
+    const EMPTY: Self = Self {
+        ops: [ParsedOp::Empty; MAX_OPS],
+        span: ZERO_SPAN,
+        len: 0,
+    };
+
+    fn push(&mut self, op: ParsedOp, at: SourceSpan) -> Result<(), Error> {
+        if usize::from(self.len) == MAX_OPS {
+            return Err(Error::Parse {
+                message: "scalar operation limit exceeded",
+                span: at,
+            });
+        }
+        self.ops[usize::from(self.len)] = op;
+        self.len += 1;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+enum BinaryCall {
+    SafeDivide,
+    Power,
+    Coalesce,
+    NullIf,
+    Mod,
+    IntegerDivide,
+}
+
+impl BinaryCall {
+    fn parsed(self) -> ParsedOp {
+        match self {
+            Self::SafeDivide => ParsedOp::SafeDivide,
+            Self::Power => ParsedOp::Power,
+            Self::Coalesce => ParsedOp::Coalesce,
+            Self::NullIf => ParsedOp::NullIf,
+            Self::Mod => ParsedOp::Mod,
+            Self::IntegerDivide => ParsedOp::IntegerDivide,
+        }
+    }
+}
+
+// Operators wait here until their operands are complete. Parenthesis and call
+// markers stop precedence handling from reaching into an enclosing expression.
+#[derive(Clone, Copy)]
+enum PendingOp {
+    Paren,
+    CaseLeft,
+    CaseRight(Comparison),
+    CaseResult(Comparison),
+    CaseElse(Comparison),
+    CaseTail(Comparison),
+    Cast,
+    // Call boundaries keep argument commas inside this frame. Closing the
+    // second argument emits one binary instruction without recursive parsing.
+    FirstArgument(BinaryCall),
+    SecondArgument(BinaryCall),
+    Abs,
+    Sign,
+    Floor,
+    Ceil,
+    Round,
+    Sqrt,
+    Ln,
+    Log10,
+    Exp,
+    Unary,
+    Binary(Kind),
+}
+
+impl PendingOp {
+    fn precedence(self) -> u8 {
+        match self {
+            Self::Paren
+            | Self::CaseLeft
+            | Self::CaseRight(_)
+            | Self::CaseResult(_)
+            | Self::CaseElse(_)
+            | Self::CaseTail(_)
+            | Self::Cast
+            | Self::FirstArgument(_)
+            | Self::SecondArgument(_)
+            | Self::Abs
+            | Self::Sign
+            | Self::Floor
+            | Self::Ceil
+            | Self::Round
+            | Self::Sqrt
+            | Self::Log10
+            | Self::Ln
+            | Self::Exp => 0,
+            Self::Binary(Kind::Star | Kind::Slash) => 2,
+            Self::Binary(_) => 1,
+            Self::Unary => 3,
+        }
+    }
+
+    fn parsed(self) -> ParsedOp {
+        match self {
+            Self::Unary => ParsedOp::Negate,
+            Self::Binary(Kind::Plus) => ParsedOp::Add,
+            Self::Binary(Kind::Minus) => ParsedOp::Subtract,
+            Self::Binary(Kind::Star) => ParsedOp::Multiply,
+            Self::Binary(Kind::Slash) => ParsedOp::Divide,
+            _ => unreachable!("pending scalar operator"),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct ParsedAggregateEntry {
+    pub(super) kind: AggregateKind,
+    pub(super) argument: Option<ParsedRange>,
+    pub(super) alias: SourceSpan,
+    pub(super) span: SourceSpan,
+}
+
+impl ParsedAggregateEntry {
+    const EMPTY: Self = Self {
+        kind: AggregateKind::Count,
+        argument: None,
+        alias: ZERO_SPAN,
+        span: ZERO_SPAN,
+    };
+}
+
+#[derive(Clone, Copy)]
+struct ParsedAggregate {
+    entries: [ParsedAggregateEntry; MAX_AGGREGATE_COLUMNS],
+    count: u8,
+    groups: [SourceSpan; MAX_AGGREGATE_COLUMNS - 1],
+    group_count: u8,
+    ordered: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct ParsedAggregateRange {
+    pub(super) entry_start: u8,
+    pub(super) count: u8,
+    pub(super) group_start: u8,
+    pub(super) group_count: u8,
+    pub(super) ordered: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct ParsedSource {
+    pub(super) table: SourceSpan,
+    pub(super) alias: SourceSpan,
+}
+
+impl ParsedSource {
+    const EMPTY: Self = Self {
+        table: ZERO_SPAN,
+        alias: ZERO_SPAN,
+    };
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct ParsedOrder {
+    pub(super) reference: SourceSpan,
+    pub(super) ordinal: bool,
+    pub(super) direction: Direction,
+    pub(super) nulls: NullPlacement,
+}
+
+impl ParsedOrder {
+    const EMPTY: Self = Self {
+        reference: ZERO_SPAN,
+        ordinal: false,
+        direction: Direction::Ascending,
+        nulls: NullPlacement::First,
+    };
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct ParsedRange {
+    pub(super) span: SourceSpan,
+    pub(super) start: u8,
+    pub(super) len: u8,
+}
+
+// `direct` preserves syntax needed for name inference: (amount) is a column
+// reference, but +amount is an unnamed expression despite having the same value.
+#[derive(Clone, Copy)]
+pub(super) struct ParsedProjection {
+    pub(super) expression: ParsedRange,
+    pub(super) alias: SourceSpan,
+    pub(super) direct: bool,
+}
+
+impl ParsedProjection {
+    const EMPTY: Self = Self {
+        expression: ParsedRange {
+            span: ZERO_SPAN,
+            start: 0,
+            len: 0,
+        },
+        alias: ZERO_SPAN,
+        direct: false,
+    };
+}
+
+pub(super) struct Parsed {
+    // Expression programs share the token bound: each operation consumes at least
+    // one distinct token. Stage/aggregate entries retain ranges, not full stacks.
+    pub(super) expression_ops: [ParsedOp; MAX_TOKENS],
+    pub(super) expression_op_count: u8,
+    pub(super) table: SourceSpan,
+    pub(super) sources: [ParsedSource; MAX_STAGES],
+    pub(super) source_count: u8,
+    pub(super) stages: [ParsedStage; MAX_STAGES],
+    pub(super) controls: [FilterControl; MAX_STAGES],
+    pub(super) len: u8,
+    pub(super) projections: [ParsedProjection; MAX_PROJECTIONS],
+    pub(super) projection_count: u8,
+    pub(super) order_items: [ParsedOrder; MAX_ORDER_ITEMS],
+    pub(super) order_count: u8,
+    pub(super) aggregate_entries: [ParsedAggregateEntry; MAX_AGGREGATE_COLUMNS],
+    pub(super) aggregate_entry_count: u8,
+    pub(super) aggregate_groups: [SourceSpan; MAX_AGGREGATE_COLUMNS - 1],
+    pub(super) aggregate_group_count: u8,
+}
+
+impl Parsed {
+    fn push_expression(&mut self, expression: ParsedExpression) -> Result<ParsedRange, Error> {
+        let start = usize::from(self.expression_op_count);
+        let len = usize::from(expression.len);
+        let end = start
+            .checked_add(len)
+            .filter(|end| *end <= MAX_TOKENS)
+            .ok_or(Error::Corrupt("expression operations exceed lexical bound"))?;
+        self.expression_ops[start..end].copy_from_slice(&expression.ops[..len]);
+        self.expression_op_count =
+            u8::try_from(end).map_err(|_| Error::Corrupt("expression operation count"))?;
+        Ok(ParsedRange {
+            span: expression.span,
+            start: start as u8,
+            len: expression.len,
+        })
+    }
+
+    // Reconstruct one expression for binding. Keeping every expression's full
+    // capacity inline in Parsed would multiply stack use by the projection limit.
+    pub(super) fn expression(&self, range: ParsedRange) -> Result<ParsedExpression, Error> {
+        let start = usize::from(range.start);
+        let len = usize::from(range.len);
+        let end = start + len;
+        if len == 0 || len > MAX_OPS || end > usize::from(self.expression_op_count) {
+            return Err(Error::Corrupt("numeric expression range"));
+        }
+        let mut expression = ParsedExpression::EMPTY;
+        expression.len = range.len;
+        expression.span = range.span;
+        expression.ops[..len].copy_from_slice(&self.expression_ops[start..end]);
+        Ok(expression)
+    }
+
+    fn push_stage(&mut self, stage: ParsedStage, span: SourceSpan) -> Result<(), Error> {
+        if usize::from(self.len) == MAX_STAGES {
+            return Err(Error::Parse {
+                message: "normalized stage limit exceeded",
+                span,
+            });
+        }
+        self.stages[usize::from(self.len)] = stage;
+        self.len += 1;
+        Ok(())
+    }
+}
+
+// Remember what to parse after a child query's closing parenthesis: its alias
+// and possibly a JOIN condition, or completion of a set-operation argument.
+// The binder, not this parser frame, owns the child's column-name scope.
+#[derive(Clone, Copy)]
+enum ChildCompletion {
+    Derived {
+        join: Option<(SourceSpan, JoinKind)>,
+    },
+    Set {
+        pipe: SourceSpan,
+        operator: SetOperator,
+    },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SetOperator {
+    UnionAll,
+    UnionDistinct,
+    ExceptDistinct,
+    ExceptAll,
+    IntersectDistinct,
+    IntersectAll,
+}
+
+struct Parser<'a> {
+    source: &'a str,
+    tokens: &'a Tokens,
+    position: usize,
+    end: usize,
+}
+
+impl Parser<'_> {
+    fn column(&mut self) -> Result<SourceSpan, Error> {
+        let mut reference = self.take(Kind::Identifier)?;
+        if self.peek() == Kind::Dot {
+            self.take(Kind::Dot)?;
+            reference.end = self.take(Kind::Identifier)?.end;
+        }
+        Ok(reference)
+    }
+
+    fn source_alias(&mut self, table: SourceSpan) -> Result<SourceSpan, Error> {
+        if self.peek() == Kind::As {
+            self.take(Kind::As)?;
+            self.take(Kind::Identifier)
+        } else {
+            Ok(table)
+        }
+    }
+
+    fn peek(&self) -> Kind {
+        if self.position == self.tokens.len {
+            Kind::Empty
+        } else {
+            self.tokens.values[self.position].kind
+        }
+    }
+
+    fn take(&mut self, kind: Kind) -> Result<SourceSpan, Error> {
+        if self.peek() != kind && !(kind == Kind::Identifier && self.peek() == Kind::Aggregate) {
+            let span = if self.position == self.tokens.len {
+                span(self.end, self.end)
+            } else {
+                self.tokens.values[self.position].span
+            };
+            return Err(Error::Parse {
+                message: "unexpected token",
+                span,
+            });
+        }
+        let span = self.tokens.values[self.position].span;
+        self.position += 1;
+        Ok(span)
+    }
+
+    fn is_word(&self, word: &str) -> bool {
+        self.position < self.tokens.len
+            && text(self.source, self.tokens.values[self.position].span).eq_ignore_ascii_case(word)
+    }
+
+    fn word(&mut self, word: &str) -> Result<SourceSpan, Error> {
+        if !self.is_word(word) {
+            return Err(parse("required keyword missing", self.end, self.end));
+        }
+        self.take(self.peek())
+    }
+
+    fn comparison_literal(&mut self, parsed: &mut Parsed) -> Result<ParsedLiteral, Error> {
+        if self.peek() == Kind::Quoted {
+            return Ok(ParsedLiteral::String(self.take(Kind::Quoted)?));
+        }
+        if self.is_word("DATE") || self.is_word("DATE_ADD") || self.is_word("DATE_SUB") {
+            let mut operators = [false; MAX_DATE_SHIFTS];
+            let mut count = 0;
+            while self.is_word("DATE_ADD") || self.is_word("DATE_SUB") {
+                if count == MAX_DATE_SHIFTS {
+                    return Err(parse("DATE nesting limit exceeded", self.end, self.end));
+                }
+                operators[count] = self.is_word("DATE_SUB");
+                count += 1;
+                self.take(Kind::Identifier)?;
+                self.take(Kind::LeftParen)?;
+            }
+            self.word("DATE")?;
+            let span = self.take(Kind::Quoted)?;
+            let mut shifts = [ParsedDateShift {
+                subtract: false,
+                negative: false,
+                amount: ZERO_SPAN,
+                part: ZERO_SPAN,
+            }; MAX_DATE_SHIFTS];
+            // Calls open from outside in, but their intervals apply inside out.
+            // Preserve that order: shifting a calendar month is not always
+            // interchangeable with shifting days.
+            for (index, subtract) in operators[..count].iter().rev().enumerate() {
+                self.take(Kind::Comma)?;
+                self.word("INTERVAL")?;
+                let negative = self.peek() == Kind::Minus;
+                if negative || self.peek() == Kind::Plus {
+                    self.take(self.peek())?;
+                }
+                let amount = self.take(Kind::Number)?;
+                let part = self.take(Kind::Identifier)?;
+                self.take(Kind::RightParen)?;
+                shifts[index] = ParsedDateShift {
+                    subtract: *subtract,
+                    negative,
+                    amount,
+                    part,
+                };
+            }
+            return Ok(ParsedLiteral::Date {
+                span,
+                shifts,
+                count: u8::try_from(count).expect("bounded DATE shifts"),
+            });
+        }
+        let expression = self.numeric_expression()?;
+        // The numeric parser also serves projections, where bare NULL is valid.
+        // Comparison literals have a narrower profile. IN and IS DISTINCT FROM
+        // handle their explicit NULL literals before reaching this path.
+        if matches!(
+            expression.ops[..usize::from(expression.len)],
+            [ParsedOp::Null]
+        ) {
+            return Err(Error::Parse {
+                message: "bare NULL requires a NULL test or membership predicate",
+                span: expression.span,
+            });
+        }
+        Ok(ParsedLiteral::Numeric(parsed.push_expression(expression)?))
+    }
+
+    // Handle the supported STRING, DATE and analytic forms before numeric
+    // arithmetic. Their arguments are deliberately narrower than general SQL
+    // expressions; recognizing a function name does not admit arbitrary nesting.
+    fn projection_expression(&mut self, parsed: &mut Parsed) -> Result<ParsedExpression, Error> {
+        let first = self.position;
+        while self.peek() == Kind::LeftParen {
+            self.take(Kind::LeftParen)?;
+        }
+        let parentheses = self.position - first;
+        let next = self
+            .tokens
+            .values
+            .get(self.position + 1)
+            .filter(|_| self.position + 1 < self.tokens.len)
+            .map(|token| token.kind);
+        let date = (self.is_word("DATE") && next == Some(Kind::Quoted))
+            || ((self.is_word("DATE_ADD") || self.is_word("DATE_SUB"))
+                && next == Some(Kind::LeftParen));
+        if (self.is_word("COUNT") || self.is_word("SUM")) && next == Some(Kind::LeftParen) {
+            return self.window_projection(first, parentheses);
+        }
+        if (self.is_word("BYTE_LENGTH") || self.is_word("CHAR_LENGTH"))
+            && next == Some(Kind::LeftParen)
+        {
+            let unit = if self.is_word("BYTE_LENGTH") {
+                StringLengthUnit::Bytes
+            } else {
+                StringLengthUnit::UnicodeScalars
+            };
+            let call = self.take(Kind::Identifier)?;
+            self.take(Kind::LeftParen)?;
+            let mut argument_parentheses = 0;
+            while self.peek() == Kind::LeftParen {
+                self.take(Kind::LeftParen)?;
+                argument_parentheses += 1;
+            }
+            let mut expression = ParsedExpression::EMPTY;
+            let argument = if self.peek() == Kind::Quoted {
+                ParsedOp::String(self.take(Kind::Quoted)?)
+            } else {
+                ParsedOp::Column(self.column()?)
+            };
+            expression.push(argument, call)?;
+            for _ in 0..argument_parentheses + 1 + parentheses {
+                self.take(Kind::RightParen)?;
+            }
+            expression.push(ParsedOp::StringLength(unit), call)?;
+            expression.span = span(
+                usize::from(self.tokens.values[first].span.start),
+                usize::from(self.tokens.values[self.position - 1].span.end),
+            );
+            return Ok(expression);
+        }
+        if self.is_word("EXTRACT") && next == Some(Kind::LeftParen) {
+            let call = self.take(Kind::Reserved)?;
+            self.take(Kind::LeftParen)?;
+            let part = self.take(Kind::Identifier)?;
+            if !text(self.source, part).eq_ignore_ascii_case("YEAR") {
+                return Err(Error::Parse {
+                    message: "only YEAR extraction is admitted",
+                    span: part,
+                });
+            }
+            self.word("FROM")?;
+            let mut argument_parentheses = 0;
+            while self.peek() == Kind::LeftParen {
+                self.take(Kind::LeftParen)?;
+                argument_parentheses += 1;
+            }
+            let next = self
+                .tokens
+                .values
+                .get(self.position + 1)
+                .filter(|_| self.position + 1 < self.tokens.len)
+                .map(|token| token.kind);
+            let date = (self.is_word("DATE") && next == Some(Kind::Quoted))
+                || ((self.is_word("DATE_ADD") || self.is_word("DATE_SUB"))
+                    && next == Some(Kind::LeftParen));
+            let mut expression = if date {
+                self.projection_constant(parsed)?
+            } else {
+                let mut expression = ParsedExpression::EMPTY;
+                let column = self.column()?;
+                expression.push(ParsedOp::Column(column), column)?;
+                expression
+            };
+            for _ in 0..argument_parentheses + 1 + parentheses {
+                self.take(Kind::RightParen)?;
+            }
+            expression.push(ParsedOp::DateYear, call)?;
+            expression.span = span(
+                usize::from(self.tokens.values[first].span.start),
+                usize::from(self.tokens.values[self.position - 1].span.end),
+            );
+            return Ok(expression);
+        }
+        if self.peek() != Kind::Quoted && !date {
+            // The numeric parser needs the opening parentheses for precedence
+            // and for the full expression span.
+            self.position = first;
+            return self.numeric_expression();
+        }
+        let mut expression = self.projection_constant(parsed)?;
+        for _ in 0..parentheses {
+            self.take(Kind::RightParen)?;
+        }
+        expression.span = span(
+            usize::from(self.tokens.values[first].span.start),
+            usize::from(self.tokens.values[self.position - 1].span.end),
+        );
+        Ok(expression)
+    }
+
+    fn projection_constant(&mut self, parsed: &mut Parsed) -> Result<ParsedExpression, Error> {
+        let mut expression = ParsedExpression::EMPTY;
+        match self.comparison_literal(parsed)? {
+            ParsedLiteral::String(span) => expression.push(ParsedOp::String(span), span)?,
+            ParsedLiteral::Date {
+                span,
+                shifts,
+                count,
+            } => {
+                expression.push(ParsedOp::Date(span), span)?;
+                for shift in &shifts[..usize::from(count)] {
+                    expression.push(
+                        ParsedOp::DateInterval {
+                            amount: shift.amount,
+                            negative: shift.negative,
+                            subtract: shift.subtract,
+                        },
+                        shift.amount,
+                    )?;
+                    expression.push(ParsedOp::DatePart(shift.part), shift.part)?;
+                }
+            }
+            _ => return Err(Error::Corrupt("projection constant syntax")),
+        }
+        Ok(expression)
+    }
+
+    // Look ahead without consuming tokens. A recognized name followed by '('
+    // selects its call boundary; ordinary names retain the column parser's errors.
+    fn pending_numeric_call(&self) -> Option<PendingOp> {
+        if !matches!(self.peek(), Kind::Identifier | Kind::Reserved)
+            || !self
+                .tokens
+                .values
+                .get(self.position + 1)
+                .is_some_and(|token| token.kind == Kind::LeftParen)
+        {
+            return None;
+        }
+        let call = if self.is_word("CAST") {
+            PendingOp::Cast
+        } else if self.is_word("COALESCE") {
+            PendingOp::FirstArgument(BinaryCall::Coalesce)
+        } else if self.is_word("NULLIF") {
+            PendingOp::FirstArgument(BinaryCall::NullIf)
+        } else if self.is_word("ABS") {
+            PendingOp::Abs
+        } else if self.is_word("SIGN") {
+            PendingOp::Sign
+        } else if self.is_word("FLOOR") {
+            PendingOp::Floor
+        } else if self.is_word("CEIL") || self.is_word("CEILING") {
+            PendingOp::Ceil
+        } else if self.is_word("EXP") {
+            PendingOp::Exp
+        } else if self.is_word("LOG10") {
+            PendingOp::Log10
+        } else if self.is_word("LN") {
+            PendingOp::Ln
+        } else if self.is_word("SQRT") {
+            PendingOp::Sqrt
+        } else if self.is_word("ROUND") {
+            PendingOp::Round
+        } else if self.is_word("POW") || self.is_word("POWER") {
+            PendingOp::FirstArgument(BinaryCall::Power)
+        } else if self.is_word("DIV") {
+            PendingOp::FirstArgument(BinaryCall::IntegerDivide)
+        } else if self.is_word("MOD") {
+            PendingOp::FirstArgument(BinaryCall::Mod)
+        } else if self.is_word("SAFE_DIVIDE") {
+            PendingOp::FirstArgument(BinaryCall::SafeDivide)
+        } else {
+            return None;
+        };
+        Some(call)
+    }
+
+    // Read operands directly into the output program and delay operators on
+    // pending. Before accepting an operator, emit any waiting operator with
+    // equal or higher precedence. Thus a + b * c becomes a b c Multiply Add;
+    // equal precedence makes subtraction and division associate to the left.
+    fn numeric_expression(&mut self) -> Result<ParsedExpression, Error> {
+        let mut expression = ParsedExpression::EMPTY;
+        let mut pending = [PendingOp::Paren; MAX_OPS];
+        let mut depth = 0;
+        let mut parentheses = 0;
+        // Expect an operand initially and after each binary operator or comma.
+        // This also rejects empty arguments and trailing operators.
+        let mut operand = true;
+        let at = self
+            .tokens
+            .values
+            .get(self.position)
+            .filter(|_| self.position < self.tokens.len)
+            .map_or(span(self.end, self.end), |token| token.span);
+        loop {
+            let kind = self.peek();
+            if operand {
+                if self.is_word("CASE") {
+                    if depth == MAX_OPS {
+                        return Err(Error::Parse {
+                            message: "scalar stack limit exceeded",
+                            span: at,
+                        });
+                    }
+                    self.word("CASE")?;
+                    self.word("WHEN")?;
+                    pending[depth] = PendingOp::CaseLeft;
+                    depth += 1;
+                    continue;
+                }
+                if self.is_word("NULL") {
+                    let span = self.word("NULL")?;
+                    expression.push(ParsedOp::Null, span)?;
+                    operand = false;
+                    continue;
+                }
+                if let Some(call) = self.pending_numeric_call() {
+                    if depth == MAX_OPS {
+                        return Err(Error::Parse {
+                            message: "scalar stack limit exceeded",
+                            span: at,
+                        });
+                    }
+                    self.take(kind)?;
+                    self.take(Kind::LeftParen)?;
+                    pending[depth] = call;
+                    depth += 1;
+                    parentheses += 1;
+                    continue;
+                }
+                match kind {
+                    Kind::Number => {
+                        let span = self.take(kind)?;
+                        expression.push(ParsedOp::Number(span), span)?;
+                        operand = false;
+                    }
+                    Kind::Identifier | Kind::Aggregate => {
+                        let span = self.column()?;
+                        expression.push(ParsedOp::Column(span), span)?;
+                        operand = false;
+                    }
+                    Kind::Plus => {
+                        self.take(kind)?;
+                    }
+                    // Keep a literal's sign separate from arithmetic negation:
+                    // binding must accept INT64::MIN without first constructing
+                    // its unrepresentable positive INT64 magnitude.
+                    Kind::Minus
+                        if self
+                            .tokens
+                            .values
+                            .get(self.position + 1)
+                            .is_some_and(|token| token.kind == Kind::Number) =>
+                    {
+                        self.take(Kind::Minus)?;
+                        let span = self.take(Kind::Number)?;
+                        expression.push(ParsedOp::NegativeNumber(span), span)?;
+                        operand = false;
+                    }
+                    Kind::Minus | Kind::LeftParen => {
+                        if depth == MAX_OPS {
+                            return Err(Error::Parse {
+                                message: "scalar stack limit exceeded",
+                                span: at,
+                            });
+                        }
+                        self.take(kind)?;
+                        pending[depth] = if kind == Kind::Minus {
+                            PendingOp::Unary
+                        } else {
+                            parentheses += 1;
+                            PendingOp::Paren
+                        };
+                        depth += 1;
+                    }
+                    _ => {
+                        return Err(Error::Parse {
+                            message: "numeric operand required",
+                            span: at,
+                        });
+                    }
+                }
+                continue;
+            }
+            if matches!(kind, Kind::Compare(_))
+                || self.is_word("IS")
+                || self.is_word("THEN")
+                || self.is_word("WHEN")
+                || self.is_word("ELSE")
+                || self.is_word("END")
+            {
+                match self.case_boundary(&mut expression, &mut pending, &mut depth, at)? {
+                    CaseStep::Operand => operand = true,
+                    CaseStep::Value => (),
+                    CaseStep::Outside => break,
+                }
+                continue;
+            }
+            match kind {
+                Kind::Plus | Kind::Minus | Kind::Star | Kind::Slash => {
+                    let operator = PendingOp::Binary(kind);
+                    while depth != 0 && pending[depth - 1].precedence() >= operator.precedence() {
+                        depth -= 1;
+                        expression.push(pending[depth].parsed(), at)?;
+                    }
+                    if depth == MAX_OPS {
+                        return Err(Error::Parse {
+                            message: "scalar stack limit exceeded",
+                            span: at,
+                        });
+                    }
+                    pending[depth] = operator;
+                    depth += 1;
+                    self.take(kind)?;
+                    operand = true;
+                }
+                Kind::As if parentheses != 0 => {
+                    // AS terminates only this CAST operand. Drain its arithmetic
+                    // before consuming the target and closing this call frame.
+                    while depth != 0 && pending[depth - 1].precedence() != 0 {
+                        depth -= 1;
+                        expression.push(pending[depth].parsed(), at)?;
+                    }
+                    let keyword = self.take(Kind::As)?;
+                    if depth == 0 || !matches!(pending[depth - 1], PendingOp::Cast) {
+                        return Err(Error::Parse {
+                            message: "AS requires a CAST boundary",
+                            span: keyword,
+                        });
+                    }
+                    let supported = self.is_word("FLOAT64") || self.is_word("DOUBLE");
+                    let target = self.take(Kind::Identifier)?;
+                    if !supported {
+                        return Err(Error::Parse {
+                            message: "CAST target must be FLOAT64 or DOUBLE",
+                            span: target,
+                        });
+                    }
+                    self.take(Kind::RightParen)?;
+                    depth -= 1;
+                    parentheses -= 1;
+                    expression.push(ParsedOp::ToDouble, at)?;
+                }
+                Kind::Comma if parentheses != 0 => {
+                    // Only a binary call waiting for its second argument owns
+                    // this comma. Grouping parentheses and completed calls do not.
+                    while depth != 0 && pending[depth - 1].precedence() != 0 {
+                        depth -= 1;
+                        expression.push(pending[depth].parsed(), at)?;
+                    }
+                    let Some(PendingOp::FirstArgument(call)) =
+                        depth.checked_sub(1).map(|index| pending[index])
+                    else {
+                        return Err(Error::Parse {
+                            message: "unexpected comma in scalar expression",
+                            span: at,
+                        });
+                    };
+                    pending[depth - 1] = PendingOp::SecondArgument(call);
+                    self.take(Kind::Comma)?;
+                    operand = true;
+                }
+                Kind::RightParen if parentheses != 0 => {
+                    while depth != 0 && pending[depth - 1].precedence() != 0 {
+                        depth -= 1;
+                        expression.push(pending[depth].parsed(), at)?;
+                    }
+                    assert!(depth != 0);
+                    depth -= 1;
+                    match pending[depth] {
+                        PendingOp::Cast => {
+                            return Err(Error::Parse {
+                                message: "CAST requires AS FLOAT64 or AS DOUBLE",
+                                span: self.tokens.values[self.position].span,
+                            });
+                        }
+                        PendingOp::FirstArgument(_) => {
+                            return Err(Error::Parse {
+                                message: "binary scalar call requires two arguments",
+                                span: at,
+                            });
+                        }
+                        PendingOp::SecondArgument(call) => expression.push(call.parsed(), at)?,
+                        PendingOp::Abs => expression.push(ParsedOp::Abs, at)?,
+                        PendingOp::Sign => expression.push(ParsedOp::Sign, at)?,
+                        PendingOp::Floor => expression.push(ParsedOp::Floor, at)?,
+                        PendingOp::Ceil => expression.push(ParsedOp::Ceil, at)?,
+                        PendingOp::Round => expression.push(ParsedOp::Round, at)?,
+                        PendingOp::Sqrt => expression.push(ParsedOp::Sqrt, at)?,
+                        PendingOp::Log10 => expression.push(ParsedOp::Log10, at)?,
+                        PendingOp::Ln => expression.push(ParsedOp::Ln, at)?,
+                        PendingOp::Exp => expression.push(ParsedOp::Exp, at)?,
+                        PendingOp::Paren => (),
+                        _ => {
+                            return Err(Error::Parse {
+                                message: "incomplete CASE before closing parenthesis",
+                                span: at,
+                            });
+                        }
+                    }
+                    parentheses -= 1;
+                    self.take(kind)?;
+                }
+                _ => break,
+            }
+        }
+        if parentheses != 0 {
+            return Err(Error::Parse {
+                message: "unclosed scalar parenthesis",
+                span: at,
+            });
+        }
+        while depth != 0 {
+            depth -= 1;
+            if pending[depth].precedence() == 0 {
+                return Err(Error::Parse {
+                    message: "incomplete scalar expression",
+                    span: at,
+                });
+            }
+            expression.push(pending[depth].parsed(), at)?;
+        }
+        expression.span = SourceSpan {
+            start: at.start,
+            end: self.tokens.values[self.position - 1].span.end,
+        };
+        Ok(expression)
+    }
+
+    fn aggregate(&mut self, parsed: &mut Parsed) -> Result<ParsedAggregate, Error> {
+        let span = self.take(Kind::Aggregate)?;
+        let mut aggregate = ParsedAggregate {
+            entries: [ParsedAggregateEntry::EMPTY; MAX_AGGREGATE_COLUMNS],
+            count: 0,
+            groups: [ZERO_SPAN; MAX_AGGREGATE_COLUMNS - 1],
+            group_count: 0,
+            ordered: false,
+        };
+        loop {
+            if usize::from(aggregate.count) == MAX_AGGREGATE_COLUMNS {
+                return Err(Error::Parse {
+                    message: "aggregate output limit exceeded",
+                    span,
+                });
+            }
+            let name = self.take(Kind::Identifier)?;
+            let kind = if text(self.source, name).eq_ignore_ascii_case("SUM") {
+                AggregateKind::Sum
+            } else if text(self.source, name).eq_ignore_ascii_case("AVG") {
+                AggregateKind::Avg
+            } else if text(self.source, name).eq_ignore_ascii_case("MIN") {
+                AggregateKind::Min
+            } else if text(self.source, name).eq_ignore_ascii_case("MAX") {
+                AggregateKind::Max
+            } else if text(self.source, name).eq_ignore_ascii_case("COUNT") {
+                AggregateKind::Count
+            } else {
+                return Err(Error::Parse {
+                    message: "unsupported aggregate function",
+                    span: name,
+                });
+            };
+            self.take(Kind::LeftParen)?;
+            let column = if kind == AggregateKind::Count && self.peek() == Kind::Star {
+                self.take(Kind::Star)?;
+                None
+            } else {
+                Some(parsed.push_expression(self.numeric_expression()?)?)
+            };
+            let end = self.take(Kind::RightParen)?.end;
+            self.take(Kind::As)?;
+            let alias = self.take(Kind::Identifier)?;
+            aggregate.entries[usize::from(aggregate.count)] = ParsedAggregateEntry {
+                kind,
+                argument: column,
+                alias,
+                span: SourceSpan {
+                    start: name.start,
+                    end,
+                },
+            };
+            aggregate.count += 1;
+            if self.peek() != Kind::Comma {
+                break;
+            }
+            self.take(Kind::Comma)?;
+        }
+        if self.is_word("GROUP") {
+            self.word("GROUP")?;
+            if self.is_word("AND") {
+                self.word("AND")?;
+                self.word("ORDER")?;
+                aggregate.ordered = true;
+            }
+            self.word("BY")?;
+            loop {
+                if usize::from(aggregate.group_count) == aggregate.groups.len() {
+                    return Err(Error::Parse {
+                        message: "at most nine grouping keys",
+                        span,
+                    });
+                }
+                aggregate.groups[usize::from(aggregate.group_count)] = self.column()?;
+                aggregate.group_count += 1;
+                if self.peek() != Kind::Comma {
+                    break;
+                }
+                self.take(Kind::Comma)?;
+            }
+        }
+        Ok(aggregate)
+    }
+
+    fn join_condition(
+        &mut self,
+        parsed: &mut Parsed,
+        span: SourceSpan,
+        kind: JoinKind,
+    ) -> Result<(), Error> {
+        self.word("ON")?;
+        let left = self.column()?;
+        self.take(Kind::Compare(Comparison::Equal))?;
+        let right = self.column()?;
+        parsed.push_stage(ParsedStage::Join { kind, left, right }, span)
+    }
+
+    fn set_argument(
+        &mut self,
+        frames: &mut [ChildCompletion; MAX_STAGES],
+        depth: &mut usize,
+        pipe: SourceSpan,
+        operator: SetOperator,
+    ) -> Result<(), Error> {
+        let open = self.take(Kind::LeftParen)?;
+        if *depth == frames.len() {
+            return Err(Error::Parse {
+                message: "derived input nesting limit exceeded",
+                span: open,
+            });
+        }
+        frames[*depth] = ChildCompletion::Set { pipe, operator };
+        *depth += 1;
+        self.take(Kind::From)?;
+        Ok(())
+    }
+
+    fn query(&mut self) -> Result<Parsed, Error> {
+        self.take(Kind::From)?;
+        let mut parsed = Parsed {
+            expression_ops: [ParsedOp::Empty; MAX_TOKENS],
+            expression_op_count: 0,
+            table: ZERO_SPAN,
+            sources: [ParsedSource::EMPTY; MAX_STAGES],
+            source_count: 0,
+            stages: [ParsedStage::Empty; MAX_STAGES],
+            controls: [FilterControl::LINEAR; MAX_STAGES],
+            len: 0,
+            projections: [ParsedProjection::EMPTY; MAX_PROJECTIONS],
+            projection_count: 0,
+            order_items: [ParsedOrder::EMPTY; MAX_ORDER_ITEMS],
+            order_count: 0,
+            aggregate_entries: [ParsedAggregateEntry::EMPTY; MAX_AGGREGATE_COLUMNS],
+            aggregate_entry_count: 0,
+            aggregate_groups: [ZERO_SPAN; MAX_AGGREGATE_COLUMNS - 1],
+            aggregate_group_count: 0,
+        };
+        // Enter and leave child queries within this loop. A frame remembers the
+        // parent's continuation; tokens and stage storage remain query-wide.
+        let mut frames = [ChildCompletion::Derived { join: None }; MAX_STAGES];
+        let mut depth = 0;
+        let mut need_source = true;
+        let mut pending_join = None;
+        loop {
+            if need_source {
+                if self.peek() == Kind::LeftParen {
+                    let open = self.take(Kind::LeftParen)?;
+                    if depth == frames.len() {
+                        return Err(Error::Parse {
+                            message: "derived input nesting limit exceeded",
+                            span: open,
+                        });
+                    }
+                    frames[depth] = ChildCompletion::Derived {
+                        join: pending_join.take(),
+                    };
+                    depth += 1;
+                    self.take(Kind::From)?;
+                    continue;
+                }
+                let table = self.take(Kind::Identifier)?;
+                let alias = self.source_alias(table)?;
+                let index = usize::from(parsed.source_count);
+                if index == parsed.sources.len() {
+                    return Err(bind_error("source occurrence limit exceeded", table));
+                }
+                parsed.sources[index] = ParsedSource { table, alias };
+                parsed.source_count += 1;
+                if index == 0 {
+                    parsed.table = table;
+                } else {
+                    parsed.push_stage(ParsedStage::Source(index as u8), table)?;
+                }
+                need_source = false;
+                if let Some((pipe, kind)) = pending_join.take() {
+                    self.join_condition(&mut parsed, pipe, kind)?;
+                }
+                continue;
+            }
+            if self.peek() == Kind::RightParen && depth != 0 {
+                let close = self.take(Kind::RightParen)?;
+                depth -= 1;
+                match frames[depth] {
+                    ChildCompletion::Derived { join } => {
+                        let alias = self.source_alias(ZERO_SPAN)?;
+                        parsed.push_stage(ParsedStage::Derived(alias), close)?;
+                        if let Some((pipe, kind)) = join {
+                            self.join_condition(&mut parsed, pipe, kind)?;
+                        }
+                    }
+                    ChildCompletion::Set { pipe, operator } => {
+                        let stage = match operator {
+                            SetOperator::ExceptDistinct => ParsedStage::ExceptDistinct(pipe),
+                            SetOperator::ExceptAll => ParsedStage::ExceptAll(pipe),
+                            SetOperator::IntersectDistinct => ParsedStage::IntersectDistinct(pipe),
+                            SetOperator::IntersectAll => ParsedStage::IntersectAll(pipe),
+                            SetOperator::UnionAll | SetOperator::UnionDistinct => {
+                                ParsedStage::UnionAll(pipe)
+                            }
+                        };
+                        parsed.push_stage(stage, close)?;
+                        if self.peek() == Kind::Comma {
+                            self.take(Kind::Comma)?;
+                            if self.peek() == Kind::LeftParen {
+                                self.set_argument(&mut frames, &mut depth, pipe, operator)?;
+                                need_source = true;
+                                continue;
+                            }
+                        }
+                        // UNION DISTINCT removes duplicates after combining all
+                        // arguments. Reuse the ordinary DISTINCT stage and count
+                        // it against the stage limit.
+                        if operator == SetOperator::UnionDistinct {
+                            parsed.push_stage(ParsedStage::Distinct(pipe), close)?;
+                        }
+                    }
+                }
+                continue;
+            }
+            if self.peek() != Kind::Pipe {
+                break;
+            }
+            let pipe = self.take(Kind::Pipe)?;
+            if usize::from(parsed.len) == MAX_STAGES {
+                return Err(Error::Parse {
+                    message: "stage limit exceeded",
+                    span: pipe,
+                });
+            }
+            let stage = match self.peek() {
+                Kind::Reserved if self.is_word("UNION") => {
+                    self.word("UNION")?;
+                    let operator = if self.peek() == Kind::Distinct {
+                        self.take(Kind::Distinct)?;
+                        SetOperator::UnionDistinct
+                    } else {
+                        self.word("ALL")?;
+                        SetOperator::UnionAll
+                    };
+                    self.set_argument(&mut frames, &mut depth, pipe, operator)?;
+                    need_source = true;
+                    continue;
+                }
+                Kind::Reserved if self.is_word("EXCEPT") => {
+                    self.word("EXCEPT")?;
+                    let operator = if self.peek() == Kind::Distinct {
+                        self.take(Kind::Distinct)?;
+                        SetOperator::ExceptDistinct
+                    } else {
+                        self.word("ALL")?;
+                        SetOperator::ExceptAll
+                    };
+                    self.set_argument(&mut frames, &mut depth, pipe, operator)?;
+                    need_source = true;
+                    continue;
+                }
+                Kind::Reserved if self.is_word("INTERSECT") => {
+                    self.word("INTERSECT")?;
+                    let operator = if self.peek() == Kind::Distinct {
+                        self.take(Kind::Distinct)?;
+                        SetOperator::IntersectDistinct
+                    } else {
+                        self.word("ALL")?;
+                        SetOperator::IntersectAll
+                    };
+                    self.set_argument(&mut frames, &mut depth, pipe, operator)?;
+                    need_source = true;
+                    continue;
+                }
+                Kind::Distinct => ParsedStage::Distinct(self.take(Kind::Distinct)?),
+                Kind::As => {
+                    self.take(Kind::As)?;
+                    ParsedStage::Alias(self.take(Kind::Identifier)?)
+                }
+                Kind::Reserved if self.is_word("LEFT") => {
+                    self.word("LEFT")?;
+                    if self.is_word("OUTER") {
+                        self.word("OUTER")?;
+                    }
+                    self.take(Kind::Join)?;
+                    pending_join = Some((pipe, JoinKind::Left));
+                    need_source = true;
+                    continue;
+                }
+                Kind::Join => {
+                    self.take(Kind::Join)?;
+                    pending_join = Some((pipe, JoinKind::Inner));
+                    need_source = true;
+                    continue;
+                }
+                Kind::Limit => {
+                    let span = self.take(Kind::Limit)?;
+                    let count = parsed.push_expression(self.numeric_expression()?)?;
+                    let offset = if self.is_word("OFFSET") {
+                        self.word("OFFSET")?;
+                        Some(parsed.push_expression(self.numeric_expression()?)?)
+                    } else {
+                        None
+                    };
+                    ParsedStage::Limit {
+                        count,
+                        offset,
+                        span,
+                    }
+                }
+                Kind::Order => {
+                    self.take(Kind::Order)?;
+                    self.word("BY")?;
+                    let start = parsed.order_count;
+                    loop {
+                        if usize::from(parsed.order_count) == MAX_ORDER_ITEMS {
+                            return Err(bind_error("order item limit exceeded", pipe));
+                        }
+                        let ordinal = self.peek() == Kind::Number;
+                        let reference = if ordinal {
+                            self.take(Kind::Number)?
+                        } else {
+                            self.column()?
+                        };
+                        let (direction, nulls) = self.order_policy()?;
+                        parsed.order_items[usize::from(parsed.order_count)] = ParsedOrder {
+                            reference,
+                            ordinal,
+                            direction,
+                            nulls,
+                        };
+                        parsed.order_count += 1;
+                        if self.peek() != Kind::Comma {
+                            break;
+                        }
+                        self.take(Kind::Comma)?;
+                    }
+                    ParsedStage::Order {
+                        start,
+                        len: parsed.order_count - start,
+                    }
+                }
+                Kind::Aggregate => {
+                    let aggregate = self.aggregate(&mut parsed)?;
+                    let range = ParsedAggregateRange {
+                        entry_start: parsed.aggregate_entry_count,
+                        count: aggregate.count,
+                        group_start: parsed.aggregate_group_count,
+                        group_count: aggregate.group_count,
+                        ordered: aggregate.ordered,
+                    };
+                    let entry_end = usize::from(range.entry_start) + usize::from(range.count);
+                    let group_end = usize::from(range.group_start) + usize::from(range.group_count);
+                    if entry_end > parsed.aggregate_entries.len()
+                        || group_end > parsed.aggregate_groups.len()
+                        || entry_end + group_end > MAX_AGGREGATE_COLUMNS
+                    {
+                        return Err(bind_error("aggregate output limit exceeded", pipe));
+                    }
+                    parsed.aggregate_entries[usize::from(range.entry_start)..entry_end]
+                        .copy_from_slice(&aggregate.entries[..usize::from(range.count)]);
+                    parsed.aggregate_groups[usize::from(range.group_start)..group_end]
+                        .copy_from_slice(&aggregate.groups[..usize::from(range.group_count)]);
+                    parsed.aggregate_entry_count = entry_end as u8;
+                    parsed.aggregate_group_count = group_end as u8;
+                    ParsedStage::Aggregate(range)
+                }
+                Kind::Identifier if self.is_word("RENAME") || self.is_word("DROP") => {
+                    let drop = self.is_word("DROP");
+                    self.take(Kind::Identifier)?;
+                    let start = parsed.projection_count;
+                    loop {
+                        let target = self.take(Kind::Identifier)?;
+                        let alias = if drop {
+                            ZERO_SPAN
+                        } else {
+                            self.take(Kind::As)?;
+                            self.take(Kind::Identifier)?
+                        };
+                        let mut reference = ParsedExpression::EMPTY;
+                        reference.span = target;
+                        reference.push(ParsedOp::Column(target), target)?;
+                        let expression = parsed.push_expression(reference)?;
+                        let index = usize::from(parsed.projection_count);
+                        if index == MAX_PROJECTIONS {
+                            return Err(Error::Parse {
+                                message: "projection entry limit exceeded",
+                                span: pipe,
+                            });
+                        }
+                        parsed.projections[index] = ParsedProjection {
+                            expression,
+                            alias,
+                            direct: true,
+                        };
+                        parsed.projection_count += 1;
+                        if self.peek() != Kind::Comma {
+                            break;
+                        }
+                        self.take(Kind::Comma)?;
+                    }
+                    let len = parsed.projection_count - start;
+                    if drop {
+                        ParsedStage::Drop {
+                            start,
+                            len,
+                            span: pipe,
+                        }
+                    } else {
+                        ParsedStage::Rename { start, len }
+                    }
+                }
+                Kind::Select | Kind::Identifier | Kind::Reserved
+                    if self.peek() == Kind::Select
+                        || self.is_word("EXTEND")
+                        || self.is_word("SET") =>
+                {
+                    let extend = self.is_word("EXTEND");
+                    let set = self.is_word("SET");
+                    if set {
+                        self.word("SET")?;
+                    } else if extend {
+                        self.word("EXTEND")?;
+                    } else {
+                        self.take(Kind::Select)?;
+                    }
+                    let start = parsed.projection_count;
+                    let mut len = 0;
+                    loop {
+                        if len == MAX_COLUMNS {
+                            return Err(Error::Parse {
+                                message: "output limit exceeded",
+                                span: pipe,
+                            });
+                        }
+                        let target = if set {
+                            let target = self.take(Kind::Identifier)?;
+                            self.take(Kind::Compare(Comparison::Equal))?;
+                            target
+                        } else {
+                            ZERO_SPAN
+                        };
+                        let first = self.position;
+                        let expression = self.projection_expression(&mut parsed)?;
+                        // Parentheses preserve a column reference's inferred
+                        // name. Unary plus produces the same operation program,
+                        // so inspect tokens to distinguish that unnamed expression.
+                        let direct = expression.len == 1
+                            && matches!(expression.ops[0], ParsedOp::Column(_))
+                            && self.tokens.values[first..self.position]
+                                .iter()
+                                .all(|token| {
+                                    matches!(
+                                        token.kind,
+                                        Kind::Identifier
+                                            | Kind::Aggregate
+                                            | Kind::Dot
+                                            | Kind::LeftParen
+                                            | Kind::RightParen
+                                    )
+                                });
+                        let expression = parsed.push_expression(expression)?;
+                        let alias = if set {
+                            target
+                        } else if self.peek() == Kind::As {
+                            self.take(Kind::As)?;
+                            self.take(Kind::Identifier)?
+                        } else if extend
+                            && matches!(self.peek(), Kind::Identifier | Kind::Aggregate)
+                        {
+                            self.take(Kind::Identifier)?
+                        } else {
+                            ZERO_SPAN
+                        };
+                        let index = usize::from(parsed.projection_count);
+                        if index == MAX_PROJECTIONS {
+                            return Err(Error::Parse {
+                                message: "projection entry limit exceeded",
+                                span: pipe,
+                            });
+                        }
+                        parsed.projections[index] = ParsedProjection {
+                            expression,
+                            alias,
+                            direct,
+                        };
+                        parsed.projection_count += 1;
+                        len += 1;
+                        if self.peek() != Kind::Comma {
+                            break;
+                        }
+                        self.take(Kind::Comma)?;
+                    }
+                    let len = u8::try_from(len).expect("bounded columns");
+                    if set {
+                        ParsedStage::Set { start, len }
+                    } else if extend {
+                        ParsedStage::Extend {
+                            start,
+                            len,
+                            span: pipe,
+                        }
+                    } else {
+                        ParsedStage::Select { start, len }
+                    }
+                }
+                Kind::Where => {
+                    self.take(Kind::Where)?;
+                    self.boolean_filter(&mut parsed, pipe)?;
+                    continue;
+                }
+                _ => {
+                    return Err(Error::Parse {
+                        message: "unsupported pipe operator",
+                        span: pipe,
+                    });
+                }
+            };
+            parsed.push_stage(stage, pipe)?;
+        }
+        if depth != 0 || need_source {
+            return Err(parse("unfinished derived input", self.end, self.end));
+        }
+        if self.peek() == Kind::Semicolon {
+            self.take(Kind::Semicolon)?;
+        }
+        // A recognized prefix is not a valid query if unsupported syntax follows.
+        if self.position != self.tokens.len {
+            return Err(parse("unexpected trailing syntax", self.end, self.end));
+        }
+        Ok(parsed)
+    }
+}
+
+pub(super) fn parse_query(source: &str) -> Result<Parsed, Error> {
+    let tokens = lex(source)?;
+    Parser {
+        source,
+        tokens: &tokens,
+        position: 0,
+        end: source.len(),
+    }
+    .query()
+}
+
+#[cfg(test)]
+mod tests {
+    // Literal operation sequences and source slices check parser structure.
+    // No catalog binding or query execution is involved in these expectations.
+    use super::*;
+
+    #[test]
+    fn numeric_calls_preserve_nested_postfix_order_and_aliases() {
+        for source in [
+            "CAST(COALESCE(ABS(a), MOD(b, 2)) AS DOUBLE) + POWER(CEILING(c), DIV(d, 2))",
+            "cAsT(coalesce(abs(a), mod(b, 2)) AS float64) + pOw(cEiL(c), div(d, 2))",
+        ] {
+            let sql = format!("FROM facts |> SELECT {source} AS value");
+            let parsed = parse_query(&sql).unwrap();
+            let expression = parsed.expression(parsed.projections[0].expression).unwrap();
+            assert_eq!(text(&sql, expression.span), source);
+            let [
+                ParsedOp::Column(a),
+                ParsedOp::Abs,
+                ParsedOp::Column(b),
+                ParsedOp::Number(first_two),
+                ParsedOp::Mod,
+                ParsedOp::Coalesce,
+                ParsedOp::ToDouble,
+                ParsedOp::Column(c),
+                ParsedOp::Ceil,
+                ParsedOp::Column(d),
+                ParsedOp::Number(second_two),
+                ParsedOp::IntegerDivide,
+                ParsedOp::Power,
+                ParsedOp::Add,
+            ] = &expression.ops[..usize::from(expression.len)]
+            else {
+                panic!("call boundaries must retain each operand's postfix subtree");
+            };
+            assert_eq!(
+                [a, b, first_two, c, d, second_two].map(|span| text(&sql, *span)),
+                ["a", "b", "2", "c", "d", "2"]
+            );
+        }
+    }
+
+    #[test]
+    fn numeric_call_lookahead_preserves_column_names_and_unknown_call_spans() {
+        let sql = "FROM facts |> SELECT abs, sqRt, safe_divide, ceiling, power, casting";
+        let parsed = parse_query(sql).unwrap();
+        for (index, name) in ["abs", "sqRt", "safe_divide", "ceiling", "power", "casting"]
+            .into_iter()
+            .enumerate()
+        {
+            let expression = parsed
+                .expression(parsed.projections[index].expression)
+                .unwrap();
+            let [ParsedOp::Column(column)] = &expression.ops[..usize::from(expression.len)] else {
+                panic!("a bare function spelling remains a column name");
+            };
+            assert_eq!(text(sql, *column), name);
+        }
+        for name in ["SQRTISH", "SAFE_CAST", "unknown"] {
+            let sql = format!("FROM facts |> SELECT {name}(a)");
+            let Err(Error::Parse { message, span }) = parse_query(&sql) else {
+                panic!("unknown numeric call must reject");
+            };
+            assert_eq!(message, "unexpected trailing syntax");
+            assert_eq!((span.start(), span.end()), (sql.len(), sql.len()));
+        }
+        let sql = "FROM facts |> SELECT CAST";
+        let Err(Error::Parse { span, .. }) = parse_query(sql) else {
+            panic!("reserved CAST is not a column name");
+        };
+        assert_eq!(text(sql, span), "CAST");
+    }
+
+    #[test]
+    fn coalesce_preserves_nested_argument_order_and_expression_span() {
+        let sql = "FROM facts |> SELECT COALESCE(a+1, COALESCE(b, 8/2))*3 AS value, a";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.projection_count, 2);
+        let expression = parsed.expression(parsed.projections[0].expression).unwrap();
+        assert_eq!(
+            text(sql, expression.span),
+            "COALESCE(a+1, COALESCE(b, 8/2))*3"
+        );
+        let [
+            ParsedOp::Column(a),
+            ParsedOp::Number(one),
+            ParsedOp::Add,
+            ParsedOp::Column(b),
+            ParsedOp::Number(eight),
+            ParsedOp::Number(two),
+            ParsedOp::Divide,
+            ParsedOp::Coalesce,
+            ParsedOp::Coalesce,
+            ParsedOp::Number(three),
+            ParsedOp::Multiply,
+        ] = &expression.ops[..usize::from(expression.len)]
+        else {
+            panic!("nested fallback must remain a distinct right subtree");
+        };
+        assert_eq!(
+            [a, one, b, eight, two, three].map(|span| text(sql, *span)),
+            ["a", "1", "b", "8", "2", "3"]
+        );
+    }
+
+    #[test]
+    fn numeric_conditionals_use_existing_arity_and_operation_bounds() {
+        for function in ["COALESCE", "NULLIF"] {
+            for expression in [
+                "COALESCE()",
+                "COALESCE(a)",
+                "COALESCE(a, )",
+                "COALESCE(, a)",
+                "COALESCE(a, b, 0)",
+                "COALESCE(a, (b, 0))",
+                "COALESCE(a, COALESCE(b))",
+                "COALESCE(a, b",
+            ] {
+                let expression = expression.replace("COALESCE", function);
+                let sql = format!("FROM facts |> SELECT {expression}");
+                assert!(parse_query(&sql).is_err(), "{sql}");
+            }
+            let mut expression = "a".to_owned();
+            for _ in 0..15 {
+                expression = format!("{function}(a, {expression})");
+            }
+            let parsed = parse_query(&format!("FROM facts |> SELECT -{expression}")).unwrap();
+            assert_eq!(parsed.projections[0].expression.len, 32);
+            assert!(matches!(
+                parse_query(&format!("FROM facts |> SELECT {function}(a, {expression})")),
+                Err(Error::Parse {
+                    message: "scalar operation limit exceeded",
+                    ..
+                })
+            ));
+        }
+    }
+
+    #[test]
+    fn numeric_cast_nesting_retains_operation_and_token_bounds() {
+        let wrap = |value: &str, count| {
+            format!(
+                "{}{}{}",
+                "CAST(".repeat(count),
+                value,
+                " AS DOUBLE)".repeat(count)
+            )
+        };
+        let parsed = parse_query(&format!("FROM facts |> SELECT {}", wrap("a", 31))).unwrap();
+        let expression = parsed.expression(parsed.projections[0].expression).unwrap();
+        assert_eq!(expression.len, 32);
+        assert!(
+            expression.ops[1..32]
+                .iter()
+                .all(|op| matches!(op, ParsedOp::ToDouble))
+        );
+        assert!(matches!(
+            parse_query(&format!("FROM facts |> SELECT {}", wrap("a+1", 30))),
+            Err(Error::Parse {
+                message: "scalar operation limit exceeded",
+                ..
+            })
+        ));
+        assert!(parse_query(&format!("FROM facts |> SELECT {}", wrap("a", 32))).is_err());
+    }
+
+    #[test]
+    fn full_partition_count_has_one_bounded_projection_operation() {
+        for stage in ["SELECT", "EXTEND"] {
+            let sql = format!("FROM facts |> {stage} amount, (COUNT(*) OVER ()) AS n, 1+2 AS next");
+            let parsed = parse_query(&sql).unwrap();
+            assert_eq!(parsed.projection_count, 3);
+            let expression = parsed.expression(parsed.projections[1].expression).unwrap();
+            assert_eq!(expression.len, 1);
+            assert!(matches!(expression.ops[0], ParsedOp::WindowCount));
+            assert_eq!(text(&sql, expression.span), "(COUNT(*) OVER ())");
+        }
+    }
+
+    #[test]
+    fn running_sum_syntax_has_bounded_partition_and_order_lists() {
+        for count in [1, 8, 9] {
+            let keys = std::iter::repeat_n("a", count)
+                .collect::<Vec<_>>()
+                .join(", ");
+            for window in [
+                format!("ORDER BY {keys}"),
+                format!("PARTITION BY {keys} ORDER BY a"),
+            ] {
+                let sql = format!("FROM facts |> SELECT SUM(a) OVER ({window}) AS n");
+                assert_eq!(parse_query(&sql).is_ok(), count <= 8, "{sql}");
+            }
+        }
+        for expression in [
+            "SUM(a) OVER ()",
+            "SUM(a) OVER (PARTITION BY b)",
+            "SUM(a+1) OVER (ORDER BY b)",
+            "SUM(a) OVER (ORDER BY b+1)",
+            "SUM(a) OVER (ORDER BY b ROWS UNBOUNDED PRECEDING)",
+            "SUM(a) OVER (ORDER BY b RANGE UNBOUNDED PRECEDING)",
+            "SUM(a) OVER (ORDER BY b)+1",
+            "SUM(a) OVER named",
+        ] {
+            let sql = format!("FROM facts |> SELECT {expression}");
+            assert!(
+                matches!(parse_query(&sql), Err(Error::Parse { .. })),
+                "{sql}"
+            );
+        }
+    }
+
+    #[test]
+    fn analytic_syntax_rejects_other_windows_arguments_and_expression_mixing() {
+        for expression in [
+            "COUNT(amount) OVER ()",
+            "SUM(amount) OVER ()",
+            "COUNT(*)",
+            "COUNT(*) OVER (PARTITION BY amount+1)",
+            "COUNT(*) OVER (PARTITION BY amount ORDER BY amount)",
+            "COUNT(*) OVER (ORDER BY amount)",
+            "COUNT(*) OVER (ROWS UNBOUNDED PRECEDING)",
+            "COUNT(*) OVER ()+1",
+            "1+COUNT(*) OVER ()",
+            "COUNT(COUNT(*) OVER ()) OVER ()",
+        ] {
+            let sql = format!("FROM facts |> SELECT {expression}");
+            assert!(parse_query(&sql).is_err(), "{sql}");
+        }
+        let sql = "FROM facts |> SELECT COUNT(*) OVER (";
+        let Err(Error::Parse { span, .. }) = parse_query(sql) else {
+            panic!("unfinished window must reject");
+        };
+        assert_eq!((span.start(), span.end()), (sql.len(), sql.len()));
+    }
+
+    #[test]
+    fn union_arguments_restore_nested_continuations_and_spans() {
+        let sql = "FROM a |> UNION ALL (FROM b |> UNION ALL (FROM c)), (FROM d), |> SELECT x";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.source_count, 4);
+        assert_eq!(parsed.len, 7);
+        let stages = &parsed.stages[..usize::from(parsed.len)];
+        assert!(matches!(stages[0], ParsedStage::Source(1)));
+        assert!(matches!(stages[1], ParsedStage::Source(2)));
+        assert!(matches!(stages[4], ParsedStage::Source(3)));
+        assert!(matches!(stages[6], ParsedStage::Select { len: 1, .. }));
+        let outer = sql.find("|>").unwrap();
+        let inner = sql.find("|> UNION ALL (FROM c)").unwrap();
+        for (index, start) in [(2, inner), (3, outer), (5, outer)] {
+            let ParsedStage::UnionAll(span) = stages[index] else {
+                panic!("union argument completion absent at {index}");
+            };
+            assert_eq!(usize::from(span.start), start);
+            assert_eq!(text(sql, span), "|>");
+        }
+    }
+
+    #[test]
+    fn union_distinct_deduplicates_after_all_arguments_and_restores_nested_modes() {
+        let sql =
+            "FROM a |> UNION DISTINCT (FROM b), (FROM c |> UNION ALL (FROM d)), |> AS combined";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.source_count, 4);
+        assert_eq!(parsed.len, 8);
+        let stages = &parsed.stages[..usize::from(parsed.len)];
+        assert!(matches!(stages[0], ParsedStage::Source(1)));
+        assert!(matches!(stages[1], ParsedStage::UnionAll(_)));
+        assert!(matches!(stages[2], ParsedStage::Source(2)));
+        assert!(matches!(stages[3], ParsedStage::Source(3)));
+        assert!(matches!(stages[4], ParsedStage::UnionAll(_)));
+        assert!(matches!(stages[5], ParsedStage::UnionAll(_)));
+        let ParsedStage::Distinct(span) = stages[6] else {
+            panic!("complete union must deduplicate before its following alias");
+        };
+        assert_eq!(usize::from(span.start), sql.find("|>").unwrap());
+        assert!(matches!(stages[7], ParsedStage::Alias(_)));
+
+        let parsed =
+            parse_query("FROM a |> UNION ALL (FROM b |> UNION DISTINCT (FROM c))").unwrap();
+        assert_eq!(parsed.len, 5);
+        assert!(matches!(parsed.stages[2], ParsedStage::UnionAll(_)));
+        assert!(matches!(parsed.stages[3], ParsedStage::Distinct(_)));
+        assert!(matches!(parsed.stages[4], ParsedStage::UnionAll(_)));
+    }
+
+    #[test]
+    fn sorted_set_distinct_preserves_left_association_and_nested_modes() {
+        for operator in ["EXCEPT", "INTERSECT"] {
+            let operation_span = |stage| match (operator, stage) {
+                ("EXCEPT", ParsedStage::ExceptDistinct(span))
+                | ("INTERSECT", ParsedStage::IntersectDistinct(span)) => span,
+                _ => panic!("wrong {operator} continuation"),
+            };
+            let sql = format!(
+                "FROM a |> {operator} DISTINCT (FROM b), (FROM c |> UNION DISTINCT (FROM d)), |> AS remaining"
+            );
+            let parsed = parse_query(&sql).unwrap();
+            assert_eq!(parsed.source_count, 4, "{operator}");
+            let stages = &parsed.stages[..usize::from(parsed.len)];
+            let [
+                ParsedStage::Source(1),
+                first,
+                ParsedStage::Source(2),
+                ParsedStage::Source(3),
+                ParsedStage::UnionAll(_),
+                ParsedStage::Distinct(_),
+                last,
+                ParsedStage::Alias(_),
+            ] = stages
+            else {
+                panic!("wrong {operator} stage sequence");
+            };
+            for stage in [*first, *last] {
+                let span = operation_span(stage);
+                assert_eq!(usize::from(span.start), sql.find("|>").unwrap());
+                assert_eq!(text(&sql, span), "|>");
+            }
+            let sql = format!("FROM a |> UNION DISTINCT (FROM b |> {operator} DISTINCT (FROM c))");
+            let parsed = parse_query(&sql).unwrap();
+            let [
+                ParsedStage::Source(1),
+                ParsedStage::Source(2),
+                inner,
+                ParsedStage::UnionAll(_),
+                ParsedStage::Distinct(_),
+            ] = &parsed.stages[..usize::from(parsed.len)]
+            else {
+                panic!("wrong nested {operator} stage sequence");
+            };
+            operation_span(*inner);
+        }
+    }
+
+    #[test]
+    fn multiset_arguments_restore_quantifiers_and_operator_spans() {
+        let sql =
+            "FROM a |> EXCEPT ALL (FROM b |> INTERSECT ALL (FROM c)), (FROM d), |> AS remaining";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.source_count, 4);
+        assert_eq!(parsed.len, 7);
+        assert!(matches!(parsed.stages[0], ParsedStage::Source(1)));
+        assert!(matches!(parsed.stages[1], ParsedStage::Source(2)));
+        let ParsedStage::IntersectAll(inner) = parsed.stages[2] else {
+            panic!("nested intersection retains ALL");
+        };
+        for position in [3, 5] {
+            let ParsedStage::ExceptAll(outer) = parsed.stages[position] else {
+                panic!("each argument completes a left-associated EXCEPT ALL");
+            };
+            assert_eq!(usize::from(outer.start), sql.find("|>").unwrap());
+        }
+        assert_eq!(usize::from(inner.start), sql.find("|> INTERSECT").unwrap());
+        assert!(matches!(parsed.stages[4], ParsedStage::Source(3)));
+        assert!(matches!(parsed.stages[6], ParsedStage::Alias(_)));
+    }
+
+    #[test]
+    fn sorted_set_keeps_argument_and_normalized_stage_bounds() {
+        for operator in ["EXCEPT", "INTERSECT"] {
+            for sql in [
+                "FROM a |> {operator} (FROM b)",
+                "FROM a |> {operator} ALL",
+                "FROM a |> {operator} DISTINCT",
+                "FROM a |> {operator} DISTINCT ()",
+                "FROM a |> {operator} DISTINCT FROM b",
+                "FROM a |> {operator} DISTINCT TABLE b",
+                "FROM a |> {operator} DISTINCT BY NAME (FROM b)",
+                "FROM a |> {operator} DISTINCT (FROM b),,",
+            ] {
+                let sql = sql.replace("{operator}", operator);
+                assert!(
+                    matches!(parse_query(&sql), Err(Error::Parse { .. })),
+                    "{sql}"
+                );
+            }
+            for quantifier in ["DISTINCT", "ALL"] {
+                let arguments = ["(FROM b)"; MAX_STAGES / 2].join(", ");
+                let sql = format!("FROM a |> {operator} {quantifier} {arguments}");
+                assert_eq!(usize::from(parse_query(&sql).unwrap().len), MAX_STAGES);
+                assert!(matches!(
+                    parse_query(&format!("{sql}, (FROM b)")),
+                    Err(Error::Parse {
+                        message: "normalized stage limit exceeded",
+                        ..
+                    })
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn union_distinct_charges_its_deduplication_stage_to_the_shared_limit() {
+        let arguments = ["(FROM b)"; MAX_STAGES / 2 - 1].join(", ");
+        let sql = format!("FROM a |> UNION DISTINCT {arguments} |> SELECT x");
+        assert_eq!(usize::from(parse_query(&sql).unwrap().len), MAX_STAGES);
+        let arguments = format!("{arguments}, (FROM b)");
+        assert!(matches!(
+            parse_query(&format!("FROM a |> UNION DISTINCT {arguments}")),
+            Err(Error::Parse {
+                message: "normalized stage limit exceeded",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn union_and_join_children_keep_distinct_completion_kinds() {
+        let sql = "FROM a |> JOIN (FROM b |> UNION ALL (FROM (FROM c) AS c)) AS r ON a.x=r.x";
+        let parsed = parse_query(sql).unwrap();
+        assert_eq!(parsed.source_count, 3);
+        assert_eq!(parsed.len, 6);
+        assert!(matches!(parsed.stages[2], ParsedStage::Derived(_)));
+        assert!(matches!(parsed.stages[3], ParsedStage::UnionAll(_)));
+        assert!(matches!(parsed.stages[4], ParsedStage::Derived(_)));
+        let ParsedStage::Join { kind, left, right } = parsed.stages[5] else {
+            panic!("outer join continuation absent");
+        };
+        assert_eq!(kind, JoinKind::Inner);
+        assert_eq!(text(sql, left), "a.x");
+        assert_eq!(text(sql, right), "r.x");
+    }
+
+    #[test]
+    fn left_join_kind_survives_nested_input_completion() {
+        for modifier in ["LEFT", "LEFT OUTER"] {
+            let sql =
+                format!("FROM a |> {modifier} JOIN (FROM b |> JOIN c ON b.x=c.x) AS r ON a.x=r.x");
+            let parsed = parse_query(&sql).unwrap();
+            assert_eq!(parsed.len, 5);
+            assert!(matches!(
+                parsed.stages[2],
+                ParsedStage::Join {
+                    kind: JoinKind::Inner,
+                    ..
+                }
+            ));
+            let ParsedStage::Join { kind, left, right } = parsed.stages[4] else {
+                panic!("left join continuation absent");
+            };
+            assert_eq!(kind, JoinKind::Left);
+            assert_eq!(text(&sql, left), "a.x");
+            assert_eq!(text(&sql, right), "r.x");
+            let direct = format!("FROM a |> {modifier} JOIN b ON a.x=b.x");
+            assert!(matches!(
+                parse_query(&direct).unwrap().stages[1],
+                ParsedStage::Join {
+                    kind: JoinKind::Left,
+                    ..
+                }
+            ));
+        }
+        for sql in [
+            "FROM a |> LEFT b ON a.x=b.x",
+            "FROM a |> LEFT OUTER OUTER JOIN b ON a.x=b.x",
+            "FROM a |> LEFT JOIN b USING (x)",
+            "FROM a |> LEFT JOIN b ON a.x>b.x",
+            "FROM a |> LEFT JOIN b ON a.x=b.x AND a.y=b.y",
+            "FROM a |> RIGHT JOIN b ON a.x=b.x",
+            "FROM a |> FULL JOIN b ON a.x=b.x",
+        ] {
+            assert!(parse_query(sql).is_err(), "accepted {sql}");
+        }
+    }
+
+    #[test]
+    fn union_rejects_incomplete_or_unsupported_argument_forms() {
+        for sql in [
+            "FROM a |> UNION",
+            "FROM a |> UNION ALL",
+            "FROM a |> UNION ALL,",
+            "FROM a |> UNION ALL ()",
+            "FROM a |> UNION ALL (FROM b",
+            "FROM a |> UNION ALL (FROM b), ,",
+            "FROM a |> UNION ALL (FROM b), (FROM)",
+            "FROM a |> UNION ALL b",
+            "FROM a |> UNION ALL TABLE b",
+            "FROM a |> UNION ALL (SELECT x)",
+            "FROM a |> UNION DISTINCT",
+            "FROM a |> UNION DISTINCT ()",
+            "FROM a |> UNION DISTINCT BY NAME (FROM b)",
+            "FROM a |> UNION ALL BY NAME (FROM b)",
+            "FROM a |> UNION ALL CORRESPONDING (FROM b)",
+            "FROM a |> UNION ALL (FROM b) AS r",
+        ] {
+            assert!(parse_query(sql).is_err(), "accepted {sql}");
+        }
+        let nested = format!(
+            "FROM a {}{}",
+            "|> UNION ALL (FROM a ".repeat(MAX_STAGES + 1),
+            ")".repeat(MAX_STAGES + 1)
+        );
+        assert!(parse_query(&nested).is_err());
+    }
+
+    #[test]
+    fn union_arguments_share_the_normalized_stage_budget() {
+        // Each additional source and its union consume one stage each.
+        let arguments = ["(FROM b)"; MAX_STAGES / 2].join(", ");
+        let sql = format!("FROM a |> UNION ALL {arguments}");
+        let parsed = parse_query(&sql).unwrap();
+        assert_eq!(usize::from(parsed.len), MAX_STAGES);
+        assert_eq!(usize::from(parsed.source_count), MAX_STAGES / 2 + 1);
+        let error = parse_query(&format!("{sql}, (FROM b)")).err().unwrap();
+        assert!(matches!(error, Error::Parse { .. }));
+    }
+}

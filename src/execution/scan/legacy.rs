@@ -1,0 +1,779 @@
+//! Read the fixed seven-column lineitem format used by the legacy loader.
+//!
+//! `Layout` assigns buffer space only to columns the query may need. Opening
+//! verifies the file and its metadata against the published unit reference, then
+//! reuses the metadata buffer for column blocks. `load_column` checks a requested
+//! block's checksum before `StoredColumn` exposes values to the scan controller.
+//!
+//! Rows advance in groups of 32,768. A DATE occupies four bytes, half a DOUBLE's
+//! width, so its storage block covers two row groups. The scan keeps that DATE
+//! block across the intervening boundary while other columns load new blocks.
+//!
+//! The shared controller applies filters and fills result batches. This source
+//! supplies typed access and bulk decoding for the fixed layout; it has no replay
+//! operation. Read errors propagate to the query result, which stops execution
+//! and releases the scan's buffers.
+
+use super::{AdmittedScan, ScanCursor, ScanPhase, Source};
+use crate::batch::{Batch, ColumnMut, OwnedBatch};
+use crate::effects::{Effect, Effects, QueryEffect};
+use crate::error::io_error;
+use crate::execution::COMPUTE_ROWS;
+use crate::execution::computed::{BatchLayout, BatchScratch};
+use crate::execution::planning::PhysicalPlan;
+use crate::execution::predicate::{BranchScratch, PhysicalFilter};
+use crate::query::{FilterLiteral, MAX_ROW_VALUES, Predicate, PreparedQuery};
+use crate::resources::{Reservation, allocate};
+use crate::storage::format::{self, BlockDescriptor, UnitMetadata};
+use crate::storage::recovery::{UNIT_NAME, UNITS_NAME};
+use crate::value::DataType;
+use crate::value::fixed_text::StringValue as FixedKey;
+use crate::{CancellationToken, DatabaseId, DateValue, Error, StringValue, Value};
+use pipesql_filesystem as filesystem;
+use std::fs::File;
+use std::io;
+use std::path::Path;
+
+const BLOCK_BYTES: usize = 262_144;
+pub(in crate::execution) const BLOCK_ROWS: usize = 32_768;
+pub(in crate::execution) const MAX_WORKSPACE_BYTES: u64 = WORKSPACE_FIXED_BYTES
+    + ARENA_BYTES as u64
+    + 2 * crate::batch::MAX_BYTES_WITH_TEXT
+    + BranchScratch::MAX_BYTES;
+const ARENA_BYTES: usize = 5 * BLOCK_BYTES + 2 * BLOCK_ROWS;
+const WORKSPACE_FIXED_BYTES: u64 = 106_496;
+const METADATA_BYTES: usize =
+    format::HEADER_BYTES + format::DESCRIPTOR_BYTES + format::UNIT_PADDING_BYTES;
+const DESCRIPTOR_CEILING: usize = 1344;
+const SELECTION_CEILING: usize = COMPUTE_ROWS;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::execution) struct UnitExpectation {
+    pub(in crate::execution) database_id: DatabaseId,
+    pub(in crate::execution) rows: u64,
+    pub(in crate::execution) unit_bytes: u64,
+    pub(in crate::execution) unit_metadata_crc32c: u32,
+    pub(in crate::execution) projected_crc32c: u32,
+    pub(in crate::execution) descriptor_count: u32,
+}
+
+pub(in crate::execution) struct Scan {
+    file: Option<File>,
+    arena: Vec<u8>,
+    buffers: [usize; 8],
+    descriptors: Vec<BlockDescriptor>,
+    rows: usize,
+    blocks: usize,
+    block: usize,
+    loaded: u8,
+    loaded_date_block: Option<usize>,
+}
+
+impl Scan {
+    pub(super) fn finish_block(&mut self) -> Result<(), Error> {
+        self.block = self
+            .block
+            .checked_add(1)
+            .ok_or(Error::Corrupt("block cursor overflow"))?;
+        // Other columns need a new block; DATE may still cover the next row
+        // group, so retain loaded_date_block until its index changes.
+        self.loaded = 0;
+        Ok(())
+    }
+
+    pub(super) fn is_finished(&self) -> bool {
+        self.block == self.blocks
+    }
+
+    pub(super) fn block_rows(&self) -> Result<usize, &'static str> {
+        let first = self
+            .block
+            .checked_mul(BLOCK_ROWS)
+            .ok_or("block row offset overflow")?;
+        self.rows
+            .checked_sub(first)
+            .map(|remaining| remaining.min(BLOCK_ROWS))
+            .ok_or("block exceeds rows")
+    }
+
+    pub(super) fn load_column(
+        &mut self,
+        column: u8,
+        cancellation: &CancellationToken,
+        effects: &mut Effects,
+    ) -> Result<bool, Error> {
+        if column >= 7 {
+            return Err(Error::Corrupt("physical column is invalid"));
+        }
+        let mask = 1_u8 << column;
+        let date_block = self.block / 2;
+        if (column == 6 && self.loaded_date_block == Some(date_block))
+            || (column != 6 && self.loaded & mask != 0)
+        {
+            return Ok(false);
+        }
+        let block = if column == 6 { date_block } else { self.block };
+        let rows_per_block = if column == 6 {
+            2 * BLOCK_ROWS
+        } else {
+            BLOCK_ROWS
+        };
+        let width = match column {
+            0..=3 => 8,
+            4..=5 => 1,
+            6 => 4,
+            _ => unreachable!(),
+        };
+        // Descriptors are grouped by column. The first six columns each have
+        // self.blocks entries; DATE is last, with one entry per two row groups.
+        let index = usize::from(column)
+            .checked_mul(self.blocks)
+            .and_then(|first| first.checked_add(block))
+            .ok_or(Error::Corrupt("descriptor index overflow"))?;
+        let descriptor = *self
+            .descriptors
+            .get(index)
+            .ok_or(Error::Corrupt("descriptor is missing"))?;
+        let (start, capacity) = buffer_range(&self.buffers, column).map_err(Error::Corrupt)?;
+        let bytes = read_demanded_block(
+            self.file
+                .as_ref()
+                .ok_or(Error::Corrupt("empty source attempted a read"))?,
+            descriptor,
+            &mut self.arena[start..start + capacity],
+            cancellation,
+            effects,
+        )?;
+        let first_row = block
+            .checked_mul(rows_per_block)
+            .ok_or(Error::Corrupt("column row offset overflow"))?;
+        let rows = self
+            .rows
+            .checked_sub(first_row)
+            .ok_or(Error::Corrupt("column block exceeds rows"))?
+            .min(rows_per_block);
+        if bytes
+            != rows
+                .checked_mul(width)
+                .ok_or(Error::Corrupt("column byte overflow"))?
+        {
+            return Err(Error::Corrupt("column extent disagrees with rows"));
+        }
+        if column == 6 {
+            self.loaded_date_block = Some(date_block);
+        } else {
+            self.loaded |= mask;
+        }
+        Ok(true)
+    }
+
+    pub(super) fn column(&self, column: u8) -> Result<StoredColumn<'_>, &'static str> {
+        if column >= 7 {
+            return Err("column index is invalid");
+        }
+        let rows = self.block_rows()?;
+        let loaded = if column == 6 {
+            self.loaded_date_block == Some(self.block / 2)
+        } else {
+            self.loaded & (1_u8 << column) != 0
+        };
+        if !loaded {
+            return Err("unloaded column");
+        }
+        let (first, capacity) = buffer_range(&self.buffers, column)?;
+        let buffer = &self.arena[first..first + capacity];
+        Ok(match column {
+            0..=3 => StoredColumn::Double(&buffer[..rows * 8]),
+            4..=5 => StoredColumn::String(&buffer[..rows]),
+            6 => {
+                let first = (self.block % 2) * BLOCK_ROWS * 4;
+                StoredColumn::Date(&buffer[first..first + rows * 4])
+            }
+            _ => unreachable!("validated column"),
+        })
+    }
+}
+
+// Borrow a checksummed block. Typed access still checks row bounds and the
+// DATE/key domains; a valid checksum alone cannot establish valid values.
+#[derive(Clone, Copy)]
+pub(super) enum StoredColumn<'a> {
+    Double(&'a [u8]),
+    String(&'a [u8]),
+    Date(&'a [u8]),
+}
+
+impl StoredColumn<'_> {
+    pub(super) fn value(self, row: usize) -> Result<Value<'static>, &'static str> {
+        Ok(match self {
+            Self::Double(bytes) => Value::Double(read_f64(bytes, row)?),
+            Self::Date(bytes) => Value::Date(read_date(bytes, row)?),
+            Self::String(bytes) => {
+                let key = FixedKey::from_byte(*bytes.get(row).ok_or("stored key row bound")?)
+                    .ok_or("stored key is outside printable ASCII domain")?;
+                Value::String(StringValue::new(key.as_str()))
+            }
+        })
+    }
+
+    pub(super) fn decode(
+        self,
+        selection: &[u32],
+        output: ColumnMut<'_>,
+    ) -> Result<(), &'static str> {
+        match (self, output) {
+            (Self::Double(bytes), ColumnMut::Double(output)) => {
+                assert_eq!(output.len(), selection.len(), "decoded column extent");
+                for (out, row) in output.iter_mut().zip(selection) {
+                    *out = read_f64(bytes, usize::try_from(*row).expect("block row fits"))?;
+                }
+            }
+            (Self::String(bytes), ColumnMut::String(output)) => {
+                assert_eq!(output.len(), selection.len(), "decoded column extent");
+                for (out, row) in output.iter_mut().zip(selection) {
+                    *out = FixedKey::from_byte(
+                        *bytes
+                            .get(usize::try_from(*row).expect("block row fits"))
+                            .ok_or("key row exceeds block")?,
+                    )
+                    .ok_or("stored key is outside printable ASCII domain")?;
+                }
+            }
+            (Self::Date(bytes), ColumnMut::Date(output)) => {
+                assert_eq!(output.len(), selection.len(), "decoded column extent");
+                for (out, row) in output.iter_mut().zip(selection) {
+                    *out = read_date(bytes, usize::try_from(*row).expect("block row fits"))?;
+                }
+            }
+            _ => return Err("stored and batch column types disagree"),
+        }
+        Ok(())
+    }
+
+    pub(super) fn filter(
+        self,
+        selection: &mut Vec<u32>,
+        filter: PhysicalFilter<'_>,
+    ) -> Result<(), &'static str> {
+        let mut retained = 0;
+        match (self, *filter.predicate) {
+            (
+                Self::Double(bytes),
+                Predicate::Compare {
+                    comparison,
+                    literal: FilterLiteral::Double(bits),
+                },
+            ) => {
+                let literal = f64::from_bits(bits);
+                for index in 0..selection.len() {
+                    let row = selection[index];
+                    if comparison.test(
+                        read_f64(bytes, usize::try_from(row).expect("block row fits"))?,
+                        literal,
+                    ) != filter.control.negated
+                    {
+                        selection[retained] = row;
+                        retained += 1;
+                    }
+                }
+            }
+            (
+                Self::Date(bytes),
+                Predicate::Compare {
+                    comparison,
+                    literal: FilterLiteral::Date(literal),
+                },
+            ) => {
+                for index in 0..selection.len() {
+                    let row = selection[index];
+                    if comparison.test_order(
+                        read_date(bytes, usize::try_from(row).expect("block row fits"))?
+                            .cmp(&literal),
+                    ) != filter.control.negated
+                    {
+                        selection[retained] = row;
+                        retained += 1;
+                    }
+                }
+            }
+            (
+                column @ Self::String(_),
+                Predicate::Compare {
+                    literal: FilterLiteral::String(_),
+                    ..
+                },
+            )
+            | (column, Predicate::IsNull { .. })
+            | (
+                column,
+                Predicate::Compare {
+                    literal: FilterLiteral::Null | FilterLiteral::NullDouble,
+                    ..
+                },
+            ) => {
+                for index in 0..selection.len() {
+                    let row = selection[index];
+                    let value = column.value(usize::try_from(row).expect("block row fits"))?;
+                    if filter
+                        .matches(value)
+                        .map_err(|_| "stored filter type disagrees")?
+                    {
+                        selection[retained] = row;
+                        retained += 1;
+                    }
+                }
+            }
+            _ => return Err("stored filter type disagrees"),
+        }
+        selection.truncate(retained);
+        Ok(())
+    }
+}
+
+fn read_date(bytes: &[u8], row: usize) -> Result<DateValue, &'static str> {
+    let first = row.checked_mul(4).ok_or("DATE row extent overflow")?;
+    let end = first.checked_add(4).ok_or("DATE value extent overflow")?;
+    let value = i32::from_le_bytes(
+        bytes
+            .get(first..end)
+            .ok_or("DATE row exceeds block")?
+            .try_into()
+            .expect("DATE width"),
+    );
+    DateValue::from_days(value).ok_or("stored DATE is outside supported calendar")
+}
+
+// Pack required columns into one allocation. offsets[c]..offsets[c + 1] is
+// column c's buffer; equal offsets mean the column needs no space. The allocation
+// must also fit metadata, which is decoded before the first payload is loaded.
+#[derive(Clone, Copy)]
+pub(in crate::execution) struct Layout {
+    computation: BatchLayout,
+    branch_rows: usize,
+    offsets: [usize; 8],
+    input_types: [DataType; MAX_ROW_VALUES],
+    input_count: usize,
+    output_types: [DataType; MAX_ROW_VALUES],
+    text_capacity: Option<usize>,
+    output_count: usize,
+}
+
+impl Layout {
+    pub(in crate::execution) fn open_empty(
+        self,
+        mut reservation: Reservation<'_>,
+    ) -> Result<AdmittedScan<'_>, Error> {
+        Ok(AdmittedScan {
+            input: OwnedBatch::new(&[], &mut reservation)?,
+            output: OwnedBatch::new_with_text(
+                &self.output_types[..self.output_count],
+                &self.text_capacities(&self.output_types[..self.output_count])[..self.output_count],
+                &mut reservation,
+            )?,
+            scan: ScanCursor {
+                computation: BatchScratch::new(self.computation)?,
+                source: Source::Legacy(Scan {
+                    file: None,
+                    arena: Vec::new(),
+                    buffers: self.offsets,
+                    descriptors: Vec::new(),
+                    rows: 0,
+                    blocks: 0,
+                    block: 0,
+                    loaded: 0,
+                    loaded_date_block: None,
+                }),
+                selection: Vec::new(),
+                branches: BranchScratch::default(),
+                start: 0,
+                end: 0,
+                phase: ScanPhase::Begin,
+                reservation,
+            },
+        })
+    }
+
+    pub(in crate::execution) fn new(
+        query: &PreparedQuery<'_>,
+        physical: &PhysicalPlan<'_>,
+    ) -> Self {
+        let demand = physical
+            .scan()
+            .raw_demand()
+            .expect("validated scan dependencies");
+        let mut offsets = [0_usize; 8];
+        for column in 0..7 {
+            let bytes = if demand & (1 << column) == 0 {
+                0
+            } else {
+                column_capacity(column)
+            };
+            offsets[column + 1] = offsets[column]
+                .checked_add(bytes)
+                .expect("seven bounded column buffers");
+        }
+        let mut input_types = [DataType::Double; MAX_ROW_VALUES];
+        let mut input_count = 0;
+        for column in physical.scan().output_columns(&query.plan) {
+            input_types[input_count] = column.data_type();
+            input_count += 1;
+        }
+        let mut output_types = [DataType::Double; MAX_ROW_VALUES];
+        let output_count = physical
+            .aggregate_pipeline()
+            .map_or(0, |pipeline| pipeline.column_count);
+        if let Some(pipeline) = physical.aggregate_pipeline() {
+            for (kind, column) in output_types
+                .iter_mut()
+                .zip(pipeline.output_columns(&query.plan))
+            {
+                *kind = column.data_type();
+            }
+        }
+        Self {
+            computation: BatchLayout::new(physical.scan()).expect("validated computation layout"),
+            branch_rows: BranchScratch::rows(physical.scan()),
+            offsets,
+            input_types,
+            input_count,
+            text_capacity: crate::execution::output_text_capacity(query),
+            output_types,
+            output_count,
+        }
+    }
+
+    fn text_capacities(&self, types: &[DataType]) -> [Option<usize>; MAX_ROW_VALUES] {
+        let mut text = [None; MAX_ROW_VALUES];
+        for (capacity, kind) in text.iter_mut().zip(types) {
+            if *kind == DataType::String {
+                *capacity = self.text_capacity;
+            }
+        }
+        text
+    }
+
+    fn arena_bytes(&self) -> usize {
+        self.offsets[7].max(METADATA_BYTES)
+    }
+
+    pub(in crate::execution) fn workspace_bytes(&self) -> Result<u64, Error> {
+        let input = Batch::required_bytes_with_text(
+            &self.input_types[..self.input_count],
+            &self.text_capacities(&self.input_types[..self.input_count])[..self.input_count],
+        )?;
+        let output = Batch::required_bytes_with_text(
+            &self.output_types[..self.output_count],
+            &self.text_capacities(&self.output_types[..self.output_count])[..self.output_count],
+        )?;
+        (WORKSPACE_FIXED_BYTES + self.arena_bytes() as u64)
+            .checked_add(input)
+            .and_then(|bytes| bytes.checked_add(output))
+            .and_then(|bytes| bytes.checked_add(self.computation.bytes()))
+            .and_then(|bytes| bytes.checked_add(BranchScratch::bytes(self.branch_rows)))
+            .ok_or(Error::Corrupt("scan workspace extent"))
+    }
+
+    pub(in crate::execution) fn validate(
+        &self,
+        plan: &PhysicalPlan,
+        query: &PreparedQuery<'_>,
+    ) -> Result<(), Error> {
+        if self.text_capacity != crate::execution::output_text_capacity(query)
+            || self.branch_rows != BranchScratch::rows(plan.scan())
+            || self.computation != BatchLayout::new(plan.scan())?
+            || self.input_count != plan.scan().column_count
+            || self.output_count
+                != plan
+                    .aggregate_pipeline()
+                    .map_or(0, |pipeline| pipeline.column_count)
+        {
+            return Err(Error::Corrupt("batch column count disagrees with plan"));
+        }
+        for (kind, column) in self.input_types[..self.input_count]
+            .iter()
+            .zip(plan.scan().output_columns(&query.plan))
+        {
+            if *kind != column.data_type() {
+                return Err(Error::Corrupt("batch source type disagrees"));
+            }
+        }
+        if let Some(pipeline) = plan.aggregate_pipeline() {
+            for (kind, column) in self.output_types[..self.output_count]
+                .iter()
+                .zip(pipeline.output_columns(&query.plan))
+            {
+                if column.data_type() != *kind {
+                    return Err(Error::Corrupt("batch output type disagrees"));
+                }
+            }
+        }
+        if self.offsets[0] != 0 || self.offsets[7] > ARENA_BYTES {
+            return Err(Error::Corrupt("column buffer extent"));
+        }
+        let demand = plan.scan().raw_demand()?;
+        for column in 0..7 {
+            let demanded = demand & (1 << column) != 0;
+            let expected = if demanded { column_capacity(column) } else { 0 };
+            if self.offsets[column + 1].checked_sub(self.offsets[column]) != Some(expected) {
+                return Err(Error::Corrupt(
+                    "column buffer disagrees with physical demand",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn buffer_range(offsets: &[usize; 8], column: u8) -> Result<(usize, usize), &'static str> {
+    let column = usize::from(column);
+    let start = offsets[column];
+    let bytes = offsets[column + 1] - start;
+    if bytes == 0 {
+        return Err("column has no admitted buffer");
+    }
+    Ok((start, bytes))
+}
+
+fn column_capacity(column: usize) -> usize {
+    match column {
+        0..=3 | 6 => BLOCK_BYTES,
+        4..=5 => BLOCK_ROWS,
+        _ => unreachable!("validated storage column"),
+    }
+}
+
+// Namespace inspection and unit decoding both need large stack buffers. Keep
+// this function out of line so their stack frames do not combine at the caller.
+#[inline(never)]
+pub(in crate::execution) fn open_workspace<'db>(
+    root: &Path,
+    expected: UnitExpectation,
+    double_blocks: u32,
+    buffers: Layout,
+    mut reservation: Reservation<'db>,
+    cancellation: &CancellationToken,
+    effects: &mut Effects,
+) -> Result<AdmittedScan<'db>, Error> {
+    let rows = expected.rows;
+    let arena_bytes = buffers.arena_bytes();
+    let mut arena = allocate::<u8>(arena_bytes, arena_bytes, "scan arena", reservation.bytes())?;
+    arena.resize(arena_bytes, 0);
+    let mut descriptors = allocate::<BlockDescriptor>(
+        DESCRIPTOR_CEILING,
+        DESCRIPTOR_CEILING,
+        "scan descriptors",
+        reservation.bytes(),
+    )?;
+    let selection = allocate::<u32>(
+        COMPUTE_ROWS,
+        SELECTION_CEILING,
+        "scan selection",
+        reservation.bytes(),
+    )?;
+    let input = OwnedBatch::new_with_text(
+        &buffers.input_types[..buffers.input_count],
+        &buffers.text_capacities(&buffers.input_types[..buffers.input_count])
+            [..buffers.input_count],
+        &mut reservation,
+    )?;
+    let output = OwnedBatch::new_with_text(
+        &buffers.output_types[..buffers.output_count],
+        &buffers.text_capacities(&buffers.output_types[..buffers.output_count])
+            [..buffers.output_count],
+        &mut reservation,
+    )?;
+    let computation = BatchScratch::new(buffers.computation)?;
+    let mut slot = std::mem::MaybeUninit::uninit();
+    let (file, metadata) = open_unit(
+        root,
+        expected,
+        &mut slot,
+        &mut arena[..METADATA_BYTES],
+        cancellation,
+        effects,
+    )?;
+    // Retain only the used descriptors. Decoding into slot avoids returning a
+    // second large metadata value by value across the function boundary.
+    descriptors.extend_from_slice(&metadata.descriptors[..metadata.descriptor_count()]);
+    Ok(AdmittedScan {
+        input,
+        output,
+        scan: ScanCursor {
+            computation,
+            source: Source::Legacy(Scan {
+                file: Some(file),
+                arena,
+                buffers: buffers.offsets,
+                descriptors,
+                rows: usize::try_from(rows)
+                    .map_err(|_| Error::Corrupt("row count does not fit"))?,
+                blocks: usize::try_from(double_blocks)
+                    .map_err(|_| Error::Corrupt("block count does not fit"))?,
+                block: 0,
+                loaded: 0,
+                loaded_date_block: None,
+            }),
+            selection,
+            branches: BranchScratch::new(buffers.branch_rows, reservation.bytes())?,
+            start: 0,
+            end: 0,
+            phase: ScanPhase::Begin,
+            reservation,
+        },
+    })
+}
+
+fn open_unit<'out>(
+    root: &Path,
+    expected_plan: UnitExpectation,
+    decoded_slot: &'out mut std::mem::MaybeUninit<UnitMetadata>,
+    buffer: &mut [u8],
+    cancellation: &CancellationToken,
+    effects: &mut Effects,
+) -> Result<(File, &'out UnitMetadata), Error> {
+    let path = crate::path::joined_path(&crate::path::joined_path(root, UNITS_NAME)?, UNIT_NAME)?;
+    cancellation.check()?;
+    effects.before(Effect::Query(QueryEffect::InspectUnit))?;
+    let expected = filesystem::symlink_metadata(&path)
+        .map_err(|source| io_error("inspect query unit", source))?;
+    if !expected.file_type().is_file() || expected.len() != expected_plan.unit_bytes {
+        return Err(Error::Corrupt("query unit has invalid type or length"));
+    }
+    cancellation.check()?;
+    effects.before(Effect::Query(QueryEffect::OpenUnit))?;
+    let file = filesystem::open_read(path).map_err(|source| io_error("open query unit", source))?;
+    cancellation.check()?;
+    effects.before(Effect::Query(QueryEffect::InspectOpenUnit))?;
+    let opened = filesystem::file_metadata(&file)
+        .map_err(|source| io_error("inspect open query unit", source))?;
+    if opened.identity() != expected.identity() || opened.len() != expected_plan.unit_bytes {
+        return Err(Error::Corrupt("query unit changed while opening"));
+    }
+
+    // Decode into a separate typed slot before reusing these bytes for payloads.
+    // The returned metadata borrows that slot, not the reusable byte buffer.
+    let (header, rest) = buffer.split_at_mut(format::HEADER_BYTES);
+    let (descriptors, rest) = rest.split_at_mut(format::DESCRIPTOR_BYTES);
+    let padding = &mut rest[..format::UNIT_PADDING_BYTES];
+    read_exact_at(
+        &file,
+        header,
+        0,
+        QueryEffect::ReadHeader,
+        cancellation,
+        effects,
+    )?;
+    read_exact_at(
+        &file,
+        descriptors,
+        u64::try_from(format::HEADER_BYTES).expect("header bytes fit u64"),
+        QueryEffect::ReadDescriptors,
+        cancellation,
+        effects,
+    )?;
+    read_exact_at(
+        &file,
+        padding,
+        u64::try_from(format::HEADER_BYTES + format::DESCRIPTOR_BYTES)
+            .expect("unit metadata prefix fits u64"),
+        QueryEffect::ReadPadding,
+        cancellation,
+        effects,
+    )?;
+    if padding.iter().any(|byte| *byte != 0) {
+        return Err(Error::Corrupt("query unit padding is nonzero"));
+    }
+    let (metadata, checksum) = format::decode_unit_metadata_into(header, descriptors, decoded_slot)
+        .map_err(|_| Error::Corrupt("query unit metadata is invalid"))?;
+    if metadata.database != expected_plan.database_id
+        || metadata.rows != expected_plan.rows
+        || metadata.projected_crc32c != expected_plan.projected_crc32c
+        || checksum != expected_plan.unit_metadata_crc32c
+        || metadata.descriptor_count()
+            != usize::try_from(expected_plan.descriptor_count)
+                .map_err(|_| Error::Corrupt("descriptor count does not fit usize"))?
+    {
+        return Err(Error::Corrupt(
+            "query unit metadata disagrees with physical plan",
+        ));
+    }
+    Ok((file, metadata))
+}
+
+fn read_demanded_block(
+    file: &File,
+    descriptor: BlockDescriptor,
+    buffer: &mut [u8],
+    cancellation: &CancellationToken,
+    effects: &mut Effects,
+) -> Result<usize, Error> {
+    let bytes = usize::try_from(descriptor.bytes)
+        .map_err(|_| Error::Corrupt("demanded block length does not fit usize"))?;
+    if bytes == 0 || bytes > buffer.len() {
+        return Err(Error::Corrupt("demanded block length is invalid"));
+    }
+    read_exact_at(
+        file,
+        &mut buffer[..bytes],
+        descriptor.offset,
+        QueryEffect::ReadPayload,
+        cancellation,
+        effects,
+    )?;
+    if format::crc32c(&buffer[..bytes]) != descriptor.crc32c {
+        return Err(Error::Corrupt("demanded unit payload checksum failed"));
+    }
+    Ok(bytes)
+}
+
+fn read_exact_at(
+    file: &File,
+    buffer: &mut [u8],
+    offset: u64,
+    effect: QueryEffect,
+    cancellation: &CancellationToken,
+    effects: &mut Effects,
+) -> Result<(), Error> {
+    cancellation.check()?;
+    let short = effects.before(Effect::Query(effect))?;
+    let length = if short {
+        buffer
+            .len()
+            .checked_sub(1)
+            .expect("fixed query reads are nonempty")
+    } else {
+        buffer.len()
+    };
+    crate::file_io::read_exact_at(file, &mut buffer[..length], offset)
+        .map_err(|source| io_error(effect.name(), source))?;
+    // Fault injection deliberately reads one byte less. Report that incomplete
+    // transfer as an error even if the shorter underlying read succeeded.
+    if short {
+        return Err(io_error(
+            effect.name(),
+            io::Error::from(io::ErrorKind::UnexpectedEof),
+        ));
+    }
+    Ok(())
+}
+
+fn read_f64(buffer: &[u8], index: usize) -> Result<f64, &'static str> {
+    let Some(start) = index.checked_mul(size_of::<f64>()) else {
+        return Err("DOUBLE value offset overflow");
+    };
+    let Some(end) = start.checked_add(size_of::<f64>()) else {
+        return Err("DOUBLE value extent overflow");
+    };
+    let Some(bytes) = buffer.get(start..end) else {
+        return Err("DOUBLE value is outside demanded block");
+    };
+    Ok(f64::from_bits(u64::from_le_bytes(
+        bytes
+            .try_into()
+            .map_err(|_| "DOUBLE value width is invalid")?,
+    )))
+}
+
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+#[path = "legacy_tests.rs"]
+mod tests;

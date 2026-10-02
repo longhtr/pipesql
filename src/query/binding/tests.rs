@@ -1,0 +1,2359 @@
+//! Test how SQL names and expressions become a typed, validated query plan.
+//!
+//! Most cases prepare SQL against declared tables or the fixed legacy schema,
+//! then inspect column identities, visible names, types and source spans.
+//! Mutation tests change a valid plan and ask the separate validator to reject
+//! it. Memory tests leave exactly enough room, or one byte too little, and check
+//! that dropping a plan or refusing preparation releases its reservations.
+//!
+//! A few cases execute expressions or aggregate chains to check that identities
+//! survive into evaluation. The catalog-generation case also checks execution's
+//! comparison with the pinned schema. Complete SQL result coverage belongs to
+//! the public catalog tests and the independent semantic campaign.
+
+use super::super::lexer::{RESERVED_IDENTIFIERS, ZERO_SPAN, lex};
+use super::super::parser::{
+    ParsedAggregateEntry, ParsedExpression, ParsedLiteral, ParsedOp, ParsedStage,
+};
+use super::super::*;
+use super::*;
+use crate::test_support::Directory;
+const Q6: &str = include_str!("../../../test/data/q6.pipe.sql");
+const Q1: &str = include_str!("../../../test/data/upstream/q1-upstream.pipe.sql");
+
+fn database(limit: u64) -> (Directory, Database) {
+    let temp = Directory::new();
+    let database = Database::create(
+        &temp.0.join("database"),
+        crate::Config::new(limit, 1).unwrap(),
+    )
+    .unwrap();
+    (temp, database)
+}
+
+#[test]
+fn derived_scope_preparation_admits_exact_peak_and_releases_it() {
+    check_scope_preparation(
+        "FROM facts AS a |> JOIN (FROM facts AS b |> JOIN (FROM facts |> SELECT k) AS c ON b.k = c.k |> SELECT b.k AS k) AS d ON a.k = d.k |> AGGREGATE COUNT(*) AS n",
+    );
+}
+
+#[test]
+fn left_join_scope_preparation_admits_exact_peak_and_releases_it() {
+    check_scope_preparation(
+        "FROM facts AS a |> LEFT JOIN (FROM facts AS b |> LEFT JOIN (FROM facts |> SELECT k, n) AS c ON b.k=c.k |> SELECT b.k, c.n) AS d ON a.k=d.k |> SELECT a.n, d.n",
+    );
+    let mut widest_chain = String::from("FROM facts AS a");
+    for index in 0..8 {
+        widest_chain.push_str(&format!(
+            " |> LEFT JOIN facts AS b{index} ON a.k=b{index}.k"
+        ));
+    }
+    check_scope_preparation(&widest_chain);
+}
+
+#[test]
+fn wide_constant_preparation_admits_exact_peak_and_releases_it() {
+    let (_directory, db) = database(4_000_000);
+    let resident = db.reserved_memory_bytes();
+    // The smaller widths straddle a 16-KiB allocation boundary; 64 also checks
+    // the maximum number of output columns.
+    for width in [30, 31, 64] {
+        let sql = format!(
+            "FROM lineitem |> SELECT {}",
+            vec!["'constant'"; width].join(", ")
+        );
+        let prepared = db.prepare(&sql).unwrap();
+        let retained = prepared.accounted_memory_bytes();
+        assert_eq!(prepared.result_column_count(), width);
+        drop(prepared);
+        for shortfall in [1, 0] {
+            let pressure = db
+                .reserve_memory(
+                    db.config().memory_limit_bytes() - resident - retained + shortfall,
+                    "prepared capacity pressure",
+                )
+                .unwrap();
+            let before = db.reserved_memory_bytes();
+            match db.prepare(&sql) {
+                Ok(query) => {
+                    assert_eq!(shortfall, 0);
+                    assert_eq!(query.result_column_count(), width);
+                    assert_eq!(db.reserved_memory_bytes(), before + retained);
+                }
+                Err(error) => assert!(
+                    shortfall == 1 && matches!(error, Error::Resource { .. }),
+                    "{error}"
+                ),
+            }
+            assert_eq!(db.reserved_memory_bytes(), before);
+            drop(pressure);
+            assert_eq!(db.reserved_memory_bytes(), resident);
+        }
+    }
+}
+
+#[test]
+fn set_scope_preparation_admits_exact_peak_and_releases_it() {
+    for operator in ["EXCEPT ALL", "INTERSECT ALL"] {
+        check_scope_preparation(&format!(
+            "FROM facts |> {operator} (FROM facts |> {operator} (FROM facts)), (FROM facts)"
+        ));
+    }
+    check_scope_preparation(
+        "FROM facts |> UNION ALL (FROM facts |> UNION ALL (FROM facts)), (FROM facts)",
+    );
+    check_scope_preparation(
+        "FROM facts |> UNION DISTINCT (FROM facts |> UNION DISTINCT (FROM facts)), (FROM facts)",
+    );
+    check_scope_preparation(
+        "FROM facts |> EXCEPT DISTINCT (FROM facts |> EXCEPT DISTINCT (FROM facts)), (FROM facts)",
+    );
+    check_scope_preparation(
+        "FROM facts |> INTERSECT DISTINCT (FROM facts |> INTERSECT DISTINCT (FROM facts)), (FROM facts)",
+    );
+}
+
+#[test]
+fn legacy_set_operations_refuse_before_execution_with_their_operator_span() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    for (operator, message) in [
+        ("UNION ALL", "UNION requires declared-table storage"),
+        ("UNION DISTINCT", "UNION requires declared-table storage"),
+        ("EXCEPT DISTINCT", "EXCEPT requires declared-table storage"),
+        ("EXCEPT ALL", "EXCEPT requires declared-table storage"),
+        ("INTERSECT ALL", "INTERSECT requires declared-table storage"),
+        (
+            "INTERSECT DISTINCT",
+            "INTERSECT requires declared-table storage",
+        ),
+    ] {
+        let sql = format!("FROM lineitem |> {operator} (FROM lineitem)");
+        let Err(Error::Bind {
+            message: observed,
+            span,
+        }) = db.prepare(&sql)
+        else {
+            panic!("legacy set operation must refuse during preparation");
+        };
+        assert_eq!(observed, message);
+        assert_eq!(text(&sql, span), "|>");
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+}
+
+// Catalog loading and scope binding use scratch memory at different times.
+// Check their combined peak through prepare, then test scope allocation alone
+// so a larger catalog requirement cannot hide an incorrect scope reservation.
+fn check_scope_preparation(sql: &str) {
+    let temp = Directory::new();
+    let db = Database::create_empty(
+        &temp.0.join("database"),
+        crate::Config::new(4_000_000, 1_000_000).unwrap(),
+    )
+    .unwrap();
+    db.declare_table(
+        "facts",
+        &[
+            crate::ColumnDeclaration {
+                name: "k",
+                data_type: DataType::Int64,
+                nullable: false,
+            },
+            crate::ColumnDeclaration {
+                name: "n",
+                data_type: DataType::Int64,
+                nullable: true,
+            },
+        ],
+        &crate::CancellationToken::new(),
+    )
+    .unwrap();
+    let baseline = db.reserved_memory_bytes();
+    let query = db.prepare(sql).unwrap();
+    let retained = query.accounted_memory_bytes();
+    assert_eq!(db.reserved_memory_bytes(), baseline + retained);
+    let syntax = parse_query(sql).unwrap();
+    let source_columns = usize::from(query.plan.source_count);
+    let scopes = SavedScopes::new(&db.memory, &syntax, source_columns).unwrap();
+    let physical = (scopes.values.capacity() * size_of::<Output>()
+        + scopes.ranges.capacity() * size_of::<Range>()
+        + 2 * PREPARED_ALLOCATION_ALLOWANCE) as u64;
+    assert_eq!(scopes._reservation.bytes(), physical);
+    let binding_peak = retained + physical;
+    // Catalog loading needs its read buffer and two 4-KiB paths. This estimate
+    // uses the catalog contract; the scope estimate above uses actual capacities.
+    let catalog_charge = if cfg!(target_os = "macos") {
+        131_072
+    } else {
+        65_536
+    };
+    let catalog_peak = catalog_charge + 2 * 4_096;
+    let peak = binding_peak.max(catalog_peak);
+    let refusal_owner = if catalog_peak > binding_peak {
+        "query catalog binding"
+    } else {
+        "binder scope storage"
+    };
+    drop(scopes);
+    drop(query);
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    for available in [0, 2 * 4_096 - 1] {
+        let pressure = db
+            .reserve_memory(
+                db.config().memory_limit_bytes() - baseline - available,
+                "catalog path admission pressure",
+            )
+            .unwrap();
+        let pressured = db.reserved_memory_bytes();
+        assert!(matches!(
+            db.prepare(sql),
+            Err(Error::Resource {
+                owner: "query catalog paths",
+                required,
+                ..
+            }) if required == pressured + 8_192
+        ));
+        assert_eq!(db.reserved_memory_bytes(), pressured);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        drop(pressure);
+    }
+    for shortfall in [0, 1] {
+        let pressure = db
+            .reserve_memory(
+                db.config().memory_limit_bytes() - baseline - peak + shortfall,
+                "scope admission pressure",
+            )
+            .unwrap();
+        let pressured = db.reserved_memory_bytes();
+        match db.prepare(sql) {
+            Ok(query) => {
+                assert_eq!(shortfall, 0);
+                assert_eq!(query.accounted_memory_bytes(), retained);
+                assert_eq!(db.reserved_memory_bytes(), pressured + retained);
+                drop(query);
+            }
+            Err(error) => assert!(
+                shortfall == 1
+                    && matches!(
+                        error,
+                        Error::Resource {
+                            owner,
+                            ..
+                        } if owner == refusal_owner
+                    ),
+                "{error}"
+            ),
+        }
+        assert_eq!(db.reserved_memory_bytes(), pressured);
+        assert_eq!(db.reserved_temp_bytes(), 0);
+        drop(pressure);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    for shortfall in [0, 1] {
+        let pressure = db
+            .reserve_memory(
+                db.config().memory_limit_bytes() - baseline - physical + shortfall,
+                "isolated scope pressure",
+            )
+            .unwrap();
+        let pressured = db.reserved_memory_bytes();
+        match SavedScopes::new(&db.memory, &syntax, source_columns) {
+            Ok(scopes) => {
+                assert_eq!(shortfall, 0);
+                assert_eq!(db.reserved_memory_bytes(), pressured + physical);
+                drop(scopes);
+            }
+            Err(error) => assert!(
+                shortfall == 1
+                    && matches!(
+                        error,
+                        Error::Resource {
+                            owner: "binder scope storage",
+                            ..
+                        }
+                    )
+            ),
+        }
+        assert_eq!(db.reserved_memory_bytes(), pressured);
+        drop(pressure);
+    }
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    println!(
+        "scope payload+allowances={physical} retained={retained} binding peak={binding_peak} catalog peak={catalog_peak} preparation peak={peak}"
+    );
+}
+
+#[test]
+fn repeated_aggregate_binding_preserves_identity_and_transitive_demand() {
+    let (_temp, database) = database(4_000_000);
+    let baseline = database.reserved_memory_bytes();
+    let sql = "FROM lineitem |> AGGREGATE SUM(l_quantity) AS l_quantity, SUM(l_extendedprice) AS unused |> SELECT l_quantity * 2 AS l_quantity |> AGGREGATE AVG(l_quantity) AS average";
+    let mut query = database.prepare(sql).unwrap();
+    assert_eq!(query.plan.aggregates.len(), 2);
+    assert_eq!(query.plan.aggregate_demand(0), 0b01);
+    assert_eq!(query.plan.aggregate_demand(1), 0b1);
+    assert_eq!(query.result_column(0).unwrap().data_type, DataType::Double);
+    assert_ne!(
+        query.plan.aggregates[0].first_output,
+        query.plan.aggregates[1].first_output
+    );
+    assert_eq!(
+        database.reserved_memory_bytes(),
+        baseline + query.accounted_memory_bytes()
+    );
+    assert!(query.accounted_memory_bytes() <= PreparedQuery::memory_requirement_bytes());
+    let last = usize::from(query.plan.count) - 1;
+    for index in [0, 2, u8::MAX] {
+        query.plan.stages[last].stage = Stage::Aggregate(index);
+        assert!(
+            validate(&query.plan).is_err(),
+            "wrong aggregate owner {index}"
+        );
+    }
+    query.plan.stages[last].stage = Stage::Aggregate(1);
+    validate(&query.plan).unwrap();
+    drop(query);
+    assert_eq!(database.reserved_memory_bytes(), baseline);
+}
+
+#[test]
+fn repeated_aggregate_legacy_empty_chain_respects_identity_limit() {
+    let (_temp, database) = database(4_000_000);
+    let baseline = database.reserved_memory_bytes();
+    let cancel = crate::CancellationToken::new();
+    let mut sql = String::from("FROM lineitem |> AGGREGATE COUNT(*) AS n");
+    for count in 1..=MAX_AGGREGATE_COLUMNS {
+        let query = database.prepare(&sql).unwrap();
+        assert_eq!(query.plan.aggregates.len(), count);
+        let mut result = database.execute(&query, &cancel).unwrap();
+        let mut observed = Vec::new();
+        let mut finished = false;
+        for _ in 0..1024 {
+            match result.step() {
+                crate::QueryStep::Rows(batch) => {
+                    for row in 0..batch.len() {
+                        let crate::Value::Int64(value) = batch.value(row, 0).unwrap() else {
+                            panic!("count chain value");
+                        };
+                        observed.push(value);
+                    }
+                }
+                crate::QueryStep::Progress => (),
+                crate::QueryStep::Finished => {
+                    finished = true;
+                    break;
+                }
+                crate::QueryStep::Failed(error) => panic!("{count}: {error}"),
+            }
+        }
+        assert!(finished);
+        assert_eq!(observed, [0]);
+        drop(result);
+        drop(query);
+        assert_eq!(database.reserved_memory_bytes(), baseline);
+        sql.push_str(" |> AGGREGATE SUM(n) AS n");
+    }
+    assert!(database.prepare(&sql).is_err());
+    assert_eq!(database.reserved_memory_bytes(), baseline);
+}
+
+#[test]
+fn string_length_definitions_reject_invalid_types_scope_and_nullability() {
+    let (_temp, db) = database(4_000_000);
+    for function in ["BYTE_LENGTH", "CHAR_LENGTH"] {
+        for mutation in 0..6 {
+            let sql = format!("FROM lineitem |> SELECT {function}(l_returnflag) AS length");
+            let mut query = db.prepare(&sql).unwrap();
+            validate(&query.plan).unwrap();
+            let definition = &mut query.plan.computed[0];
+            let Computation::StringLength { input, unit } = definition.expression else {
+                panic!("typed STRING-length computation");
+            };
+            match mutation {
+                0 => {
+                    definition.expression = Computation::StringLength {
+                        input: SourceColumn::QUANTITY.semantic(),
+                        unit,
+                    }
+                }
+                1 => {
+                    definition.expression = Computation::StringLength {
+                        input: SemanticColumn::new(
+                            input.identity().value(),
+                            DataType::String,
+                            true,
+                        ),
+                        unit,
+                    }
+                }
+                2 => {
+                    definition.expression = Computation::StringLength {
+                        input: SemanticColumn::new(99, DataType::String, false),
+                        unit,
+                    }
+                }
+                3 => {
+                    definition.column = SemanticColumn::new(
+                        definition.column.identity().value(),
+                        DataType::Double,
+                        false,
+                    )
+                }
+                4 => {
+                    definition.column = SemanticColumn::new(
+                        definition.column.identity().value(),
+                        DataType::Int64,
+                        true,
+                    )
+                }
+                5 => definition.input = RelationId(16),
+                _ => unreachable!(),
+            }
+            assert!(
+                validate(&query.plan).is_err(),
+                "{function} mutation {mutation}"
+            );
+        }
+    }
+}
+
+#[test]
+fn computed_definitions_reject_invalid_scope_identity_and_provenance() {
+    let (_temp, database) = database(4_000_000);
+    for sql in [
+        "FROM lineitem |> SELECT l_quantity+1 AS x |> SELECT x*2 AS y",
+        "FROM lineitem |> EXTEND l_quantity+1 AS x |> EXTEND x*2 AS y",
+    ] {
+        for mutation in 0..8 {
+            let mut query = database.prepare(sql).unwrap();
+            let second = query.plan.computed[1].column;
+            match mutation {
+                0 => query.plan.computed[0].column = second,
+                1 => query.plan.computed[1].input = RelationId::SOURCE,
+                2 => query.plan.computed[0].span = ZERO_SPAN,
+                3 => query.plan.computed[0].span.end = u16::MAX,
+                4 | 5 => {
+                    let Computation::Numeric(expression) = &mut query.plan.computed[0].expression
+                    else {
+                        unreachable!()
+                    };
+                    if mutation == 4 {
+                        expression.ops[0] = Op::Column(second);
+                    } else {
+                        expression.data_type = DataType::Int64;
+                    }
+                }
+                6 => {
+                    query.plan.computed.pop();
+                }
+                7 => query.plan.projections[1] = query.plan.computed[0].column.identity(),
+                _ => unreachable!(),
+            }
+            assert!(
+                validate(&query.plan).is_err(),
+                "computed mutation {mutation}"
+            );
+        }
+    }
+    println!(
+        "computed storage Parsed={} Plan={} Computed={}",
+        size_of::<Parsed>(),
+        size_of::<Plan>(),
+        size_of::<Computed>()
+    );
+}
+
+#[test]
+fn limit_bounds_and_shared_parser_storage_are_checked() {
+    let (_temp, db) = database(2_000_000);
+    for bad_count in [true, false] {
+        let mut query = db
+            .prepare("FROM lineitem |> LIMIT 0 OFFSET 9223372036854775807")
+            .unwrap();
+        let Stage::Limit(bounds) = &mut query.plan.stages[0].stage else {
+            unreachable!();
+        };
+        if bad_count {
+            bounds.count = u64::MAX;
+        } else {
+            bounds.offset = u64::MAX;
+        }
+        assert!(validate(&query.plan).is_err());
+    }
+    // The parser stores operations in one shared array. Giving every stage or
+    // aggregate call its own full expression buffer would exceed these sizes.
+    assert!(std::mem::size_of::<ParsedStage>() <= std::mem::size_of::<ParsedLiteral>() + 16);
+    assert!(std::mem::size_of::<ParsedAggregateEntry>() <= 24);
+    assert!(
+        std::mem::size_of::<Parsed>() <= 4500,
+        "parsed={} operation={}",
+        std::mem::size_of::<Parsed>(),
+        std::mem::size_of::<ParsedOp>(),
+    );
+    eprintln!(
+        "parser bytes: parsed={} stage={} expression={} shared_expression_ops={}",
+        std::mem::size_of::<Parsed>(),
+        std::mem::size_of::<ParsedStage>(),
+        std::mem::size_of::<ParsedExpression>(),
+        std::mem::size_of::<[ParsedOp; MAX_TOKENS]>()
+    );
+}
+
+#[test]
+fn boolean_controls_preserve_scope_bounds_and_finite_paths() {
+    let (_temp, db) = database(2_000_000);
+    for mutation in 0..4 {
+        let mut query = db
+            .prepare("FROM lineitem |> WHERE l_quantity<0 OR l_quantity>1 |> SELECT l_quantity")
+            .unwrap();
+        let Stage::Where(filter) = &mut query.plan.stages[0].stage else {
+            unreachable!()
+        };
+        match mutation {
+            0 => filter.control.end = u8::MAX,
+            1 => filter.control.matched = 3,
+            2 => filter.control.end = 3,
+            3 => filter.control.other = 3,
+            _ => unreachable!(),
+        }
+        assert!(validate(&query.plan).is_err());
+    }
+    for syntax in ["NOT ".repeat(100), "(".repeat(70)] {
+        let ending = if syntax.starts_with('(') {
+            ")".repeat(70)
+        } else {
+            String::new()
+        };
+        let query = format!("FROM lineitem |> WHERE {syntax}l_quantity<0{ending}");
+        db.prepare(&query).unwrap();
+    }
+    assert!(
+        db.prepare(&format!(
+            "FROM lineitem |> WHERE {}l_quantity<0",
+            "NOT ".repeat(160)
+        ))
+        .is_err()
+    );
+}
+
+#[test]
+fn infix_negation_preserves_stage_bounds_and_preparation_admission() {
+    let (_temp, db) = database(2_000_000);
+    let at_limit = format!(
+        "FROM lineitem{}",
+        " |> WHERE l_quantity NOT BETWEEN 0 AND 1".repeat(MAX_STAGES / 2)
+    );
+    db.prepare(&at_limit).unwrap();
+    assert!(matches!(
+        db.prepare(&(at_limit + " |> WHERE l_quantity NOT IN (0)")),
+        Err(Error::Parse { .. })
+    ));
+    check_scope_preparation(
+        "FROM facts |> SELECT k, n |> WHERE n NOT IN (0, NULL, 3) |> AGGREGATE SUM(n) AS total GROUP BY k",
+    );
+    check_scope_preparation(
+        "FROM facts |> SELECT k, n |> WHERE n NOT BETWEEN 0 AND 3 OR k NOT IN (1)",
+    );
+}
+
+#[test]
+fn null_safe_predicates_preserve_types_validation_and_admission() {
+    let (_temp, db) = database(2_000_000);
+    for keyword in ["IS DISTINCT FROM", "IS NOT DISTINCT FROM"] {
+        let sql = format!("FROM lineitem |> SELECT l_quantity |> WHERE l_quantity {keyword} NULL");
+        for mutation in 0..6 {
+            let mut query = db.prepare(&sql).unwrap();
+            let Stage::Where(filter) = &mut query.plan.stages[1].stage else {
+                unreachable!()
+            };
+            match mutation {
+                0 => (),
+                1 => filter.column = SourceColumn::PRICE.identity,
+                2 => filter.span = ZERO_SPAN,
+                3 | 4 => {
+                    let Predicate::Compare { literal, .. } = &mut filter.predicate else {
+                        unreachable!()
+                    };
+                    *literal = if mutation == 3 {
+                        FilterLiteral::Double(f64::NAN.to_bits())
+                    } else {
+                        FilterLiteral::Int64(1) // Binding should have converted this to DOUBLE.
+                    };
+                }
+                5 => filter.control.end = 0,
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                validate(&query.plan).is_ok(),
+                mutation == 0,
+                "{keyword}: mutation {mutation}"
+            );
+        }
+        let repeated = format!(
+            "FROM lineitem{}",
+            format!(" |> WHERE l_quantity {keyword} 0").repeat(MAX_STAGES)
+        );
+        db.prepare(&repeated).unwrap();
+        assert!(
+            db.prepare(&(repeated + " |> WHERE l_quantity IS NULL"))
+                .is_err()
+        );
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k, n |> WHERE n IS DISTINCT FROM NULL |> AGGREGATE SUM(n) AS total GROUP BY k",
+    );
+    check_scope_preparation(
+        "FROM facts |> SELECT k, n |> WHERE NOT (n IS NOT DISTINCT FROM NULL OR k IS DISTINCT FROM 1)",
+    );
+}
+
+#[test]
+fn null_predicates_keep_scope_validation_and_stage_bounds() {
+    let (_temp, db) = database(2_000_000);
+    for mutation in 0..2 {
+        let mut query = db
+            .prepare("FROM lineitem |> SELECT l_quantity |> WHERE l_quantity IS NULL")
+            .unwrap();
+        let Stage::Where(filter) = &mut query.plan.stages[1].stage else {
+            unreachable!()
+        };
+        assert_eq!(filter.predicate, Predicate::IsNull { negated: false });
+        if mutation == 0 {
+            // SELECT removed price, so the later filter cannot refer to it.
+            filter.column = SourceColumn::PRICE.identity;
+        } else {
+            filter.span = ZERO_SPAN;
+        }
+        assert!(validate(&query.plan).is_err());
+    }
+    let sql = format!(
+        "FROM lineitem{}",
+        " |> WHERE l_quantity IS NOT NULL".repeat(MAX_STAGES)
+    );
+    assert!(db.prepare(&sql).is_ok());
+    assert!(matches!(
+        db.prepare(&(sql + " |> WHERE l_quantity IS NULL")),
+        Err(Error::Parse { .. })
+    ));
+}
+
+#[test]
+fn pooled_numeric_programs_preserve_individual_bounds_and_spans() {
+    let (_temp, db) = database(2_000_000);
+    // Each expression uses all 32 permitted operations. Sharing their storage
+    // must preserve each expression's range and enforce its own limit.
+    let expression = format!("-({}0)", "0+".repeat(15));
+    let source = format!(
+        "FROM lineitem |> LIMIT {expression} OFFSET {expression} |> LIMIT {expression} OFFSET {expression}"
+    );
+    let parsed = parse_query(&source).unwrap();
+    assert_eq!(parsed.expression_op_count, 128);
+    assert!(db.prepare(&source).is_ok());
+    let too_many = source.replacen(&expression, &format!("-{expression}"), 1);
+    assert!(matches!(db.prepare(&too_many), Err(Error::Parse { .. })));
+
+    let prefix = "# 雪\nFROM lineitem |> WHERE l_quantity BETWEEN (0+1) AND (3*4) |> AGGREGATE SUM(l_quantity+5) AS s, AVG(l_quantity*6) AS a |> WHERE s > (7-8) |> LIMIT (9+10) OFFSET ";
+    let source = format!("{prefix}(9223372036854775807+1)");
+    let resident = db.reserved_memory_bytes();
+    match db.prepare(&source) {
+        Err(Error::ArithmeticOverflow { span, .. }) => {
+            assert_eq!(span.start(), prefix.len());
+            assert_eq!(span.end(), source.len());
+        }
+        outcome => panic!("expected final constant overflow: {:?}", outcome.err()),
+    }
+    assert_eq!(db.reserved_memory_bytes(), resident);
+}
+
+#[test]
+fn legacy_joins_refuse_during_preparation_and_release_ownership() {
+    let (_temp, database) = database(2_000_000);
+    let baseline = database.reserved_memory_bytes();
+    let sql = "FROM lineitem AS a |> JOIN lineitem AS b ON a.l_quantity = b.l_quantity";
+    let error = database
+        .prepare(sql)
+        .err()
+        .expect("unsupported storage profile");
+    assert!(matches!(error, Error::Bind { .. }));
+    assert!(
+        error
+            .to_string()
+            .contains("joins require declared-table storage")
+    );
+    assert_eq!(database.reserved_memory_bytes(), baseline);
+    assert_eq!(database.reserved_temp_bytes(), 0);
+    database.close().unwrap();
+}
+
+#[test]
+fn ordering_facts_preserve_hidden_identity_and_reject_invalid_item_slices() {
+    let temp = Directory::new();
+    let database = Database::create_empty(
+        &temp.0.join("database"),
+        crate::Config::new(2_000_000, 1_000_000).unwrap(),
+    )
+    .unwrap();
+    database
+        .declare_table(
+            "facts",
+            &["k", "v"].map(|name| crate::ColumnDeclaration {
+                name,
+                data_type: DataType::Int64,
+                nullable: true,
+            }),
+            &crate::CancellationToken::new(),
+        )
+        .unwrap();
+    let sql =
+        "FROM facts |> ORDER BY k DESC NULLS FIRST, v |> SELECT v AS x |> WHERE x > 0 |> AS p";
+    let query = database.prepare(sql).unwrap();
+    let keys = query.plan.order_items(0, 2).unwrap();
+    assert_eq!(
+        keys[0],
+        OrderKey {
+            column: ColumnId::new(1),
+            direction: Direction::Descending,
+            nulls: NullPlacement::First
+        }
+    );
+    assert_eq!(keys[1].column, ColumnId::new(2));
+    for relation in 1..=4 {
+        assert_eq!(
+            query.plan.order_key(RelationId(relation), 0).unwrap(),
+            Some(keys[0])
+        );
+        assert_eq!(
+            query.plan.order_key(RelationId(relation), 1).unwrap(),
+            Some(keys[1])
+        );
+        assert_eq!(query.plan.order_key(RelationId(relation), 2).unwrap(), None);
+    }
+    assert_eq!(query.plan.outputs().collect::<Vec<_>>(), [ColumnId::new(2)]);
+    drop(query);
+    for mutation in 0..8 {
+        let mut query = database.prepare(sql).unwrap();
+        match mutation {
+            0 => query.plan.order_count = 81,
+            1 => query.plan.order_count = 1,
+            2 => query.plan.order_items[0].column = ColumnId::EMPTY,
+            3 => query.plan.order_items[0].column = ColumnId::new(3),
+            4 => query.plan.order_items[2] = query.plan.order_items[0],
+            5 => query.plan.stages[0].stage = Stage::Order { start: 1, len: 1 },
+            6 => query.plan.stages[0].stage = Stage::Order { start: 0, len: 0 },
+            7 => query.plan.stages[0].stage = Stage::Order { start: 0, len: 81 },
+            _ => unreachable!(),
+        }
+        assert!(validate(&query.plan).is_err(), "mutation {mutation}");
+    }
+    for (sql, ordered) in [
+        ("FROM facts |> ORDER BY k |> ORDER BY v", true),
+        (
+            "FROM facts |> ORDER BY k |> JOIN facts AS b ON facts.k = b.k",
+            false,
+        ),
+        (
+            "FROM facts |> ORDER BY k |> AGGREGATE COUNT(*) AS n GROUP BY v",
+            false,
+        ),
+        (
+            "FROM facts |> ORDER BY k |> AGGREGATE COUNT(*) AS n GROUP AND ORDER BY v",
+            true,
+        ),
+    ] {
+        let query = database.prepare(sql).unwrap();
+        let key = query
+            .plan
+            .order_key(query.plan.final_relation(), 0)
+            .unwrap();
+        assert_eq!(key.is_some(), ordered, "{sql}");
+        if let Some(key) = key {
+            assert_ne!(key.column, ColumnId::new(1));
+        }
+    }
+    database.close().unwrap();
+    let (_temp, legacy) = self::database(2_000_000);
+    let baseline = legacy.reserved_memory_bytes();
+    assert!(matches!(
+        legacy.prepare("FROM lineitem |> ORDER BY l_quantity"),
+        Err(Error::Bind { .. })
+    ));
+    assert_eq!(legacy.reserved_memory_bytes(), baseline);
+    legacy.close().unwrap();
+}
+
+#[test]
+fn join_binding_preserves_occurrences_ranges_and_both_input_edges() {
+    let temp = Directory::new();
+    let database = Database::create_empty(
+        &temp.0.join("database"),
+        crate::Config::new(2_000_000, 1_000_000).unwrap(),
+    )
+    .unwrap();
+    let names = [
+        "l_quantity",
+        "l_extendedprice",
+        "l_discount",
+        "l_tax",
+        "l_returnflag",
+        "l_linestatus",
+        "l_shipdate",
+    ];
+    let columns = names.map(|name| crate::ColumnDeclaration {
+        name,
+        data_type: if name == "l_shipdate" {
+            DataType::Date
+        } else if name == "l_returnflag" || name == "l_linestatus" {
+            DataType::String
+        } else {
+            DataType::Double
+        },
+        nullable: false,
+    });
+    database
+        .declare_table("lineitem", &columns, &crate::CancellationToken::new())
+        .unwrap();
+
+    let sql = "FROM lineitem AS a |> JOIN lineitem AS b ON a.l_quantity = b.l_quantity \
+               |> SELECT b.l_extendedprice, a.l_extendedprice";
+    let query = database.prepare(sql).unwrap();
+    assert_eq!(query.plan.occurrence_count, 2);
+    assert_eq!(
+        query.plan.occurrences[0].table,
+        query.plan.occurrences[1].table
+    );
+    assert_eq!(
+        query.plan.outputs().collect::<Vec<_>>(),
+        [ColumnId::new(9), ColumnId::new(2)]
+    );
+    assert_eq!(
+        query.plan.source_columns[0].storage,
+        query.plan.source_columns[7].storage
+    );
+    assert_ne!(
+        query.plan.source_columns[0].identity,
+        query.plan.source_columns[7].identity
+    );
+    assert_eq!(query.plan.stages[1].input, RelationId::SOURCE);
+    assert_eq!(
+        query.plan.stages[1].stage,
+        Stage::Join {
+            nulls: None,
+            right: RelationId(1),
+            left_key: ColumnId::new(1),
+            right_key: ColumnId::new(8),
+        }
+    );
+    drop(query);
+    for mutation in 0..9 {
+        let mut query = database.prepare(sql).unwrap();
+        match mutation {
+            0 => query.plan.stages[1].input = RelationId(1),
+            1 => query.plan.stages[1].columns = 13,
+            2 => query.plan.occurrences[1].start = 6,
+            3 => query.plan.source_columns[7].identity = ColumnId::new(1),
+            4 => query.plan.stages[2].input = RelationId(1),
+            5..=8 => {
+                let Stage::Join {
+                    nulls: _,
+                    right,
+                    left_key,
+                    right_key,
+                } = &mut query.plan.stages[1].stage
+                else {
+                    unreachable!()
+                };
+                match mutation {
+                    5 => *right = RelationId(2),
+                    6 => *right = RelationId(0),
+                    7 => *left_key = ColumnId::new(8),
+                    8 => *right_key = ColumnId::new(1),
+                    _ => unreachable!(),
+                }
+            }
+            _ => unreachable!(),
+        }
+        assert!(validate(&query.plan).is_err(), "mutation {mutation}");
+    }
+    for sql in [
+        "FROM lineitem AS a |> JOIN lineitem AS a ON a.l_quantity = a.l_quantity",
+        "FROM lineitem AS a |> JOIN lineitem AS b ON a.l_quantity = a.l_extendedprice",
+        "FROM lineitem AS a |> SELECT l_quantity |> SELECT a.l_quantity",
+        "FROM lineitem AS a |> AS b |> SELECT a.l_quantity",
+        "FROM lineitem |> SELECT l_quantity AS q, l_quantity AS q |> AS p |> SELECT p.q",
+        "FROM lineitem AS a |> JOIN lineitem AS b ON a.l_quantity = b.l_quantity |> SELECT l_quantity",
+        "FROM lineitem AS a |> JOIN lineitem AS b ON a.l_quantity < b.l_quantity",
+    ] {
+        assert!(database.prepare(sql).is_err(), "{sql}");
+    }
+    for sql in [
+        "FROM lineitem AS a |> SELECT a . l_quantity AS q |> AS p |> SELECT p.q",
+        "FROM lineitem AS a |> AGGREGATE SUM(a.l_quantity) AS s |> AS p |> SELECT p.s",
+        "FROM lineitem AS a |> SELECT l_quantity AS q |> AS p |> JOIN lineitem AS b ON b.l_quantity = p.q |> SELECT p.q",
+        "FROM lineitem |> AGGREGATE SUM(l_quantity) AS s |> AS p |> JOIN lineitem AS b ON p.s = b.l_quantity |> SELECT p.s",
+    ] {
+        let query = database.prepare(sql).unwrap();
+        validate(&query.plan).unwrap();
+    }
+    let query = database
+        .prepare(
+            "FROM lineitem |> AGGREGATE SUM(l_quantity) AS s, COUNT(*) AS n |> AS p \
+         |> JOIN lineitem AS b ON p.s = b.l_quantity |> SELECT b.l_quantity",
+        )
+        .unwrap();
+    assert_eq!(
+        query.plan.aggregate_demand(0),
+        1,
+        "a join key demands its aggregate even when projection drops it"
+    );
+    drop(query);
+    database.close().unwrap();
+}
+
+#[test]
+fn relation_edges_preserve_every_operator_and_reject_invalid_producers() {
+    let (_temp, database) = database(2_000_000);
+    for sql in [
+        "FROM lineitem |> WHERE l_quantity > 0 |> SELECT l_quantity AS q |> WHERE q < 20",
+        "FROM lineitem |> SELECT l_quantity AS q |> AGGREGATE SUM(q) AS s, COUNT(*) AS n |> WHERE n > 0 |> SELECT s",
+    ] {
+        let mut query = database.prepare(sql).unwrap();
+        let count = usize::from(query.plan.count);
+        for index in 0..count {
+            let original = query.plan.stages[index].input;
+            for candidate in (0..=MAX_STAGES + 1)
+                .map(|value| value as u8)
+                .chain([u8::MAX])
+            {
+                query.plan.stages[index].input = RelationId(candidate);
+                assert_eq!(
+                    validate(&query.plan).is_ok(),
+                    candidate == original.0,
+                    "node {index}, input {candidate}, query {sql}",
+                );
+            }
+            query.plan.stages[index].input = original;
+        }
+        query.plan.stages[count].input = RelationId(1);
+        assert!(
+            validate(&query.plan).is_err(),
+            "unused node input must be empty"
+        );
+        query.plan.stages[count] = Node::EMPTY;
+        validate(&query.plan).unwrap();
+        assert_eq!(
+            query
+                .plan
+                .relation_columns(RelationId(query.plan.count))
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
+            query.plan.outputs().collect::<Vec<_>>(),
+        );
+    }
+}
+
+#[test]
+fn query_identity_is_independent_of_catalog_origin() {
+    let stored = crate::storage::schema::ColumnSpec::new(
+        crate::storage::schema::ColumnId::new(91).unwrap(),
+        "value",
+        DataType::Int64,
+        false,
+    )
+    .unwrap();
+    let left = SourceColumn::bind_declaration(stored, 7, 1);
+    let right = SourceColumn::bind_declaration(stored, 7, 2);
+    assert_ne!(left.semantic(), right.semantic());
+    assert_eq!(left.storage_slot(), right.storage_slot());
+
+    let mut expression = Expression::EMPTY;
+    expression.ops[..3].copy_from_slice(&[
+        Op::Column(left.semantic()),
+        Op::Column(right.semantic()),
+        Op::Subtract,
+    ]);
+    expression.len = 3;
+    expression.data_type = expression
+        .infer(&[left.semantic(), right.semantic()])
+        .unwrap();
+    assert!(expression.validate(&[left.semantic()]).is_err());
+    let left_values = [7_i64];
+    let right_values = [11_i64];
+    let inputs = [
+        Some(
+            crate::query::scalar::NumericInput::new(
+                right.semantic(),
+                crate::query::scalar::NumericValues::Int64(&right_values),
+                None,
+            )
+            .unwrap(),
+        ),
+        Some(
+            crate::query::scalar::NumericInput::new(
+                left.semantic(),
+                crate::query::scalar::NumericValues::Int64(&left_values),
+                None,
+            )
+            .unwrap(),
+        ),
+    ];
+    let mut scratch = [0_u64; 2];
+    let output = expression
+        .evaluate_batch(&inputs, 0..1, &mut scratch)
+        .unwrap();
+    assert_eq!(output.value(0), Some((-4_i64) as u64));
+}
+
+#[test]
+fn catalog_binding_preserves_declared_identity_types_and_generation() {
+    use crate::ColumnValues;
+    use crate::storage::schema::{ColumnId as StoredColumn, ColumnSpec, TableId};
+    use crate::storage::unit::InputColumn;
+    let (temp, stock) = database(2_000_000);
+    stock.close().unwrap();
+    let db = Database::create_catalog_with_effects(
+        &temp.0.join("catalog"),
+        crate::Config::new(2_000_000, 1_000_000).unwrap(),
+        &mut crate::effects::Effects::default(),
+    )
+    .unwrap();
+    let cancel = crate::CancellationToken::new();
+    let table = TableId::new(901).unwrap();
+    let columns = [
+        ColumnSpec::new(
+            StoredColumn::new(29).unwrap(),
+            "word",
+            DataType::String,
+            true,
+        )
+        .unwrap(),
+        ColumnSpec::new(
+            StoredColumn::new(3).unwrap(),
+            "amount",
+            DataType::Double,
+            false,
+        )
+        .unwrap(),
+    ];
+    db.catalog_writer()
+        .unwrap()
+        .create_table(
+            "facts",
+            table,
+            &columns,
+            &cancel,
+            &mut crate::effects::Effects::default(),
+        )
+        .unwrap();
+    let query = prepare_catalog(
+        &db,
+        "FROM FaCtS |> SELECT amount AS n, word AS s |> WHERE n > 0",
+    )
+    .unwrap();
+    assert_eq!(query.plan.table(), Some(table));
+    assert_eq!(query.plan.generation, 1);
+    assert_eq!(&query.plan.catalog_columns[..2], &[29, 3]);
+    for (index, column) in query.plan.source_columns().enumerate() {
+        assert!(crate::query::sources::matches_declaration(
+            &query.plan,
+            column,
+            columns[index],
+            index
+        ));
+        assert!(!crate::query::sources::matches_declaration(
+            &query.plan,
+            column,
+            columns[1 - index],
+            index
+        ));
+    }
+
+    assert_eq!(
+        query
+            .plan
+            .columns()
+            .map(|column| (
+                column.identity.0,
+                column.storage,
+                column.kind,
+                column.nullable,
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (2, 1, DataType::Double, false),
+            (1, 0, DataType::String, true),
+        ]
+    );
+    assert_eq!(
+        query.result_column(0),
+        Some(ResultColumn {
+            name: Some("n"),
+            data_type: DataType::Double,
+            nullable: false
+        })
+    );
+    assert_eq!(
+        query.result_column(1),
+        Some(ResultColumn {
+            name: Some("s"),
+            data_type: DataType::String,
+            nullable: true
+        })
+    );
+    let inputs = [
+        InputColumn {
+            id: StoredColumn::new(3).unwrap(),
+            values: ColumnValues::Double(&[1.0]),
+            validity: &[1],
+        },
+        InputColumn {
+            id: StoredColumn::new(29).unwrap(),
+            values: ColumnValues::String(&["雪"]),
+            validity: &[1],
+        },
+    ];
+    db.catalog_writer()
+        .unwrap()
+        .append(
+            table,
+            &inputs,
+            &cancel,
+            &mut crate::effects::Effects::default(),
+        )
+        .unwrap();
+    assert_eq!(db.generation(), 2);
+    assert_eq!(query.snapshot.as_ref().unwrap().generation(), 1);
+    let mut bytes = [0; crate::storage::catalog::MAX_BYTES];
+    let old = query
+        .snapshot
+        .as_ref()
+        .unwrap()
+        .read_catalog(&mut bytes, &cancel, &mut crate::effects::Effects::default())
+        .unwrap()
+        .unwrap();
+    assert_eq!(old.table(0).unwrap().units(), 0);
+    let mut current = prepare_catalog(&db, "FROM facts").unwrap();
+    assert_eq!(current.plan.generation, 2);
+    assert!(db.execute(&current, &cancel).is_ok());
+    let public = db.prepare("FROM facts").unwrap();
+    assert_eq!(public.plan.generation, current.plan.generation);
+    assert_eq!(public.result_column_count(), current.result_column_count());
+    for index in 0..public.result_column_count() {
+        assert_eq!(public.result_column(index), current.result_column(index));
+    }
+    drop(public);
+    for _ in 0..16 {
+        assert!(prepare_catalog(&db, "FROM facts |> SELECT missing").is_err());
+        assert!(prepare_catalog(&db, "FROM absent").is_err());
+    }
+    assert!(prepare_catalog(&db, "FROM facts |> AGGREGATE COUNT(*) AS n").is_ok());
+    let pin = db.catalog_snapshot().unwrap();
+    drop(pin);
+    let origins = current.plan.catalog_columns;
+    for (slot, value) in [(0, 0), (1, 29), (2, 31)] {
+        current.plan.catalog_columns[slot] = value;
+        assert!(validate(&current.plan).is_err());
+        current.plan.catalog_columns = origins;
+    }
+    // A unique, nonzero stored ID is structurally valid. Only comparison with
+    // the pinned catalog can establish whether that ID names the right column.
+    current.plan.catalog_columns[0] = 30;
+    assert!(validate(&current.plan).is_ok());
+    let owned = db.reserved_memory_bytes();
+    assert!(matches!(
+        db.execute(&current, &cancel),
+        Err(Error::Corrupt(_))
+    ));
+    assert_eq!(db.reserved_memory_bytes(), owned);
+    current.plan.catalog_columns = origins;
+    drop(current);
+    drop(query);
+    assert_eq!(
+        db.reserved_memory_bytes(),
+        crate::storage::snapshot::REGISTRY_BYTES + db.path_memory_bytes()
+    );
+}
+
+#[test]
+fn reserved_keywords_cannot_be_bare_output_aliases() {
+    let (_temp, database) = database(1_048_576);
+    assert_eq!(RESERVED_IDENTIFIERS.len(), 99);
+    assert!(
+        RESERVED_IDENTIFIERS
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+    );
+    for alias in RESERVED_IDENTIFIERS
+        .iter()
+        .flat_map(|word| [word.to_string(), word.to_ascii_lowercase()])
+    {
+        for source in [
+            Q6.replace("AS revenue", &format!("AS {alias}")),
+            Q1.replace("AS sum_qty", &format!("AS {alias}")),
+        ] {
+            let Err(Error::Parse { span, .. }) = database.prepare(&source) else {
+                panic!("accepted bare reserved alias {alias}");
+            };
+            assert_eq!(&source[span.start()..span.end()], alias);
+        }
+    }
+}
+
+#[test]
+fn nonreserved_syntax_words_remain_valid_output_aliases() {
+    let (_temp, database) = database(1_048_576);
+    for alias in ["date", "aggregate", "function", "language", "safe_cast"] {
+        for (source, column) in [
+            (Q6.replace("AS revenue", &format!("AS {alias}")), 0),
+            (Q1.replace("AS sum_qty", &format!("AS {alias}")), 2),
+        ] {
+            let prepared = database.prepare(&source).unwrap();
+            assert_eq!(prepared.result_column(column).unwrap().name, Some(alias));
+        }
+    }
+}
+
+#[test]
+fn diagnostics_identify_exact_source_bytes() {
+    let (_temp, database) = database(1_048_576);
+    let unknown = Q6.replacen("lineitem", "unknownxx", 1);
+    match database.prepare(&unknown) {
+        Err(Error::Bind { span, .. }) => {
+            assert_eq!(&unknown[span.start()..span.end()], "unknownxx");
+        }
+        outcome => panic!("unexpected bind outcome: {}", outcome.err().unwrap()),
+    }
+    for suffix in [
+        "SET missing=1",
+        "DROP missing",
+        "RENAME missing AS renamed",
+        "SET l_quantity=1, L_QUANTITY=2",
+        "DROP l_quantity, L_QUANTITY",
+        "RENAME l_quantity AS a, L_QUANTITY AS b",
+    ] {
+        let sql = format!("FROM lineitem |> {suffix}");
+        let Err(Error::Bind { span, .. }) = database.prepare(&sql) else {
+            panic!("missing target diagnostic: {sql}");
+        };
+        let expected = if suffix.contains("missing") {
+            "missing"
+        } else {
+            "L_QUANTITY"
+        };
+        assert_eq!(&sql[span.start()..span.end()], expected, "{sql}");
+    }
+    let offset = Q6.find("l_quantity <").unwrap();
+    let invalid = Q6.replacen("l_quantity", "@_quantity", 1);
+    match database.prepare(&invalid) {
+        Err(Error::Parse { span, .. }) => {
+            assert_eq!((span.start(), span.end()), (offset, offset + 1))
+        }
+        outcome => panic!("unexpected parse outcome: {}", outcome.err().unwrap()),
+    }
+}
+
+#[test]
+fn lexical_stage_and_name_boundaries() {
+    assert_eq!(lex(Q1).unwrap().len, 98);
+    assert_eq!(lex(&"a ".repeat(MAX_TOKENS)).unwrap().len, MAX_TOKENS);
+    assert!(matches!(
+        lex(&"a ".repeat(MAX_TOKENS + 1)),
+        Err(Error::Parse { .. })
+    ));
+    assert!(lex(&format!("#{}", "x".repeat(MAX_SOURCE_BYTES - 1))).is_ok());
+    assert!(matches!(
+        lex(&format!("#{}", "x".repeat(MAX_SOURCE_BYTES))),
+        Err(Error::Parse { .. })
+    ));
+    for value in ['a', '1'] {
+        assert!(lex(&value.to_string().repeat(MAX_NAME_BYTES)).is_ok());
+        assert!(matches!(
+            lex(&value.to_string().repeat(MAX_NAME_BYTES + 1)),
+            Err(Error::Parse { .. })
+        ));
+    }
+    assert!(lex(&format!("'{}'", "x".repeat(MAX_NAME_BYTES))).is_ok());
+    assert!(matches!(
+        lex(&format!("'{}'", "x".repeat(MAX_NAME_BYTES + 1))),
+        Err(Error::Parse { .. })
+    ));
+    let (_temp, database) = database(1_048_576);
+    let source = format!(
+        "FROM lineitem{}",
+        " |> SELECT l_quantity".repeat(MAX_STAGES)
+    );
+    assert!(database.prepare(&source).is_ok());
+    assert!(matches!(
+        database.prepare(&(source + " |> SELECT l_quantity")),
+        Err(Error::Parse { .. })
+    ));
+    let alias = "a".repeat(MAX_NAME_BYTES);
+    assert_eq!(
+        database
+            .prepare(&Q6.replacen("revenue", &alias, 1))
+            .unwrap()
+            .result_column(0)
+            .unwrap()
+            .name,
+        Some(alias.as_str())
+    );
+}
+
+#[test]
+fn malformed_byte_campaigns_release_all_prepared_owners() {
+    let (_temp, database) = database(1_048_576);
+    for original in [Q6, Q1] {
+        let mut outcomes = [0_u32; 3];
+        for index in 0..original.len() {
+            for replacement in [b' ', b'#', b'\'', b'|', 0xff] {
+                let mut bytes = original.as_bytes().to_vec();
+                bytes[index] = replacement;
+                // prepare accepts &str, so invalid UTF-8 is rejected here and
+                // counted with parse failures without calling the engine.
+                match std::str::from_utf8(&bytes) {
+                    Ok(source) => match database.prepare(source) {
+                        Ok(plan) => {
+                            outcomes[0] += 1;
+                            drop(plan);
+                        }
+                        Err(Error::Parse { .. }) => outcomes[1] += 1,
+                        Err(Error::Bind { .. }) => outcomes[2] += 1,
+                        Err(error) => panic!("unexpected mutated query error: {error}"),
+                    },
+                    Err(_) => outcomes[1] += 1,
+                }
+                assert_eq!(
+                    database.reserved_memory_bytes(),
+                    database.path_memory_bytes()
+                );
+            }
+        }
+        assert_eq!(outcomes.iter().sum::<u32>() as usize, original.len() * 5);
+        assert!(outcomes.iter().all(|count| *count > 0));
+        eprintln!(
+            "query_mutations={} success={} parse={} bind={}",
+            original.len() * 5,
+            outcomes[0],
+            outcomes[1],
+            outcomes[2]
+        );
+    }
+}
+
+#[test]
+fn exact_prepared_admission_and_concurrent_owners() {
+    use std::sync::mpsc::sync_channel;
+    use std::time::Duration;
+    let case = std::env::var(crate::test_subprocess::CASE).unwrap_or_default();
+    let (temp, db) = database(1_048_576);
+    let resident = db.reserved_memory_bytes();
+    let required = db.prepare(Q6).unwrap().accounted_memory_bytes();
+    db.close().unwrap();
+    let total = resident + required;
+    let refused = Database::open(
+        &temp.0.join("database"),
+        crate::Config::new(total - 1, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(refused.reserved_memory_bytes(), resident);
+    assert!(
+        matches!(refused.prepare(Q6), Err(Error::Resource { required: value, limit, .. }) if value==total && limit==total-1)
+    );
+    assert_eq!(refused.reserved_memory_bytes(), resident);
+    refused.close().unwrap();
+    const QUERIES: usize = 8;
+    for (limit, expected) in [
+        (required * QUERIES as u64, QUERIES),
+        (required * QUERIES as u64 - 1, QUERIES - 1),
+    ] {
+        let db = Database::open(
+            &temp.0.join("database"),
+            crate::Config::new(resident + limit, 1).unwrap(),
+        )
+        .unwrap();
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::thread::scope(|scope| {
+                // Retain all plans until the parent measures their total.
+                // Dropping endpoints inside this closure also releases workers
+                // when a later spawn or the coordinator fails.
+                let handles: [_; QUERIES] = std::array::from_fn(|index| {
+                    if index == 1 {
+                        assert_ne!(case, "prepare-partial-start", "prepare partial startup");
+                    }
+                    let (ready, entered) = sync_channel(1);
+                    let (resume, released) = sync_channel(1);
+                    let db = &db;
+                    let case = case.as_str();
+                    let handle = scope.spawn(move || {
+                        let prepared = db.prepare(Q6);
+                        if index == 0 {
+                            assert_ne!(case, "prepare-worker-panic", "prepare worker failure");
+                            if case == "prepare-delayed-readiness" {
+                                assert!(released.recv().is_err());
+                                return false;
+                            }
+                        }
+                        if ready.send(()).is_err() || released.recv().is_err() {
+                            return false;
+                        }
+                        match prepared {
+                            Ok(prepared) => {
+                                drop(prepared);
+                                true
+                            }
+                            Err(Error::Resource { .. }) => false,
+                            Err(error) => panic!("unexpected prepare error: {error}"),
+                        }
+                    });
+                    (handle, entered, resume)
+                });
+                for (_, entered, _) in &handles {
+                    entered
+                        .recv_timeout(if case == "prepare-delayed-readiness" {
+                            Duration::from_millis(20)
+                        } else {
+                            Duration::from_secs(5)
+                        })
+                        .expect("prepare worker readiness");
+                }
+                assert_ne!(
+                    case, "prepare-coordinator-panic",
+                    "prepare coordinator failure"
+                );
+                let observed = db.reserved_memory_bytes();
+                for (_, _, resume) in &handles {
+                    resume.send(()).unwrap();
+                }
+                assert_eq!(observed, resident + required * expected as u64);
+                assert_eq!(
+                    handles
+                        .into_iter()
+                        .map(|(handle, _, _)| usize::from(handle.join().unwrap()))
+                        .sum::<usize>(),
+                    expected
+                );
+            });
+        }));
+        if !case.is_empty() {
+            let panic = outcome.expect_err("prepare control must panic");
+            let expected = match case.as_str() {
+                "prepare-partial-start" => "prepare partial startup",
+                "prepare-worker-panic" => "prepare worker readiness: Disconnected",
+                "prepare-delayed-readiness" => "prepare worker readiness: Timeout",
+                "prepare-coordinator-panic" => "prepare coordinator failure",
+                _ => panic!("unknown prepare failure control"),
+            };
+            assert!(panic.downcast_ref::<String>().unwrap().contains(expected));
+            assert_eq!(db.reserved_memory_bytes(), resident);
+            let retry = db.prepare(Q6).unwrap();
+            assert_eq!(retry.accounted_memory_bytes(), required);
+            drop(retry);
+        } else {
+            outcome.unwrap();
+        }
+        assert_eq!(db.reserved_memory_bytes(), db.path_memory_bytes());
+        db.close().unwrap();
+        if !case.is_empty() {
+            println!("prepare workers exited, reservations released and retry passed");
+            return;
+        }
+    }
+}
+
+#[test]
+fn prepare_worker_failure_controls_terminate() {
+    for case in [
+        "prepare-partial-start",
+        "prepare-worker-panic",
+        "prepare-delayed-readiness",
+        "prepare-coordinator-panic",
+    ] {
+        crate::test_subprocess::run(
+            concat!(
+                module_path!(),
+                "::exact_prepared_admission_and_concurrent_owners"
+            ),
+            case,
+            true,
+            "prepare workers exited, reservations released and retry passed",
+        );
+    }
+}
+
+#[test]
+fn extend_preserves_input_identity_ranges_and_input_only_alias_scope() {
+    let (_directory, db) = database(4_000_000);
+    let query = db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity AS q, t.l_quantity+1 n |> EXTEND n+1 AS m |> SELECT t.l_quantity, q, n, m").unwrap();
+    assert_eq!(query.result_column_count(), 4);
+    assert_eq!(query.plan.outputs[0].id, query.plan.outputs[1].id);
+    assert_ne!(query.plan.outputs[1].id, query.plan.outputs[2].id);
+    assert_ne!(query.plan.outputs[2].id, query.plan.outputs[3].id);
+    assert_eq!(query.plan.computed.len(), 2);
+    for (index, name) in ["l_quantity", "q", "n", "m"].into_iter().enumerate() {
+        assert_eq!(query.result_column(index).unwrap().name, Some(name));
+    }
+    let extended = db.prepare("FROM lineitem |> EXTEND l_quantity").unwrap();
+    assert_eq!(extended.result_column_count(), 8);
+    assert_eq!(extended.plan.outputs[0].id, extended.plan.outputs[7].id);
+    assert!(
+        db.prepare("FROM lineitem |> EXTEND l_quantity |> SELECT l_quantity")
+            .is_err()
+    );
+    let sibling = "FROM lineitem |> EXTEND l_quantity+1 AS n, n+1 AS m";
+    let Err(Error::Bind { span, .. }) = db.prepare(sibling) else {
+        panic!("a sibling alias cannot enter the input scope");
+    };
+    assert_eq!(&sibling[span.start()..span.end()], "n");
+    db.prepare("FROM lineitem |> SELECT l_quantity AS extend |> EXTEND extend+1 AS n")
+        .unwrap();
+    db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS n |> SELECT t.l_quantity, n")
+        .unwrap();
+    assert!(
+        db.prepare("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS n |> SELECT t.n")
+            .is_err()
+    );
+    for unsupported in ["*", "SUM(l_quantity)", "1 OVER ()", "'text'+1"] {
+        assert!(
+            db.prepare(&format!("FROM lineitem |> EXTEND {unsupported}"))
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn extend_entries_are_syntax_bounded_and_validated_independently() {
+    let (_directory, db) = database(4_000_000);
+    let sql = "FROM lineitem |> EXTEND 1 AS a |> EXTEND 2 AS b |> EXTEND 3 AS c |> EXTEND 4 AS d |> EXTEND 5 AS e |> EXTEND 6 AS f |> EXTEND 7 AS g |> EXTEND 8 AS h |> EXTEND 9 AS i";
+    let query = db.prepare(sql).unwrap();
+    assert_eq!(query.result_column_count(), 16);
+    assert_eq!(
+        query.plan.projection_count, 9,
+        "inherited columns consume no new projection entries"
+    );
+    drop(query);
+    let widest = format!("FROM lineitem |> EXTEND {}", vec!["1"; 57].join(", "));
+    assert_eq!(db.prepare(&widest).unwrap().result_column_count(), 64);
+    assert!(matches!(
+        db.prepare(&format!("{widest}, 1")),
+        Err(Error::Bind { .. })
+    ));
+    for mutation in 0..3 {
+        let mut query = db
+            .prepare("FROM lineitem |> EXTEND l_quantity+1 AS n")
+            .unwrap();
+        match mutation {
+            0 => query.plan.stages[0].columns -= 1,
+            1 => query.plan.stages[0].stage = Stage::Select { start: 0, len: 1 },
+            2 => query.plan.projections[0] = ColumnId::new(99),
+            _ => unreachable!(),
+        }
+        assert!(validate(&query.plan).is_err(), "EXTEND mutation {mutation}");
+    }
+}
+
+#[test]
+fn projection_preserves_nonreserved_operator_identifiers() {
+    let (_directory, db) = database(4_000_000);
+    for (sql, name) in [
+        (
+            "FROM lineitem |> SELECT l_returnflag AS aggregate |> SELECT aggregate",
+            "aggregate",
+        ),
+        (
+            "FROM lineitem |> SELECT l_returnflag AS date |> SELECT date",
+            "date",
+        ),
+        (
+            "FROM lineitem |> SELECT l_returnflag AS date_add |> SELECT (date_add)",
+            "date_add",
+        ),
+        (
+            "FROM lineitem |> SELECT l_returnflag AS date_sub |> SELECT date_sub",
+            "date_sub",
+        ),
+        (
+            "FROM lineitem |> EXTEND l_returnflag aggregate |> SELECT aggregate",
+            "aggregate",
+        ),
+    ] {
+        let query = db.prepare(sql).unwrap();
+        let column = query.result_column(0).unwrap();
+        assert_eq!(column.name, Some(name));
+        assert_eq!(column.data_type, DataType::String);
+    }
+}
+
+#[test]
+fn extend_prepared_admission_refuses_one_byte_short_and_releases_owners() {
+    check_prepared_admission("FROM lineitem AS t |> EXTEND t.l_quantity+1 AS x |> EXTEND x*2 AS y");
+}
+
+#[test]
+fn column_transform_admission_refuses_one_byte_short_and_releases_owners() {
+    for sql in [
+        "FROM lineitem |> SET l_quantity=l_quantity+1",
+        "FROM lineitem |> SET l_quantity=l_returnflag",
+        "FROM lineitem |> RENAME l_quantity AS quantity |> DROP l_discount",
+    ] {
+        check_prepared_admission(sql);
+    }
+}
+
+// These legacy queries retain all their preparation memory in the plan. Measure
+// that reservation once, then reopen with the exact limit and one byte less.
+fn check_prepared_admission(sql: &str) {
+    let (directory, db) = database(4_000_000);
+    let resident = db.reserved_memory_bytes();
+    let required = db.prepare(sql).unwrap().accounted_memory_bytes();
+    assert_eq!(db.reserved_memory_bytes(), resident);
+    db.close().unwrap();
+    for available in [required - 1, required] {
+        let limit = resident + available;
+        let db = Database::open(
+            &directory.0.join("database"),
+            crate::Config::new(limit, 1).unwrap(),
+        )
+        .unwrap();
+        match db.prepare(sql) {
+            Ok(query) => {
+                assert_eq!(available, required);
+                assert_eq!(db.reserved_memory_bytes(), limit);
+                drop(query);
+            }
+            Err(Error::Resource {
+                required: need,
+                limit: actual,
+                ..
+            }) => {
+                assert_eq!(available, required - 1);
+                assert_eq!(need, resident + required);
+                assert_eq!(actual, limit);
+            }
+            Err(error) => panic!("unexpected admission failure: {error}"),
+        }
+        assert_eq!(db.reserved_memory_bytes(), resident);
+        db.close().unwrap();
+    }
+}
+
+#[test]
+fn column_transforms_preserve_original_ranges_and_set_creates_fresh_identity() {
+    let (_directory, db) = database(4_000_000);
+    let set = db.prepare("FROM lineitem AS t |> SET l_returnflag=l_linestatus |> SELECT l_returnflag, t.l_returnflag, t.l_linestatus").unwrap();
+    assert_eq!(set.result_column_count(), 3);
+    assert_ne!(set.plan.outputs[0].id, set.plan.outputs[1].id);
+    assert_ne!(set.plan.outputs[0].id, set.plan.outputs[2].id);
+    for index in 0..3 {
+        assert_eq!(
+            set.result_column(index).unwrap().data_type,
+            DataType::String
+        );
+    }
+    let dropped = db
+        .prepare("FROM lineitem AS t |> DROP l_quantity |> SELECT t.l_quantity, l_returnflag")
+        .unwrap();
+    assert_eq!(dropped.result_column(0).unwrap().name, Some("l_quantity"));
+    let renamed = db
+        .prepare("FROM lineitem AS t |> RENAME l_quantity AS q |> SELECT q, t.l_quantity")
+        .unwrap();
+    assert_eq!(renamed.plan.outputs[0].id, renamed.plan.outputs[1].id);
+}
+
+#[test]
+fn column_transform_targets_use_the_complete_input_name_list() {
+    let (_directory, db) = database(4_000_000);
+    let prefix = "FROM lineitem |> SELECT l_quantity AS x, l_returnflag AS y";
+    let renamed = db
+        .prepare(&format!("{prefix} |> RENAME x AS y, y AS x"))
+        .unwrap();
+    assert_eq!(renamed.result_column(0).unwrap().name, Some("y"));
+    assert_eq!(
+        renamed.result_column(0).unwrap().data_type,
+        DataType::Double
+    );
+    assert_eq!(renamed.result_column(1).unwrap().name, Some("x"));
+    assert_eq!(
+        renamed.result_column(1).unwrap().data_type,
+        DataType::String
+    );
+    let set = db.prepare(&format!("{prefix} |> SET x=y, y=x")).unwrap();
+    assert_eq!(set.result_column(0).unwrap().data_type, DataType::String);
+    assert_eq!(set.result_column(1).unwrap().data_type, DataType::Double);
+
+    let duplicate =
+        "FROM lineitem |> SELECT l_quantity AS x, l_discount AS x, l_returnflag AS keep";
+    let dropped = db.prepare(&format!("{duplicate} |> DROP x")).unwrap();
+    assert_eq!(dropped.result_column_count(), 1);
+    assert_eq!(dropped.result_column(0).unwrap().name, Some("keep"));
+    for suffix in ["SET x=1", "RENAME x AS z"] {
+        assert!(matches!(
+            db.prepare(&format!("{duplicate} |> {suffix}")),
+            Err(Error::Bind { .. })
+        ));
+    }
+    for sql in [
+        format!("{prefix} |> DROP x, y"),
+        format!("{prefix} |> DROP missing"),
+        format!("{prefix} |> DROP x, X"),
+        format!("{prefix} |> SET x=1, X=2"),
+        format!("{prefix} |> RENAME x AS a, X AS b"),
+        format!("{prefix} |> RENAME x AS y |> SELECT y"),
+    ] {
+        assert!(matches!(db.prepare(&sql), Err(Error::Bind { .. })), "{sql}");
+    }
+}
+
+#[test]
+fn rename_preserves_identity_and_ranges_without_rebinding_sibling_names() {
+    let (_directory, db) = database(4_000_000);
+    let query = db
+        .prepare("FROM lineitem AS t |> RENAME l_quantity AS q |> SELECT q, t.l_quantity")
+        .unwrap();
+    assert_eq!(query.plan.outputs[0].id, query.plan.outputs[1].id);
+    let swapped = db
+        .prepare(
+            "FROM lineitem |> SELECT l_quantity AS x, l_returnflag AS y |> RENAME x AS y, y AS x",
+        )
+        .unwrap();
+    assert_eq!(swapped.result_column(0).unwrap().name, Some("y"));
+    assert_eq!(
+        swapped.result_column(0).unwrap().data_type,
+        DataType::Double
+    );
+    assert_eq!(swapped.result_column(1).unwrap().name, Some("x"));
+    assert_eq!(
+        swapped.result_column(1).unwrap().data_type,
+        DataType::String
+    );
+    for suffix in [
+        "RENAME missing AS x",
+        "RENAME l_quantity AS x, L_QUANTITY AS y",
+        "RENAME l_quantity AS l_returnflag |> SELECT l_returnflag",
+        "AS l_quantity |> RENAME l_quantity AS x",
+    ] {
+        assert!(
+            matches!(
+                db.prepare(&format!("FROM lineitem |> {suffix}")),
+                Err(Error::Bind { .. })
+            ),
+            "{suffix}"
+        );
+    }
+    for mutation in 0..2 {
+        let mut query = db
+            .prepare("FROM lineitem |> RENAME l_quantity AS q")
+            .unwrap();
+        if mutation == 0 {
+            query.plan.projections[0] = ColumnId::new(99);
+        } else {
+            query.plan.stages[0].columns -= 1;
+        }
+        assert!(validate(&query.plan).is_err());
+    }
+}
+
+#[test]
+fn table_ranges_take_precedence_over_colliding_scalar_names() {
+    let (_directory, db) = database(4_000_000);
+    for sql in [
+        "FROM lineitem AS l_quantity |> SELECT l_quantity",
+        "FROM lineitem |> RENAME l_quantity AS lineitem |> SELECT lineitem",
+        "FROM lineitem |> EXTEND l_quantity AS lineitem |> SELECT lineitem",
+    ] {
+        assert!(matches!(db.prepare(sql), Err(Error::Bind { .. })), "{sql}");
+    }
+    db.prepare("FROM lineitem AS l_quantity |> SELECT l_quantity.l_quantity")
+        .unwrap();
+    db.prepare("FROM lineitem |> SELECT l_quantity AS lineitem |> SELECT lineitem")
+        .unwrap();
+}
+
+#[test]
+fn drop_preserves_survivor_positions_and_removes_duplicate_names() {
+    let (_directory, db) = database(4_000_000);
+    let sql = "FROM lineitem |> SELECT l_quantity AS x, l_discount AS x, l_returnflag AS keep |> DROP x |> EXTEND keep AS copy |> RENAME keep AS original";
+    let query = db.prepare(sql).unwrap();
+    assert_eq!(query.result_column_count(), 2);
+    assert_eq!(query.result_column(0).unwrap().name, Some("original"));
+    assert_eq!(query.result_column(1).unwrap().name, Some("copy"));
+    assert_eq!(query.plan.outputs[0].id, query.plan.outputs[1].id);
+    assert_eq!(query.plan.projection_count, 4);
+    for sql in [
+        "FROM lineitem |> DROP l_quantity, L_QUANTITY",
+        "FROM lineitem |> DROP absent",
+        "FROM lineitem |> SELECT l_quantity |> DROP l_quantity",
+    ] {
+        assert!(matches!(db.prepare(sql), Err(Error::Bind { .. })), "{sql}");
+    }
+    for keep in [0, u64::MAX, 127] {
+        let mut query = db.prepare("FROM lineitem |> DROP l_quantity").unwrap();
+        query.plan.stages[0].stage = Stage::Drop { keep };
+        assert!(validate(&query.plan).is_err());
+    }
+}
+
+#[test]
+fn qualified_inputs_survive_drop_but_not_scope_replacement() {
+    let (_directory, db) = database(4_000_000);
+    db.prepare("FROM lineitem AS l |> DROP l_quantity |> SELECT l.l_quantity")
+        .unwrap();
+    for sql in [
+        "FROM lineitem AS l |> DROP l_quantity |> SELECT l_quantity",
+        "FROM lineitem AS l |> DROP l_quantity |> AS renamed_scope |> SELECT renamed_scope.l_quantity",
+        "FROM lineitem AS l |> DROP l_quantity |> SELECT l_discount |> SELECT l.l_quantity",
+        "FROM lineitem AS l |> DROP l_quantity |> AGGREGATE COUNT(*) AS n |> SELECT l.l_quantity",
+    ] {
+        assert!(matches!(db.prepare(sql), Err(Error::Bind { .. })), "{sql}");
+    }
+    for (sql, relation) in [
+        ("FROM lineitem", 0),
+        ("FROM lineitem |> SELECT l_discount", 1),
+        ("FROM lineitem |> AGGREGATE COUNT(*) AS n", 1),
+        ("FROM lineitem |> DROP l_quantity", 1),
+    ] {
+        let mut query = db.prepare(sql).unwrap();
+        query.plan.range_columns[relation].insert(ColumnId::new(99));
+        assert!(validate(&query.plan).is_err(), "{sql}");
+    }
+}
+
+#[test]
+fn set_assignments_and_typed_copies_are_validated_independently() {
+    let (_directory, db) = database(4_000_000);
+    let sql = "FROM lineitem |> SELECT l_quantity AS x, l_returnflag AS y |> SET x=y, y=x";
+    for mutation in 0..8 {
+        let mut query = db.prepare(sql).unwrap();
+        match mutation {
+            0 => query.plan.assignments[1].position = query.plan.assignments[0].position,
+            1 => query.plan.assignments[0].position = 64,
+            2 => query.plan.assignments[0].column = query.plan.projections[0],
+            3 => query.plan.assignment_count -= 1,
+            4 => query.plan.computed[0].span = ZERO_SPAN,
+            5 => query.plan.computed[0].input = RelationId::SOURCE,
+            6 => {
+                query.plan.computed[0].expression = Computation::Copy(query.plan.computed[1].column)
+            }
+            7 => query.plan.assignments[2] = query.plan.assignments[0],
+            _ => unreachable!(),
+        }
+        assert!(validate(&query.plan).is_err(), "mutation {mutation}");
+    }
+}
+
+#[test]
+fn constant_definitions_reject_inconsistent_facts_and_provenance() {
+    let (_temp, database) = database(4_000_000);
+    for sql in [
+        "FROM lineitem |> SELECT '雪' AS value",
+        "FROM lineitem |> SELECT DATE '1970-01-02' AS value",
+    ] {
+        for mutation in 0..5 {
+            let mut query = database.prepare(sql).unwrap();
+            validate(&query.plan).unwrap();
+            let definition = &mut query.plan.computed[0];
+            let column = definition.column;
+            match mutation {
+                0 => {
+                    definition.column =
+                        SemanticColumn::new(column.identity().value(), DataType::Int64, false)
+                }
+                1 => {
+                    definition.column =
+                        SemanticColumn::new(column.identity().value(), column.data_type(), true)
+                }
+                2 => definition.column = SourceColumn::QUANTITY.semantic(),
+                3 => definition.span = ZERO_SPAN,
+                4 => definition.input = RelationId(16),
+                _ => unreachable!(),
+            }
+            assert!(validate(&query.plan).is_err(), "{sql}: mutation {mutation}");
+        }
+    }
+}
+
+#[test]
+fn analytic_projection_owns_fresh_counts_and_clears_relation_order() {
+    let (_directory, db) = database(4_000_000);
+    let sql = "FROM lineitem |> SELECT l_quantity |> EXTEND COUNT(*) OVER () AS n, COUNT(*) OVER () AS m, l_quantity+1 AS next |> SELECT n, m, next";
+    for mutation in 0..5 {
+        let mut query = db.prepare(sql).unwrap();
+        assert_eq!(query.plan.computed.len(), 3);
+        assert_ne!(
+            query.plan.computed[0].column.identity(),
+            query.plan.computed[1].column.identity()
+        );
+        for definition in &query.plan.computed[..2] {
+            assert_eq!(definition.column.data_type(), DataType::Int64);
+            assert!(!definition.column.nullable());
+            assert_eq!(definition.expression.columns().count(), 0);
+        }
+        for definition in &query.plan.computed {
+            assert_eq!(definition.input, RelationId(1));
+            assert_eq!(
+                query.plan.computation_producer(definition).unwrap(),
+                RelationId(2)
+            );
+        }
+        match mutation {
+            0 => (),
+            1 => query.plan.computed[0].column.nullable = true,
+            2 => query.plan.computed[0].column.kind = DataType::Double,
+            3 => query.plan.computed[0].input = RelationId::SOURCE,
+            4 => query.plan.computed[1].column = query.plan.computed[0].column,
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            validate(&query.plan).is_ok(),
+            mutation == 0,
+            "analytic mutation {mutation}"
+        );
+    }
+    // GROUP AND ORDER BY establishes row order. The analytic count removes
+    // that guarantee; a later SELECT must not restore it.
+    let query = db.prepare("FROM lineitem |> AGGREGATE COUNT(*) AS n GROUP AND ORDER BY l_returnflag |> EXTEND COUNT(*) OVER () AS total |> SELECT total").unwrap();
+    assert!(query.plan.order_key(RelationId(1), 0).unwrap().is_some());
+    assert_eq!(query.plan.order_key(RelationId(2), 0).unwrap(), None);
+    assert_eq!(query.plan.order_key(RelationId(3), 0).unwrap(), None);
+}
+
+#[test]
+fn partition_keys_bind_to_input_and_validate_as_one_specification() {
+    let (_directory, db) = database(4_000_000);
+    let sql = "FROM lineitem |> SELECT COUNT(*) OVER (PARTITION BY l_returnflag, l_shipdate) AS n, COUNT(*) OVER (PARTITION BY l_returnflag, l_shipdate) AS m";
+    for mutation in 0..6 {
+        let mut query = db.prepare(sql).unwrap();
+        let Computation::WindowCount(keys) = &mut query.plan.computed[0].expression else {
+            panic!("window computation");
+        };
+        assert_eq!(keys.columns().count(), 2);
+        match mutation {
+            0 => (),
+            1 => keys.keys[0] = None,
+            2 => keys.keys[0].as_mut().unwrap().nullable = true,
+            3 => keys.keys[0].as_mut().unwrap().kind = DataType::Double,
+            4 => keys.keys.swap(0, 1),
+            5 => keys.keys[0] = Some(SemanticColumn::new(255, DataType::String, false)),
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            validate(&query.plan).is_ok(),
+            mutation == 0,
+            "mutation {mutation}"
+        );
+    }
+    for expression in [
+        "COUNT(*) OVER (PARTITION BY l_quantity)",
+        "COUNT(*) OVER (PARTITION BY missing)",
+        "COUNT(*) OVER (PARTITION BY n) AS n",
+        "COUNT(*) OVER (PARTITION BY l_returnflag) AS n, COUNT(*) OVER () AS m",
+        "COUNT(*) OVER (PARTITION BY l_returnflag, l_shipdate) AS n, COUNT(*) OVER (PARTITION BY l_shipdate, l_returnflag) AS m",
+    ] {
+        let sql = format!("FROM lineitem |> SELECT {expression}");
+        assert!(matches!(db.prepare(&sql), Err(Error::Bind { .. })), "{sql}");
+    }
+    for count in [8, 9] {
+        let keys = std::iter::repeat_n("l_returnflag", count)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!("FROM lineitem |> SELECT COUNT(*) OVER (PARTITION BY {keys}) AS n");
+        assert_eq!(db.prepare(&sql).is_ok(), count == 8);
+    }
+}
+
+#[test]
+fn running_sum_preparation_admits_exact_peak_and_releases_it() {
+    check_scope_preparation(
+        "FROM facts |> SELECT n, SUM(n) OVER (PARTITION BY k ORDER BY n DESC NULLS FIRST) AS total |> WHERE total>0",
+    );
+}
+
+#[test]
+fn running_sum_binds_input_scope_and_validates_peer_keys() {
+    let (_directory, db) = database(4_000_000);
+    let call = "SUM(year) OVER (PARTITION BY l_returnflag ORDER BY l_shipdate DESC NULLS FIRST)";
+    let sql = format!(
+        "FROM lineitem |> EXTEND EXTRACT(YEAR FROM l_shipdate) AS year |> SELECT {call} AS n, {call} AS m"
+    );
+    for mutation in 0..7 {
+        let mut query = db.prepare(&sql).unwrap();
+        assert_eq!(query.plan.computed[1].column.data_type(), DataType::Int64);
+        assert!(query.plan.computed[1].column.nullable());
+        let Computation::WindowSum(sum) = &mut query.plan.computed[1].expression else {
+            panic!("running sum");
+        };
+        assert_eq!(sum.order[0].unwrap().direction, Direction::Descending);
+        assert_eq!(sum.order[0].unwrap().nulls, NullPlacement::First);
+        match mutation {
+            0 => (),
+            1 => sum.argument.kind = DataType::Double,
+            2 => sum.order[0] = None,
+            3 => sum.order[1] = sum.order[0].take(),
+            4 => sum.order[0].as_mut().unwrap().column.kind = DataType::String,
+            5 => sum.order[0].as_mut().unwrap().direction = Direction::Ascending,
+            6 => query.plan.computed[1].column.nullable = false,
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            validate(&query.plan).is_ok(),
+            mutation == 0,
+            "mutation {mutation}"
+        );
+    }
+    for expression in [
+        "SUM(l_quantity) OVER (ORDER BY l_shipdate)",
+        "SUM(year) OVER (ORDER BY l_quantity)",
+        "SUM(year) OVER (ORDER BY l_shipdate) AS n, SUM(year) OVER (ORDER BY l_shipdate DESC) AS m",
+        "SUM(year) OVER (ORDER BY l_shipdate) AS n, COUNT(*) OVER () AS m",
+    ] {
+        let sql = format!(
+            "FROM lineitem |> EXTEND EXTRACT(YEAR FROM l_shipdate) AS year |> SELECT {expression}"
+        );
+        assert!(matches!(db.prepare(&sql), Err(Error::Bind { .. })), "{sql}");
+    }
+}
+
+#[test]
+fn division_constant_failures_keep_types_and_spans() {
+    let (_temp, db) = database(2_000_000);
+    let prefix = "# 雪\nFROM lineitem |> WHERE l_quantity > ";
+    let sql = format!("{prefix}1/0");
+    let baseline = db.reserved_memory_bytes();
+    match db.prepare(&sql) {
+        Err(Error::DivisionByZero { span }) => {
+            assert_eq!(span.start(), prefix.len());
+            assert_eq!(span.end(), sql.len());
+        }
+        result => panic!("expected division by zero: {:?}", result.err()),
+    }
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    assert!(db.prepare("FROM lineitem |> LIMIT 4/2").is_err());
+}
+
+#[test]
+fn division_preparation_admits_exact_peak_and_releases_it() {
+    check_scope_preparation(
+        "FROM facts |> SELECT k, n/(k+1) AS ratio |> WHERE ratio>1/2 |> AGGREGATE AVG(ratio) AS mean GROUP BY k",
+    );
+}
+
+#[test]
+fn safe_divide_keeps_nullable_identity_and_bounded_call_programs() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    for argument in ["1, 2", "l_quantity, 0"] {
+        let mut query = db
+            .prepare(&format!(
+                "FROM lineitem |> SELECT SAFE_DIVIDE({argument}) AS ratio"
+            ))
+            .unwrap();
+        let output = query.result_column(0).unwrap();
+        assert_eq!(output.data_type, DataType::Double);
+        assert!(output.nullable);
+        let column = query.plan.computed[0].column;
+        query.plan.computed[0].column =
+            SemanticColumn::new(column.identity().value(), DataType::Double, false);
+        assert!(validate(&query.plan).is_err());
+    }
+    assert_eq!(db.reserved_memory_bytes(), baseline);
+    for depth in [15, 16] {
+        let expression = format!("{}1{}", "SAFE_DIVIDE(".repeat(depth), ", 1)".repeat(depth));
+        let sql = format!("FROM lineitem |> SELECT {expression} AS ratio");
+        if depth == 15 {
+            assert!(db.prepare(&sql).is_ok());
+        } else {
+            assert!(matches!(db.prepare(&sql), Err(Error::Parse { .. })));
+        }
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k, SAFE_DIVIDE(n, k) AS ratio |> WHERE ratio>SAFE_DIVIDE(1, 2) |> AGGREGATE AVG(ratio) AS mean GROUP BY k",
+    );
+}
+
+#[test]
+fn unary_numeric_calls_preserve_type_nullability_and_bounded_admission() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    for (function, integer_output) in [
+        ("ABS", DataType::Int64),
+        ("SIGN", DataType::Int64),
+        ("FLOOR", DataType::Double),
+        ("CEIL", DataType::Double),
+        ("CEILING", DataType::Double),
+        ("ROUND", DataType::Double),
+        ("SQRT", DataType::Double),
+        ("LN", DataType::Double),
+        ("LOG10", DataType::Double),
+        ("EXP", DataType::Double),
+    ] {
+        for (argument, kind, nullable) in [
+            ("1", integer_output, false),
+            ("-1.0", DataType::Double, false),
+            ("SAFE_DIVIDE(1, 0)", DataType::Double, true),
+        ] {
+            let mut query = db
+                .prepare(&format!(
+                    "FROM lineitem |> SELECT {function}({argument}) AS magnitude"
+                ))
+                .unwrap();
+            let output = query.result_column(0).unwrap();
+            assert_eq!((output.data_type, output.nullable), (kind, nullable));
+            let column = query.plan.computed[0].column;
+            query.plan.computed[0].column =
+                SemanticColumn::new(column.identity().value(), kind, !nullable);
+            assert!(validate(&query.plan).is_err());
+        }
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+        for depth in [31, 32] {
+            let expression = format!(
+                "{}1{}",
+                format!("{function}(").repeat(depth),
+                ")".repeat(depth)
+            );
+            let result = db.prepare(&format!(
+                "FROM lineitem |> SELECT {expression} AS magnitude"
+            ));
+            if depth == 31 {
+                assert!(result.is_ok());
+            } else {
+                assert!(matches!(result, Err(Error::Parse { .. })));
+            }
+            drop(result);
+            assert_eq!(db.reserved_memory_bytes(), baseline);
+        }
+        let threshold = if matches!(function, "SQRT" | "LN" | "LOG10") {
+            "2"
+        } else {
+            "-2"
+        };
+        check_scope_preparation(&format!(
+            "FROM facts |> SELECT k, {function}(n-5) AS deviation |> WHERE deviation>{function}({threshold}) |> AGGREGATE AVG(deviation) AS mean GROUP BY k",
+        ));
+    }
+}
+
+#[test]
+fn mod_keeps_integer_identity_and_bounded_call_admission() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    let mut query = db
+        .prepare("FROM lineitem |> SELECT MOD(5, 3) AS remainder")
+        .unwrap();
+    let output = query.result_column(0).unwrap();
+    assert_eq!(
+        (output.data_type, output.nullable),
+        (DataType::Int64, false)
+    );
+    let column = query.plan.computed[0].column;
+    query.plan.computed[0].column =
+        SemanticColumn::new(column.identity().value(), DataType::Double, false);
+    assert!(validate(&query.plan).is_err());
+    drop(query);
+    for depth in [15, 16] {
+        let expression = format!("{}1{}", "MOD(".repeat(depth), ", 3)".repeat(depth));
+        let result = db.prepare(&format!(
+            "FROM lineitem |> SELECT {expression} AS remainder"
+        ));
+        if depth == 15 {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(Error::Parse { .. })));
+        }
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k, MOD(n, 3) AS remainder |> WHERE remainder>MOD(3, 3) |> AGGREGATE SUM(remainder) AS total GROUP BY k",
+    );
+}
+
+#[test]
+fn div_keeps_integer_identity_and_bounded_call_admission() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    let mut query = db
+        .prepare("FROM lineitem |> SELECT DIV(5, 3) AS quotient")
+        .unwrap();
+    let output = query.result_column(0).unwrap();
+    assert_eq!(
+        (output.data_type, output.nullable),
+        (DataType::Int64, false)
+    );
+    let column = query.plan.computed[0].column;
+    query.plan.computed[0].column =
+        SemanticColumn::new(column.identity().value(), DataType::Double, false);
+    assert!(validate(&query.plan).is_err());
+    drop(query);
+    for depth in [15, 16] {
+        let expression = format!("{}1{}", "DIV(".repeat(depth), ", 3)".repeat(depth));
+        let result = db.prepare(&format!("FROM lineitem |> SELECT {expression} AS quotient"));
+        if depth == 15 {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(Error::Parse { .. })));
+        }
+        drop(result);
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k, DIV(n, 3) AS quotient |> WHERE quotient>DIV(3, 3) |> AGGREGATE SUM(quotient) AS total GROUP BY k",
+    );
+}
+
+#[test]
+fn coalesce_validates_both_branches_and_nullable_result_identity() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    for (arguments, kind, nullable) in [
+        ("1, 2", DataType::Int64, false),
+        ("1, 2.0", DataType::Double, false),
+        ("SAFE_DIVIDE(1, 0), 2", DataType::Double, false),
+        (
+            "SAFE_DIVIDE(1, 0), SAFE_DIVIDE(2, 0)",
+            DataType::Double,
+            true,
+        ),
+    ] {
+        let mut query = db
+            .prepare(&format!(
+                "FROM lineitem |> SELECT COALESCE({arguments}) AS n"
+            ))
+            .unwrap();
+        let output = query.result_column(0).unwrap();
+        assert_eq!((output.data_type, output.nullable), (kind, nullable));
+        validate(&query.plan).unwrap();
+        let column = query.plan.computed[0].column;
+        query.plan.computed[0].column =
+            SemanticColumn::new(column.identity().value(), kind, !nullable);
+        assert!(validate(&query.plan).is_err());
+    }
+    for expression in [
+        "COALESCE(1, missing)",
+        "COALESCE(1, l_returnflag)",
+        "COALESCE(1, 9223372036854775808)",
+    ] {
+        assert!(
+            db.prepare(&format!("FROM lineitem |> SELECT {expression}"))
+                .is_err()
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k, COALESCE(n, k) AS value |> WHERE value>COALESCE(1, 0) |> AGGREGATE SUM(value) AS total GROUP BY k",
+    );
+}
+
+#[test]
+fn nullif_validates_numeric_arguments_nullable_identity_and_admission() {
+    let (_temp, db) = database(4_000_000);
+    let baseline = db.reserved_memory_bytes();
+    for (arguments, kind) in [
+        ("1, 2", DataType::Int64),
+        ("1, 2.0", DataType::Double),
+        ("1, SAFE_DIVIDE(1, 0)", DataType::Double),
+        ("1, NULL", DataType::Int64),
+    ] {
+        let mut query = db
+            .prepare(&format!("FROM lineitem |> SELECT NULLIF({arguments}) AS n"))
+            .unwrap();
+        let output = query.result_column(0).unwrap();
+        assert_eq!((output.data_type, output.nullable), (kind, true));
+        validate(&query.plan).unwrap();
+        let column = query.plan.computed[0].column;
+        query.plan.computed[0].column = SemanticColumn::new(column.identity().value(), kind, false);
+        assert!(validate(&query.plan).is_err());
+    }
+    for expression in [
+        "NULLIF(1, missing)",
+        "NULLIF(1, l_returnflag)",
+        "NULLIF(l_shipdate, l_shipdate)",
+        "NULLIF(1, 9223372036854775808)",
+    ] {
+        assert!(
+            db.prepare(&format!("FROM lineitem |> SELECT {expression}"))
+                .is_err()
+        );
+        assert_eq!(db.reserved_memory_bytes(), baseline);
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k, NULLIF(n, k) AS value |> WHERE value>NULLIF(1, 0) |> AGGREGATE SUM(value) AS total GROUP BY k",
+    );
+}
+
+#[test]
+fn date_year_definitions_reject_invalid_types_scope_and_nullability() {
+    let (_temp, db) = database(4_000_000);
+    for mutation in 0..6 {
+        let mut query = db
+            .prepare("FROM lineitem |> SELECT EXTRACT(YEAR FROM l_shipdate) AS y")
+            .unwrap();
+        validate(&query.plan).unwrap();
+        let definition = &mut query.plan.computed[0];
+        let Computation::DateYear(input) = definition.expression else {
+            panic!("typed year computation");
+        };
+        match mutation {
+            0 => definition.expression = Computation::DateYear(SourceColumn::QUANTITY.semantic()),
+            1 => {
+                definition.expression = Computation::DateYear(SemanticColumn::new(
+                    input.identity().value(),
+                    DataType::Date,
+                    true,
+                ))
+            }
+            2 => {
+                definition.expression =
+                    Computation::DateYear(SemanticColumn::new(99, DataType::Date, false))
+            }
+            3 => {
+                definition.column = SemanticColumn::new(
+                    definition.column.identity().value(),
+                    DataType::Double,
+                    false,
+                )
+            }
+            4 => {
+                definition.column =
+                    SemanticColumn::new(definition.column.identity().value(), DataType::Int64, true)
+            }
+            5 => definition.input = RelationId(16),
+            _ => unreachable!(),
+        }
+        assert!(validate(&query.plan).is_err(), "year mutation {mutation}");
+    }
+}
+
+#[test]
+fn case_validates_all_arms_result_identity_and_preparation_admission() {
+    let (_temp, db) = database(4_000_000);
+    for (expression, kind, nullable) in [
+        (
+            "CASE WHEN 1.0=1.0 THEN 2 ELSE 3 END",
+            DataType::Int64,
+            false,
+        ),
+        ("CASE WHEN 1=1 THEN 2 ELSE 3.0 END", DataType::Double, false),
+        ("CASE WHEN 1=1 THEN 2 END", DataType::Int64, true),
+        (
+            "CASE WHEN 1=1 THEN NULL ELSE 3.0 END",
+            DataType::Double,
+            true,
+        ),
+    ] {
+        let mut query = db
+            .prepare(&format!("FROM lineitem |> SELECT {expression} AS n"))
+            .unwrap();
+        let output = query.result_column(0).unwrap();
+        assert_eq!((output.data_type, output.nullable), (kind, nullable));
+        validate(&query.plan).unwrap();
+        let column = query.plan.computed[0].column;
+        query.plan.computed[0].column =
+            SemanticColumn::new(column.identity().value(), kind, !nullable);
+        assert!(validate(&query.plan).is_err());
+    }
+    check_scope_preparation(
+        "FROM facts |> SELECT k, CASE WHEN n IS NULL THEN k WHEN n>k THEN n ELSE 0 END AS value |> WHERE value>0 |> AGGREGATE SUM(value) AS total GROUP BY k",
+    );
+}
